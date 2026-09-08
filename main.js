@@ -127,22 +127,23 @@ const paneGeo = new THREE.BoxGeometry(2.25, 3.8, .18);
 const paneWideGeo = new THREE.BoxGeometry(2.8, 3.8, .18);
 const crystalGeo = new THREE.OctahedronGeometry(.65, 0);
 const hazardGeo = new THREE.BoxGeometry(2.4, 2.7, 1);
+let buildLevel = 1;
 
 function addPane(x, z, wide = false) {
   const mesh = new THREE.Mesh(wide ? paneWideGeo : paneGeo, glassMat.clone());
-  mesh.position.set(x, 1.9, z); mesh.userData = { kind: "pane", alive: true, points: 150 };
+  mesh.position.set(x, 1.9, z); mesh.userData = { kind: "pane", alive: true, points: 150, level: buildLevel };
   scene.add(mesh); breakables.push(mesh); obstacles.push(mesh); return mesh;
 }
 
 function addCrystal(x, y, z) {
   const mesh = new THREE.Mesh(crystalGeo, crystalMat.clone());
-  mesh.position.set(x, y, z); mesh.rotation.z = Math.PI / 4; mesh.userData = { kind: "crystal", alive: true, points: 250 };
+  mesh.position.set(x, y, z); mesh.rotation.z = Math.PI / 4; mesh.userData = { kind: "crystal", alive: true, points: 250, level: buildLevel };
   scene.add(mesh); breakables.push(mesh); return mesh;
 }
 
 function addHazard(x, z) {
   const mesh = new THREE.Mesh(hazardGeo, hazardMat);
-  mesh.position.set(x, 1.35, z); mesh.userData = { kind: "hazard", hit: false };
+  mesh.position.set(x, 1.35, z); mesh.userData = { kind: "hazard", hit: false, level: buildLevel };
   scene.add(mesh); obstacles.push(mesh);
   return mesh;
 }
@@ -151,6 +152,15 @@ addPane(0, -13, true); addCrystal(-3.2, 1.2, -21); addPane(3.2, -29); addHazard(
 addPane(0, -47); addCrystal(3.2, 2.1, -55); addHazard(0, -65); addPane(-3.2, -74);
 addPane(3.2, -82); addCrystal(0, 2.5, -92); addHazard(3.2, -101); addPane(0, -110, true);
 addCrystal(-3.2, 1.4, -118);
+
+const causewayWallGeo = new THREE.BoxGeometry(.15, 2.6, 11);
+for (let z = 2; z > -128; z -= 11) {
+  for (const x of [-5.25, 5.25]) {
+    const wall = new THREE.Mesh(causewayWallGeo, glassMat.clone());
+    wall.position.set(x, 1.3, z); wall.userData.level = 1;
+    scene.add(wall); structural.push(wall);
+  }
+}
 
 function addLift(z) {
   const group = new THREE.Group(); group.position.z = z;
@@ -169,12 +179,23 @@ const energyMat = new THREE.ShaderMaterial({
 });
 for (const z of [-132, -282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); structural.push(core); }
 
-// Level 2: a darker mechanical foundry with moving machinery and lane hazards.
+// Level 2: an enclosed mechanical foundry with moving machinery and lane hazards.
+buildLevel = 2;
 const foundryMetal = new THREE.MeshStandardMaterial({ color: 0x332a24, metalness: .88, roughness: .3 });
 const furnaceMat = new THREE.MeshStandardMaterial({ color: 0x3f1710, emissive: 0xff5a19, emissiveIntensity: 1.8, roughness: .5 });
 for (let z = -152; z > -272; z -= 14) {
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); scene.add(beam); structural.push(beam);
-  const vent = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 5.2, 10), furnaceMat); vent.rotation.z = Math.PI / 2; vent.position.set(z % 28 ? -4.7 : 4.7, 2.1, z - 5); scene.add(vent); structural.push(vent);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); beam.userData.level = 2; scene.add(beam); structural.push(beam);
+  const vent = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 5.2, 10), furnaceMat); vent.rotation.z = Math.PI / 2; vent.position.set(z % 28 ? -4.7 : 4.7, 2.1, z - 5); vent.userData.level = 2; scene.add(vent); structural.push(vent);
+}
+const foundryWallGeo = new THREE.BoxGeometry(.3, 6.2, 15);
+const foundryCeilingGeo = new THREE.BoxGeometry(10.6, .3, 15);
+for (let z = -134; z > -280; z -= 15) {
+  for (const x of [-5.25, 5.25]) {
+    const wall = new THREE.Mesh(foundryWallGeo, foundryMetal); wall.position.set(x, 3.1, z); wall.userData.level = 2;
+    scene.add(wall); structural.push(wall);
+  }
+  const ceiling = new THREE.Mesh(foundryCeilingGeo, foundryMetal); ceiling.position.set(0, 6.25, z); ceiling.userData.level = 2;
+  scene.add(ceiling); structural.push(ceiling);
 }
 function addMover(x, z, range, speed) {
   const mesh = addHazard(x, z); mesh.scale.set(1.15, 1.5, 1.1); mesh.userData.mover = { base: x, range, speed, phase: Math.random() * Math.PI * 2 }; return mesh;
@@ -183,7 +204,8 @@ addPane(-3.2, -158); addMover(0, -169, 3.2, 1.4); addCrystal(3.2, 2.4, -180);
 addMover(-2.4, -192, 2.2, 1.8); addPane(3.2, -204); addHazard(0, -215);
 addCrystal(-3.2, 1.5, -225); addMover(1.5, -238, 2.8, 2.1); addPane(0, -251, true); addHazard(-3.2, -263);
 
-// Level 3: fractured rings, vertical lanes, and a reactor suspended in a storm.
+// Level 3: fractured rings, vertical lanes, and a reactor suspended in an open storm sky.
+buildLevel = 3;
 const ringMat = new THREE.MeshStandardMaterial({ color: 0x1c1512, metalness: .92, roughness: .18, emissive: 0x5c2410, emissiveIntensity: .75 });
 const gravityRings = [];
 for (let z = -302; z > -426; z -= 18) {
@@ -325,11 +347,17 @@ function updateLaunchCamera(dt, time) {
   if (launchTimer >= duration) { ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show"); state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); }
 }
 
+function isLevelVisible(level) {
+  if (level === undefined) return true;
+  if (state === "lift") return level === currentLevel || level === transitionTarget;
+  return level === currentLevel;
+}
+
 function updateCulling() {
-  for (const mesh of structural) mesh.visible = mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
-  for (const ring of gravityRings) ring.visible = ring.position.z <= runZ + RENDER_BEHIND && ring.position.z >= runZ - RENDER_AHEAD;
-  for (const mesh of breakables) mesh.visible = mesh.userData.alive && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
-  for (const mesh of obstacles) if (mesh.userData.kind === "hazard") mesh.visible = mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+  for (const mesh of structural) mesh.visible = isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+  for (const ring of gravityRings) ring.visible = isLevelVisible(3) && ring.position.z <= runZ + RENDER_BEHIND && ring.position.z >= runZ - RENDER_AHEAD;
+  for (const mesh of breakables) mesh.visible = mesh.userData.alive && isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+  for (const mesh of obstacles) if (mesh.userData.kind === "hazard") mesh.visible = isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
 }
 
 function updateGame(dt, time) {
