@@ -9,8 +9,8 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x071318);
-scene.fog = new THREE.FogExp2(0x071318, 0.018);
+scene.background = new THREE.Color(0x140b09);
+scene.fog = new THREE.FogExp2(0x140b09, 0.018);
 
 const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 280);
 const clock = new THREE.Clock();
@@ -66,6 +66,7 @@ function saveSettings() {
 const ui = {
   level: document.querySelector("#level"), ammo: document.querySelector("#ammo"), health: document.querySelector("#health"), score: document.querySelector("#score"),
   camera: document.querySelector("#cameraMode"), reticle: document.querySelector("#reticle"), message: document.querySelector("#message"), caption: document.querySelector("#caption"),
+  story: document.querySelector("#storyScreen"), storyLine: document.querySelector("#storyLine"),
   start: document.querySelector("#startScreen"), end: document.querySelector("#endScreen"), final: document.querySelector("#finalScore"),
   endEyebrow: document.querySelector("#endEyebrow"), endTitle: document.querySelector("#endTitle"), endText: document.querySelector("#endText"),
   settings: document.querySelector("#settingsScreen"), settingsEyebrow: document.querySelector("#settingsEyebrow"), settingsTitle: document.querySelector("#settingsTitle"),
@@ -78,56 +79,65 @@ ui.sensitivitySlider.value = settings.sensitivity;
 ui.reducedMotionToggle.checked = settings.reducedMotion;
 document.querySelector("#soundButton").textContent = muted ? "MUTED" : "SOUND";
 
-scene.add(new THREE.HemisphereLight(0xa7f6ff, 0x12222a, 1.8));
-const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+scene.add(new THREE.HemisphereLight(0xffd0a0, 0x2a1510, 1.8));
+const sun = new THREE.DirectionalLight(0xffe4c4, 2.5);
 sun.position.set(-8, 16, 12);
 scene.add(sun);
 
-const floorMaterial = new THREE.MeshPhysicalMaterial({ color: 0x19414b, roughness: 0.25, metalness: 0.45, transparent: true, opacity: 0.72 });
+const floorMaterial = new THREE.MeshPhysicalMaterial({ color: 0x4a2318, roughness: 0.25, metalness: 0.45, transparent: true, opacity: 0.72 });
+const slabGeo = new THREE.BoxGeometry(10.8, 0.2, 7.3);
+const slabEdgeGeo = new THREE.EdgesGeometry(slabGeo);
+const slabEdgeMat = new THREE.LineBasicMaterial({ color: 0xff7a3d, transparent: true, opacity: 0.32 });
 for (let z = 4; z > -438; z -= 8) {
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(10.8, 0.2, 7.3), floorMaterial);
+  const slab = new THREE.Mesh(slabGeo, floorMaterial);
   slab.position.set(0, -0.2, z);
   scene.add(slab);
-  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(slab.geometry), new THREE.LineBasicMaterial({ color: 0x3e9aaa, transparent: true, opacity: 0.32 }));
+  const edge = new THREE.LineSegments(slabEdgeGeo, slabEdgeMat);
   edge.position.copy(slab.position); scene.add(edge);
 }
 
-const railMat = new THREE.MeshStandardMaterial({ color: 0x254854, metalness: 0.75, roughness: 0.26 });
+const railMat = new THREE.MeshStandardMaterial({ color: 0x35241c, metalness: 0.75, roughness: 0.26 });
 for (const side of [-5.2, 5.2]) {
   const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 442), railMat);
   rail.position.set(side, 1.1, -216); scene.add(rail);
 }
 
 const archGeo = new THREE.BoxGeometry(0.24, 6, 0.24);
+const archTopGeo = new THREE.BoxGeometry(10.4, .24, .24);
 for (let z = 0; z > -438; z -= 12) {
   for (const x of [-5.1, 5.1]) { const p = new THREE.Mesh(archGeo, railMat); p.position.set(x, 2.8, z); scene.add(p); }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(10.4, .24, .24), railMat); top.position.set(0, 5.7, z); scene.add(top);
+  const top = new THREE.Mesh(archTopGeo, railMat); top.position.set(0, 5.7, z); scene.add(top);
 }
 
 const starGeo = new THREE.BufferGeometry();
 const starData = new Float32Array(900);
 for (let i = 0; i < starData.length; i += 3) { starData[i] = (Math.random() - .5) * 90; starData[i+1] = Math.random() * 40; starData[i+2] = -Math.random() * 210; }
 starGeo.setAttribute("position", new THREE.BufferAttribute(starData, 3));
-scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x91edf0, size: .08, transparent: true, opacity: .5 })));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffcf9a, size: .08, transparent: true, opacity: .5 })));
 
-const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x7ef4f1, transmission: .5, transparent: true, opacity: .52, roughness: .06, metalness: .05, thickness: .35, emissive: 0x123b42, emissiveIntensity: .5 });
-const crystalMat = new THREE.MeshPhysicalMaterial({ color: 0xffcf66, transmission: .15, roughness: .15, metalness: .1, emissive: 0x8f4a08, emissiveIntensity: 1.2 });
-const hazardMat = new THREE.MeshStandardMaterial({ color: 0x752f36, roughness: .28, metalness: .68, emissive: 0x31090d, emissiveIntensity: .6 });
+const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffb26b, transparent: true, opacity: .58, roughness: .06, metalness: .05, emissive: 0x4a1d0a, emissiveIntensity: .55 });
+const crystalMat = new THREE.MeshPhysicalMaterial({ color: 0xffb04a, roughness: .15, metalness: .1, emissive: 0xb35a10, emissiveIntensity: 1.2 });
+const hazardMat = new THREE.MeshStandardMaterial({ color: 0x8a2f2f, roughness: .28, metalness: .68, emissive: 0x4a0f0f, emissiveIntensity: .6 });
+
+const paneGeo = new THREE.BoxGeometry(2.25, 3.8, .18);
+const paneWideGeo = new THREE.BoxGeometry(2.8, 3.8, .18);
+const crystalGeo = new THREE.OctahedronGeometry(.65, 0);
+const hazardGeo = new THREE.BoxGeometry(2.4, 2.7, 1);
 
 function addPane(x, z, wide = false) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(wide ? 2.8 : 2.25, 3.8, .18), glassMat.clone());
+  const mesh = new THREE.Mesh(wide ? paneWideGeo : paneGeo, glassMat.clone());
   mesh.position.set(x, 1.9, z); mesh.userData = { kind: "pane", alive: true, points: 150 };
   scene.add(mesh); breakables.push(mesh); obstacles.push(mesh); return mesh;
 }
 
 function addCrystal(x, y, z) {
-  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(.65, 0), crystalMat.clone());
+  const mesh = new THREE.Mesh(crystalGeo, crystalMat.clone());
   mesh.position.set(x, y, z); mesh.rotation.z = Math.PI / 4; mesh.userData = { kind: "crystal", alive: true, points: 250 };
   scene.add(mesh); breakables.push(mesh); return mesh;
 }
 
 function addHazard(x, z) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.7, 1), hazardMat);
+  const mesh = new THREE.Mesh(hazardGeo, hazardMat);
   mesh.position.set(x, 1.35, z); mesh.userData = { kind: "hazard", hit: false };
   scene.add(mesh); obstacles.push(mesh);
   return mesh;
@@ -151,12 +161,12 @@ const energyUniforms = { uTime: { value: 0 }, uLift: { value: 0 } };
 const energyMat = new THREE.ShaderMaterial({
   uniforms: energyUniforms, transparent: true, blending: THREE.AdditiveBlending,
   vertexShader: `varying vec2 vUv; varying float vWave; uniform float uTime; void main(){vUv=uv; vec3 p=position; vWave=sin(p.y*3.0+uTime*4.0)*0.06; p.x+=vWave; gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
-  fragmentShader: `varying vec2 vUv; varying float vWave; uniform float uTime; uniform float uLift; void main(){float band=0.45+0.45*sin(vUv.y*28.0-uTime*5.0); float edge=pow(abs(vUv.x-.5)*2.0,3.0); vec3 col=mix(vec3(.05,.55,.62),vec3(.55,1.0,.92),band+uLift*.25); gl_FragColor=vec4(col,(.18+band*.42+edge*.25));}`
+  fragmentShader: `varying vec2 vUv; varying float vWave; uniform float uTime; uniform float uLift; void main(){float band=0.45+0.45*sin(vUv.y*28.0-uTime*5.0); float edge=pow(abs(vUv.x-.5)*2.0,3.0); vec3 col=mix(vec3(.45,.12,.04),vec3(1.0,.62,.25),band+uLift*.25); gl_FragColor=vec4(col,(.18+band*.42+edge*.25));}`
 });
 for (const z of [-132, -282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); }
 
 // Level 2: a darker mechanical foundry with moving machinery and lane hazards.
-const foundryMetal = new THREE.MeshStandardMaterial({ color: 0x263138, metalness: .88, roughness: .3 });
+const foundryMetal = new THREE.MeshStandardMaterial({ color: 0x332a24, metalness: .88, roughness: .3 });
 const furnaceMat = new THREE.MeshStandardMaterial({ color: 0x3f1710, emissive: 0xff5a19, emissiveIntensity: 1.8, roughness: .5 });
 for (let z = -152; z > -272; z -= 14) {
   const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); scene.add(beam);
@@ -170,7 +180,7 @@ addMover(-2.4, -192, 2.2, 1.8); addPane(3.2, -204); addHazard(0, -215);
 addCrystal(-3.2, 1.5, -225); addMover(1.5, -238, 2.8, 2.1); addPane(0, -251, true); addHazard(-3.2, -263);
 
 // Level 3: fractured rings, vertical lanes, and a reactor suspended in a storm.
-const ringMat = new THREE.MeshStandardMaterial({ color: 0x161a22, metalness: .92, roughness: .18, emissive: 0x173e4b, emissiveIntensity: .75 });
+const ringMat = new THREE.MeshStandardMaterial({ color: 0x1c1512, metalness: .92, roughness: .18, emissive: 0x5c2410, emissiveIntensity: .75 });
 const gravityRings = [];
 for (let z = -302; z > -426; z -= 18) {
   const ring = new THREE.Mesh(new THREE.TorusGeometry(6.2, .22, 10, 42), ringMat); ring.position.set(0, 3, z); ring.userData.spin = (z % 36 ? 1 : -1) * (.22 + Math.random() * .22); scene.add(ring); gravityRings.push(ring);
@@ -180,7 +190,7 @@ addCrystal(3.2, 3.4, -349); addPane(0, -362, true); addHazard(-3.2, -375);
 addCrystal(-3.2, 5.1, -388); addPane(3.2, -401); addPane(0, -414, true);
 
 const avatar = new THREE.Group();
-const body = new THREE.Mesh(new THREE.CapsuleGeometry(.42, 1.05, 6, 12), new THREE.MeshStandardMaterial({ color: 0xe7f9fa, roughness: .3, metalness: .45 })); body.position.y = 1.1; avatar.add(body);
+const body = new THREE.Mesh(new THREE.CapsuleGeometry(.42, 1.05, 6, 12), new THREE.MeshStandardMaterial({ color: 0xffece0, roughness: .3, metalness: .45 })); body.position.y = 1.1; avatar.add(body);
 const pack = new THREE.Mesh(new THREE.BoxGeometry(.65, .8, .3), railMat); pack.position.set(0, 1.2, .42); avatar.add(pack); scene.add(avatar);
 
 function updateUI() {
@@ -221,7 +231,7 @@ function fire() {
   ammo--;
   raycaster.setFromCamera(pointer, camera);
   const origin = camera.position.clone();
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.18, 14, 14), new THREE.MeshBasicMaterial({ color: 0xbaffff }));
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.18, 14, 14), new THREE.MeshBasicMaterial({ color: 0xffcf9a }));
   mesh.position.copy(origin); scene.add(mesh);
   projectiles.push({ mesh, velocity: raycaster.ray.direction.clone().multiplyScalar(34), life: 3 });
   updateUI();
@@ -233,7 +243,7 @@ function shatter(target) {
   if (target.userData.kind === "crystal") { ammo += 3; showMessage("+3 SPHERES"); } else { showMessage("GLASS FRACTURED"); }
   const count = target.userData.kind === "crystal" ? 8 : 14;
   for (let i = 0; i < count; i++) {
-    const material = new THREE.MeshBasicMaterial({ color: target.userData.kind === "crystal" ? 0xffcf66 : 0x7ef4f1, transparent: true, opacity: .78 });
+    const material = new THREE.MeshBasicMaterial({ color: target.userData.kind === "crystal" ? 0xffb04a : 0xffb26b, transparent: true, opacity: .78 });
     const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(.08 + Math.random() * .14), material);
     mesh.position.copy(target.position); scene.add(mesh);
     shards.push({ mesh, velocity: new THREE.Vector3((Math.random()-.5)*6, Math.random()*5, (Math.random()-.5)*5), life: 1.4 });
@@ -336,14 +346,15 @@ function updateGame(dt, time) {
   camera.position.lerp(desired, 1 - Math.exp(-dt * 7)); camera.lookAt(forward);
   if (shake > .001) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 2.4); }
 
+  const aliveBreakables = breakables.filter(x => x.userData.alive);
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(breakables.filter(x => x.userData.alive), false);
+  const hits = raycaster.intersectObjects(aliveBreakables, false);
   ui.reticle.classList.toggle("hot", hits.length > 0);
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i]; const old = p.mesh.position.clone(); p.mesh.position.addScaledVector(p.velocity, dt); p.life -= dt;
     const segment = p.mesh.position.clone().sub(old); raycaster.set(old, segment.clone().normalize()); raycaster.far = segment.length() + .35;
-    const hit = raycaster.intersectObjects(breakables.filter(x => x.userData.alive), false)[0];
+    const hit = raycaster.intersectObjects(aliveBreakables, false)[0];
     if (hit) { shatter(hit.object); p.life = 0; }
     if (p.life <= 0) { scene.remove(p.mesh); projectiles.splice(i, 1); }
   }
@@ -378,6 +389,32 @@ function closeSettings() {
   if (settingsFrom === "pause") paused = false;
   settingsFrom = null;
 }
+
+const storyLines = [
+  "THE ASCENSION TOWER IS FAILING.",
+  "STRUCTURAL INTEGRITY CRITICAL ACROSS ALL SECTORS.",
+  "ONE PATH REMAINS — UP, THROUGH THE CORE, BEFORE IT COLLAPSES.",
+];
+let storyTimeouts = [];
+
+function showStoryLine(index) {
+  if (index >= storyLines.length) { finishStory(); return; }
+  ui.storyLine.textContent = storyLines[index];
+  ui.storyLine.classList.add("show");
+  storyTimeouts.push(setTimeout(() => {
+    ui.storyLine.classList.remove("show");
+    storyTimeouts.push(setTimeout(() => showStoryLine(index + 1), 500));
+  }, 2400));
+}
+
+function finishStory() {
+  storyTimeouts.forEach(clearTimeout); storyTimeouts = [];
+  ui.story.classList.remove("active");
+  ui.start.classList.add("active");
+}
+
+document.querySelector("#storySkipButton").addEventListener("click", finishStory);
+showStoryLine(0);
 
 document.querySelector("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
 document.querySelector("#settingsButton").addEventListener("click", () => openSettings("intro"));
