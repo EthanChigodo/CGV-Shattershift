@@ -69,6 +69,7 @@ function saveSettings() {
 const ui = {
   level: document.querySelector("#level"), ammo: document.querySelector("#ammo"), health: document.querySelector("#health"), score: document.querySelector("#score"),
   camera: document.querySelector("#cameraMode"), reticle: document.querySelector("#reticle"), message: document.querySelector("#message"), caption: document.querySelector("#caption"),
+  launchControls: document.querySelector("#launchControls"),
   story: document.querySelector("#storyScreen"), storyLine: document.querySelector("#storyLine"),
   start: document.querySelector("#startScreen"), end: document.querySelector("#endScreen"), final: document.querySelector("#finalScore"),
   endEyebrow: document.querySelector("#endEyebrow"), endTitle: document.querySelector("#endTitle"), endText: document.querySelector("#endText"),
@@ -253,6 +254,7 @@ function resetGame() {
 
 function beginLaunch() {
   resetStats(); state = "launch"; launchTimer = 0; captionIndex = -1; advanceCaption();
+  ui.launchControls.classList.add("show");
 }
 
 function advanceCaption() {
@@ -320,7 +322,7 @@ function updateLaunchCamera(dt, time) {
   camera.position.lerpVectors(fromPos, new THREE.Vector3(0, 1.8, 8), ease);
   const lookAt = new THREE.Vector3(0, 2, -8).lerp(new THREE.Vector3(0, 1.7, -4), ease);
   camera.lookAt(lookAt);
-  if (launchTimer >= duration) { ui.caption.classList.remove("show"); state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); }
+  if (launchTimer >= duration) { ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show"); state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); }
 }
 
 function updateCulling() {

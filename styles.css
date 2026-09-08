@@ -80,6 +80,14 @@ button { font: inherit; }
 }
 .caption.show { opacity: 1; }
 
+.launch-controls {
+  position: fixed; z-index: 6; left: 50%; bottom: 64px; transform: translateX(-50%);
+  margin: 0; padding: 10px 20px; border-radius: 8px; border: 1px solid var(--accent-border-soft);
+  background: var(--panel-bg); backdrop-filter: blur(10px);
+  opacity: 0; transition: opacity .6s ease; pointer-events: none;
+}
+.launch-controls.show { opacity: 1; }
+
 body.pregame .hud, body.pregame .reticle { display: none; }
 
 .screen {
@@ -99,9 +107,9 @@ h2 { font-size: clamp(36px, 6vw, 68px); }
 kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border); border-radius: 4px; color: var(--text); background: rgba(18, 10, 8, .72); text-align: center; font-size: 9px; }
 .primary-button { min-width: 180px; height: 48px; padding: 0 24px; border: 0; border-radius: 4px; color: #1a0a04; background: var(--accent); cursor: pointer; font-weight: 850; font-size: 12px; }
 .primary-button:hover { background: #ffb066; box-shadow: 0 0 30px var(--accent-glow); }
-.secondary-button { min-width: 160px; height: 48px; padding: 0 24px; border: 1px solid var(--accent-border); border-radius: 4px; color: var(--text-dim); background: transparent; cursor: pointer; font-weight: 800; font-size: 12px; }
-.secondary-button:hover { border-color: var(--accent); color: #fff; background: rgba(255, 122, 61, .1); }
-.button-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+.text-button { height: 48px; padding: 0 6px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; font-weight: 800; font-size: 12px; text-decoration: underline; text-underline-offset: 4px; }
+.text-button:hover { color: var(--text); }
+.button-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-top: 6px; }
 .hint { position: absolute; bottom: 24px; margin: 0; color: var(--text-dimmer); font-size: 10px; }
 .result { display: flex; gap: 16px; align-items: baseline; margin: 28px 0; }
 .result span { color: var(--text-dim); font-size: 10px; font-weight: 700; }
@@ -125,9 +133,8 @@ kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border);
 #startScreen .eyebrow { animation: fadeSlideUp .6s ease both; }
 #startScreen h1 { animation: fadeSlideUp .7s .12s ease both; }
 #startScreen .intro { animation: fadeSlideUp .7s .24s ease both; }
-#startScreen .controls { animation: fadeSlideUp .7s .36s ease both; }
-#startScreen .button-row { animation: fadeSlideUp .7s .48s ease both; }
-#startScreen .hint { animation: fadeSlideUp .7s .6s ease both; }
+#startScreen .button-row { animation: fadeSlideUp .7s .36s ease both; }
+#startScreen .hint { animation: fadeSlideUp .7s .48s ease both; }
 
 @media (max-width: 650px) {
   .topbar { height: 60px; padding: 12px 14px; }
