@@ -20,7 +20,14 @@ The player automatically travels through a failing glass tower, throws limited e
 - Left mouse button: throw a sphere.
 - `C`: switch between first-person and chase cameras where applicable.
 - `W` / `S` or up / down arrows: move between gravity heights in Level 3.
+- `Esc` or the `MENU` button: pause and open settings mid-run.
 - `1`, `2`, `3`: jump directly to a level during a project demonstration.
+
+## Intro and settings
+
+Selecting **Start Run** plays a short scripted launch sequence (a sweeping establishing shot of the Causeway with staged caption text) before handing control to the player, rather than cutting straight into gameplay. The title screen itself idles on a slow cinematic drift through the opening corridor instead of a static shot.
+
+A **SETTINGS** screen is reachable from the title screen, and the same panel doubles as the pause menu (`Esc` or the `MENU` button during a run). It exposes master volume, aim sensitivity, and a **Reduced motion & camera shake** toggle for players sensitive to camera movement or impact shake; choices persist locally between sessions.
 
 ## Play locally
 

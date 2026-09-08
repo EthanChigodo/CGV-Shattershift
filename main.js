@@ -36,13 +36,47 @@ let currentLevel = 1;
 let transitionTarget = 0;
 let heightLane = 0;
 let playerY = 0;
+let paused = false;
+let launchTimer = 0;
+let captionIndex = -1;
+let settingsFrom = null;
+let shake = 0;
+let lastVolume = 80;
+
+const LAUNCH_DURATION = 4.2;
+const captionScript = [
+  { t: 0, text: "SYSTEM LINK ESTABLISHED" },
+  { t: 1.4, text: "CAUSEWAY INTEGRITY: CRITICAL" },
+  { t: 2.7, text: "REACH THE CONTROL CORE" },
+];
+
+const settingsDefaults = { masterVolume: 80, sensitivity: 100, reducedMotion: false };
+let settings = { ...settingsDefaults };
+try {
+  const saved = JSON.parse(localStorage.getItem("fractureRunSettings"));
+  if (saved) settings = { ...settingsDefaults, ...saved };
+} catch (error) {}
+muted = settings.masterVolume === 0;
+lastVolume = settings.masterVolume || 80;
+
+function saveSettings() {
+  try { localStorage.setItem("fractureRunSettings", JSON.stringify(settings)); } catch (error) {}
+}
 
 const ui = {
   level: document.querySelector("#level"), ammo: document.querySelector("#ammo"), health: document.querySelector("#health"), score: document.querySelector("#score"),
-  camera: document.querySelector("#cameraMode"), reticle: document.querySelector("#reticle"), message: document.querySelector("#message"),
+  camera: document.querySelector("#cameraMode"), reticle: document.querySelector("#reticle"), message: document.querySelector("#message"), caption: document.querySelector("#caption"),
   start: document.querySelector("#startScreen"), end: document.querySelector("#endScreen"), final: document.querySelector("#finalScore"),
-  endEyebrow: document.querySelector("#endEyebrow"), endTitle: document.querySelector("#endTitle"), endText: document.querySelector("#endText")
+  endEyebrow: document.querySelector("#endEyebrow"), endTitle: document.querySelector("#endTitle"), endText: document.querySelector("#endText"),
+  settings: document.querySelector("#settingsScreen"), settingsEyebrow: document.querySelector("#settingsEyebrow"), settingsTitle: document.querySelector("#settingsTitle"),
+  settingsBackButton: document.querySelector("#settingsBackButton"), volumeSlider: document.querySelector("#volumeSlider"),
+  sensitivitySlider: document.querySelector("#sensitivitySlider"), reducedMotionToggle: document.querySelector("#reducedMotionToggle")
 };
+
+ui.volumeSlider.value = settings.masterVolume;
+ui.sensitivitySlider.value = settings.sensitivity;
+ui.reducedMotionToggle.checked = settings.reducedMotion;
+document.querySelector("#soundButton").textContent = muted ? "MUTED" : "SOUND";
 
 scene.add(new THREE.HemisphereLight(0xa7f6ff, 0x12222a, 1.8));
 const sun = new THREE.DirectionalLight(0xffffff, 2.5);
@@ -157,18 +191,33 @@ function updateUI() {
 
 function showMessage(text) { ui.message.textContent = text; ui.message.classList.add("show"); messageTimer = 1.2; }
 
-function resetGame() {
+function resetStats() {
   ammo = 18; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0; heightLane = 0;
-  runZ = 7; cameraThird = false; liftTimer = 0; currentLevel = 1; transitionTarget = 0;
+  runZ = 7; cameraThird = false; liftTimer = 0; currentLevel = 1; transitionTarget = 0; shake = 0;
   for (const mesh of breakables) { mesh.visible = true; mesh.userData.alive = true; mesh.scale.setScalar(1); }
   for (const mesh of obstacles) mesh.userData.hit = false;
   for (const p of projectiles) scene.remove(p.mesh); projectiles.length = 0;
   for (const s of shards) scene.remove(s.mesh); shards.length = 0;
-  ui.end.classList.remove("active"); state = "playing"; updateUI(); showMessage("SECTOR LINKED // MOVE");
+  ui.end.classList.remove("active"); updateUI();
 }
 
+function resetGame() {
+  resetStats(); state = "playing"; showMessage("SECTOR LINKED // MOVE");
+}
+
+function beginLaunch() {
+  resetStats(); state = "launch"; launchTimer = 0; captionIndex = -1; advanceCaption();
+}
+
+function advanceCaption() {
+  captionIndex++;
+  if (captionIndex < captionScript.length) { ui.caption.textContent = captionScript[captionIndex].text; ui.caption.classList.add("show"); }
+}
+
+function triggerShake(amount) { shake = Math.max(shake, amount * (settings.reducedMotion ? 0.25 : 1)); }
+
 function fire() {
-  if (state !== "playing" || ammo <= 0) { if (state === "playing") showMessage("NO SPHERES"); return; }
+  if (state !== "playing" || paused || ammo <= 0) { if (state === "playing" && !paused) showMessage("NO SPHERES"); return; }
   ammo--;
   raycaster.setFromCamera(pointer, camera);
   const origin = camera.position.clone();
@@ -209,10 +258,37 @@ function demoJump(level) {
   showMessage(`DEMO JUMP // LEVEL ${level}`); updateUI();
 }
 
+function updateIntroCamera(dt, time) {
+  const sway = settings.reducedMotion ? .35 : 1;
+  const target = new THREE.Vector3(Math.sin(time * .12) * 3.2 * sway, 2.4 + Math.sin(time * .18) * .3 * sway, -6 + Math.sin(time * .07) * 10 * sway);
+  camera.position.lerp(target, 1 - Math.exp(-dt * 1.2));
+  camera.lookAt(target.x * .4, 1.7, target.z - 14);
+}
+
+function updateLaunchCamera(dt, time) {
+  launchTimer += dt;
+  while (captionIndex + 1 < captionScript.length && launchTimer >= captionScript[captionIndex + 1].t) advanceCaption();
+  const duration = settings.reducedMotion ? LAUNCH_DURATION * .55 : LAUNCH_DURATION;
+  const ease = 1 - Math.pow(1 - Math.min(1, launchTimer / duration), 3);
+  const fromPos = settings.reducedMotion ? new THREE.Vector3(0, 3.4, 15) : new THREE.Vector3(7, 10, 24);
+  camera.position.lerpVectors(fromPos, new THREE.Vector3(0, 1.8, 8), ease);
+  const lookAt = new THREE.Vector3(0, 2, -8).lerp(new THREE.Vector3(0, 1.7, -4), ease);
+  camera.lookAt(lookAt);
+  if (launchTimer >= duration) { ui.caption.classList.remove("show"); state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); }
+}
+
 function updateGame(dt, time) {
   energyUniforms.uTime.value = time;
-  avatar.position.set(playerX, playerY, runZ + .5); avatar.visible = cameraThird || currentLevel === 3 || state === "lift";
+  document.body.classList.toggle("pregame", state === "intro" || state === "launch");
+  avatar.position.set(playerX, playerY, runZ + .5); avatar.visible = cameraThird || currentLevel === 3 || state === "lift" || state === "launch";
   body.rotation.z = Math.sin(time * 9) * .035;
+  for (const crystal of breakables.filter(x => x.userData.kind === "crystal" && x.userData.alive)) crystal.rotation.y += dt * 1.8;
+  for (const ring of gravityRings) { ring.rotation.z += dt * ring.userData.spin; ring.rotation.x = Math.sin(time * .4 + ring.position.z) * .18; }
+  if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
+
+  if (state === "intro") { updateIntroCamera(dt, time); return; }
+  if (state === "launch") { updateLaunchCamera(dt, time); return; }
+  if (paused) return;
 
   if (state === "playing") {
     runZ -= dt * (currentLevel === 2 ? 9.2 : currentLevel === 3 ? 8.7 : 8.1);
@@ -226,8 +302,8 @@ function updateGame(dt, time) {
       const playerCentreY = playerY + 1.35;
       if (!item.userData.hit && Math.abs(item.position.z - runZ) < .65 && Math.abs(item.position.x - playerX) < 1.3 && Math.abs(item.position.y - playerCentreY) < 2.1) {
         item.userData.hit = true;
-        if (item.userData.kind === "pane" && item.userData.alive) { health -= 18; shatter(item); }
-        if (item.userData.kind === "hazard") { health -= 30; showMessage("INTEGRITY DAMAGED"); }
+        if (item.userData.kind === "pane" && item.userData.alive) { health -= 18; shatter(item); triggerShake(.22); }
+        if (item.userData.kind === "hazard") { health -= 30; showMessage("INTEGRITY DAMAGED"); triggerShake(.42); }
         updateUI(); if (health <= 0) endRun(false);
       }
     }
@@ -258,6 +334,7 @@ function updateGame(dt, time) {
     desired.set(Math.sin(liftTimer * .9) * 8, 4 + liftTimer * .5, liftZ + 8 + Math.cos(liftTimer * .9) * 4); forward.set(0, 3.5 + liftTimer, liftZ);
   }
   camera.position.lerp(desired, 1 - Math.exp(-dt * 7)); camera.lookAt(forward);
+  if (shake > .001) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 2.4); }
 
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(breakables.filter(x => x.userData.alive), false);
@@ -276,9 +353,6 @@ function updateGame(dt, time) {
     if (s.life <= 0) { scene.remove(s.mesh); shards.splice(i, 1); }
   }
 
-  for (const crystal of breakables.filter(x => x.userData.kind === "crystal" && x.userData.alive)) crystal.rotation.y += dt * 1.8;
-  for (const ring of gravityRings) { ring.rotation.z += dt * ring.userData.spin; ring.rotation.x = Math.sin(time * .4 + ring.position.z) * .18; }
-  if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
 }
 
 function animate() {
@@ -288,12 +362,52 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-document.querySelector("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); resetGame(); });
+function openSettings(from) {
+  settingsFrom = from;
+  ui.settingsEyebrow.textContent = from === "pause" ? "RUN PAUSED" : "SETTINGS";
+  ui.settingsTitle.textContent = from === "pause" ? "CAUSEWAY ON HOLD" : "CALIBRATE YOUR RUN";
+  ui.settingsBackButton.textContent = from === "pause" ? "RESUME" : "BACK";
+  if (from === "intro") ui.start.classList.remove("active");
+  if (from === "pause") paused = true;
+  ui.settings.classList.add("active");
+}
+
+function closeSettings() {
+  ui.settings.classList.remove("active");
+  if (settingsFrom === "intro") ui.start.classList.add("active");
+  if (settingsFrom === "pause") paused = false;
+  settingsFrom = null;
+}
+
+document.querySelector("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
+document.querySelector("#settingsButton").addEventListener("click", () => openSettings("intro"));
+document.querySelector("#settingsBackButton").addEventListener("click", closeSettings);
+document.querySelector("#menuButton").addEventListener("click", () => { if (state === "playing" || state === "lift") { paused ? closeSettings() : openSettings("pause"); } });
 document.querySelector("#restartButton").addEventListener("click", resetGame);
-document.querySelector("#soundButton").addEventListener("click", (event) => { muted = !muted; event.currentTarget.textContent = muted ? "MUTED" : "SOUND"; });
-addEventListener("pointermove", (event) => { pointer.x = (event.clientX / innerWidth) * 2 - 1; pointer.y = -(event.clientY / innerHeight) * 2 + 1; });
+document.querySelector("#soundButton").addEventListener("click", (event) => {
+  muted = !muted;
+  settings.masterVolume = muted ? 0 : (lastVolume || 80);
+  if (!muted) lastVolume = settings.masterVolume;
+  ui.volumeSlider.value = settings.masterVolume;
+  event.currentTarget.textContent = muted ? "MUTED" : "SOUND";
+  saveSettings();
+});
+ui.volumeSlider.addEventListener("input", (event) => {
+  settings.masterVolume = Number(event.target.value); muted = settings.masterVolume === 0;
+  if (!muted) lastVolume = settings.masterVolume;
+  document.querySelector("#soundButton").textContent = muted ? "MUTED" : "SOUND"; saveSettings();
+});
+ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
+ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); });
+
+addEventListener("pointermove", (event) => {
+  const factor = settings.sensitivity / 100;
+  pointer.x = THREE.MathUtils.clamp(((event.clientX / innerWidth) * 2 - 1) * factor, -1, 1);
+  pointer.y = THREE.MathUtils.clamp((-(event.clientY / innerHeight) * 2 + 1) * factor, -1, 1);
+});
 addEventListener("pointerdown", (event) => { if (event.button === 0 && !event.target.closest("button")) fire(); });
 addEventListener("keydown", (event) => {
+  if (event.code === "Escape") { if (state === "playing" || state === "lift") { paused ? closeSettings() : openSettings("pause"); } else if (settingsFrom === "intro") closeSettings(); }
   if (event.code === "Digit1") demoJump(1);
   if (event.code === "Digit2") demoJump(2);
   if (event.code === "Digit3") demoJump(3);
