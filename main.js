@@ -10,14 +10,17 @@ renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x140b09);
-scene.fog = new THREE.FogExp2(0x140b09, 0.018);
+scene.fog = new THREE.FogExp2(0x140b09, 0.032);
 
-const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 280);
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 150);
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const lanes = [-3.2, 0, 3.2];
 const breakables = [];
+const structural = [];
+const RENDER_AHEAD = 95;
+const RENDER_BEHIND = 15;
 const projectiles = [];
 const shards = [];
 const obstacles = [];
@@ -91,9 +94,9 @@ const slabEdgeMat = new THREE.LineBasicMaterial({ color: 0xff7a3d, transparent: 
 for (let z = 4; z > -438; z -= 8) {
   const slab = new THREE.Mesh(slabGeo, floorMaterial);
   slab.position.set(0, -0.2, z);
-  scene.add(slab);
+  scene.add(slab); structural.push(slab);
   const edge = new THREE.LineSegments(slabEdgeGeo, slabEdgeMat);
-  edge.position.copy(slab.position); scene.add(edge);
+  edge.position.copy(slab.position); scene.add(edge); structural.push(edge);
 }
 
 const railMat = new THREE.MeshStandardMaterial({ color: 0x35241c, metalness: 0.75, roughness: 0.26 });
@@ -105,8 +108,8 @@ for (const side of [-5.2, 5.2]) {
 const archGeo = new THREE.BoxGeometry(0.24, 6, 0.24);
 const archTopGeo = new THREE.BoxGeometry(10.4, .24, .24);
 for (let z = 0; z > -438; z -= 12) {
-  for (const x of [-5.1, 5.1]) { const p = new THREE.Mesh(archGeo, railMat); p.position.set(x, 2.8, z); scene.add(p); }
-  const top = new THREE.Mesh(archTopGeo, railMat); top.position.set(0, 5.7, z); scene.add(top);
+  for (const x of [-5.1, 5.1]) { const p = new THREE.Mesh(archGeo, railMat); p.position.set(x, 2.8, z); scene.add(p); structural.push(p); }
+  const top = new THREE.Mesh(archTopGeo, railMat); top.position.set(0, 5.7, z); scene.add(top); structural.push(top);
 }
 
 const starGeo = new THREE.BufferGeometry();
@@ -153,7 +156,7 @@ function addLift(z) {
   const liftFloor = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, .4, 8), railMat); liftFloor.position.y = .05; group.add(liftFloor);
   for (const x of [-4.3, 4.3]) { const wall = new THREE.Mesh(new THREE.BoxGeometry(.22, 6.8, 8.4), glassMat); wall.position.set(x, 3.4, 0); group.add(wall); }
   const gate = new THREE.Mesh(new THREE.BoxGeometry(6.5, 5.5, .24), glassMat); gate.position.set(0, 2.75, -3.8); group.add(gate);
-  scene.add(group); return group;
+  scene.add(group); structural.push(group); return group;
 }
 addLift(-132); addLift(-282);
 
@@ -163,14 +166,14 @@ const energyMat = new THREE.ShaderMaterial({
   vertexShader: `varying vec2 vUv; varying float vWave; uniform float uTime; void main(){vUv=uv; vec3 p=position; vWave=sin(p.y*3.0+uTime*4.0)*0.06; p.x+=vWave; gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
   fragmentShader: `varying vec2 vUv; varying float vWave; uniform float uTime; uniform float uLift; void main(){float band=0.45+0.45*sin(vUv.y*28.0-uTime*5.0); float edge=pow(abs(vUv.x-.5)*2.0,3.0); vec3 col=mix(vec3(.45,.12,.04),vec3(1.0,.62,.25),band+uLift*.25); gl_FragColor=vec4(col,(.18+band*.42+edge*.25));}`
 });
-for (const z of [-132, -282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); }
+for (const z of [-132, -282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); structural.push(core); }
 
 // Level 2: a darker mechanical foundry with moving machinery and lane hazards.
 const foundryMetal = new THREE.MeshStandardMaterial({ color: 0x332a24, metalness: .88, roughness: .3 });
 const furnaceMat = new THREE.MeshStandardMaterial({ color: 0x3f1710, emissive: 0xff5a19, emissiveIntensity: 1.8, roughness: .5 });
 for (let z = -152; z > -272; z -= 14) {
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); scene.add(beam);
-  const vent = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 5.2, 10), furnaceMat); vent.rotation.z = Math.PI / 2; vent.position.set(z % 28 ? -4.7 : 4.7, 2.1, z - 5); scene.add(vent);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); scene.add(beam); structural.push(beam);
+  const vent = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 5.2, 10), furnaceMat); vent.rotation.z = Math.PI / 2; vent.position.set(z % 28 ? -4.7 : 4.7, 2.1, z - 5); scene.add(vent); structural.push(vent);
 }
 function addMover(x, z, range, speed) {
   const mesh = addHazard(x, z); mesh.scale.set(1.15, 1.5, 1.1); mesh.userData.mover = { base: x, range, speed, phase: Math.random() * Math.PI * 2 }; return mesh;
@@ -188,6 +191,39 @@ for (let z = -302; z > -426; z -= 18) {
 addCrystal(0, 1.2, -310); addPane(-3.2, -323); addHazard(3.2, -336);
 addCrystal(3.2, 3.4, -349); addPane(0, -362, true); addHazard(-3.2, -375);
 addCrystal(-3.2, 5.1, -388); addPane(3.2, -401); addPane(0, -414, true);
+
+function makeSmokeTexture() {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "rgba(255,170,110,0.45)");
+  gradient.addColorStop(1, "rgba(255,170,110,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
+const smokeTexture = makeSmokeTexture();
+const smokeSprites = [];
+for (let i = 0; i < 12; i++) {
+  const material = new THREE.SpriteMaterial({ map: smokeTexture, transparent: true, opacity: .4, blending: THREE.AdditiveBlending, depthWrite: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.setScalar(7 + Math.random() * 6);
+  sprite.userData = { speed: .3 + Math.random() * .4, phase: Math.random() * Math.PI * 2 };
+  sprite.position.set((Math.random() - .5) * 8, .5 + Math.random() * 4, 4 - i * 8);
+  scene.add(sprite); smokeSprites.push(sprite);
+}
+
+function updateSmoke(dt, time) {
+  for (const sprite of smokeSprites) {
+    sprite.position.x += Math.sin(time * sprite.userData.speed + sprite.userData.phase) * dt * .4;
+    if (sprite.position.z > runZ + 8 || sprite.position.z < runZ - RENDER_AHEAD) {
+      sprite.position.set((Math.random() - .5) * 8, .5 + Math.random() * 4, runZ - 25 - Math.random() * (RENDER_AHEAD - 25));
+    }
+  }
+}
 
 const avatar = new THREE.Group();
 const body = new THREE.Mesh(new THREE.CapsuleGeometry(.42, 1.05, 6, 12), new THREE.MeshStandardMaterial({ color: 0xffece0, roughness: .3, metalness: .45 })); body.position.y = 1.1; avatar.add(body);
@@ -287,6 +323,13 @@ function updateLaunchCamera(dt, time) {
   if (launchTimer >= duration) { ui.caption.classList.remove("show"); state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); }
 }
 
+function updateCulling() {
+  for (const mesh of structural) mesh.visible = mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+  for (const ring of gravityRings) ring.visible = ring.position.z <= runZ + RENDER_BEHIND && ring.position.z >= runZ - RENDER_AHEAD;
+  for (const mesh of breakables) mesh.visible = mesh.userData.alive && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+  for (const mesh of obstacles) if (mesh.userData.kind === "hazard") mesh.visible = mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+}
+
 function updateGame(dt, time) {
   energyUniforms.uTime.value = time;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
@@ -299,6 +342,8 @@ function updateGame(dt, time) {
   if (state === "intro") { updateIntroCamera(dt, time); return; }
   if (state === "launch") { updateLaunchCamera(dt, time); return; }
   if (paused) return;
+  updateCulling();
+  updateSmoke(dt, time);
 
   if (state === "playing") {
     runZ -= dt * (currentLevel === 2 ? 9.2 : currentLevel === 3 ? 8.7 : 8.1);
