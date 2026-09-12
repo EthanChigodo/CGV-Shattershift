@@ -125,16 +125,48 @@ Audio is **not** implemented here - it belongs to the UI/audio workstream. The l
 
 ## 8. Performance budget
 
-Measured in headless Chromium at 1280×760 with shadows on:
+### Measured on real hardware
 
-| Metric | Value | Notes |
+AMD Radeon integrated graphics (`nkosi-laptop`), Chromium, 1280×720, shadows on, all 11 dynamic lights:
+
+| Section | Draw calls | Triangles | FPS @ pixelRatio 1.25 | FPS @ pixelRatio 1.0 |
+| --- | --- | --- | --- | --- |
+| Beat A - Intake | 238 | 19.9k | 32.3 | 47.0 |
+| Junction 1 | 264 | 20.4k | 32.5 | - |
+| Beat B - Rolling Floor | 85 | 8.7k | 32.7 | 48.8 |
+| Beat C - Furnace escape | 82 | 15.8k | 29.9 | 40.9 |
+
+Geometries: 43. Textures: 11 (all procedural).
+
+### The level is fill-rate bound, not geometry bound
+
+This is the useful finding, and it should shape how the whole game is optimised, not just Level 2.
+
+Frame rate barely moved between a 238-draw-call section and an 82-draw-call one — about 32 fps either way. But it tracked **resolution** almost exactly. Isolating each cost at Beat B:
+
+| Change | FPS | Cost |
 | --- | --- | --- |
-| Draw calls | ~230 | Includes the shadow-map pass; the base scene is well under half of that |
-| Triangles | ~20k | |
-| Geometries | 32 | All shared across the level |
-| Textures | 11 | All procedural |
-| Dynamic lights | 11 fixed (8 point, 3 spot) | Never changes, regardless of level content |
-| Light emitters | 39 | Competing for those 11 lights |
+| Baseline (pixelRatio 1.25, shadows, 11 lights) | 31.1 | - |
+| Shadows off | 33.6 | shadows ≈ 8% |
+| Shadows off, 11 lights down to 3 | 43.6 | lights ≈ 30% |
+| Shadows and lights untouched, pixelRatio 0.75 | 59.0 | **resolution ≈ 90%** |
+
+So the bottleneck is pixels multiplied by per-pixel lighting work, which is what you would expect from `MeshStandardMaterial` under eleven lights on an integrated GPU.
+
+**Consequences for the team:**
+
+1. **Cap the render resolution.** The preview now uses `Math.min(devicePixelRatio, 1)`, worth 10-17 fps for one line. `main.js` currently does not cap at all; on a HiDPI lab machine that is four times the pixels for no visible gain at running speed. This is the single highest-value performance change available to the project right now.
+2. **Chasing draw calls further is not worth much here.** The instancing work was still right — it took the shell from ~600 draw calls to about a dozen, and it keeps CPU time and memory down — but more of it will not raise the frame rate.
+3. **Dynamic light count is the second lever,** ahead of shadows. If a machine still struggles, drop the pool from 11 to 6 before turning shadows off.
+
+### Budget
+
+| Metric | Value |
+| --- | --- |
+| Draw calls | 82-264 depending on section (includes the shadow-map pass) |
+| Triangles | 9k-20k |
+| Dynamic lights | 11 fixed (8 point, 3 spot) - never changes, regardless of level content |
+| Light emitters | 39 - competing for those 11 lights |
 
 Three decisions carry this budget:
 

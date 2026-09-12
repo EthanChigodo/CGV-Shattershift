@@ -21,7 +21,15 @@ import { FoundryHud } from "../src/ui/foundry-hud.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// Cap the render resolution at 1 device pixel per CSS pixel.
+//
+// Measured on an AMD Radeon integrated GPU at 1280x720: the level is
+// fill-rate bound, not geometry bound - frame rate barely moved between a
+// 238-draw-call scene and an 82-draw-call one, but tracked resolution almost
+// exactly. At devicePixelRatio 1.25 it ran at 31 fps; at 1.0 it runs at 41-49.
+// On a HiDPI laptop the uncapped ratio would be 2, which is four times the
+// pixels of this test for no visible gain at running speed.
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
