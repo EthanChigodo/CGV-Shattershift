@@ -28,30 +28,61 @@ Level 1 is aiming and ammunition. Level 3 is gravity and orientation. Level 2 is
 
 ## 3. Map
 
-Total route: **384 m**, laid out as straights and arcs rather than one straight corridor.
+Total route: **764 m**, laid out as straights and arcs rather than one straight corridor.
 
 ```
   START                                             J1
-    |--------- BEAT A: INTAKE (124m) --------------->\
+    |--------- BEAT A: INTAKE (256m) --------------->\
                                                       \  (90° left, r=9)
                                                        \
-    /<------ BEAT B: ROLLING FLOOR (120m) --------------/
+    /<------ BEAT B: ROLLING FLOOR (248m) --------------/
    /
   J2  (90° right, r=9)
    \
-    \-------- BEAT C: FURNACE THROAT (112m) --------> EXIT
+    \-------- BEAT C: FURNACE THROAT (232m) --------> EXIT
 ```
 
-| Distance | Section | Contents |
-| --- | --- | --- |
-| 0 - 60 | **A1 - teach** | 3 conveyors, 3 heat vents, 1 ceiling piston at 26 m, low barrier at 36 m, corridor-blocking gate at 48 m, `ROUTE GATE` switch at 40 m |
-| 60 - 124 | **A2 - reinforce** | 2 more pistons (66, 78 m), slide barrier at 88 m, optional half-gate at 106 m with `INTAKE BYPASS` switch at 98 m, low barrier at 118 m, chevrons at 120 m |
-| 124 - 138 | **Junction 1** | 90° left turn, widening into a chamber (see below). Vents on the outside of the curve, strobe on the apex |
-| 138 - 258 | **Beat B - Rolling Floor** | 6 conveyors, 6 heat vents, **two** piston banks of three (bank A at +10/+20/+32, bank B at +54/+70/+92), 6 jump/slide barriers, two sets of oscillating walls (+38, +82), `PISTON LOCK` (+28, disables bank A), `WALL RETRACT` (+44), `PRESSURE BLEED` (+76, disables bank B) |
-| 258 - 272 | **Junction 2** | 90° right turn, same treatment as J1 |
-| 272 - 384 | **Beat C - Furnace Throat** | 8 heat vents, 6 warning strobes, 2 side-lane barriers, escape armed at +6, **6** closing gates at +18/+32/+46/+62/+78/+94, `EXTRACTION VALVE` at +104 |
+| Distance | Section |
+| --- | --- |
+| 0 - 256 | **Beat A - Intake** |
+| 256 - 270 | **Junction 1** — 90° left, widening into a chamber |
+| 270 - 518 | **Beat B - Rolling Floor** |
+| 518 - 532 | **Junction 2** — 90° right |
+| 532 - 764 | **Beat C - Furnace Throat** |
 
-Doubling the route was not padding: the set-piece count roughly doubled with it, and Beat A gained a second half so the mechanic is taught once cleanly and then reinforced under movement pressure, rather than taught once and dropped.
+### How the layout is authored
+
+Two kinds of content, deliberately handled differently.
+
+**Set pieces are placed by hand, at fractions of their beat.** Switches, the gates they open, the oscillating walls, the piston banks tied to a switch, the escape gates — their positions carry meaning, so they are authored as `at(0.19)` rather than `48`. Change a beat's length and they redistribute correctly.
+
+**Everything between them is generated at a target spacing.** Routine hazards and dressing come from `_fillHazards` and `_fillDressing`, walking a stretch at roughly `HAZARD_SPACING` metres with deterministic variation and a keep-clear radius around the set pieces. The generator is seeded, so every teammate and every run gets the same level.
+
+The reason for this is practical: the level has now doubled in length twice. Hand-placed distances meant re-typing a hundred numbers each time. The three numbers in `BEAT_LENGTHS` and the two spacing constants now define the whole layout.
+
+Set piece fractions:
+
+| Beat | Fraction | What |
+| --- | --- | --- |
+| A | 0.10 | Teaching piston, alone |
+| A | 0.155 / 0.19 | `ROUTE GATE` switch and the gate it opens |
+| A | 0.385 / 0.42 | `INTAKE BYPASS` switch and the optional half-gate |
+| B | 0.05 / 0.10 / 0.16 | Piston bank A |
+| B | 0.22 | `PISTON LOCK` (disables bank A) |
+| B | 0.30 / 0.78 | Oscillating wall pairs |
+| B | 0.36 | `WALL RETRACT` |
+| B | 0.55 / 0.63 / 0.72 | Piston bank B |
+| B | 0.66 | `PRESSURE BLEED` (disables bank B) |
+| C | 0.03 | Escape arms |
+| C | 0.10 … 0.88 | Eight closing gates |
+| C | 0.96 | `EXTRACTION VALVE` |
+
+### Spacing
+
+| | Value | Notes |
+| --- | --- | --- |
+| Hazards | ~14 m target, 19.7 m median gap | Was around 8 m, which at speed left no room to read the next decision |
+| Pressure cells | ~17 m target, 16.9 m median gap | Was 9 m, which crowded the corridor |
 
 ### Junction chambers
 
@@ -83,7 +114,7 @@ Three of the six restore one of the tower's three systems, which is the level's 
 
 ### The score loop
 
-Six route switches across 384 m is not a shooting rhythm, so the level also carries **41 pressure cells** — small cyan glass targets scattered every 9 m or so (median gap 9 m, largest 16 m), placed across the full corridor width rather than only in the three lanes, so reaching one is an aim rather than a lane change. They are pure score and entirely optional.
+Six route switches across 764 m is not a shooting rhythm, so the level also carries **46 pressure cells** — small cyan glass targets roughly every 17 m, placed across the full corridor width rather than only in the three lanes, so reaching one is an aim rather than a lane change. They are pure score and entirely optional.
 
 | System | Rule | Why |
 | --- | --- | --- |
@@ -91,7 +122,7 @@ Six route switches across 384 m is not a shooting rhythm, so the level also carr
 | **Spheres** | Start with 20, cap 25. Every shot costs one. Every cell returns one, every switch returns three. | Missing is the only thing that drains you, which is the Smash Hit rule |
 | **Sphere recharge** | At zero, one sphere every 4 s | Safety net, see below |
 | **Near miss** | Passing within 0.55 m of a hazard without touching it pays 25 × combo | Gives a reason to cut it fine instead of playing wide |
-| **Speed** | Ramps 8.4 → 13.2 m/s across the level | Escalation without changing the mechanics |
+| **Speed** | Three zones: 6.8 m/s for the first half, 9.0 to three quarters, 11.6 for the final quarter, blended at the boundaries | Escalation without changing the mechanics. Top speed sits just under the old flat-out 13.2, which was too quick to read the lane ahead |
 
 **The recharge exists because of a softlock.** In simulation, a player who shot every cell ran out of spheres before the extraction valve — the mandatory switch that completes the level — and the run became not hard but *unfinishable*. Cells were returning a sphere only 55% of the time. They now always return one, and the trickle at zero guarantees a dry player can still open the last gate.
 
@@ -122,8 +153,8 @@ Sweeping a player-sized box down all three lanes of the whole route, the only po
 
 | Player | Hits | Integrity | Outcome |
 | --- | --- | --- | --- |
-| Shoots switches, holds centre, correct inputs | 0 | 100 | Completes with 7.3 s of 16 s left, all 3 systems |
-| Shoots only the two mandatory switches, holds centre, never jumps or slides | 3 (all high barriers) | 46 | Completes, **0 hits during the escape** |
+| Shoots everything, holds centre, correct inputs | 0 | 100 | Clears in 94 s. All 46 cells, 100% accuracy, x9 combo, 21,885 points, 3 systems, 10.4 s of 27.9 s left |
+| Shoots only the two mandatory switches, never jumps or slides | 4 | 28 | Clears in 95 s, **0 hits during the escape** |
 
 The second row is the one that matters. Before the escape gates were capped, that same player took six gate hits in a row.
 
@@ -166,6 +197,8 @@ The level emits a `junction` event 24 m before each turn so the camera controlle
 ## 6. Success and failure
 
 **Success:** break `EXTRACTION VALVE` before the containment timer expires. Systems restored (0-3) carries into the score.
+
+Clearing the sector shows **no summary card** — the player runs straight on into the extraction lift and rides it to Level 3, and a card there would interrupt the one transition the game is built around. The level emits `complete`, which is the elevator's cue. The summary is kept for failure, where the run has genuinely ended.
 
 **Failure:**
 - Integrity reaches zero from hazard collisions (owned by the player/physics workstream).

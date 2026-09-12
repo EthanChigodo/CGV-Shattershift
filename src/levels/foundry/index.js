@@ -50,11 +50,33 @@ const ARC = TURN_RADIUS * QUARTER; // 14.137m of travel through each junction
  */
 const ESCAPE_GATE_MAX_CLOSE = 0.82;
 
+/**
+ * Beat lengths. Everything inside a beat is placed as a fraction of its length
+ * plus a spacing-driven filler, so changing these three numbers re-lays the
+ * whole level instead of needing a hundred distances edited by hand.
+ */
+export const BEAT_LENGTHS = { intake: 256, rolling: 248, furnace: 232 };
+
 export const BEATS = [
-  { key: "intake", name: "INTAKE", start: 0, end: 124 },
-  { key: "rolling", name: "ROLLING FLOOR", start: 124 + ARC, end: 124 + ARC + 120 },
-  { key: "furnace", name: "FURNACE THROAT", start: 124 + ARC * 2 + 120, end: 124 + ARC * 2 + 120 + 112 },
+  { key: "intake", name: "INTAKE", start: 0, end: BEAT_LENGTHS.intake },
+  {
+    key: "rolling",
+    name: "ROLLING FLOOR",
+    start: BEAT_LENGTHS.intake + ARC,
+    end: BEAT_LENGTHS.intake + ARC + BEAT_LENGTHS.rolling,
+  },
+  {
+    key: "furnace",
+    name: "FURNACE THROAT",
+    start: BEAT_LENGTHS.intake + BEAT_LENGTHS.rolling + ARC * 2,
+    end: BEAT_LENGTHS.intake + BEAT_LENGTHS.rolling + ARC * 2 + BEAT_LENGTHS.furnace,
+  },
 ];
+
+/** Roughly one hazard every this many metres in the filler stretches. */
+const HAZARD_SPACING = 14;
+/** Roughly one pressure cell every this many metres. */
+const CELL_SPACING = 17;
 
 /** Tiny event emitter - the level announces, the UI listens. */
 function createEmitter() {
@@ -121,15 +143,15 @@ export class FoundryLevel {
     this.groups.signage.name = "Signage";
     for (const group of Object.values(this.groups)) this.root.add(group);
 
-    const TOTAL = 124 + ARC + 120 + ARC + 112; // 384.3m
+    const TOTAL = BEAT_LENGTHS.intake + BEAT_LENGTHS.rolling + BEAT_LENGTHS.furnace + ARC * 2;
     const segments = straightRoute
       ? straightSegments(TOTAL)
       : [
-          { type: "straight", length: 124 },
+          { type: "straight", length: BEAT_LENGTHS.intake },
           { type: "arc", radius: TURN_RADIUS, angle: QUARTER },
-          { type: "straight", length: 120 },
+          { type: "straight", length: BEAT_LENGTHS.rolling },
           { type: "arc", radius: TURN_RADIUS, angle: -QUARTER },
-          { type: "straight", length: 112 },
+          { type: "straight", length: BEAT_LENGTHS.furnace },
         ];
 
     this.route = createRoute(segments, { origin, heading });
@@ -373,30 +395,114 @@ export class FoundryLevel {
     this._hazardIndex.push({ mesh, distance, box: new THREE.Box3() });
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Layout helpers                                                     */
+  /* ---------------------------------------------------------------- */
+
+  /** Deterministic generator, so every teammate and every run see one level. */
+  _rng(seed) {
+    let value = seed;
+    return () => {
+      value = (value * 16807) % 2147483647;
+      return (value - 1) / 2147483646;
+    };
+  }
+
+  /**
+   * Fill a stretch with routine hazards at a target spacing.
+   *
+   * Set pieces - switches, gates, moving walls, piston banks tied to a switch -
+   * are still placed by hand at fractions of the beat, because their positions
+   * carry meaning. Everything between them is filler, and filler is better
+   * generated at a spacing than typed out: it keeps a consistent rhythm, and
+   * the level's length becomes a number rather than a hundred edits.
+   */
+  _fillHazards(from, to, { seed = 1, spacing = HAZARD_SPACING, avoid = [], lanes = [-3.2, 0, 3.2] } = {}) {
+    const random = this._rng(seed);
+    const clear = (d) => !avoid.some((a) => Math.abs(a - d) < 9);
+    let at = from + spacing * 0.5;
+    let index = 0;
+
+    while (at < to) {
+      if (clear(at)) {
+        const roll = random();
+        const lane = lanes[Math.floor(random() * lanes.length)];
+
+        if (roll < 0.34) {
+          this._hazard(this.kit.barrier({ kind: "low" }), at, lane);
+        } else if (roll < 0.62) {
+          this._hazard(this.kit.barrier({ kind: "high" }), at, lane);
+        } else {
+          this._hazard(
+            this.kit.pistonBank({
+              speed: 1.3 + random() * 0.8,
+              phase: random() * Math.PI * 2,
+              reach: roll > 0.86 ? 4.4 : 5.2,
+              fromCeiling: roll <= 0.86,
+            }),
+            at,
+            lane
+          );
+        }
+        index += 1;
+      }
+      // Vary the gap so the rhythm never becomes metronomic.
+      at += spacing * (0.82 + random() * 0.42);
+    }
+    return index;
+  }
+
+  /** Dress a stretch with belts and vents at a loose spacing. */
+  _fillDressing(from, to, { seed = 1, spacing = 22 } = {}) {
+    const { halfWidth } = this.options;
+    const random = this._rng(seed);
+    let at = from + 6;
+    let index = 0;
+
+    while (at < to) {
+      const side = random() < 0.5 ? -1 : 1;
+      if (random() < 0.55) {
+        this._add(this.groups.machinery, this.kit.conveyor({ side, speed: 0.9 + random() * 0.8, halfWidth }), at);
+      } else {
+        this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed: 30 + index }), at);
+      }
+      if (index % 3 === 0) {
+        this._add(
+          this.groups.signage,
+          this.kit.warningStrobe({ x: 0, y: 5.6, speed: 3.2 + random(), phase: at }),
+          at + spacing * 0.4
+        );
+      }
+      at += spacing * (0.8 + random() * 0.5);
+      index += 1;
+    }
+    return index;
+  }
+
   /**
    * BEAT A - INTAKE.
    * One idea at a time: a belt to establish the place, a piston to establish
    * that some things are solid, then a blocked gate and the switch that opens
-   * it. The player cannot leave the beat without using the mechanic once.
+   * it. The player cannot leave the beat without using the mechanic once. The
+   * back half repeats the lesson with movement layered on top.
    */
   _buildBeatA() {
     const { halfWidth } = this.options;
+    const L = BEAT_LENGTHS.intake;
+    const at = (f) => L * f;
 
-    // --- A1 (0-60): teach the mechanic with nothing else competing --------
-    for (const [at, side, speed] of [[15, 1, 1.1], [24, 1, 1.1], [44, -1, 0.9]]) {
-      this._add(this.groups.machinery, this.kit.conveyor({ side, speed, halfWidth }), at);
-    }
-    for (const [at, side, seed] of [[11, -1, 1], [31, 1, 2], [50, -1, 12]]) {
-      this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), at);
-    }
+    // --- Set pieces -----------------------------------------------------
+    const gateAt = at(0.19);
+    const switchAt = at(0.155);
+    const halfGateAt = at(0.42);
+    const bypassAt = at(0.385);
 
-    this._hazard(this.kit.pistonBank({ speed: 1.3, phase: 0, reach: 5.2 }), 26, 0);
-    this._hazard(this.kit.barrier({ kind: "low" }), 36, 3.2);
+    // The teaching piston, alone, before anything else competes for attention.
+    this._hazard(this.kit.pistonBank({ speed: 1.3, phase: 0, reach: 5.2 }), at(0.1), 0);
 
-    // The gate that blocks the corridor, and the switch that retracts it.
-    const gate = this._closingPair(48, 1);
+    const gate = this._closingPair(gateAt, 1);
     this._switch({
-      distance: 40,
+      distance: switchAt,
       lane: -3.2,
       label: "ROUTE GATE",
       system: true,
@@ -407,35 +513,19 @@ export class FoundryLevel {
       },
     });
 
-    // --- A2 (60-124): same idea, now with movement on top ------------------
-    for (const [at, side, speed] of [[72, 1, 1.3], [100, -1, 1.1], [114, 1, 1.0]]) {
-      this._add(this.groups.machinery, this.kit.conveyor({ side, speed, halfWidth }), at);
-    }
-    for (const [at, side, seed] of [[70, 1, 13], [92, -1, 14], [110, 1, 15]]) {
-      this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), at);
-    }
-
-    this._hazard(this.kit.barrier({ kind: "low" }), 58, 0);
-    this._hazard(this.kit.pistonBank({ speed: 1.5, phase: 0.4, reach: 5.2 }), 66, -3.2);
-    this._hazard(this.kit.pistonBank({ speed: 1.7, phase: 1.6, reach: 5.2 }), 78, 3.2);
-    this._hazard(this.kit.barrier({ kind: "high" }), 88, 0);
-    this._hazard(this.kit.pistonBank({ speed: 1.8, phase: 2.4, reach: 5.2 }), 96, -3.2);
-    this._hazard(this.kit.barrier({ kind: "high" }), 112, 3.2);
-    this._hazard(this.kit.barrier({ kind: "low" }), 118, -3.2);
-
     // Optional: a half-gate closing off the right lane. Miss the switch and
     // you simply take the other two lanes - the first gate was the mandatory
     // lesson, this one rewards noticing.
     const halfGate = this.kit.shutterWall({ side: 1, halfWidth, closedOffset: 4, progress: 1 });
-    this._add(this.groups.hazards, halfGate, 106);
+    this._add(this.groups.hazards, halfGate, halfGateAt);
     halfGate.userData.setProgress(1, true);
     if (halfGate.userData.hazardMesh) {
       this.obstacles.push(halfGate.userData.hazardMesh);
-      this._indexHazard(halfGate.userData.hazardMesh, 106);
+      this._indexHazard(halfGate.userData.hazardMesh, halfGateAt);
     }
 
     this._switch({
-      distance: 98,
+      distance: bypassAt,
       lane: 3.2,
       label: "INTAKE BYPASS",
       points: 200,
@@ -445,89 +535,49 @@ export class FoundryLevel {
       },
     });
 
-    for (const at of [45, 84, 112]) {
-      this._add(this.groups.signage, this.kit.warningStrobe({ x: 0, y: 5.6, speed: 3.2, phase: at }), at);
-    }
+    // --- Filler ---------------------------------------------------------
+    // The opening 24m stays deliberately clear so the player can look around.
+    this._fillHazards(at(0.1) + 14, L - 10, {
+      seed: 1301,
+      avoid: [at(0.1), gateAt, switchAt, halfGateAt, bypassAt],
+    });
+    this._fillDressing(0, L, { seed: 2801 });
+
     // Junction 1 turns left, so the chevrons fan to the player's left.
-    this._add(this.groups.signage, this.kit.turnChevrons({ direction: -1 }), 120, 0);
+    this._add(this.groups.signage, this.kit.turnChevrons({ direction: -1 }), L - 5, 0);
   }
 
   /**
    * BEAT B - ROLLING FLOOR.
-   * Escalation: the beat combines what Beat A taught with lane timing. Three
-   * piston banks on different phases, a jump and a slide, oscillating walls,
-   * and two switches that each remove one pressure so the player chooses what
-   * to disable first.
+   * Escalation: the beat combines what Beat A taught with lane timing. Two
+   * piston banks on different phases, oscillating walls, and three switches
+   * that each remove one pressure, so the player chooses what to disable.
    */
   _buildBeatB() {
-    const { halfWidth } = this.options;
     const base = BEATS[1].start;
+    const L = BEAT_LENGTHS.rolling;
+    const at = (f) => base + L * f;
 
-    for (const [offset, side, speed] of [
-      [6, -1, 1.2],
-      [14, 1, 1.5],
-      [30, -1, 1.0],
-      [58, 1, 1.4],
-      [78, -1, 1.2],
-      [98, 1, 1.6],
-    ]) {
-      this._add(this.groups.machinery, this.kit.conveyor({ side, speed, halfWidth }), base + offset);
-    }
+    // --- Set pieces -----------------------------------------------------
+    const bankA = [0.05, 0.1, 0.16].map((f, i) =>
+      this._hazard(
+        this.kit.pistonBank({ speed: 1.6 + i * 0.2, phase: i * 1.1, reach: i === 2 ? 4.4 : 5.2, fromCeiling: i !== 2 }),
+        at(f),
+        [-3.2, 3.2, 0][i]
+      )
+    );
+    const bankB = [0.55, 0.63, 0.72].map((f, i) =>
+      this._hazard(
+        this.kit.pistonBank({ speed: 1.7 + i * 0.2, phase: 0.6 + i * 1.2, reach: i === 2 ? 4.4 : 5.2, fromCeiling: i !== 2 }),
+        at(f),
+        [-3.2, 3.2, 0][i]
+      )
+    );
 
-    for (const [offset, side, seed] of [
-      [4, 1, 3],
-      [24, -1, 4],
-      [44, 1, 5],
-      [66, -1, 16],
-      [88, 1, 17],
-      [108, -1, 18],
-    ]) {
-      this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), base + offset);
-    }
-
-    // Two piston banks, each disabled by its own switch, so the player picks
-    // which pressure to remove first.
-    const bankA = [
-      this._hazard(this.kit.pistonBank({ speed: 1.6, phase: 0, reach: 5.2 }), base + 10, -3.2),
-      this._hazard(this.kit.pistonBank({ speed: 1.9, phase: 1.1, reach: 5.2 }), base + 20, 3.2),
-      this._hazard(this.kit.pistonBank({ speed: 1.4, phase: 2.2, reach: 4.4, fromCeiling: false }), base + 32, 0),
-    ];
-    const bankB = [
-      this._hazard(this.kit.pistonBank({ speed: 1.7, phase: 0.6, reach: 5.2 }), base + 54, -3.2),
-      this._hazard(this.kit.pistonBank({ speed: 2.1, phase: 1.8, reach: 5.2 }), base + 70, 3.2),
-      this._hazard(this.kit.pistonBank({ speed: 1.5, phase: 3.0, reach: 4.4, fromCeiling: false }), base + 92, 0),
-    ];
-
-    for (const [offset, kind, lane] of [
-      [6, "low", 3.2],
-      [16, "high", 0],
-      [26, "low", -3.2],
-      [48, "low", 3.2],
-      [62, "high", 0],
-      [74, "high", -3.2],
-      [84, "low", 3.2],
-      [96, "low", 0],
-      [102, "high", -3.2],
-      [116, "high", 3.2],
-    ]) {
-      this._hazard(this.kit.barrier({ kind }), base + offset, lane);
-    }
-
-    // Extra pistons between the two banks so the middle of the beat is not a
-    // quiet stretch. These are not tied to either switch - they stay live.
-    this._hazard(this.kit.pistonBank({ speed: 1.8, phase: 0.9, reach: 5.2 }), base + 42, 3.2);
-    this._hazard(this.kit.pistonBank({ speed: 2.0, phase: 2.6, reach: 5.2 }), base + 110, -3.2);
-
-    for (const [offset, lane] of [[20, 3.2], [70, -3.2]]) {
-      this._add(this.groups.machinery, this.kit.sparkBurst({ count: 22 }), base + offset, lane, 1.4);
-    }
-
-    // Oscillating "moving walls" - driven directly rather than damped, so they
-    // sweep at a readable, constant rate.
-    const walls = [this._closingPair(base + 38, 0), this._closingPair(base + 82, 0)];
+    const walls = [this._closingPair(at(0.3), 0), this._closingPair(at(0.78), 0)];
     let wallsLive = true;
     this._animated.push({
-      distance: base + 38,
+      distance: at(0.3),
       piece: {
         userData: {
           tick: (dt, time) => {
@@ -552,8 +602,12 @@ export class FoundryLevel {
       }
     };
 
+    const switchA = at(0.22);
+    const switchB = at(0.36);
+    const switchC = at(0.66);
+
     this._switch({
-      distance: base + 28,
+      distance: switchA,
       lane: 3.2,
       label: "PISTON LOCK",
       system: true,
@@ -565,7 +619,7 @@ export class FoundryLevel {
     });
 
     this._switch({
-      distance: base + 44,
+      distance: switchB,
       lane: -3.2,
       label: "WALL RETRACT",
       points: 200,
@@ -577,7 +631,7 @@ export class FoundryLevel {
     });
 
     this._switch({
-      distance: base + 76,
+      distance: switchC,
       lane: 0,
       label: "PRESSURE BLEED",
       points: 250,
@@ -587,20 +641,27 @@ export class FoundryLevel {
       },
     });
 
-    for (const offset of [12, 34, 60, 86, 106]) {
-      this._add(
-        this.groups.signage,
-        this.kit.warningStrobe({ x: 0, y: 5.6, speed: 3.8, phase: offset }),
-        base + offset
-      );
+    // --- Filler ---------------------------------------------------------
+    const setPieces = [
+      ...[0.05, 0.1, 0.16, 0.55, 0.63, 0.72, 0.3, 0.78].map(at),
+      switchA,
+      switchB,
+      switchC,
+    ];
+    this._fillHazards(base + 18, base + L - 12, { seed: 5507, avoid: setPieces });
+    this._fillDressing(base, base + L, { seed: 6203 });
+
+    for (const [f, lane] of [[0.16, 3.2], [0.72, -3.2]]) {
+      this._add(this.groups.machinery, this.kit.sparkBurst({ count: 22 }), at(f), lane, 1.4);
     }
+
     // Junction 2 turns right.
-    this._add(this.groups.signage, this.kit.turnChevrons({ direction: 1 }), base + 116, 0);
+    this._add(this.groups.signage, this.kit.turnChevrons({ direction: 1 }), base + L - 5, 0);
   }
 
   /**
    * BEAT C - FURNACE THROAT.
-   * The finale. Crossing the trigger arms four gates that close as the player
+   * The finale. Crossing the trigger arms the gates, which close as the player
    * approaches each one; at roughly two-thirds closed only the centre lane is
    * passable, so the escape is a lane-discipline test rather than a speed test.
    * Breaking the extraction valve stops every gate and completes the level.
@@ -608,45 +669,43 @@ export class FoundryLevel {
   _buildBeatC() {
     const { halfWidth } = this.options;
     const base = BEATS[2].start;
+    const L = BEAT_LENGTHS.furnace;
+    const at = (f) => base + L * f;
 
-    for (const [offset, side, seed] of [
-      [4, -1, 6],
-      [12, 1, 7],
-      [26, -1, 8],
-      [38, 1, 9],
-      [52, -1, 10],
-      [68, 1, 11],
-      [84, -1, 19],
-      [98, 1, 20],
-    ]) {
-      this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), base + offset);
-    }
+    // The furnace is dressed heavily - it is the loudest, hottest stretch.
+    this._fillDressing(base, base + L, { seed: 7717, spacing: 16 });
 
-    for (const offset of [10, 24, 40, 58, 74, 90]) {
+    for (const f of [0.06, 0.14, 0.24, 0.36, 0.48, 0.6, 0.72, 0.84]) {
       this._add(
         this.groups.signage,
-        this.kit.warningStrobe({ x: 0, y: 5.8, speed: 5.2, phase: offset }),
-        base + offset
+        this.kit.warningStrobe({ x: 0, y: 5.8, speed: 5.2, phase: at(f) }),
+        at(f)
       );
     }
 
-    // Side-lane barriers only. The escape already forces the centre; putting a
-    // hazard there too would be unfair rather than hard.
-    for (const [offset, lane] of [[40, -3.2], [54, 3.2], [70, 3.2], [86, -3.2]]) {
-      this._hazard(this.kit.barrier({ kind: "low" }), base + offset, lane);
-    }
+    this._escapeTrigger = at(0.03);
 
-    this._escapeTrigger = base + 6;
-
-    for (const offset of [18, 32, 46, 62, 78, 94]) {
-      const distance = base + offset;
+    const gateFractions = [0.1, 0.2, 0.3, 0.42, 0.54, 0.66, 0.78, 0.88];
+    for (const f of gateFractions) {
+      const distance = at(f);
       const pair = this._closingPair(distance, 0);
       this._escapeGates.push({ distance, pair, progress: 0, triggered: false, elapsed: 0 });
     }
 
-    const finalSwitch = base + 104;
+    // Side-lane hazards only. The escape already forces the centre; putting a
+    // hazard there too would be unfair rather than hard. Sparser than the rest
+    // of the level, because the gates are already the pressure.
+    this._fillHazards(at(0.08), at(0.92), {
+      seed: 9109,
+      spacing: HAZARD_SPACING * 1.6,
+      lanes: [-3.2, 3.2],
+      avoid: gateFractions.map(at),
+    });
+
+    const finalSwitch = at(0.96);
     // 1.5x the time a clean run needs, so the countdown is a real loss
-    // condition but not a coin flip.
+    // condition but not a coin flip. Derived from the run speed, so changing
+    // the level's length or pace keeps the escape fair automatically.
     this.state.escape.remaining =
       this.options.escapeSeconds ??
       ((finalSwitch - this._escapeTrigger) / this.options.runSpeed) * 1.5;
@@ -734,10 +793,13 @@ export class FoundryLevel {
     let index = 0;
 
     while (distance < total - 12) {
-      const cluster = index % 4 === 3 ? 3 : 1;
+      // Every fifth position is a run of two rather than three - clusters are
+      // still a combo opportunity, but at the old density they were crowding
+      // the corridor rather than punctuating it.
+      const cluster = index % 5 === 4 ? 2 : 1;
 
       for (let i = 0; i < cluster; i += 1) {
-        const at = distance + i * 3.4;
+        const at = distance + i * 4.2;
         if (at > total - 12 || tooCloseToSwitch(at)) continue;
 
         // Spread across the full corridor width, not just the three lanes:
@@ -756,7 +818,7 @@ export class FoundryLevel {
         this.breakables.push(cell.userData.glass);
       }
 
-      distance += 9 + random() * 5;
+      distance += CELL_SPACING * (0.85 + random() * 0.4);
       index += 1;
     }
   }

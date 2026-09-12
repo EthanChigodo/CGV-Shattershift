@@ -90,12 +90,42 @@ const ui = {
 const LANES = [-3.2, 0, 3.2];
 
 /**
- * Speed ramps across the level rather than holding constant. Same corridor at
- * the same pace for 384m is what made it feel passive; by Beat C the player is
- * covering ground half again as fast as they were in the intake.
+ * Speed is set in three zones rather than one continuous ramp.
+ *
+ *   first half        6.8 m/s   room to read the corridor and learn it
+ *   to three quarters 9.0 m/s   pressure comes on
+ *   final quarter    11.6 m/s   the escape, and the fastest the level gets
+ *
+ * Blended over a short distance at each boundary so the change is felt as
+ * acceleration rather than a gear shift. The top speed sits just under the
+ * old flat-out 13.2, which was too quick to read the lane ahead.
  */
-const SPEED_START = 8.4;
-const SPEED_END = 13.2;
+const SPEED_ZONES = [
+  { until: 0.5, speed: 6.8 },
+  { until: 0.75, speed: 9.0 },
+  { until: 1.01, speed: 11.6 },
+];
+const SPEED_BLEND = 0.04;
+
+function speedAt(progress) {
+  let previous = SPEED_ZONES[0].speed;
+  let from = 0;
+
+  for (const zone of SPEED_ZONES) {
+    if (progress < zone.until) {
+      // ease in over the first slice of the zone
+      const into = (progress - from) / SPEED_BLEND;
+      if (into < 1 && from > 0) {
+        const t = THREE.MathUtils.smoothstep(into, 0, 1);
+        return THREE.MathUtils.lerp(previous, zone.speed, t);
+      }
+      return zone.speed;
+    }
+    previous = zone.speed;
+    from = zone.until;
+  }
+  return SPEED_ZONES[SPEED_ZONES.length - 1].speed;
+}
 
 /** A miss breaks the chain, so spheres are worth spending carefully. */
 const COMBO_WINDOW = 2.6;
@@ -452,10 +482,19 @@ function finishRun(survived, title) {
   runner.finished = true;
   runner.alive = false;
 
+  // Clearing the sector shows no summary card. The player is meant to run
+  // straight into the extraction lift and ride it to Level 3, so a card here
+  // would interrupt the one transition the game is built around. The card is
+  // kept for failure, where the run genuinely has ended and there is nothing
+  // to carry forward.
+  if (survived) {
+    hud.showBanner("SECTOR 02 CLEARED", "EXTRACTION LIFT", 6000);
+    return;
+  }
+
   const seconds = (performance.now() - runner.startedAt) / 1000;
   const accuracy = runner.shots ? Math.round((runner.breaks / runner.shots) * 100) : 0;
-  const bonus = survived ? runner.integrity * 25 + level.state.systemsOnline * 500 : 0;
-  const total = Math.round(runner.score + bonus);
+  const total = Math.round(runner.score);
 
   hud.showSummary({
     title,
@@ -467,9 +506,8 @@ function finishRun(survived, title) {
       ["Best combo", `x${runner.maxCombo}`],
       ["Accuracy", `${Math.max(0, Math.min(100, accuracy))}%`],
       ["Systems restored", `${level.state.systemsOnline} / 3`],
-      ["Hull remaining", runner.integrity],
-      ["Completion bonus", bonus],
-      ["Total", String(total).padStart(6, "0"), true],
+      ["Distance", `${Math.round(runner.distance)} / ${Math.round(level.route.totalLength)}m`],
+      ["Score", String(total).padStart(6, "0"), true],
     ],
   });
 }
@@ -488,6 +526,9 @@ function loadLevel() {
     origin: new THREE.Vector3(0, 0, 0),
     shadows: true,
     brightness, // tune live with [ and ]
+    // The escape countdown is derived from this. Beat C sits in the final
+    // speed zone, so that is the speed the timer has to be fair against.
+    runSpeed: SPEED_ZONES[SPEED_ZONES.length - 1].speed,
   });
   level.addTo(scene);
   hud.bind(level);
@@ -596,8 +637,7 @@ function animate() {
 
   if (runner.alive) {
     const progress = runner.distance / level.route.totalLength;
-    const base = SPEED_START + (SPEED_END - SPEED_START) * progress;
-    const speed = base * (runner.slow > 0 ? 0.45 : 1);
+    const speed = speedAt(progress) * (runner.slow > 0 ? 0.45 : 1);
     runner.distance = Math.min(runner.distance + speed * dt, level.route.totalLength - 1);
   }
 
