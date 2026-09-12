@@ -219,6 +219,16 @@ const swingSample = new THREE.Vector3();
 /** Lateral offset that pushes the chase camera to the outside of a turn. */
 let swing = 0;
 
+/**
+ * Set to skip the camera's smoothing for one frame.
+ *
+ * The rig eases toward its target, which is right during play and wrong after
+ * a jump: on a restart, or when a tool drops the runner somewhere else, the
+ * camera crawls across the level from wherever it was. On a slow machine that
+ * takes long enough to leave it outside the corridor entirely.
+ */
+let snapCamera = true;
+
 /** Current chase boom length, shortened when the view is obstructed. */
 let boomLength = 7.5;
 const BOOM_MAX = 7.5;
@@ -255,21 +265,33 @@ function chaseBoom(dt) {
   return boomLength;
 }
 
+/**
+ * Ease the camera toward a target, or jump straight to it when `snapCamera` is
+ * set. `rate` is the exponential rate, so the easing is frame-rate independent.
+ */
+function approach(target, rate) {
+  if (snapCamera) camera.position.copy(target);
+  else camera.position.lerp(target, 1 - Math.exp(-lastDelta * rate));
+}
+
+let lastDelta = 1 / 60;
+
 function updateCamera(dt, time) {
+  lastDelta = dt;
   const mode = CAMERA_MODES[cameraMode];
   const here = level.route.sample(runner.distance, runner.lateral, 0);
 
   if (mode === "FIRST PERSON") {
     level.route.sample(runner.distance + 0.4, runner.lateral, 1.65 + runner.height, cameraDesired);
     level.route.sample(runner.distance + 14, runner.lateral * 0.4, 1.5, lookTarget);
-    camera.position.lerp(cameraDesired, 1 - Math.exp(-dt * 18));
+    approach(cameraDesired, 18);
   } else if (mode === "CINEMATIC") {
     // A corner camera that tracks the runner past the set piece, easing around
     // junctions because it is sampled from the route, not from -Z. Kept inside
     // the corridor wall so it never cuts away to the outside of the level.
     level.route.sample(runner.distance + 7, 4.3, 2.9, cameraDesired);
     lookTarget.copy(here.position).setY(1.4);
-    camera.position.lerp(cameraDesired, 1 - Math.exp(-dt * 3.2));
+    approach(cameraDesired, 3.2);
   } else if (mode === "ORBIT") {
     const radius = 16;
     level.route.sample(runner.distance, 0, 0, cameraDesired);
@@ -277,7 +299,7 @@ function updateCamera(dt, time) {
     cameraDesired.z += Math.sin(time * 0.25) * radius;
     cameraDesired.y += 9;
     lookTarget.copy(here.position).setY(2);
-    camera.position.lerp(cameraDesired, 1 - Math.exp(-dt * 4));
+    approach(cameraDesired, 4);
   } else {
     // CHASE. Sampling the camera from a point behind the runner on the same
     // curve is what makes the 90-degree junctions ease instead of snapping.
@@ -300,12 +322,15 @@ function updateCamera(dt, time) {
 
     level.route.sample(runner.distance - boom, runner.lateral * 0.55 + swing, 3.1 + runner.height * 0.6, cameraDesired);
     level.route.sample(runner.distance + 12, runner.lateral * 0.3, 1.6, lookTarget);
-    camera.position.lerp(cameraDesired, 1 - Math.exp(-dt * 7));
+    approach(cameraDesired, 7);
   }
 
-  smoothedLook.lerp(lookTarget, 1 - Math.exp(-dt * 9));
+  if (snapCamera) smoothedLook.copy(lookTarget);
+  else smoothedLook.lerp(lookTarget, 1 - Math.exp(-dt * 9));
+
   camera.lookAt(smoothedLook);
   applyShake(dt);
+  snapCamera = false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -567,6 +592,7 @@ function loadLevel() {
   trauma = 0;
   swing = 0;
   boomLength = BOOM_MAX;
+  snapCamera = true;
   hud.setIntegrity(100);
   hud.setRun({ score: 0, combo: 1, spheres: START_SPHERES, comboRatio: 0 });
 
@@ -700,4 +726,9 @@ ui.cameraName.textContent = CAMERA_MODES[cameraMode];
 animate();
 
 // Exposed for console poking during review: __foundry.level, __foundry.runner
-globalThis.__foundry = { get level() { return level; }, runner, hud, scene, renderer, camera, THREE, BEATS };
+globalThis.__foundry = {
+  get level() { return level; },
+  runner, hud, scene, renderer, camera, THREE, BEATS,
+  /** Jump the camera to its target instead of easing - used after a teleport. */
+  snapCamera: () => { snapCamera = true; },
+};

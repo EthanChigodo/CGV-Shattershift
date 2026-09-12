@@ -103,12 +103,14 @@ Breaking a cyan switch runs an action on the environment:
 
 | Switch | Distance | Effect | Restores a system |
 | --- | --- | --- | --- |
-| `ROUTE GATE` | 40 m | Retracts the gate blocking the corridor at 48 m | Yes |
-| `INTAKE BYPASS` | 98 m | Opens the half-gate closing the right lane at 106 m | No (bonus) |
-| `PISTON LOCK` | 166 m | Disables Beat B piston bank A | Yes |
-| `WALL RETRACT` | 182 m | Stops both sets of oscillating walls, open | No (bonus) |
-| `PRESSURE BLEED` | 214 m | Disables Beat B piston bank B | No (bonus) |
-| `EXTRACTION VALVE` | 376 m | Stops every escape gate, ends the escape, completes the level | Yes |
+| `ROUTE GATE` | 40 m | Retracts the gate blocking the corridor at 49 m | Yes |
+| `INTAKE BYPASS` | 99 m | Opens the half-gate closing the right lane at 108 m | No (bonus) |
+| `PISTON LOCK` | 325 m | Disables Beat B piston bank A | Yes |
+| `WALL RETRACT` | 359 m | Stops both sets of oscillating walls, open | No (bonus) |
+| `PRESSURE BLEED` | 434 m | Disables Beat B piston bank B | No (bonus) |
+| `EXTRACTION VALVE` | 755 m | Stops every escape gate, ends the escape, completes the level | Yes |
+
+These are derived from the fractions above, so they move if a beat length changes — the fractions are the source of truth.
 
 Three of the six restore one of the tower's three systems, which is the level's tie into the game's story of restoring three systems on the way to the control core. The other three are optional relief — a player who spots them has an easier Beat B, a player who misses them has a harder one, and neither can get stuck.
 
@@ -354,7 +356,23 @@ The current prototype moves the player along `-Z` only. Passing `straightRoute: 
 
 ---
 
-## 11. How to run it
+## 11. Verification
+
+Everything asserted in this document is checked by a harness in the repository, not by hand:
+
+```text
+npm install --no-save playwright
+npx playwright install chromium
+node tests/foundry/run.js
+```
+
+Three groups — `geometry`, `balance`, `performance` — each guarding a bug that actually happened. `--shots` regenerates the screenshots in `docs/images/` from the current build. See [`docs/test-plan-level-2.md`](./test-plan-level-2.md) for the full test plan and bug log.
+
+![Beat A intake](./images/beat-a-intake.jpg)
+![Junction one](./images/junction-one.jpg)
+![Beat C escape](./images/beat-c-escape.jpg)
+
+## 12. How to run it
 
 Serve the repository over HTTP and open the preview:
 
