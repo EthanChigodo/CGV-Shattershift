@@ -91,6 +91,8 @@ const runner = {
   integrity: 100,
   score: 0,
   alive: true,
+  invulnerable: 0,
+  slow: 0,
 };
 
 /* ------------------------------------------------------------------ */
@@ -99,6 +101,24 @@ const runner = {
 
 const CAMERA_MODES = ["CHASE", "FIRST PERSON", "CINEMATIC", "ORBIT"];
 let cameraMode = 0;
+
+/**
+ * Camera shake, trauma-style: hits add trauma, trauma decays on its own, and
+ * the actual shake is trauma squared. Squaring is what makes a big hit feel
+ * violent and the tail end settle quickly instead of buzzing.
+ */
+let trauma = 0;
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function applyShake(dt) {
+  trauma = Math.max(0, trauma - dt * 1.5);
+  if (trauma <= 0.001) return;
+  const amount = trauma * trauma * (reducedMotion ? 0.25 : 1);
+  camera.position.x += (Math.random() * 2 - 1) * amount * 0.6;
+  camera.position.y += (Math.random() * 2 - 1) * amount * 0.5;
+  camera.position.z += (Math.random() * 2 - 1) * amount * 0.3;
+  camera.rotateZ((Math.random() * 2 - 1) * amount * 0.07);
+}
 
 const cameraTarget = new THREE.Vector3();
 const cameraDesired = new THREE.Vector3();
@@ -138,6 +158,7 @@ function updateCamera(dt, time) {
 
   smoothedLook.lerp(lookTarget, 1 - Math.exp(-dt * 9));
   camera.lookAt(smoothedLook);
+  applyShake(dt);
 }
 
 /* ------------------------------------------------------------------ */
@@ -200,38 +221,62 @@ function updateReticle() {
 /* Stand-in collision                                                   */
 /* ------------------------------------------------------------------ */
 
-const hazardWorld = new THREE.Vector3();
-const runnerWorld = new THREE.Vector3();
+const playerBox = new THREE.Box3();
+const playerCentre = new THREE.Vector3();
+const playerSize = new THREE.Vector3();
+
+/** Player bounds: a box roughly the size of the avatar, shorter while sliding. */
+function updatePlayerBox() {
+  const crouched = runner.sliding > 0;
+  const height = crouched ? 1.0 : 1.9;
+  // Start the box just above the floor. A box sitting flat on y=0 collides
+  // with anything flush with the floor, including a retracted floor piston.
+  const FOOT = 0.18;
+  level.route.sample(runner.distance, runner.lateral, runner.height, playerCentre);
+  playerCentre.y += FOOT + height / 2;
+  playerSize.set(0.9, height, 0.9);
+  playerBox.setFromCenterAndSize(playerCentre, playerSize);
+}
+
+const HAZARD_NAMES = { low: "BARRIER", high: "LOW CLEARANCE" };
 
 /**
- * Preview-only proximity check. The real game will use the physics library
- * chosen in the Sprint 1 backlog; this is only here so hazards visibly matter
- * while the level is being tuned.
+ * Collision against the level's own hazards.
+ *
+ * The level does the geometry (see FoundryLevel.collide); the preview decides
+ * what a hit costs, because damage and integrity belong to the player
+ * workstream, not to the environment. When the real physics library lands this
+ * function is what gets replaced - the level side stays as it is.
  */
 function checkHazards(dt) {
-  if (!runner.alive) return;
-  level.route.sample(runner.distance, runner.lateral, 0.9 + runner.height, runnerWorld);
+  runner.invulnerable = Math.max(0, runner.invulnerable - dt);
+  runner.slow = Math.max(0, runner.slow - dt);
+  if (!runner.alive || runner.invulnerable > 0) return;
 
-  for (const hazard of level.obstacles) {
-    if (hazard.userData.disabled || !hazard.visible) continue;
-    hazard.getWorldPosition(hazardWorld);
-    if (Math.abs(hazardWorld.z - runnerWorld.z) > 30 && Math.abs(hazardWorld.x - runnerWorld.x) > 30) continue;
+  updatePlayerBox();
+  const hits = level.collide(playerBox, runner.distance);
+  if (!hits.length) return;
 
-    const gap = hazardWorld.distanceTo(runnerWorld);
-    const threshold = hazard.userData.barrier === "high" ? 1.5 : 1.7;
-    if (gap < threshold && !hazard.userData.cooldown) {
-      hazard.userData.cooldown = 0.9;
-      runner.integrity -= 18;
-      hud.toast("IMPACT", `-18`);
-      if (runner.integrity <= 0) {
-        runner.integrity = 0;
-        runner.alive = false;
-        hud.showBanner("RUN TERMINATED", "PRESS R TO RESTART", 6000);
-      }
-    }
-    if (hazard.userData.cooldown) {
-      hazard.userData.cooldown = Math.max(0, hazard.userData.cooldown - dt);
-    }
+  const hazard = hits[0];
+  runner.integrity = Math.max(0, runner.integrity - 18);
+
+  // A mercy window, so brushing along one long gate is a single hit rather
+  // than a death sentence, and a moment of lost speed so the hit costs
+  // something beyond a number.
+  runner.invulnerable = 1.1;
+  runner.slow = 0.55;
+
+  trauma = Math.min(1, trauma + 0.8);
+  level.impact(1);
+  hud.setIntegrity(runner.integrity);
+
+  const label = HAZARD_NAMES[hazard.userData.barrier] ?? (hazard.userData.piston ? "PISTON" : "GATE");
+  hud.toast(label, "-18");
+
+  if (runner.integrity <= 0) {
+    runner.alive = false;
+    trauma = 1;
+    hud.showBanner("RUN TERMINATED", "PRESS R TO RESTART", 8000);
   }
 }
 
@@ -263,6 +308,10 @@ function loadLevel() {
   runner.integrity = 100;
   runner.score = 0;
   runner.alive = true;
+  runner.invulnerable = 0;
+  runner.slow = 0;
+  trauma = 0;
+  hud.setIntegrity(100);
 
   smoothedLook.copy(level.route.sample(14, 0, 1.5).position);
 }
@@ -328,7 +377,8 @@ function animate() {
   }
 
   if (runner.alive) {
-    runner.distance = Math.min(runner.distance + RUN_SPEED * dt, level.route.totalLength - 1);
+    const speed = RUN_SPEED * (runner.slow > 0 ? 0.45 : 1);
+    runner.distance = Math.min(runner.distance + speed * dt, level.route.totalLength - 1);
   }
 
   // Lane easing, jump arc, and slide crouch.
@@ -343,7 +393,9 @@ function animate() {
   avatar.rotation.y = placement.heading;
   avatarBody.scale.y = runner.sliding > 0 ? 0.55 : 1;
   avatarBody.position.y = runner.sliding > 0 ? 0.62 : 1.1;
-  avatar.visible = CAMERA_MODES[cameraMode] !== "FIRST PERSON";
+  // Blink through the mercy window so the player can see they are briefly safe.
+  const blinking = runner.invulnerable > 0 && Math.floor(time * 14) % 2 === 0;
+  avatar.visible = CAMERA_MODES[cameraMode] !== "FIRST PERSON" && !blinking;
 
   level.update({ dt, time, distance: runner.distance, playerPosition: avatar.position });
   checkHazards(dt);
@@ -364,4 +416,4 @@ ui.cameraName.textContent = CAMERA_MODES[cameraMode];
 animate();
 
 // Exposed for console poking during review: __foundry.level, __foundry.runner
-globalThis.__foundry = { get level() { return level; }, runner, hud, scene, renderer, BEATS };
+globalThis.__foundry = { get level() { return level; }, runner, hud, scene, renderer, camera, THREE, BEATS };
