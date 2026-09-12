@@ -28,27 +28,30 @@ Level 1 is aiming and ammunition. Level 3 is gravity and orientation. Level 2 is
 
 ## 3. Map
 
-Total route: **194 m**, laid out as straights and arcs rather than one straight corridor.
+Total route: **384 m**, laid out as straights and arcs rather than one straight corridor.
 
 ```
-  START                                            J1
-    |--------- BEAT A: INTAKE (58m) --------------->\
-                                                     \  (90° left, r=9)
-                                                      \
-    /<------- BEAT B: ROLLING FLOOR (56m) -------------/
+  START                                             J1
+    |--------- BEAT A: INTAKE (124m) --------------->\
+                                                      \  (90° left, r=9)
+                                                       \
+    /<------ BEAT B: ROLLING FLOOR (120m) --------------/
    /
   J2  (90° right, r=9)
    \
-    \--------- BEAT C: FURNACE THROAT (52m) --------> EXIT
+    \-------- BEAT C: FURNACE THROAT (112m) --------> EXIT
 ```
 
 | Distance | Section | Contents |
 | --- | --- | --- |
-| 0 - 58 | **Beat A - Intake** | Conveyor, 2 heat vents, 1 ceiling piston, 1 low barrier, blocked gate at 48 m, `ROUTE GATE` switch at 40 m |
-| 58 - 72 | **Junction 1** | 90° left turn. Vents on the outside of the curve, strobe on the apex, floor chevrons at 54 m |
-| 72 - 128 | **Beat B - Rolling Floor** | 3 conveyors, 3 heat vents, 3 piston banks (different speeds and phases), high barrier (slide) at 88 m, low barrier (jump) at 98 m, oscillating moving walls at 110 m, `PISTON LOCK` switch at 100 m, `WALL RETRACT` switch at 116 m |
-| 128 - 142 | **Junction 2** | 90° right turn, same treatment as J1 |
-| 142 - 194 | **Beat C - Furnace Throat** | 6 heat vents, 5 warning strobes, escape armed at 147 m, 4 closing gates at 156 / 166 / 176 / 186 m, `EXTRACTION VALVE` switch at 190 m |
+| 0 - 60 | **A1 - teach** | 3 conveyors, 3 heat vents, 1 ceiling piston at 26 m, low barrier at 36 m, corridor-blocking gate at 48 m, `ROUTE GATE` switch at 40 m |
+| 60 - 124 | **A2 - reinforce** | 2 more pistons (66, 78 m), slide barrier at 88 m, optional half-gate at 106 m with `INTAKE BYPASS` switch at 98 m, low barrier at 118 m, chevrons at 120 m |
+| 124 - 138 | **Junction 1** | 90° left turn. Vents on the outside of the curve, strobe on the apex |
+| 138 - 258 | **Beat B - Rolling Floor** | 6 conveyors, 6 heat vents, **two** piston banks of three (bank A at +10/+20/+32, bank B at +54/+70/+92), 6 jump/slide barriers, two sets of oscillating walls (+38, +82), `PISTON LOCK` (+28, disables bank A), `WALL RETRACT` (+44), `PRESSURE BLEED` (+76, disables bank B) |
+| 258 - 272 | **Junction 2** | 90° right turn, same treatment as J1 |
+| 272 - 384 | **Beat C - Furnace Throat** | 8 heat vents, 6 warning strobes, 2 side-lane barriers, escape armed at +6, **6** closing gates at +18/+32/+46/+62/+78/+94, `EXTRACTION VALVE` at +104 |
+
+Doubling the route was not padding: the set-piece count roughly doubled with it, and Beat A gained a second half so the mechanic is taught once cleanly and then reinforced under movement pressure, rather than taught once and dropped.
 
 ### Beat shape
 
@@ -64,11 +67,25 @@ Breaking a cyan switch runs an action on the environment:
 | Switch | Distance | Effect | Restores a system |
 | --- | --- | --- | --- |
 | `ROUTE GATE` | 40 m | Retracts the gate blocking the corridor at 48 m | Yes |
-| `PISTON LOCK` | 100 m | Stops and removes all three Beat B piston banks | Yes |
-| `WALL RETRACT` | 116 m | Stops the oscillating walls in the open position | No (bonus) |
-| `EXTRACTION VALVE` | 190 m | Stops every escape gate, ends the escape, completes the level | Yes |
+| `INTAKE BYPASS` | 98 m | Opens the half-gate closing the right lane at 106 m | No (bonus) |
+| `PISTON LOCK` | 166 m | Disables Beat B piston bank A | Yes |
+| `WALL RETRACT` | 182 m | Stops both sets of oscillating walls, open | No (bonus) |
+| `PRESSURE BLEED` | 214 m | Disables Beat B piston bank B | No (bonus) |
+| `EXTRACTION VALVE` | 376 m | Stops every escape gate, ends the escape, completes the level | Yes |
 
-Three of the four restore one of the tower's three systems, which is the level's tie into the game's story of restoring three systems on the way to the control core. The fourth is optional relief for a player who wants an easier Beat B.
+Three of the six restore one of the tower's three systems, which is the level's tie into the game's story of restoring three systems on the way to the control core. The other three are optional relief — a player who spots them has an easier Beat B, a player who misses them has a harder one, and neither can get stuck.
+
+### Collision and impact
+
+Solid hazards actually stop mattering if nothing happens when you touch them, so the level tests and reacts.
+
+`level.collide(playerBox, playerDistance)` tests a world-space box against every hazard within 9 m along the route — normally two or three boxes, not the level's forty. Boxes rather than a centre-to-centre distance check, because a piston head is 2.3 m across and a gate slab 4.6 m; a point threshold either lets the player through the edges of things or trips them on thin air.
+
+`level.impact(strength)` is the environment's reaction. Every pooled light bleeds toward alarm red and spikes with a flicker, every warning strobe in range goes into overdrive, and the alarm decays over about half a second. It lives in the level rather than the HUD deliberately: it should read from any camera, and it survives the preview HUD being replaced by the real game's.
+
+The preview adds the player-side consequences, which belong to the player workstream rather than here: −18 integrity, a 1.1 s mercy window with the avatar blinking, a 0.55 s speed penalty so the hit costs momentum, and trauma-based camera shake (shake is trauma *squared*, which is what makes a big hit feel violent and the tail settle fast instead of buzzing).
+
+**Tuning check.** Every piston cycles between lethal and safe rather than being a wall — measured at 28-31% of the cycle lethal for ceiling pistons and 15% for floor ones. Sweeping a player-sized box down all three lanes of the whole route, the only point where all three lanes are blocked at once is 48 m, the mandatory gate before `ROUTE GATE`. That is by design; anywhere else always has a way through.
 
 ### Solid hazards (cannot be destroyed)
 - **Piston heads** - hierarchical housing → shaft → head, extending on a sine with a fast snap and a slower retract. Timing, not shooting.
@@ -126,6 +143,8 @@ Audio is **not** implemented here - it belongs to the UI/audio workstream. The l
 ## 8. Performance budget
 
 ### Measured on real hardware
+
+> **These figures are for the 194 m version of the level.** The route has since been doubled to 384 m with roughly double the set pieces. The instanced shell and the fixed 11-light pool mean the numbers should barely move — emitters went from 39 to 61 and the light count did not change at all — but this needs re-measuring on hardware before it goes in a report.
 
 AMD Radeon integrated graphics (`nkosi-laptop`), Chromium, 1280×720, shadows on, all 11 dynamic lights:
 
@@ -210,6 +229,14 @@ hud.update({ distance, fps, renderer, level });
 const hit = level.breakTarget(mesh);   // null if it was not one of our switches
 if (hit) score += hit.points;
 
+// Hazard collision - pass a world-space box for the player:
+const hits = level.collide(playerBox, distance);
+if (hits.length && !invulnerable) {
+  integrity -= 18;
+  level.impact(1);       // corridor lights flash red, strobes spike
+  cameraController.addTrauma(0.8);
+}
+
 // On leaving Level 2:
 hud.dispose();
 level.dispose();   // frees every geometry, material, and texture the level made
@@ -229,6 +256,7 @@ The current prototype moves the player along `-Z` only. Passing `straightRoute: 
 | `escape-start` | `{ seconds }` | Music sting, camera tighten |
 | `escape-tick` | `{ remaining }` | Countdown |
 | `escape-end` | `{ survived }` | Win or loss |
+| `impact` | `{ strength, alarm }` | HUD damage flash, hit sound |
 | `complete` | `{ systemsOnline }` | Hand over to the elevator transition |
 
 ---
@@ -236,7 +264,7 @@ The current prototype moves the player along `-Z` only. Passing `straightRoute: 
 ## 10. Still to do
 
 - **Audio.** Every cue exists as an event; nothing plays yet.
-- **Real collision.** The preview uses a proximity check as a placeholder. This should move to whichever physics library the team picks in the Sprint 1 backlog.
+- **Physics library.** Collision is now real box testing rather than a proximity guess, but it is still hand-rolled AABBs. When the team picks a physics library it should replace `FoundryLevel.collide`; nothing else in the level depends on how the test is done.
 - **Shard/destruction effect** when a switch breaks - currently a placeholder ring in the preview, and it belongs to the destruction workstream.
 - **Jump and slide** are implemented in the preview's dummy runner. The real `PlayerController` needs them, and the high/low barriers are built expecting them.
 - **Elevator bay** at the end of the route - the level stops at the exit and emits `complete`; the transition is a separate workstream.

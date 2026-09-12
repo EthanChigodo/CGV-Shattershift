@@ -42,6 +42,14 @@ const QUARTER = Math.PI / 2;
 
 const ARC = TURN_RADIUS * QUARTER; // 14.137m of travel through each junction
 
+/**
+ * How far an escape gate closes while the countdown is still running.
+ * At 0.82 the opening is about 1.1m either side of the centre line - passable
+ * in the centre lane, impassable in the outer two. They only slam fully shut
+ * when the timer runs out.
+ */
+const ESCAPE_GATE_MAX_CLOSE = 0.82;
+
 export const BEATS = [
   { key: "intake", name: "INTAKE", start: 0, end: 124 },
   { key: "rolling", name: "ROLLING FLOOR", start: 124 + ARC, end: 124 + ARC + 120 },
@@ -86,11 +94,12 @@ export class FoundryLevel {
     lanes = [-3.2, 0, 3.2],
     runSpeed = 9.2,
     escapeSeconds = null,
+    brightness = 1.6,
   } = {}) {
     // The escape timer is derived from how far the player actually has to run,
     // not hard-coded. At 194m the old fixed 26s could never expire, which made
     // the countdown decoration rather than a loss condition.
-    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds };
+    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -124,10 +133,10 @@ export class FoundryLevel {
     this.route = createRoute(segments, { origin, heading });
     this.kit = createFoundryKit({ shadows });
 
-    this.ambience = createFoundryAmbience();
+    this.ambience = createFoundryAmbience({ brightness });
     this.root.add(this.ambience);
 
-    this.lights = new LightPool({ points: 8, spots: 3, shadows });
+    this.lights = new LightPool({ points: 8, spots: 3, shadows, brightness });
     this.root.add(this.lights.group);
 
     /** Meshes a projectile can destroy. Push these into the host's breakables. */
@@ -208,9 +217,23 @@ export class FoundryLevel {
       const { node } = this.route.nodeAt(distance + 0.01);
       const isArc = node.type === "arc";
       const step = isArc ? 3.6 : 8;
+      const centre = Math.min(distance + step / 2, total);
+
+      // Junctions swell into a chamber. At a 9m radius the corridor's own outer
+      // wall sits 14m in front of the player through the turn, so a plain
+      // constant-width corridor means staring at a blank wall for the whole
+      // corner. Widening to ~1.5x and easing back gives a sightline through the
+      // turn and somewhere for the machinery to sit.
+      let widen = 1;
+      if (isArc) {
+        const fraction = (centre - node.startDistance) / node.length;
+        widen = 1 + 0.55 * Math.sin(THREE.MathUtils.clamp(fraction, 0, 1) * Math.PI);
+      }
+
       stations.push({
-        distance: Math.min(distance + step / 2, total),
+        distance: centre,
         scaleZ: (step / 8) * (isArc ? 1.18 : 1.02),
+        widen,
         index,
       });
       distance += step;
@@ -219,30 +242,32 @@ export class FoundryLevel {
 
     // 2. What is stamped at each station? `every` thins a piece out; `offset`,
     //    `rot`, and `scale` are in station-local space (x lateral, z forward).
+    // `span` pieces stretch across the corridor and scale with the widening;
+    // `edge` pieces sit against a wall and move outward with it.
     const RIBS = [-2.6, -0.4, 2.3];
     const specs = [
-      { key: "floor", geometry: geo.floorPlate, material: mat.grate, offset: [0, -0.16, 0], shadow: "receive" },
-      { key: "ceiling", geometry: geo.floorPlate, material: mat.plating, offset: [0, 7.62, 0] },
-      { key: "kerbL", geometry: geo.kerb, material: mat.trim, offset: [-5.2, 0.16, 0] },
-      { key: "kerbR", geometry: geo.kerb, material: mat.trim, offset: [5.2, 0.16, 0] },
+      { key: "floor", geometry: geo.floorPlate, material: mat.grate, offset: [0, -0.16, 0], shadow: "receive", span: true },
+      { key: "ceiling", geometry: geo.floorPlate, material: mat.plating, offset: [0, 7.62, 0], span: true },
+      { key: "kerbL", geometry: geo.kerb, material: mat.trim, offset: [-5.2, 0.16, 0], edge: true },
+      { key: "kerbR", geometry: geo.kerb, material: mat.trim, offset: [5.2, 0.16, 0], edge: true },
       // Dashed rather than continuous: a solid line blooms over the floor at a
       // grazing chase-camera angle and reads brighter than the hazards.
       { key: "seam", geometry: geo.seamStrip, material: mat.seam, offset: [0, 0.02, 0], every: 2, shadow: "none" },
-      { key: "wallL", geometry: geo.wallPanel, material: mat.plating, offset: [-halfWidth, 3.7, 0] },
-      { key: "wallR", geometry: geo.wallPanel, material: mat.plating, offset: [halfWidth, 3.7, 0] },
-      { key: "trimL", geometry: geo.wallRib, material: mat.hazard, offset: [-(halfWidth - 0.26), 0.62, 0], scale: [0.6, 0.1, 22] },
-      { key: "trimR", geometry: geo.wallRib, material: mat.hazard, offset: [halfWidth - 0.26, 0.62, 0], scale: [0.6, 0.1, 22] },
-      { key: "beam", geometry: geo.beam, material: mat.trim, offset: [0, 7.1, 0], every: 2 },
-      { key: "conduitA", geometry: geo.conduit, material: mat.trim, offset: [0, 7.48, -0.32], rot: [0, 0, Math.PI / 2], scale: [0.8, 1, 0.8], every: 2 },
-      { key: "conduitB", geometry: geo.conduit, material: mat.trim, offset: [0, 7.48, 0.34], rot: [0, 0, Math.PI / 2], scale: [0.8, 1, 0.8], every: 2 },
+      { key: "wallL", geometry: geo.wallPanel, material: mat.plating, offset: [-halfWidth, 3.7, 0], edge: true },
+      { key: "wallR", geometry: geo.wallPanel, material: mat.plating, offset: [halfWidth, 3.7, 0], edge: true },
+      { key: "trimL", geometry: geo.wallRib, material: mat.hazard, offset: [-(halfWidth - 0.26), 0.62, 0], scale: [0.6, 0.1, 22], edge: true },
+      { key: "trimR", geometry: geo.wallRib, material: mat.hazard, offset: [halfWidth - 0.26, 0.62, 0], scale: [0.6, 0.1, 22], edge: true },
+      { key: "beam", geometry: geo.beam, material: mat.trim, offset: [0, 7.1, 0], every: 2, span: true },
+      { key: "conduitA", geometry: geo.conduit, material: mat.trim, offset: [0, 7.48, -0.32], rot: [0, 0, Math.PI / 2], scale: [0.8, 1, 0.8], every: 2, span: true },
+      { key: "conduitB", geometry: geo.conduit, material: mat.trim, offset: [0, 7.48, 0.34], rot: [0, 0, Math.PI / 2], scale: [0.8, 1, 0.8], every: 2, span: true },
       { key: "lampHousing", geometry: geo.lampHousing, material: mat.trim, offset: [2.6, 6.42, 0], rot: [Math.PI, 0, 0], every: 4 },
       { key: "lampBulb", geometry: geo.lampBulb, material: mat.lamp, offset: [2.6, 6.2, 0], every: 4, shadow: "none" },
     ];
 
     // Ribs vary per station so repeated segments do not read as tiling.
     for (const [i, z] of RIBS.entries()) {
-      specs.push({ key: `ribL${i}`, geometry: geo.wallRib, material: mat.trim, offset: [-(halfWidth - 0.22), 3.7, z], vary: i });
-      specs.push({ key: `ribR${i}`, geometry: geo.wallRib, material: mat.trim, offset: [halfWidth - 0.22, 3.7, z], vary: i });
+      specs.push({ key: `ribL${i}`, geometry: geo.wallRib, material: mat.trim, offset: [-(halfWidth - 0.22), 3.7, z], vary: i, edge: true });
+      specs.push({ key: `ribR${i}`, geometry: geo.wallRib, material: mat.trim, offset: [halfWidth - 0.22, 3.7, z], vary: i, edge: true });
     }
 
     // 3. Compose one matrix per instance: station transform * local transform.
@@ -263,9 +288,13 @@ export class FoundryLevel {
         quaternion.setFromEuler(euler.set(0, sample.heading, 0));
         stationMatrix.compose(sample.position, quaternion, scale.set(1, 1, station.scaleZ));
 
-        const [ox, oy, oz] = spec.offset;
+        const [ox0, oy, oz] = spec.offset;
         const [rx, ry, rz] = spec.rot ?? [0, 0, 0];
-        const [sx, sy, sz] = spec.scale ?? [1, 1, 1];
+        const [sx0, sy, sz] = spec.scale ?? [1, 1, 1];
+        // Widen the junction chambers: edge pieces move out, spanning pieces
+        // stretch to still reach across.
+        const ox = spec.edge ? ox0 * station.widen : ox0;
+        const sx = spec.span ? sx0 * station.widen : sx0;
         // Ribs stretch slightly by station so the wall reads as hand-placed.
         const varyY = spec.vary === undefined ? 1 : 0.82 + ((station.index + spec.vary) % 3) * 0.09;
 
@@ -644,11 +673,13 @@ export class FoundryLevel {
       const outside = junction.direction === "left" ? 1 : -1;
       const span = junction.endDistance - junction.startDistance;
 
+      // Vents sit against the widened chamber wall, not the corridor wall.
       for (const fraction of [0.15, 0.55, 0.9]) {
         const distance = junction.startDistance + span * fraction;
+        const widened = halfWidth * (1 + 0.55 * Math.sin(fraction * Math.PI));
         this._add(
           this.groups.machinery,
-          this.kit.heatVent({ side: outside, halfWidth, seed: (seed += 1) }),
+          this.kit.heatVent({ side: outside, halfWidth: widened, seed: (seed += 1) }),
           distance
         );
       }
@@ -765,6 +796,20 @@ export class FoundryLevel {
    * reacting - the same alarm should read from any camera, and it survives when
    * the HUD is replaced by the real game's.
    */
+  /**
+   * Set the level's overall light level. One knob for the ambient fill and
+   * every pooled light, so the sector can be tuned without touching code.
+   * 1.0 is moody, 1.6 is the default, past ~2.2 it stops reading as the dark
+   * level.
+   */
+  setBrightness(value) {
+    const brightness = Math.max(0.2, value);
+    this.options.brightness = brightness;
+    this.lights.brightness = brightness;
+    this.ambience.userData.setBrightness?.(brightness);
+    return brightness;
+  }
+
   impact(strength = 1) {
     this.state.alarm = Math.min(1.4, this.state.alarm + strength);
     this.events.emit("impact", { strength, alarm: this.state.alarm });
@@ -874,7 +919,15 @@ export class FoundryLevel {
       }
       if (!gate.triggered) continue;
       gate.elapsed += dt;
-      gate.progress = Math.min(1, gate.elapsed / 4);
+      // Gates stop just short of shut while the clock is running, leaving the
+      // centre lane passable. The HUD promises "hold the centre lane" and this
+      // is what makes that promise true.
+      //
+      // Letting them close fully created a death spiral: an impact costs speed,
+      // the lost speed means arriving after the next gate has shut, which costs
+      // more speed. A simulated run took six gate hits in a row that way. The
+      // timer is the loss condition here; the gates enforce the lane.
+      gate.progress = Math.min(ESCAPE_GATE_MAX_CLOSE, gate.elapsed / 4);
       for (const slab of gate.pair) slab.userData.setProgress(gate.progress, true);
     }
   }

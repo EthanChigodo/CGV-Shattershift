@@ -18,7 +18,8 @@ export class LightPool {
   /**
    * @param {{points?:number, spots?:number, shadows?:boolean}} options
    */
-  constructor({ points = 7, spots = 2, shadows = false } = {}) {
+  constructor({ points = 7, spots = 2, shadows = false, brightness = 1 } = {}) {
+    this.brightness = brightness;
     this.group = new THREE.Group();
     this.group.name = "PooledLighting";
     this.emitters = [];
@@ -126,7 +127,8 @@ export class LightPool {
       // rebound to a further emitter never pops.
       const falloff =
         1 - THREE.MathUtils.smoothstep(Math.sqrt(entry.d2), emitter.distance * 1.1, emitter.distance * 2.2);
-      light.intensity = emitter.intensityAt(time) * falloff;
+      light.intensity = emitter.intensityAt(time) * falloff * this.brightness;
+      light.distance = emitter.distance * (0.85 + this.brightness * 0.25);
 
       if (this.alarm > 0.001) {
         const a = Math.min(1, this.alarm);
@@ -156,19 +158,29 @@ export class LightPool {
  * Ambient fill for the foundry: a dim hemisphere plus one weak directional so
  * unlit metal still reads as metal. Everything dramatic comes from the pool.
  */
-export function createFoundryAmbience() {
+export function createFoundryAmbience({ brightness = 1 } = {}) {
   const group = new THREE.Group();
   group.name = "FoundryAmbience";
 
   // Enough fill that plating and grating stay readable at running speed - the
   // foundry is the dark level, but the guide is explicit that the floor path
   // and interactive objects must never be hard to read.
-  const hemisphere = new THREE.HemisphereLight(0x4a677a, 0x1d1109, 1.15);
+  //
+  // `brightness` is the single knob for the whole level: it scales this fill
+  // and every pooled light. 1.0 is the original moody authoring, 1.6 is the
+  // default, and roughly 2.2 is as bright as it can go before the sector stops
+  // reading as the dark one.
+  const hemisphere = new THREE.HemisphereLight(0x4a677a, 0x241a12, 1.15 * brightness);
   group.add(hemisphere);
 
-  const key = new THREE.DirectionalLight(0x9fc4d8, 0.7);
+  const key = new THREE.DirectionalLight(0x9fc4d8, 0.7 * brightness);
   key.position.set(4, 12, 3);
   group.add(key);
+
+  group.userData.setBrightness = (value) => {
+    hemisphere.intensity = 1.15 * value;
+    key.intensity = 0.7 * value;
+  };
 
   group.userData.dispose = () => {
     hemisphere.dispose?.();

@@ -34,11 +34,13 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.25;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x080c0f);
-scene.fog = new THREE.FogExp2(0x0a1013, 0.017);
+// Fog thinned from 0.017: at the old density the corridor faded to black about
+// 40m out, which hid the gates and junctions the player needs to read early.
+scene.background = new THREE.Color(0x121a20);
+scene.fog = new THREE.FogExp2(0x141d23, 0.0115);
 
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 320);
 const clock = new THREE.Clock();
@@ -51,6 +53,29 @@ const pointer = new THREE.Vector2();
 
 let level = null;
 const hud = new FoundryHud({ dev: true });
+
+/**
+ * Overall light level, adjustable live with [ and ]. Persisted per browser so
+ * a value you like survives a reload while you are tuning the sector.
+ */
+let brightness = 1.6;
+try {
+  const saved = Number(localStorage.getItem("foundry-brightness"));
+  if (Number.isFinite(saved) && saved > 0) brightness = saved;
+} catch {
+  /* private window or blocked storage - the default is fine */
+}
+
+function setBrightness(value) {
+  brightness = Math.max(0.4, Math.min(2.6, Number(value.toFixed(2))));
+  level?.setBrightness(brightness);
+  try {
+    localStorage.setItem("foundry-brightness", String(brightness));
+  } catch {
+    /* ignore */
+  }
+  hud.toast("BRIGHTNESS", brightness.toFixed(1));
+}
 
 const ui = {
   cameraName: document.querySelector("#cameraName"),
@@ -124,6 +149,46 @@ const cameraTarget = new THREE.Vector3();
 const cameraDesired = new THREE.Vector3();
 const lookTarget = new THREE.Vector3();
 const smoothedLook = new THREE.Vector3();
+const swingSample = new THREE.Vector3();
+
+/** Lateral offset that pushes the chase camera to the outside of a turn. */
+let swing = 0;
+
+/** Current chase boom length, shortened when the view is obstructed. */
+let boomLength = 7.5;
+const BOOM_MAX = 7.5;
+const BOOM_MIN = 2.2;
+const boomRay = new THREE.Raycaster();
+const boomFrom = new THREE.Vector3();
+const boomTo = new THREE.Vector3();
+const boomDir = new THREE.Vector3();
+
+/**
+ * Cast back along the boom from the player. If a hazard is in the way - most
+ * often one of Beat C's closing gates as the player passes through it - pull
+ * the camera in front of it instead of letting it end up inside the slab.
+ * Snaps in quickly, eases back out slowly, which is the standard behaviour and
+ * avoids the camera pumping in and out around thin geometry.
+ */
+function chaseBoom(dt) {
+  level.route.sample(runner.distance, runner.lateral, 1.6, boomFrom);
+  level.route.sample(runner.distance - BOOM_MAX, runner.lateral * 0.55 + swing, 3.1, boomTo);
+  boomDir.copy(boomTo).sub(boomFrom);
+  const span = boomDir.length();
+  boomDir.normalize();
+
+  boomRay.set(boomFrom, boomDir);
+  boomRay.far = span;
+  const blockers = boomRay.intersectObjects(level.obstacles, false);
+
+  const wanted = blockers.length
+    ? Math.max(BOOM_MIN, Math.min(BOOM_MAX, blockers[0].distance - 0.5))
+    : BOOM_MAX;
+
+  const rate = wanted < boomLength ? 18 : 2.5;
+  boomLength += (wanted - boomLength) * Math.min(1, dt * rate);
+  return boomLength;
+}
 
 function updateCamera(dt, time) {
   const mode = CAMERA_MODES[cameraMode];
@@ -151,7 +216,24 @@ function updateCamera(dt, time) {
   } else {
     // CHASE. Sampling the camera from a point behind the runner on the same
     // curve is what makes the 90-degree junctions ease instead of snapping.
-    level.route.sample(runner.distance - 7.5, runner.lateral * 0.55, 3.1 + runner.height * 0.6, cameraDesired);
+    //
+    // Two corrections on top of that:
+    //
+    // 1. Swing wide through turns. A boom straight back from the player cuts
+    //    the corner on a 9m-radius arc and ends up pressed against the inside
+    //    wall, which fills half the frame with unlit metal.
+    const behind = level.route.sample(runner.distance - 7.5, 0, 0, swingSample).heading;
+    const ahead = level.route.sample(runner.distance, 0, 0, swingSample).heading;
+    let turn = ahead - behind;
+    // positive heading change = turning left, so the outside of the curve is
+    // to the player's right, which is positive lateral
+    swing += (Math.sign(turn) * Math.min(1, Math.abs(turn) * 2.4) * 2.8 - swing) * Math.min(1, dt * 3);
+
+    // 2. Shorten the boom when something solid is between camera and player,
+    //    or a closing gate swallows the camera as the player passes through it.
+    const boom = chaseBoom(dt);
+
+    level.route.sample(runner.distance - boom, runner.lateral * 0.55 + swing, 3.1 + runner.height * 0.6, cameraDesired);
     level.route.sample(runner.distance + 12, runner.lateral * 0.3, 1.6, lookTarget);
     camera.position.lerp(cameraDesired, 1 - Math.exp(-dt * 7));
   }
@@ -293,6 +375,7 @@ function loadLevel() {
   level = new FoundryLevel({
     origin: new THREE.Vector3(0, 0, 0),
     shadows: true,
+    brightness, // tune live with [ and ]
   });
   level.addTo(scene);
   hud.bind(level);
@@ -311,6 +394,8 @@ function loadLevel() {
   runner.invulnerable = 0;
   runner.slow = 0;
   trauma = 0;
+  swing = 0;
+  boomLength = BOOM_MAX;
   hud.setIntegrity(100);
 
   smoothedLook.copy(level.route.sample(14, 0, 1.5).position);
@@ -345,6 +430,8 @@ addEventListener("keydown", (event) => {
   }
   if (event.code === "KeyF") hud.setDevVisible(hud.dev.hidden);
   if (event.code === "KeyR") loadLevel();
+  if (event.code === "BracketRight") setBrightness(brightness + 0.2);
+  if (event.code === "BracketLeft") setBrightness(brightness - 0.2);
 });
 
 addEventListener("resize", () => {

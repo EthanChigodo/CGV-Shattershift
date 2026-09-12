@@ -621,15 +621,23 @@ export function createFoundryKit({ shadows = false } = {}) {
     const slab = mesh(geometries.pistonHead, materials.hazard);
     const isLow = kind === "low";
     slab.scale.set(width / 2.3, isLow ? 1.5 : 1.1, 0.42);
-    slab.position.set(x, isLow ? 0.56 : 3.55, 0);
+    // Heights are set against the player volume, not by eye:
+    //   standing player   0.18 - 2.08m      sliding player   0.18 - 1.18m
+    //   low barrier       0.00 - 1.12m  ->  blocks standing, cleared by a jump
+    //   high barrier      1.69 - 2.51m  ->  blocks standing, cleared by a slide
+    // The high barrier used to sit at 3.55m, a metre clear of a standing
+    // player's head, so it was scenery rather than an obstacle.
+    slab.position.set(x, isLow ? 0.56 : 2.1, 0);
     slab.userData = { kind: "hazard", solid: true, barrier: kind };
     group.add(slab);
 
     // Support posts tie the barrier to the corridor so it reads as installed.
     for (const side of [-1, 1]) {
       const post = mesh(geometries.switchStem, materials.trim);
-      post.scale.set(1.1, isLow ? 0.7 : 3.4, 1.1);
-      post.position.set(x + side * (width / 2), isLow ? 0.4 : 2.1, 0);
+      post.scale.set(1.1, isLow ? 0.7 : 4.4, 1.1);
+      // A high barrier hangs from the ceiling; the posts run up past it so the
+      // silhouette reads as "duck", not "step over".
+      post.position.set(x + side * (width / 2), isLow ? 0.4 : 4.5, 0);
       group.add(post);
     }
 
