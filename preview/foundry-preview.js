@@ -88,7 +88,28 @@ const ui = {
 /* ------------------------------------------------------------------ */
 
 const LANES = [-3.2, 0, 3.2];
-const RUN_SPEED = 9.2;
+
+/**
+ * Speed ramps across the level rather than holding constant. Same corridor at
+ * the same pace for 384m is what made it feel passive; by Beat C the player is
+ * covering ground half again as fast as they were in the intake.
+ */
+const SPEED_START = 8.4;
+const SPEED_END = 13.2;
+
+/** A miss breaks the chain, so spheres are worth spending carefully. */
+const COMBO_WINDOW = 2.6;
+const START_SPHERES = 20;
+const MAX_SPHERES = 25;
+
+/**
+ * At zero spheres, one is issued every few seconds.
+ *
+ * Without it a player with poor aim can arrive at a mandatory route switch
+ * with nothing to shoot it with, and the level becomes literally impossible -
+ * not hard, unfinishable. The trickle is slow enough to still hurt.
+ */
+const SPHERE_RECHARGE = 4;
 
 const avatar = new THREE.Group();
 const avatarBody = new THREE.Mesh(
@@ -118,7 +139,21 @@ const runner = {
   alive: true,
   invulnerable: 0,
   slow: 0,
+  spheres: START_SPHERES,
+  combo: 1,
+  comboTimer: 0,
+  maxCombo: 1,
+  cells: 0,
+  nearMisses: 0,
+  shots: 0,
+  breaks: 0,
+  startedAt: 0,
+  finished: false,
+  rechargeTimer: 0,
 };
+
+/** Meshes recently credited as a near miss, so one gap pays out once. */
+const grazeCooldown = new Map();
 
 /* ------------------------------------------------------------------ */
 /* Cameras                                                              */
@@ -279,16 +314,41 @@ function updateFlashes(dt) {
   }
 }
 
+function bumpCombo() {
+  runner.combo = Math.min(9, runner.combo + 1);
+  runner.maxCombo = Math.max(runner.maxCombo, runner.combo);
+  runner.comboTimer = COMBO_WINDOW;
+}
+
 function shoot() {
-  if (!runner.alive || !level) return;
+  if (!runner.alive || runner.finished || !level) return;
+
+  if (runner.spheres <= 0) {
+    hud.toast("NO SPHERES", "");
+    return;
+  }
+
+  runner.spheres -= 1;
+  runner.shots += 1;
+
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(level.breakables, false);
-  if (!hits.length) return;
-  const result = level.breakTarget(hits[0].object);
-  if (result) {
-    runner.score += result.points;
-    spawnFlash(result.position);
+  const result = hits.length ? level.breakTarget(hits[0].object) : null;
+
+  if (!result) {
+    // A miss costs the sphere and the chain. That is what gives each shot
+    // weight - without it, spraying at the corridor is free.
+    runner.combo = 1;
+    runner.comboTimer = 0;
+    return;
   }
+
+  runner.score += result.points * runner.combo;
+  runner.spheres = Math.min(MAX_SPHERES, runner.spheres + (result.spheres ?? 0));
+  runner.breaks += 1;
+  if (result.kind === "cell") runner.cells += 1;
+  bumpCombo();
+  spawnFlash(result.position);
 }
 
 /** Reticle turns cyan when a breakable switch is under the cursor. */
@@ -333,11 +393,27 @@ const HAZARD_NAMES = { low: "BARRIER", high: "LOW CLEARANCE" };
 function checkHazards(dt) {
   runner.invulnerable = Math.max(0, runner.invulnerable - dt);
   runner.slow = Math.max(0, runner.slow - dt);
-  if (!runner.alive || runner.invulnerable > 0) return;
+  for (const [mesh, left] of grazeCooldown) {
+    if (left - dt <= 0) grazeCooldown.delete(mesh);
+    else grazeCooldown.set(mesh, left - dt);
+  }
+  if (!runner.alive || runner.finished) return;
 
   updatePlayerBox();
-  const hits = level.collide(playerBox, runner.distance);
-  if (!hits.length) return;
+  const { hits, grazes } = level.probe(playerBox, runner.distance);
+
+  // Near miss: threading a gap pays, so cutting it fine is a decision rather
+  // than just a thing that did not go wrong.
+  for (const mesh of grazes) {
+    if (grazeCooldown.has(mesh)) continue;
+    grazeCooldown.set(mesh, 1.4);
+    runner.nearMisses += 1;
+    runner.score += 25 * runner.combo;
+    if (runner.combo > 1) runner.comboTimer = COMBO_WINDOW;
+    hud.toast("NEAR MISS", `+${25 * runner.combo}`, 1100);
+  }
+
+  if (!hits.length || runner.invulnerable > 0) return;
 
   const hazard = hits[0];
   runner.integrity = Math.max(0, runner.integrity - 18);
@@ -352,14 +428,50 @@ function checkHazards(dt) {
   level.impact(1);
   hud.setIntegrity(runner.integrity);
 
+  // An impact breaks the chain too, so the combo is a record of a clean run,
+  // not just of accurate shooting.
+  runner.combo = 1;
+  runner.comboTimer = 0;
+
   const label = HAZARD_NAMES[hazard.userData.barrier] ?? (hazard.userData.piston ? "PISTON" : "GATE");
   hud.toast(label, "-18");
 
   if (runner.integrity <= 0) {
     runner.alive = false;
     trauma = 1;
-    hud.showBanner("RUN TERMINATED", "PRESS R TO RESTART", 8000);
+    finishRun(false, "HULL BREACHED");
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* End of run                                                           */
+/* ------------------------------------------------------------------ */
+
+function finishRun(survived, title) {
+  if (runner.finished) return;
+  runner.finished = true;
+  runner.alive = false;
+
+  const seconds = (performance.now() - runner.startedAt) / 1000;
+  const accuracy = runner.shots ? Math.round((runner.breaks / runner.shots) * 100) : 0;
+  const bonus = survived ? runner.integrity * 25 + level.state.systemsOnline * 500 : 0;
+  const total = Math.round(runner.score + bonus);
+
+  hud.showSummary({
+    title,
+    failed: !survived,
+    rows: [
+      ["Time", `${seconds.toFixed(1)}s`],
+      ["Cells broken", runner.cells],
+      ["Near misses", runner.nearMisses],
+      ["Best combo", `x${runner.maxCombo}`],
+      ["Accuracy", `${Math.max(0, Math.min(100, accuracy))}%`],
+      ["Systems restored", `${level.state.systemsOnline} / 3`],
+      ["Hull remaining", runner.integrity],
+      ["Completion bonus", bonus],
+      ["Total", String(total).padStart(6, "0"), true],
+    ],
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -380,7 +492,13 @@ function loadLevel() {
   level.addTo(scene);
   hud.bind(level);
   hud.setSystems(0);
+  hud.hideSummary();
   hud.show();
+
+  level.events.on("complete", () => finishRun(true, "FOUNDRY CLEARED"));
+  level.events.on("escape-end", ({ survived }) => {
+    if (!survived) finishRun(false, "CONTAINMENT LOST");
+  });
 
   runner.distance = 0;
   runner.lane = 1;
@@ -393,10 +511,23 @@ function loadLevel() {
   runner.alive = true;
   runner.invulnerable = 0;
   runner.slow = 0;
+  runner.spheres = START_SPHERES;
+  runner.combo = 1;
+  runner.comboTimer = 0;
+  runner.maxCombo = 1;
+  runner.cells = 0;
+  runner.nearMisses = 0;
+  runner.shots = 0;
+  runner.breaks = 0;
+  runner.finished = false;
+  runner.rechargeTimer = 0;
+  runner.startedAt = performance.now();
+  grazeCooldown.clear();
   trauma = 0;
   swing = 0;
   boomLength = BOOM_MAX;
   hud.setIntegrity(100);
+  hud.setRun({ score: 0, combo: 1, spheres: START_SPHERES, comboRatio: 0 });
 
   smoothedLook.copy(level.route.sample(14, 0, 1.5).position);
 }
@@ -464,8 +595,28 @@ function animate() {
   }
 
   if (runner.alive) {
-    const speed = RUN_SPEED * (runner.slow > 0 ? 0.45 : 1);
+    const progress = runner.distance / level.route.totalLength;
+    const base = SPEED_START + (SPEED_END - SPEED_START) * progress;
+    const speed = base * (runner.slow > 0 ? 0.45 : 1);
     runner.distance = Math.min(runner.distance + speed * dt, level.route.totalLength - 1);
+  }
+
+  // Combo decays on its own; the bar under it shows the window closing.
+  if (runner.comboTimer > 0) {
+    runner.comboTimer = Math.max(0, runner.comboTimer - dt);
+    if (runner.comboTimer === 0) runner.combo = 1;
+  }
+
+  // Emergency sphere trickle, so a dry player is never stuck at a switch.
+  if (runner.alive && !runner.finished && runner.spheres <= 0) {
+    runner.rechargeTimer += dt;
+    if (runner.rechargeTimer >= SPHERE_RECHARGE) {
+      runner.rechargeTimer = 0;
+      runner.spheres += 1;
+      hud.toast("SPHERE RECHARGED", "+1", 1400);
+    }
+  } else {
+    runner.rechargeTimer = 0;
   }
 
   // Lane easing, jump arc, and slide crouch.
@@ -491,6 +642,12 @@ function animate() {
   updateReticle();
 
   hud.update({ distance: runner.distance, fps, renderer, level });
+  hud.setRun({
+    score: runner.score,
+    combo: runner.combo,
+    spheres: runner.spheres,
+    comboRatio: runner.comboTimer / COMBO_WINDOW,
+  });
 
   const beat = level.beatAt(runner.distance);
   ui.beatName.textContent = beat ? beat.name : "JUNCTION";

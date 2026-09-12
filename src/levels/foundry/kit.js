@@ -137,6 +137,9 @@ export function createFoundryKit({ shadows = false } = {}) {
     switchStem: new THREE.CylinderGeometry(0.09, 0.09, 1.1, 6),
     strobeLens: new THREE.SphereGeometry(0.24, 10, 8),
     chevron: new THREE.BoxGeometry(1.5, 0.14, 0.42),
+    cellGlass: new THREE.OctahedronGeometry(0.46, 0),
+    cellCage: new THREE.TorusGeometry(0.52, 0.06, 6, 12),
+    cellMount: new THREE.CylinderGeometry(0.08, 0.08, 0.8, 6),
   };
 
   // Cloned materials and cloned textures are tracked here too - disposing a
@@ -605,6 +608,61 @@ export function createFoundryKit({ shadows = false } = {}) {
     return group;
   }
 
+  /**
+   * Pressure cell: the small, plentiful, optional shootable.
+   *
+   * The six route switches are big, labelled, and gate progress. Six targets
+   * across 384m is not a shooting rhythm though, so cells fill the gaps: worth
+   * score, worth a sphere back, and safe to ignore. Same cyan glass language as
+   * everything else breakable, at a fraction of the size so the player never
+   * confuses one for a switch.
+   *
+   * Deliberately no light emitter - there are dozens of these, and they would
+   * crowd the pooled lights out of the vents and strobes that actually shape
+   * the corridor. Emissive material self-lights them for free.
+   */
+  function pressureCell({ points = 60, spheres = 1 } = {}) {
+    const group = new THREE.Group();
+    group.name = "PressureCell";
+
+    const mount = mesh(geometries.cellMount, materials.switchHousing);
+    mount.position.y = 0.5;
+    group.add(mount);
+
+    const glassMaterial = materials.switchGlass.clone();
+    glassMaterial.emissiveIntensity = 1.5;
+    tracked.materials.push(glassMaterial);
+
+    const glass = mesh(geometries.cellGlass, glassMaterial);
+    glass.userData = { kind: "cell", breakable: true, alive: true, points, spheres, label: "CELL", node: group };
+    group.add(glass);
+
+    const cage = mesh(geometries.cellCage, materials.switchHousing);
+    group.add(cage);
+
+    const spin = 0.7 + Math.random() * 0.8;
+    const phase = Math.random() * Math.PI * 2;
+
+    group.userData.glass = glass;
+    group.userData.tick = (dt, time) => {
+      if (!glass.userData.alive) return;
+      glass.rotation.y += dt * spin;
+      glass.rotation.x = Math.sin(time * 1.4 + phase) * 0.3;
+      cage.rotation.z += dt * spin * 0.45;
+      glassMaterial.emissiveIntensity = 1.25 + Math.sin(time * 4.2 + phase) * 0.5;
+    };
+
+    group.userData.onBreak = () => {
+      if (!glass.userData.alive) return false;
+      glass.userData.alive = false;
+      glass.visible = false;
+      cage.visible = false;
+      return true;
+    };
+
+    return group;
+  }
+
   /* -------------------------------------------------------------- */
   /* Support pieces                                                  */
   /* -------------------------------------------------------------- */
@@ -731,6 +789,7 @@ export function createFoundryKit({ shadows = false } = {}) {
     heatVent,
     shutterWall,
     switchNode,
+    pressureCell,
     barrier,
     warningStrobe,
     turnChevrons,

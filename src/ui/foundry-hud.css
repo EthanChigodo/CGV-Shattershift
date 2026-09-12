@@ -369,6 +369,149 @@
 }
 
 /* ---------------------------------------------------------------- */
+/* Run stats: spheres, score, combo                                  */
+/* ---------------------------------------------------------------- */
+
+.fdy-run {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  background: var(--fdy-line);
+  border: 1px solid var(--fdy-line);
+  backdrop-filter: blur(7px);
+}
+
+.fdy-stat {
+  min-width: 92px;
+  padding: 8px 14px;
+  background: var(--fdy-panel);
+  text-align: center;
+}
+
+.fdy-stat span {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: #9db0b8;
+}
+
+.fdy-stat strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-stat.spheres strong { color: var(--fdy-cyan); }
+.fdy-stat.spheres.empty strong { color: var(--fdy-red); animation: fdy-pulse 0.7s ease-in-out infinite; }
+
+.fdy-stat.combo { position: relative; overflow: hidden; }
+.fdy-stat.combo strong { color: var(--fdy-amber); }
+.fdy-stat.combo.idle strong { color: #55646c; }
+
+/* Decay bar under the combo, so the player can see the window closing. */
+.fdy-stat.combo .fdy-decay {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--fdy-amber);
+  transform-origin: left center;
+}
+
+.fdy-stat.pop strong { animation: fdy-pop 0.3s ease-out; }
+
+@keyframes fdy-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------- */
+/* Run summary                                                       */
+/* ---------------------------------------------------------------- */
+
+.fdy-summary {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 11, 0.82);
+  backdrop-filter: blur(5px);
+}
+
+.fdy-summary.show { display: flex; }
+
+.fdy-summary-card {
+  width: min(420px, 88vw);
+  padding: 26px 28px;
+  background: var(--fdy-panel);
+  border: 1px solid var(--fdy-line);
+  border-top: 2px solid var(--fdy-amber);
+  text-align: center;
+}
+
+.fdy-summary-card > span {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  color: var(--fdy-amber);
+}
+
+.fdy-summary-card > h2 {
+  margin: 8px 0 20px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.fdy-summary-card.failed { border-top-color: var(--fdy-red); }
+.fdy-summary-card.failed > span { color: var(--fdy-red); }
+
+.fdy-summary-rows {
+  display: grid;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fdy-summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 13px;
+  background: rgba(9, 14, 18, 0.9);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: #9db0b8;
+}
+
+.fdy-summary-row b {
+  color: #f4fbff;
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-summary-row.total { background: rgba(20, 30, 36, 0.95); }
+.fdy-summary-row.total b { color: var(--fdy-amber); font-size: 15px; }
+
+.fdy-summary-card > small {
+  display: block;
+  margin-top: 18px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: #6f8088;
+}
+
+/* ---------------------------------------------------------------- */
 /* Toasts and dev readout                                            */
 /* ---------------------------------------------------------------- */
 

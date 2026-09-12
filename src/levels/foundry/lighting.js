@@ -35,6 +35,20 @@ export class LightPool {
     this.alarm = 0;
     this._alarmColour = new THREE.Color(0xff2a24);
 
+    /**
+     * A light that travels with the player, outside the emitter pool.
+     *
+     * Ambient fill raises everything by the same amount, which makes a scene
+     * brighter and flatter at once - it was why turning the brightness up read
+     * as washed out rather than lit. A travelling light does the opposite: it
+     * gives the metal nearest the player highlights and falloff, so the corridor
+     * has shape wherever the player happens to be, and the distance is still
+     * allowed to go dark.
+     */
+    this.playerLight = new THREE.PointLight(0xffd9b0, 26, 26, 1.7);
+    this.playerLight.name = "PlayerRigLight";
+    this.group.add(this.playerLight);
+
     this.pointLights = [];
     for (let i = 0; i < points; i += 1) {
       const light = new THREE.PointLight(0xffffff, 0, 16, 2);
@@ -93,6 +107,16 @@ export class LightPool {
    * stretches of corridor sit close together.
    */
   update(playerPosition, time) {
+    // Sits slightly above and ahead of the player so it lights the route rather
+    // than the floor under their feet.
+    this.playerLight.position.set(playerPosition.x, playerPosition.y + 2.6, playerPosition.z);
+    this.playerLight.intensity = 22 * this.brightness * (1 + this.alarm * 0.8);
+    if (this.alarm > 0.001) {
+      this.playerLight.color.set(0xffd9b0).lerp(this._alarmColour, Math.min(1, this.alarm) * 0.85);
+    } else {
+      this.playerLight.color.set(0xffd9b0);
+    }
+
     const point = [];
     const spot = [];
 
@@ -170,16 +194,21 @@ export function createFoundryAmbience({ brightness = 1 } = {}) {
   // and every pooled light. 1.0 is the original moody authoring, 1.6 is the
   // default, and roughly 2.2 is as bright as it can go before the sector stops
   // reading as the dark one.
-  const hemisphere = new THREE.HemisphereLight(0x4a677a, 0x241a12, 1.15 * brightness);
+  // Fill is deliberately weak and scaled sub-linearly. Raising it in step with
+  // brightness lifts lit and unlit surfaces equally, which flattens the image:
+  // the sector got brighter and less readable at the same time. Shape comes
+  // from the travelling player light, the pooled lights, and the directional
+  // key instead.
+  const hemisphere = new THREE.HemisphereLight(0x3d5361, 0x241a12, 0.72 * Math.sqrt(brightness));
   group.add(hemisphere);
 
-  const key = new THREE.DirectionalLight(0x9fc4d8, 0.7 * brightness);
+  const key = new THREE.DirectionalLight(0xbcd8e8, 0.95 * brightness);
   key.position.set(4, 12, 3);
   group.add(key);
 
   group.userData.setBrightness = (value) => {
-    hemisphere.intensity = 1.15 * value;
-    key.intensity = 0.7 * value;
+    hemisphere.intensity = 0.72 * Math.sqrt(value);
+    key.intensity = 0.95 * value;
   };
 
   group.userData.dispose = () => {

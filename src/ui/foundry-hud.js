@@ -80,6 +80,34 @@ export class FoundryHud {
     /* Impact flash */
     this.damage = element("div", "fdy-damage");
 
+    /* Run stats: spheres, score, combo */
+    this.run = element("div", "fdy-run");
+    const stat = (className, label, initial) => {
+      const node = element("div", `fdy-stat ${className}`);
+      node.append(element("span", null, label), element("strong", null, initial));
+      this.run.append(node);
+      return node;
+    };
+    this.spheresStat = stat("spheres", "Spheres", "20");
+    this.scoreStat = stat("score", "Score", "000000");
+    this.comboStat = stat("combo idle", "Combo", "x1");
+    this.comboDecay = element("div", "fdy-decay");
+    this.comboStat.append(this.comboDecay);
+
+    /* Run summary */
+    this.summary = element("div", "fdy-summary");
+    this.summaryCard = element("div", "fdy-summary-card");
+    this.summaryEyebrow = element("span", null, "SECTOR 02");
+    this.summaryTitle = element("h2", null, "FOUNDRY CLEARED");
+    this.summaryRows = element("div", "fdy-summary-rows");
+    this.summaryCard.append(
+      this.summaryEyebrow,
+      this.summaryTitle,
+      this.summaryRows,
+      element("small", null, "PRESS R TO RUN AGAIN")
+    );
+    this.summary.append(this.summaryCard);
+
     /* Switch prompt */
     this.prompt = element("div", "fdy-prompt");
     this.promptLabel = element("b", null, "SWITCH");
@@ -116,8 +144,10 @@ export class FoundryHud {
       this.prompt,
       this.junction,
       this.escape,
+      this.run,
       this.toasts,
-      this.dev
+      this.dev,
+      this.summary
     );
     container.append(this.root);
 
@@ -127,6 +157,9 @@ export class FoundryHud {
     this._escapeActive = false;
     this._level = null;
     this._lastPromptKey = null;
+    this._lastScore = null;
+    this._lastCombo = null;
+    this._lastSpheres = null;
   }
 
   /* ---------------------------------------------------------------- */
@@ -209,6 +242,61 @@ export class FoundryHud {
     this.damage.classList.add("hit");
   }
 
+  /**
+   * @param {{score:number, combo:number, spheres:number, comboRatio:number}} run
+   */
+  setRun({ score, combo, spheres, comboRatio = 0 }) {
+    if (score !== undefined && score !== this._lastScore) {
+      this.scoreStat.querySelector("strong").textContent = String(Math.round(score)).padStart(6, "0");
+      this._pop(this.scoreStat);
+      this._lastScore = score;
+    }
+
+    if (spheres !== undefined && spheres !== this._lastSpheres) {
+      this.spheresStat.querySelector("strong").textContent = String(spheres);
+      this.spheresStat.classList.toggle("empty", spheres <= 0);
+      this._lastSpheres = spheres;
+    }
+
+    if (combo !== undefined) {
+      if (combo !== this._lastCombo) {
+        this.comboStat.querySelector("strong").textContent = `x${combo}`;
+        this.comboStat.classList.toggle("idle", combo <= 1);
+        if (combo > 1) this._pop(this.comboStat);
+        this._lastCombo = combo;
+      }
+      this.comboDecay.style.transform = `scaleX(${Math.max(0, Math.min(1, comboRatio))})`;
+      this.comboDecay.style.opacity = combo > 1 ? "1" : "0";
+    }
+  }
+
+  _pop(node) {
+    node.classList.remove("pop");
+    void node.offsetWidth;
+    node.classList.add("pop");
+  }
+
+  /**
+   * End-of-run card. `rows` is an array of [label, value] so the caller decides
+   * what a run is worth reporting - the level does not own scoring.
+   */
+  showSummary({ title, eyebrow = "SECTOR 02", rows = [], failed = false }) {
+    this.summaryEyebrow.textContent = eyebrow;
+    this.summaryTitle.textContent = title;
+    this.summaryCard.classList.toggle("failed", failed);
+    this.summaryRows.replaceChildren();
+    for (const [label, value, isTotal] of rows) {
+      const row = element("div", `fdy-summary-row${isTotal ? " total" : ""}`);
+      row.append(element("span", null, label), element("b", null, String(value)));
+      this.summaryRows.append(row);
+    }
+    this.summary.classList.add("show");
+  }
+
+  hideSummary() {
+    this.summary.classList.remove("show");
+  }
+
   setIntegrity(value, max = 100) {
     const ratio = Math.max(0, Math.min(1, value / max));
     this.integrityFill.style.transform = `scaleX(${ratio})`;
@@ -283,9 +371,16 @@ export class FoundryHud {
   update({ distance, fps, renderer, level = this._level }) {
     if (this.root.hidden || !level) return;
 
-    // Prompt for the nearest live switch in front of the player.
+    // Prompt for the nearest live *switch* in front of the player. Pressure
+    // cells are deliberately excluded - there are dozens of them and prompting
+    // for each would turn a readable cue into wallpaper.
     const ahead = level.breakables
-      .filter((mesh) => mesh.userData.alive && mesh.userData.routeDistance > distance - 3)
+      .filter(
+        (mesh) =>
+          mesh.userData.kind === "switch" &&
+          mesh.userData.alive &&
+          mesh.userData.routeDistance > distance - 3
+      )
       .sort((a, b) => a.userData.routeDistance - b.userData.routeDistance)[0];
 
     if (ahead && ahead.userData.routeDistance - distance < 34) {

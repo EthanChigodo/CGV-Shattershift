@@ -110,8 +110,10 @@ export class FoundryLevel {
       machinery: new THREE.Group(),
       hazards: new THREE.Group(),
       switches: new THREE.Group(),
+      targets: new THREE.Group(),
       signage: new THREE.Group(),
     };
+    this.groups.targets.name = "Targets";
     this.groups.shell.name = "Shell";
     this.groups.machinery.name = "Machinery";
     this.groups.hazards.name = "Hazards";
@@ -167,10 +169,12 @@ export class FoundryLevel {
     this._buildBeatB();
     this._buildBeatC();
     this._buildJunctions();
+    this._buildTargets();
     this._registerEmitters();
 
     this._playerWorld = new THREE.Vector3();
     this._scratch = new THREE.Vector3();
+    this._grazeBox = new THREE.Box3();
   }
 
   /* ================================================================ */
@@ -338,11 +342,12 @@ export class FoundryLevel {
   }
 
   /** Register a switch and wire its break action. */
-  _switch({ distance, lane, label, action, system = false, points = 200, height = 2.3 }) {
+  _switch({ distance, lane, label, action, system = false, points = 200, height = 2.3, spheres = 3 }) {
     const node = this.kit.switchNode({ x: 0, y: height, label, action, points });
     this._add(this.groups.switches, node, distance, lane);
     node.userData.glass.userData.system = system;
     node.userData.glass.userData.routeDistance = distance;
+    node.userData.glass.userData.spheres = spheres;
     this.breakables.push(node.userData.glass);
     this._switchNodes.push(node);
     return node;
@@ -410,9 +415,12 @@ export class FoundryLevel {
       this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), at);
     }
 
+    this._hazard(this.kit.barrier({ kind: "low" }), 58, 0);
     this._hazard(this.kit.pistonBank({ speed: 1.5, phase: 0.4, reach: 5.2 }), 66, -3.2);
     this._hazard(this.kit.pistonBank({ speed: 1.7, phase: 1.6, reach: 5.2 }), 78, 3.2);
     this._hazard(this.kit.barrier({ kind: "high" }), 88, 0);
+    this._hazard(this.kit.pistonBank({ speed: 1.8, phase: 2.4, reach: 5.2 }), 96, -3.2);
+    this._hazard(this.kit.barrier({ kind: "high" }), 112, 3.2);
     this._hazard(this.kit.barrier({ kind: "low" }), 118, -3.2);
 
     // Optional: a half-gate closing off the right lane. Miss the switch and
@@ -491,15 +499,24 @@ export class FoundryLevel {
     ];
 
     for (const [offset, kind, lane] of [
+      [6, "low", 3.2],
       [16, "high", 0],
       [26, "low", -3.2],
       [48, "low", 3.2],
       [62, "high", 0],
+      [74, "high", -3.2],
       [84, "low", 3.2],
+      [96, "low", 0],
       [102, "high", -3.2],
+      [116, "high", 3.2],
     ]) {
       this._hazard(this.kit.barrier({ kind }), base + offset, lane);
     }
+
+    // Extra pistons between the two banks so the middle of the beat is not a
+    // quiet stretch. These are not tied to either switch - they stay live.
+    this._hazard(this.kit.pistonBank({ speed: 1.8, phase: 0.9, reach: 5.2 }), base + 42, 3.2);
+    this._hazard(this.kit.pistonBank({ speed: 2.0, phase: 2.6, reach: 5.2 }), base + 110, -3.2);
 
     for (const [offset, lane] of [[20, 3.2], [70, -3.2]]) {
       this._add(this.groups.machinery, this.kit.sparkBurst({ count: 22 }), base + offset, lane, 1.4);
@@ -615,7 +632,7 @@ export class FoundryLevel {
 
     // Side-lane barriers only. The escape already forces the centre; putting a
     // hazard there too would be unfair rather than hard.
-    for (const [offset, lane] of [[40, -3.2], [70, 3.2]]) {
+    for (const [offset, lane] of [[40, -3.2], [54, 3.2], [70, 3.2], [86, -3.2]]) {
       this._hazard(this.kit.barrier({ kind: "low" }), base + offset, lane);
     }
 
@@ -692,6 +709,58 @@ export class FoundryLevel {
     }
   }
 
+  /**
+   * Scatter pressure cells along the whole route.
+   *
+   * Placement is deterministic (a fixed seed), so every teammate and every run
+   * sees the same layout and the level can be practised. Cells keep clear of
+   * the route switches so the player never mistakes one for the other, and
+   * every fourth position becomes a run of three at staggered heights - a
+   * deliberate combo opportunity rather than an even sprinkle.
+   */
+  _buildTargets() {
+    let seed = 20260912;
+    const random = () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    };
+
+    const switchDistances = this.breakables.map((mesh) => mesh.userData.routeDistance);
+    const tooCloseToSwitch = (d) => switchDistances.some((s) => Math.abs(s - d) < 6);
+
+    const total = this.route.totalLength;
+    const heights = [1.5, 2.2, 3.0, 3.7];
+    let distance = 10;
+    let index = 0;
+
+    while (distance < total - 12) {
+      const cluster = index % 4 === 3 ? 3 : 1;
+
+      for (let i = 0; i < cluster; i += 1) {
+        const at = distance + i * 3.4;
+        if (at > total - 12 || tooCloseToSwitch(at)) continue;
+
+        // Spread across the full corridor width, not just the three lanes:
+        // reaching a cell near a wall is a real aim, not a lane change.
+        const lateral = -4.4 + random() * 8.8;
+        const height = heights[Math.floor(random() * heights.length)];
+
+        // Every cell returns the sphere it cost. Hitting things sustains the
+        // run and only missing drains it, which is the Smash Hit rule and the
+        // reason spheres can be a real resource without becoming a trap: at
+        // 55% return, a player who shot every cell ran dry before the
+        // extraction valve and could not finish the level at all.
+        const cell = this.kit.pressureCell({ points: 60, spheres: 1 });
+        this._add(this.groups.targets, cell, at, lateral, height);
+        cell.userData.glass.userData.routeDistance = at;
+        this.breakables.push(cell.userData.glass);
+      }
+
+      distance += 9 + random() * 5;
+      index += 1;
+    }
+  }
+
   /** A left/right pair of shutter slabs that close across the corridor. */
   _closingPair(distance, progress) {
     const { halfWidth } = this.options;
@@ -737,21 +806,61 @@ export class FoundryLevel {
    * @returns {{points:number,label:string,position:THREE.Vector3}|null}
    */
   breakTarget(mesh) {
-    if (!mesh?.userData || mesh.userData.kind !== "switch" || !mesh.userData.alive) return null;
-    const node = mesh.userData.node;
-    if (!node || !this.groups.switches.children.includes(node)) return null;
+    const data = mesh?.userData;
+    if (!data?.alive || (data.kind !== "switch" && data.kind !== "cell")) return null;
+
+    const node = data.node;
+    const owned =
+      node &&
+      (this.groups.switches.children.includes(node) || this.groups.targets.children.includes(node));
+    if (!owned) return null;
 
     const position = new THREE.Vector3();
     mesh.getWorldPosition(position);
-    const points = mesh.userData.points ?? 200;
+    const points = data.points ?? 60;
 
     node.userData.onBreak();
 
     const index = this.breakables.indexOf(mesh);
     if (index >= 0) this.breakables.splice(index, 1);
 
-    this.events.emit("switch-broken", { label: mesh.userData.label, points, position });
-    return { points, label: mesh.userData.label, position };
+    const result = {
+      points,
+      label: data.label,
+      kind: data.kind,
+      spheres: data.spheres ?? 0,
+      position,
+    };
+
+    this.events.emit(data.kind === "switch" ? "switch-broken" : "cell-broken", result);
+    return result;
+  }
+
+  /**
+   * Hazards the player is currently touching, and hazards they are passing
+   * close to without touching.
+   *
+   * The near miss is the whole reason this returns two lists. A runner that
+   * only punishes contact gives no reason to cut anything fine; paying out for
+   * threading a gap turns a dodge into a decision.
+   *
+   * @returns {{hits: THREE.Mesh[], grazes: THREE.Mesh[]}}
+   */
+  probe(playerBox, playerDistance, grazeMargin = 0.55) {
+    const hits = this.collide(playerBox, playerDistance);
+    if (hits.length) return { hits, grazes: [] };
+
+    this._grazeBox.copy(playerBox).expandByScalar(grazeMargin);
+    const grazes = [];
+    for (const entry of this._hazardIndex) {
+      if (Math.abs(entry.distance - playerDistance) > 9) continue;
+      const mesh = entry.mesh;
+      if (!mesh.visible || mesh.userData.disabled) continue;
+      mesh.updateWorldMatrix(true, false);
+      entry.box.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+      if (entry.box.intersectsBox(this._grazeBox)) grazes.push(mesh);
+    }
+    return { hits, grazes };
   }
 
   /**
