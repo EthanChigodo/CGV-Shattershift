@@ -304,6 +304,71 @@
 }
 
 /* ---------------------------------------------------------------- */
+/* Impact                                                            */
+/* ---------------------------------------------------------------- */
+
+/* Full-screen hit flash. Heaviest at the edges so it never hides the lane
+   the player is trying to read while recovering. */
+.fdy-damage {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 40, 40, 0.08) 30%, rgba(190, 12, 18, 0.82) 100%);
+  box-shadow: inset 0 0 120px rgba(255, 30, 40, 0.9);
+}
+
+.fdy-damage.hit {
+  animation: fdy-hit 0.42s ease-out;
+}
+
+@keyframes fdy-hit {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.fdy-integrity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #9db0b8;
+}
+
+.fdy-integrity .fdy-track {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.fdy-integrity .fdy-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(90deg, var(--fdy-cyan), #4fd8e0);
+  transform-origin: left center;
+  transition: transform 0.25s ease, background 0.25s ease;
+}
+
+.fdy-integrity.hurt .fdy-fill { background: linear-gradient(90deg, var(--fdy-amber), #ffd27a); }
+.fdy-integrity.critical .fdy-fill { background: linear-gradient(90deg, var(--fdy-red), #ff8a8a); }
+
+.fdy-integrity b {
+  min-width: 26px;
+  text-align: right;
+  color: #f4fbff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- */
 /* Toasts and dev readout                                            */
 /* ---------------------------------------------------------------- */
 

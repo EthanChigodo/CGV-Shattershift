@@ -24,6 +24,16 @@ export class LightPool {
     this.emitters = [];
     this._scratch = new THREE.Vector3();
 
+    /**
+     * 0 normally; raised by the level when the player is hit. Every pooled
+     * light bleeds toward alarm red and spikes in intensity, so a collision
+     * changes the whole corridor rather than just the screen. Because it only
+     * touches colour and intensity uniforms, it costs nothing and cannot
+     * trigger a shader recompile.
+     */
+    this.alarm = 0;
+    this._alarmColour = new THREE.Color(0xff2a24);
+
     this.pointLights = [];
     for (let i = 0; i < points; i += 1) {
       const light = new THREE.PointLight(0xffffff, 0, 16, 2);
@@ -117,6 +127,14 @@ export class LightPool {
       const falloff =
         1 - THREE.MathUtils.smoothstep(Math.sqrt(entry.d2), emitter.distance * 1.1, emitter.distance * 2.2);
       light.intensity = emitter.intensityAt(time) * falloff;
+
+      if (this.alarm > 0.001) {
+        const a = Math.min(1, this.alarm);
+        light.color.lerp(this._alarmColour, a * 0.9);
+        // Flicker the spike so it reads as an alarm, not a dimmer switch.
+        light.intensity *= 1 + a * (1.6 + Math.sin(time * 34) * 0.5);
+        light.distance = emitter.distance * (1 + a * 0.5);
+      }
 
       if (isSpot) {
         light.target.position.set(emitter.position.x, emitter.position.y - 8, emitter.position.z);

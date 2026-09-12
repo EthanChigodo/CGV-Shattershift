@@ -325,12 +325,12 @@ export function createFoundryKit({ shadows = false } = {}) {
    * the head travels, which is what sells it as one mechanism rather than three
    * boxes. The head is a solid hazard - it cannot be destroyed, only timed.
    */
-  function pistonBank({ speed = 1.4, phase = 0, reach = 3.4, fromCeiling = true } = {}) {
+  function pistonBank({ speed = 1.4, phase = 0, reach = 5, fromCeiling = true } = {}) {
     const group = new THREE.Group();
     group.name = "PistonBank";
 
     const housing = mesh(geometries.pistonHousing, materials.trim);
-    housing.position.y = fromCeiling ? 7.0 : 0.4;
+    housing.position.y = fromCeiling ? 7.0 : -0.55;
     group.add(housing);
 
     const shaft = mesh(geometries.pistonShaft, materials.plating);
@@ -340,7 +340,12 @@ export function createFoundryKit({ shadows = false } = {}) {
     head.userData = { kind: "hazard", solid: true, piston: true };
     group.add(head);
 
-    const anchorY = fromCeiling ? 6.4 : 0.9;
+    // Reach matters for more than looks: a ceiling piston that bottoms out at
+    // 2.4m is decorative, because the player is only 1.9m tall and walks under
+    // it. A floor piston parked at 0.9m is the opposite problem - a permanent
+    // wall. So the ceiling piston slams to just above the floor, and the floor
+    // piston retracts flush into it.
+    const anchorY = fromCeiling ? 6.4 : -0.35;
     const direction = fromCeiling ? -1 : 1;
 
     group.userData.tick = (dt, time) => {

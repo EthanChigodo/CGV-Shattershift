@@ -40,10 +40,12 @@ import { LightPool, createFoundryAmbience } from "./lighting.js";
 const TURN_RADIUS = 9;
 const QUARTER = Math.PI / 2;
 
+const ARC = TURN_RADIUS * QUARTER; // 14.137m of travel through each junction
+
 export const BEATS = [
-  { key: "intake", name: "INTAKE", start: 0, end: 58 },
-  { key: "rolling", name: "ROLLING FLOOR", start: 72.14, end: 128.14 },
-  { key: "furnace", name: "FURNACE THROAT", start: 142.28, end: 194.28 },
+  { key: "intake", name: "INTAKE", start: 0, end: 124 },
+  { key: "rolling", name: "ROLLING FLOOR", start: 124 + ARC, end: 124 + ARC + 120 },
+  { key: "furnace", name: "FURNACE THROAT", start: 124 + ARC * 2 + 120, end: 124 + ARC * 2 + 120 + 112 },
 ];
 
 /** Tiny event emitter - the level announces, the UI listens. */
@@ -82,9 +84,13 @@ export class FoundryLevel {
     straightRoute = false,
     halfWidth = 5.6,
     lanes = [-3.2, 0, 3.2],
-    escapeSeconds = 26,
+    runSpeed = 9.2,
+    escapeSeconds = null,
   } = {}) {
-    this.options = { halfWidth, lanes, shadows, escapeSeconds };
+    // The escape timer is derived from how far the player actually has to run,
+    // not hard-coded. At 194m the old fixed 26s could never expire, which made
+    // the countdown decoration rather than a loss condition.
+    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -104,14 +110,15 @@ export class FoundryLevel {
     this.groups.signage.name = "Signage";
     for (const group of Object.values(this.groups)) this.root.add(group);
 
+    const TOTAL = 124 + ARC + 120 + ARC + 112; // 384.3m
     const segments = straightRoute
-      ? straightSegments(194.28)
+      ? straightSegments(TOTAL)
       : [
-          { type: "straight", length: 58 },
+          { type: "straight", length: 124 },
           { type: "arc", radius: TURN_RADIUS, angle: QUARTER },
-          { type: "straight", length: 56 },
+          { type: "straight", length: 120 },
           { type: "arc", radius: TURN_RADIUS, angle: -QUARTER },
-          { type: "straight", length: 52 },
+          { type: "straight", length: 112 },
         ];
 
     this.route = createRoute(segments, { origin, heading });
@@ -133,13 +140,17 @@ export class FoundryLevel {
     this._switchNodes = [];
     this._escapeGates = [];
     this._pendingEmitters = [];
+    /** Hazards with their route distance and a reusable world-space box. */
+    this._hazardIndex = [];
+    this._escapeSeconds = 0;
 
     this.state = {
       beatIndex: -1,
       systemsOnline: 0,
       systemsTotal: 3,
-      escape: { active: false, armed: false, remaining: escapeSeconds, failed: false },
+      escape: { active: false, armed: false, remaining: 0, failed: false },
       complete: false,
+      alarm: 0,
     };
 
     this._buildShell();
@@ -311,8 +322,21 @@ export class FoundryLevel {
   _hazard(piece, distance, lateral = 0) {
     this._add(this.groups.hazards, piece, distance, lateral);
     const hazardMesh = piece.userData.hazardMesh;
-    if (hazardMesh) this.obstacles.push(hazardMesh);
+    if (hazardMesh) {
+      this.obstacles.push(hazardMesh);
+      this._indexHazard(hazardMesh, distance);
+    }
     return piece;
+  }
+
+  /**
+   * Record a hazard for collision testing. Its bounding box is computed once
+   * in local space and transformed per test, so a moving piston head or a
+   * closing gate is always tested where it actually is this frame.
+   */
+  _indexHazard(mesh, distance) {
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    this._hazardIndex.push({ mesh, distance, box: new THREE.Box3() });
   }
 
   /**
@@ -324,12 +348,15 @@ export class FoundryLevel {
   _buildBeatA() {
     const { halfWidth } = this.options;
 
-    this._add(this.groups.machinery, this.kit.conveyor({ side: 1, speed: 1.1, halfWidth }), 15);
-    this._add(this.groups.machinery, this.kit.conveyor({ side: 1, speed: 1.1, halfWidth }), 24);
-    this._add(this.groups.machinery, this.kit.heatVent({ side: -1, halfWidth, seed: 1 }), 11);
-    this._add(this.groups.machinery, this.kit.heatVent({ side: 1, halfWidth, seed: 2 }), 31);
+    // --- A1 (0-60): teach the mechanic with nothing else competing --------
+    for (const [at, side, speed] of [[15, 1, 1.1], [24, 1, 1.1], [44, -1, 0.9]]) {
+      this._add(this.groups.machinery, this.kit.conveyor({ side, speed, halfWidth }), at);
+    }
+    for (const [at, side, seed] of [[11, -1, 1], [31, 1, 2], [50, -1, 12]]) {
+      this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), at);
+    }
 
-    this._hazard(this.kit.pistonBank({ speed: 1.3, phase: 0, reach: 3.6 }), 26, 0);
+    this._hazard(this.kit.pistonBank({ speed: 1.3, phase: 0, reach: 5.2 }), 26, 0);
     this._hazard(this.kit.barrier({ kind: "low" }), 36, 3.2);
 
     // The gate that blocks the corridor, and the switch that retracts it.
@@ -346,9 +373,46 @@ export class FoundryLevel {
       },
     });
 
-    this._add(this.groups.signage, this.kit.warningStrobe({ x: 0, y: 5.6, speed: 3.2 }), 45);
+    // --- A2 (60-124): same idea, now with movement on top ------------------
+    for (const [at, side, speed] of [[72, 1, 1.3], [100, -1, 1.1], [114, 1, 1.0]]) {
+      this._add(this.groups.machinery, this.kit.conveyor({ side, speed, halfWidth }), at);
+    }
+    for (const [at, side, seed] of [[70, 1, 13], [92, -1, 14], [110, 1, 15]]) {
+      this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), at);
+    }
+
+    this._hazard(this.kit.pistonBank({ speed: 1.5, phase: 0.4, reach: 5.2 }), 66, -3.2);
+    this._hazard(this.kit.pistonBank({ speed: 1.7, phase: 1.6, reach: 5.2 }), 78, 3.2);
+    this._hazard(this.kit.barrier({ kind: "high" }), 88, 0);
+    this._hazard(this.kit.barrier({ kind: "low" }), 118, -3.2);
+
+    // Optional: a half-gate closing off the right lane. Miss the switch and
+    // you simply take the other two lanes - the first gate was the mandatory
+    // lesson, this one rewards noticing.
+    const halfGate = this.kit.shutterWall({ side: 1, halfWidth, closedOffset: 4, progress: 1 });
+    this._add(this.groups.hazards, halfGate, 106);
+    halfGate.userData.setProgress(1, true);
+    if (halfGate.userData.hazardMesh) {
+      this.obstacles.push(halfGate.userData.hazardMesh);
+      this._indexHazard(halfGate.userData.hazardMesh, 106);
+    }
+
+    this._switch({
+      distance: 98,
+      lane: 3.2,
+      label: "INTAKE BYPASS",
+      points: 200,
+      action: () => {
+        halfGate.userData.setProgress(0);
+        this.events.emit("switch-bonus", { label: "INTAKE BYPASS" });
+      },
+    });
+
+    for (const at of [45, 84, 112]) {
+      this._add(this.groups.signage, this.kit.warningStrobe({ x: 0, y: 5.6, speed: 3.2, phase: at }), at);
+    }
     // Junction 1 turns left, so the chevrons fan to the player's left.
-    this._add(this.groups.signage, this.kit.turnChevrons({ direction: -1 }), 54, 0);
+    this._add(this.groups.signage, this.kit.turnChevrons({ direction: -1 }), 120, 0);
   }
 
   /**
@@ -366,6 +430,9 @@ export class FoundryLevel {
       [6, -1, 1.2],
       [14, 1, 1.5],
       [30, -1, 1.0],
+      [58, 1, 1.4],
+      [78, -1, 1.2],
+      [98, 1, 1.6],
     ]) {
       this._add(this.groups.machinery, this.kit.conveyor({ side, speed, halfWidth }), base + offset);
     }
@@ -374,27 +441,44 @@ export class FoundryLevel {
       [4, 1, 3],
       [24, -1, 4],
       [44, 1, 5],
+      [66, -1, 16],
+      [88, 1, 17],
+      [108, -1, 18],
     ]) {
       this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), base + offset);
     }
 
-    const pistonA = this._hazard(this.kit.pistonBank({ speed: 1.6, phase: 0, reach: 3.6 }), base + 10, -3.2);
-    const pistonB = this._hazard(this.kit.pistonBank({ speed: 1.9, phase: 1.1, reach: 3.6 }), base + 20, 3.2);
-    const pistonC = this._hazard(
-      this.kit.pistonBank({ speed: 1.4, phase: 2.2, reach: 3.9, fromCeiling: false }),
-      base + 32,
-      0
-    );
+    // Two piston banks, each disabled by its own switch, so the player picks
+    // which pressure to remove first.
+    const bankA = [
+      this._hazard(this.kit.pistonBank({ speed: 1.6, phase: 0, reach: 5.2 }), base + 10, -3.2),
+      this._hazard(this.kit.pistonBank({ speed: 1.9, phase: 1.1, reach: 5.2 }), base + 20, 3.2),
+      this._hazard(this.kit.pistonBank({ speed: 1.4, phase: 2.2, reach: 4.4, fromCeiling: false }), base + 32, 0),
+    ];
+    const bankB = [
+      this._hazard(this.kit.pistonBank({ speed: 1.7, phase: 0.6, reach: 5.2 }), base + 54, -3.2),
+      this._hazard(this.kit.pistonBank({ speed: 2.1, phase: 1.8, reach: 5.2 }), base + 70, 3.2),
+      this._hazard(this.kit.pistonBank({ speed: 1.5, phase: 3.0, reach: 4.4, fromCeiling: false }), base + 92, 0),
+    ];
 
-    this._hazard(this.kit.barrier({ kind: "high" }), base + 16, 0);
-    this._hazard(this.kit.barrier({ kind: "low" }), base + 26, -3.2);
+    for (const [offset, kind, lane] of [
+      [16, "high", 0],
+      [26, "low", -3.2],
+      [48, "low", 3.2],
+      [62, "high", 0],
+      [84, "low", 3.2],
+      [102, "high", -3.2],
+    ]) {
+      this._hazard(this.kit.barrier({ kind }), base + offset, lane);
+    }
 
-    const sparks = this.kit.sparkBurst({ count: 22 });
-    this._add(this.groups.machinery, sparks, base + 20, 3.2, 1.4);
+    for (const [offset, lane] of [[20, 3.2], [70, -3.2]]) {
+      this._add(this.groups.machinery, this.kit.sparkBurst({ count: 22 }), base + offset, lane, 1.4);
+    }
 
     // Oscillating "moving walls" - driven directly rather than damped, so they
     // sweep at a readable, constant rate.
-    const movingWalls = this._closingPair(base + 38, 0);
+    const walls = [this._closingPair(base + 38, 0), this._closingPair(base + 82, 0)];
     let wallsLive = true;
     this._animated.push({
       distance: base + 38,
@@ -402,12 +486,25 @@ export class FoundryLevel {
         userData: {
           tick: (dt, time) => {
             if (!wallsLive) return;
-            const sweep = 0.5 + 0.5 * Math.sin(time * 1.15);
-            for (const slab of movingWalls) slab.userData.setProgress(sweep * 0.82, true);
+            for (const [i, pair] of walls.entries()) {
+              const sweep = 0.5 + 0.5 * Math.sin(time * (1.15 + i * 0.35) + i * 2.1);
+              for (const slab of pair) slab.userData.setProgress(sweep * 0.82, true);
+            }
           },
         },
       },
     });
+
+    const disableBank = (bank) => {
+      for (const piston of bank) {
+        piston.userData.tick = null;
+        const head = piston.userData.hazardMesh;
+        head.userData.disabled = true;
+        head.visible = false;
+        const index = this.obstacles.indexOf(head);
+        if (index >= 0) this.obstacles.splice(index, 1);
+      }
+    };
 
     this._switch({
       distance: base + 28,
@@ -416,14 +513,7 @@ export class FoundryLevel {
       system: true,
       points: 250,
       action: () => {
-        for (const piston of [pistonA, pistonB, pistonC]) {
-          piston.userData.tick = null;
-          const head = piston.userData.hazardMesh;
-          head.userData.disabled = true;
-          head.visible = false;
-          const index = this.obstacles.indexOf(head);
-          if (index >= 0) this.obstacles.splice(index, 1);
-        }
+        disableBank(bankA);
         this._restoreSystem("PISTON LOCK");
       },
     });
@@ -435,16 +525,31 @@ export class FoundryLevel {
       points: 200,
       action: () => {
         wallsLive = false;
-        for (const slab of movingWalls) slab.userData.setProgress(0);
+        for (const pair of walls) for (const slab of pair) slab.userData.setProgress(0);
         this.events.emit("switch-bonus", { label: "WALL RETRACT" });
       },
     });
 
-    for (const offset of [12, 34]) {
-      this._add(this.groups.signage, this.kit.warningStrobe({ x: 0, y: 5.6, speed: 3.8 }), base + offset);
+    this._switch({
+      distance: base + 76,
+      lane: 0,
+      label: "PRESSURE BLEED",
+      points: 250,
+      action: () => {
+        disableBank(bankB);
+        this.events.emit("switch-bonus", { label: "PRESSURE BLEED" });
+      },
+    });
+
+    for (const offset of [12, 34, 60, 86, 106]) {
+      this._add(
+        this.groups.signage,
+        this.kit.warningStrobe({ x: 0, y: 5.6, speed: 3.8, phase: offset }),
+        base + offset
+      );
     }
     // Junction 2 turns right.
-    this._add(this.groups.signage, this.kit.turnChevrons({ direction: 1 }), base + 52, 0);
+    this._add(this.groups.signage, this.kit.turnChevrons({ direction: 1 }), base + 116, 0);
   }
 
   /**
@@ -460,16 +565,18 @@ export class FoundryLevel {
 
     for (const [offset, side, seed] of [
       [4, -1, 6],
-      [10, 1, 7],
-      [20, -1, 8],
-      [28, 1, 9],
-      [38, -1, 10],
-      [44, 1, 11],
+      [12, 1, 7],
+      [26, -1, 8],
+      [38, 1, 9],
+      [52, -1, 10],
+      [68, 1, 11],
+      [84, -1, 19],
+      [98, 1, 20],
     ]) {
       this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed }), base + offset);
     }
 
-    for (const offset of [6, 16, 26, 36, 46]) {
+    for (const offset of [10, 24, 40, 58, 74, 90]) {
       this._add(
         this.groups.signage,
         this.kit.warningStrobe({ x: 0, y: 5.8, speed: 5.2, phase: offset }),
@@ -477,16 +584,30 @@ export class FoundryLevel {
       );
     }
 
-    this._escapeTrigger = base + 5;
+    // Side-lane barriers only. The escape already forces the centre; putting a
+    // hazard there too would be unfair rather than hard.
+    for (const [offset, lane] of [[40, -3.2], [70, 3.2]]) {
+      this._hazard(this.kit.barrier({ kind: "low" }), base + offset, lane);
+    }
 
-    for (const offset of [14, 24, 34, 44]) {
+    this._escapeTrigger = base + 6;
+
+    for (const offset of [18, 32, 46, 62, 78, 94]) {
       const distance = base + offset;
       const pair = this._closingPair(distance, 0);
       this._escapeGates.push({ distance, pair, progress: 0, triggered: false, elapsed: 0 });
     }
 
+    const finalSwitch = base + 104;
+    // 1.5x the time a clean run needs, so the countdown is a real loss
+    // condition but not a coin flip.
+    this.state.escape.remaining =
+      this.options.escapeSeconds ??
+      ((finalSwitch - this._escapeTrigger) / this.options.runSpeed) * 1.5;
+    this._escapeSeconds = this.state.escape.remaining;
+
     this._switch({
-      distance: base + 48,
+      distance: finalSwitch,
       lane: 0,
       label: "EXTRACTION VALVE",
       system: true,
@@ -548,7 +669,10 @@ export class FoundryLevel {
       const slab = this.kit.shutterWall({ side, halfWidth, progress });
       this._add(this.groups.hazards, slab, distance);
       slab.userData.setProgress(progress, true);
-      if (slab.userData.hazardMesh) this.obstacles.push(slab.userData.hazardMesh);
+      if (slab.userData.hazardMesh) {
+        this.obstacles.push(slab.userData.hazardMesh);
+        this._indexHazard(slab.userData.hazardMesh, distance);
+      }
       pair.push(slab);
     }
     return pair;
@@ -599,6 +723,53 @@ export class FoundryLevel {
     return { points, label: mesh.userData.label, position };
   }
 
+  /**
+   * Test a player volume against every hazard near them.
+   *
+   * The host owns the player, so it passes in a world-space Box3 and its route
+   * distance; the level owns the hazards, so it does the testing. Only hazards
+   * within `radius` metres along the route are considered, which is normally
+   * two or three boxes rather than the level's fifty-odd.
+   *
+   * Real axis-aligned boxes rather than a point-distance check: a piston head
+   * is 2.3m across and a gate slab 4.6m, so a centre-to-centre threshold either
+   * lets the player walk through the edges of things or trips on thin air.
+   *
+   * @param {THREE.Box3} playerBox world-space bounds of the player
+   * @param {number} playerDistance the player's distance along the route
+   * @returns {THREE.Mesh[]} hazards currently overlapping
+   */
+  collide(playerBox, playerDistance, radius = 9) {
+    const hits = [];
+    for (const entry of this._hazardIndex) {
+      if (Math.abs(entry.distance - playerDistance) > radius) continue;
+
+      const mesh = entry.mesh;
+      if (!mesh.visible || mesh.userData.disabled) continue;
+
+      // Ancestors first: a piston head hangs off a shaft off a housing, and a
+      // gate slab is a child of a group the level moved this frame.
+      mesh.updateWorldMatrix(true, false);
+      entry.box.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+      if (entry.box.intersectsBox(playerBox)) hits.push(mesh);
+    }
+    return hits;
+  }
+
+  /**
+   * The environment's reaction to the player being hit: the pooled lights bleed
+   * to red and spike, and every warning strobe goes into overdrive. Decays on
+   * its own over about half a second.
+   *
+   * This lives in the level rather than the HUD because it is the *world*
+   * reacting - the same alarm should read from any camera, and it survives when
+   * the HUD is replaced by the real game's.
+   */
+  impact(strength = 1) {
+    this.state.alarm = Math.min(1.4, this.state.alarm + strength);
+    this.events.emit("impact", { strength, alarm: this.state.alarm });
+  }
+
   /** Beat containing a route distance, or null in a junction. */
   beatAt(distance) {
     return BEATS.find((beat) => distance >= beat.start && distance <= beat.end) ?? null;
@@ -630,6 +801,12 @@ export class FoundryLevel {
       this.events.emit("beat", { index: beatIndex, key: beat.key, name: beat.name });
     }
 
+    // Impact alarm decays fast enough to read as a hit rather than a mood.
+    if (this.state.alarm > 0) {
+      this.state.alarm = Math.max(0, this.state.alarm - dt * 2.4);
+    }
+    this.lights.alarm = this.state.alarm;
+
     this._updateEscape(dt, distance);
 
     // Tick and cull. Anything far from the player is skipped entirely and
@@ -638,8 +815,14 @@ export class FoundryLevel {
       const gap = Math.abs(entry.distance - distance);
       entry.piece.visible = gap < 95;
     }
+    const alarmed = this.state.alarm > 0.05;
     for (const entry of this._animated) {
       if (Math.abs(entry.distance - distance) > 70) continue;
+      // During an impact every strobe in earshot fires, not just armed ones.
+      if (alarmed && entry.piece.userData.armed !== undefined) {
+        entry.piece.userData.tick?.(dt, time * 2.6);
+        continue;
+      }
       entry.piece.userData.tick?.(dt, time);
     }
 
@@ -663,8 +846,8 @@ export class FoundryLevel {
     if (!escape.armed && !this.state.complete && distance >= this._escapeTrigger) {
       escape.armed = true;
       escape.active = true;
-      escape.remaining = this.options.escapeSeconds;
-      this.events.emit("escape-start", { seconds: this.options.escapeSeconds });
+      escape.remaining = this._escapeSeconds;
+      this.events.emit("escape-start", { seconds: this._escapeSeconds });
     }
 
     if (!escape.active) return;
@@ -726,6 +909,7 @@ export class FoundryLevel {
     this._culled.length = 0;
     this._switchNodes.length = 0;
     this._escapeGates.length = 0;
+    this._hazardIndex.length = 0;
     this.events.clear();
   }
 }

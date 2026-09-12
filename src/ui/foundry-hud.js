@@ -68,6 +68,18 @@ export class FoundryHud {
       return row;
     });
 
+    /* Integrity, in the same panel as the systems */
+    this.integrity = element("div", "fdy-integrity");
+    this.integrityFill = element("div", "fdy-fill");
+    const integrityTrack = element("div", "fdy-track");
+    integrityTrack.append(this.integrityFill);
+    this.integrityValue = element("b", null, "100");
+    this.integrity.append(element("span", null, "HULL"), integrityTrack, this.integrityValue);
+    this.systemsPanel.append(this.integrity);
+
+    /* Impact flash */
+    this.damage = element("div", "fdy-damage");
+
     /* Switch prompt */
     this.prompt = element("div", "fdy-prompt");
     this.promptLabel = element("b", null, "SWITCH");
@@ -98,6 +110,7 @@ export class FoundryHud {
 
     this.root.append(
       this.vignette,
+      this.damage,
       this.banner,
       this.systemsPanel,
       this.prompt,
@@ -136,6 +149,7 @@ export class FoundryHud {
     });
 
     on("switch-broken", ({ label, points }) => this.toast(label, `+${points}`));
+    on("impact", ({ strength }) => this.flashDamage(strength));
     on("switch-bonus", ({ label }) => this.toast(`${label} CLEAR`, ""));
 
     on("escape-start", ({ seconds }) => this.startEscape(seconds));
@@ -186,6 +200,21 @@ export class FoundryHud {
 
   setSystems(online) {
     this.systemRows.forEach((row, index) => row.classList.toggle("online", index < online));
+  }
+
+  /** Red hit flash. Restarting the animation needs a reflow between removes. */
+  flashDamage() {
+    this.damage.classList.remove("hit");
+    void this.damage.offsetWidth;
+    this.damage.classList.add("hit");
+  }
+
+  setIntegrity(value, max = 100) {
+    const ratio = Math.max(0, Math.min(1, value / max));
+    this.integrityFill.style.transform = `scaleX(${ratio})`;
+    this.integrityValue.textContent = String(Math.round(value));
+    this.integrity.classList.toggle("hurt", ratio <= 0.6 && ratio > 0.3);
+    this.integrity.classList.toggle("critical", ratio <= 0.3);
   }
 
   showJunction(direction, hold = 2400) {
