@@ -53,7 +53,7 @@ const captionScript = [
   { t: 2.7, text: "REACH THE CONTROL CORE" },
 ];
 
-const settingsDefaults = { masterVolume: 80, sensitivity: 100, reducedMotion: false };
+const settingsDefaults = { masterVolume: 80, sensitivity: 100, reducedMotion: false, narration: true };
 let settings = { ...settingsDefaults };
 try {
   const saved = JSON.parse(localStorage.getItem("fractureRunSettings"));
@@ -66,22 +66,45 @@ function saveSettings() {
   try { localStorage.setItem("fractureRunSettings", JSON.stringify(settings)); } catch (error) {}
 }
 
+const synth = window.speechSynthesis;
+
+function narrate(text) {
+  if (!synth || !settings.narration || settings.masterVolume === 0) return;
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.volume = settings.masterVolume / 100;
+  utterance.rate = .92;
+  utterance.pitch = .8;
+  synth.speak(utterance);
+}
+
+function stopNarration() { if (synth) synth.cancel(); }
+
 const ui = {
   level: document.querySelector("#level"), ammo: document.querySelector("#ammo"), health: document.querySelector("#health"), score: document.querySelector("#score"),
   camera: document.querySelector("#cameraMode"), reticle: document.querySelector("#reticle"), message: document.querySelector("#message"), caption: document.querySelector("#caption"),
   launchControls: document.querySelector("#launchControls"),
   story: document.querySelector("#storyScreen"), storyLine: document.querySelector("#storyLine"),
+  storyPrompt: document.querySelector("#storyPrompt"), storyPlayer: document.querySelector("#storyPlayer"),
+  storyDots: document.querySelector("#storyDots"), storySkipButton: document.querySelector("#storySkipButton"),
   start: document.querySelector("#startScreen"), end: document.querySelector("#endScreen"), final: document.querySelector("#finalScore"),
   endEyebrow: document.querySelector("#endEyebrow"), endTitle: document.querySelector("#endTitle"), endText: document.querySelector("#endText"),
-  settings: document.querySelector("#settingsScreen"), settingsEyebrow: document.querySelector("#settingsEyebrow"), settingsTitle: document.querySelector("#settingsTitle"),
+  pause: document.querySelector("#pauseScreen"), pauseLevel: document.querySelector("#pauseLevel"), pauseScore: document.querySelector("#pauseScore"),
+  pauseAmmo: document.querySelector("#pauseAmmo"), pauseHealth: document.querySelector("#pauseHealth"),
+  settings: document.querySelector("#settingsScreen"),
   settingsBackButton: document.querySelector("#settingsBackButton"), volumeSlider: document.querySelector("#volumeSlider"),
-  sensitivitySlider: document.querySelector("#sensitivitySlider"), reducedMotionToggle: document.querySelector("#reducedMotionToggle")
+  sensitivitySlider: document.querySelector("#sensitivitySlider"), reducedMotionToggle: document.querySelector("#reducedMotionToggle"),
+  narrationToggle: document.querySelector("#narrationToggle"), soundButton: document.querySelector("#soundButton")
 };
 
-ui.volumeSlider.value = settings.masterVolume;
-ui.sensitivitySlider.value = settings.sensitivity;
-ui.reducedMotionToggle.checked = settings.reducedMotion;
-document.querySelector("#soundButton").textContent = muted ? "MUTED" : "SOUND";
+function applySettingsToControls() {
+  ui.volumeSlider.value = settings.masterVolume;
+  ui.sensitivitySlider.value = settings.sensitivity;
+  ui.reducedMotionToggle.checked = settings.reducedMotion;
+  ui.narrationToggle.checked = settings.narration;
+  ui.soundButton.textContent = muted ? "MUTED" : "SOUND";
+}
+applySettingsToControls();
 
 scene.add(new THREE.HemisphereLight(0xffd0a0, 0x2a1510, 1.8));
 const sun = new THREE.DirectionalLight(0xffe4c4, 2.5);
@@ -311,12 +334,22 @@ function shatter(target) {
   updateUI();
 }
 
+const sectorNames = { 1: "GLASS CAUSEWAY", 2: "SHIFTING FOUNDRY", 3: "INVERTED CORE" };
+const sectorBriefings = {
+  1: "Sector one. The Glass Causeway. Break the panes before they break you.",
+  2: "Sector two. The Shifting Foundry. The machinery will not stop for you.",
+  3: "Sector three. The Inverted Core. Gravity is only a suggestion here."
+};
+
 function endRun(won) {
-  state = "ended"; ui.final.textContent = String(score).padStart(6, "0");
-  ui.endEyebrow.textContent = won ? "SECTOR COMPLETE" : "RUN TERMINATED";
-  ui.endTitle.textContent = won ? "CALIBRATION LIFT REACHED" : "CAUSEWAY FRACTURED";
-  ui.endText.textContent = won ? "The Causeway, Foundry, and Inverted Core are stable. The full three-level prototype is complete." : "The tower rejected this run. Shift lanes earlier and preserve your spheres.";
+  state = "ended"; stopNarration(); ui.final.textContent = String(score).padStart(6, "0");
+  ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${currentLevel}`;
+  ui.endTitle.textContent = won ? "CONTROL CORE STABILISED" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
+  ui.endText.textContent = won
+    ? "The Causeway, Foundry, and Inverted Core are stable. The tower holds."
+    : `Integrity failed in the ${sectorNames[currentLevel].toLowerCase()}. Shift lanes earlier and preserve your spheres.`;
   ui.end.classList.add("active");
+  narrate(won ? "Core stabilised. The tower holds." : "Runner signal lost.");
 }
 
 function demoJump(level) {
@@ -325,7 +358,7 @@ function demoJump(level) {
   if (level === 1) { runZ = 7; cameraThird = false; }
   if (level === 2) { runZ = -146; cameraThird = true; }
   if (level === 3) { runZ = -296; cameraThird = true; }
-  showMessage(`DEMO JUMP // LEVEL ${level}`); updateUI();
+  showMessage(`DEMO JUMP // LEVEL ${level}`); narrate(sectorBriefings[level]); updateUI();
 }
 
 function updateIntroCamera(dt, time) {
@@ -344,7 +377,10 @@ function updateLaunchCamera(dt, time) {
   camera.position.lerpVectors(fromPos, new THREE.Vector3(0, 1.8, 8), ease);
   const lookAt = new THREE.Vector3(0, 2, -8).lerp(new THREE.Vector3(0, 1.7, -4), ease);
   camera.lookAt(lookAt);
-  if (launchTimer >= duration) { ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show"); state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); }
+  if (launchTimer >= duration) {
+    ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
+    state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); narrate(sectorBriefings[1]);
+  }
 }
 
 function isLevelVisible(level) {
@@ -363,6 +399,7 @@ function updateCulling() {
 function updateGame(dt, time) {
   energyUniforms.uTime.value = time;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
+  document.body.classList.toggle("paused", paused);
   avatar.position.set(playerX, playerY, runZ + .5); avatar.visible = cameraThird || currentLevel === 3 || state === "lift" || state === "launch";
   body.rotation.z = Math.sin(time * 9) * .035;
   for (const crystal of breakables.filter(x => x.userData.kind === "crystal" && x.userData.alive)) crystal.rotation.y += dt * 1.8;
@@ -392,8 +429,8 @@ function updateGame(dt, time) {
         updateUI(); if (health <= 0) endRun(false);
       }
     }
-    if (currentLevel === 1 && runZ < -124) { state = "lift"; liftTimer = 0; transitionTarget = 2; showMessage("CALIBRATION LIFT // FOUNDRY"); }
-    if (currentLevel === 2 && runZ < -274) { state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("GRAVITY LIFT // CORE"); }
+    if (currentLevel === 1 && runZ < -124) { state = "lift"; liftTimer = 0; transitionTarget = 2; showMessage("CALIBRATION LIFT // FOUNDRY"); narrate("Calibration lift engaged. Foundry systems coming online."); }
+    if (currentLevel === 2 && runZ < -274) { state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("GRAVITY LIFT // CORE"); narrate("Gravity fault detected. Hold on."); }
     if (currentLevel === 3 && runZ < -422) { score += Math.max(0, ammo * 50 + health * 10); updateUI(); endRun(true); }
   } else if (state === "lift") {
     liftTimer += dt; energyUniforms.uLift.value = Math.min(1, liftTimer / 2);
@@ -403,6 +440,7 @@ function updateGame(dt, time) {
       health = 100; ammo += 4;
       if (currentLevel === 2) { runZ = -146; cameraThird = true; showMessage("LEVEL 2 // SHIFTING FOUNDRY"); }
       if (currentLevel === 3) { runZ = -296; cameraThird = true; showMessage("LEVEL 3 // INVERTED CORE"); }
+      narrate(sectorBriefings[currentLevel]);
       updateUI();
     }
   }
@@ -450,67 +488,135 @@ function animate() {
 
 function openSettings(from) {
   settingsFrom = from;
-  ui.settingsEyebrow.textContent = from === "pause" ? "RUN PAUSED" : "SETTINGS";
-  ui.settingsTitle.textContent = from === "pause" ? "CAUSEWAY ON HOLD" : "CALIBRATE YOUR RUN";
-  ui.settingsBackButton.textContent = from === "pause" ? "RESUME" : "BACK";
+  ui.settingsBackButton.textContent = from === "pause" ? "BACK TO PAUSE" : "BACK";
   if (from === "intro") ui.start.classList.remove("active");
-  if (from === "pause") paused = true;
+  if (from === "pause") ui.pause.classList.remove("active");
   ui.settings.classList.add("active");
 }
 
 function closeSettings() {
   ui.settings.classList.remove("active");
   if (settingsFrom === "intro") ui.start.classList.add("active");
-  if (settingsFrom === "pause") paused = false;
+  if (settingsFrom === "pause") ui.pause.classList.add("active");
   settingsFrom = null;
 }
 
-const storyLines = [
-  "THE ASCENSION TOWER IS FAILING.",
-  "STRUCTURAL INTEGRITY CRITICAL ACROSS ALL SECTORS.",
-  "ONE PATH REMAINS — UP, THROUGH THE CORE, BEFORE IT COLLAPSES.",
-];
-let storyTimeouts = [];
-
-function showStoryLine(index) {
-  if (index >= storyLines.length) { finishStory(); return; }
-  ui.storyLine.textContent = storyLines[index];
-  ui.storyLine.classList.add("show");
-  storyTimeouts.push(setTimeout(() => {
-    ui.storyLine.classList.remove("show");
-    storyTimeouts.push(setTimeout(() => showStoryLine(index + 1), 500));
-  }, 2400));
+function openPause() {
+  if (state !== "playing" && state !== "lift") return;
+  paused = true; stopNarration();
+  ui.pauseLevel.textContent = `0${currentLevel} / 03`;
+  ui.pauseScore.textContent = String(score).padStart(6, "0");
+  ui.pauseAmmo.textContent = ammo;
+  ui.pauseHealth.textContent = health;
+  ui.pause.classList.add("active");
 }
 
-function finishStory() {
-  storyTimeouts.forEach(clearTimeout); storyTimeouts = [];
+function closePause() {
+  ui.pause.classList.remove("active");
+  paused = false;
+}
+
+function quitToMenu() {
+  stopNarration(); closePause(); cancelStory();
+  ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
+  ui.settings.classList.remove("active"); ui.end.classList.remove("active");
+  resetStats(); state = "intro"; settingsFrom = null;
   ui.story.classList.remove("active");
   ui.start.classList.add("active");
 }
 
-document.querySelector("#storySkipButton").addEventListener("click", finishStory);
-showStoryLine(0);
+const storyBeats = [
+  "Ascension Tower. Two hundred floors of glass and light.",
+  "The core lattice fractured at dawn. Every sector began to fail.",
+  "You are the last runner still inside.",
+  "Three sectors stand between you and the control core.",
+  "Break what blocks you. Reach the core before the tower comes down.",
+];
+let storyTimeouts = [];
+let storyPlaying = false;
+
+for (const _ of storyBeats) ui.storyDots.appendChild(document.createElement("i"));
+
+function showStoryBeat(index) {
+  if (index >= storyBeats.length) { finishStory(); return; }
+  const text = storyBeats[index];
+  ui.storyLine.textContent = text;
+  ui.storyLine.classList.add("show");
+  ui.storyDots.children[index].classList.add("on");
+  narrate(text);
+  const hold = Math.max(2800, text.length * 68);
+  storyTimeouts.push(setTimeout(() => {
+    ui.storyLine.classList.remove("show");
+    storyTimeouts.push(setTimeout(() => showStoryBeat(index + 1), 520));
+  }, hold));
+}
+
+function cancelStory() {
+  storyTimeouts.forEach(clearTimeout); storyTimeouts = [];
+  storyPlaying = false;
+  stopNarration();
+}
+
+function startStory() {
+  cancelStory();
+  storyPlaying = true;
+  ui.story.classList.add("active");
+  ui.start.classList.remove("active");
+  ui.storyPrompt.hidden = true;
+  ui.storyPlayer.hidden = false;
+  ui.storySkipButton.hidden = false;
+  ui.storyLine.classList.remove("show");
+  for (const dot of ui.storyDots.children) dot.classList.remove("on");
+  showStoryBeat(0);
+}
+
+function finishStory() {
+  cancelStory();
+  ui.story.classList.remove("active");
+  ui.start.classList.add("active");
+}
+
+ui.storySkipButton.addEventListener("click", finishStory);
+document.querySelector("#storyBeginButton").addEventListener("click", startStory);
+document.querySelector("#storySkipToMenuButton").addEventListener("click", finishStory);
+document.querySelector("#replayStoryButton").addEventListener("click", startStory);
 
 document.querySelector("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
 document.querySelector("#settingsButton").addEventListener("click", () => openSettings("intro"));
 document.querySelector("#settingsBackButton").addEventListener("click", closeSettings);
-document.querySelector("#menuButton").addEventListener("click", () => { if (state === "playing" || state === "lift") { paused ? closeSettings() : openSettings("pause"); } });
-document.querySelector("#restartButton").addEventListener("click", resetGame);
-document.querySelector("#soundButton").addEventListener("click", (event) => {
+document.querySelector("#pauseButton").addEventListener("click", () => { paused ? closePause() : openPause(); });
+document.querySelector("#resumeButton").addEventListener("click", closePause);
+document.querySelector("#pauseSettingsButton").addEventListener("click", () => openSettings("pause"));
+document.querySelector("#restartRunButton").addEventListener("click", () => { closePause(); resetGame(); narrate(sectorBriefings[1]); });
+document.querySelector("#quitButton").addEventListener("click", quitToMenu);
+document.querySelector("#restartButton").addEventListener("click", () => { resetGame(); narrate(sectorBriefings[1]); });
+document.querySelector("#endMenuButton").addEventListener("click", quitToMenu);
+ui.soundButton.addEventListener("click", () => {
   muted = !muted;
   settings.masterVolume = muted ? 0 : (lastVolume || 80);
   if (!muted) lastVolume = settings.masterVolume;
-  ui.volumeSlider.value = settings.masterVolume;
-  event.currentTarget.textContent = muted ? "MUTED" : "SOUND";
+  if (muted) stopNarration();
+  applySettingsToControls();
   saveSettings();
 });
 ui.volumeSlider.addEventListener("input", (event) => {
   settings.masterVolume = Number(event.target.value); muted = settings.masterVolume === 0;
   if (!muted) lastVolume = settings.masterVolume;
-  document.querySelector("#soundButton").textContent = muted ? "MUTED" : "SOUND"; saveSettings();
+  if (muted) stopNarration();
+  ui.soundButton.textContent = muted ? "MUTED" : "SOUND"; saveSettings();
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
 ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); });
+ui.narrationToggle.addEventListener("change", (event) => {
+  settings.narration = event.target.checked;
+  if (!settings.narration) stopNarration();
+  saveSettings();
+});
+document.querySelector("#resetSettingsButton").addEventListener("click", () => {
+  settings = { ...settingsDefaults };
+  muted = false; lastVolume = settingsDefaults.masterVolume;
+  stopNarration(); applySettingsToControls(); saveSettings();
+});
 
 addEventListener("pointermove", (event) => {
   const factor = settings.sensitivity / 100;
@@ -519,7 +625,14 @@ addEventListener("pointermove", (event) => {
 });
 addEventListener("pointerdown", (event) => { if (event.button === 0 && !event.target.closest("button")) fire(); });
 addEventListener("keydown", (event) => {
-  if (event.code === "Escape") { if (state === "playing" || state === "lift") { paused ? closeSettings() : openSettings("pause"); } else if (settingsFrom === "intro") closeSettings(); }
+  if (event.code === "Escape") {
+    if (ui.settings.classList.contains("active")) closeSettings();
+    else if (storyPlaying) finishStory();
+    else if (paused) closePause();
+    else openPause();
+    return;
+  }
+  if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
   if (event.code === "Digit1") demoJump(1);
   if (event.code === "Digit2") demoJump(2);
   if (event.code === "Digit3") demoJump(3);
