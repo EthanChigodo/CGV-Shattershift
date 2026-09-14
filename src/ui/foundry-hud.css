@@ -1,0 +1,605 @@
+/**
+ * Level 2 HUD - The Shifting Foundry.
+ *
+ * Scoped under .foundry-ui so it can sit on top of the existing game HUD
+ * without touching styles.css. The palette is the foundry's: amber work light,
+ * hazard red, and the cyan that every breakable object in the game shares.
+ */
+
+.foundry-ui {
+  --fdy-amber: #f0a93c;
+  --fdy-red: #ff4a54;
+  --fdy-cyan: #7ef4f1;
+  --fdy-ink: #060a0d;
+  --fdy-panel: rgba(9, 14, 18, 0.82);
+  --fdy-line: rgba(240, 169, 60, 0.28);
+
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #f4fbff;
+  text-transform: uppercase;
+}
+
+.foundry-ui[hidden] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------- */
+/* Sector banner                                                     */
+/* ---------------------------------------------------------------- */
+
+.fdy-banner {
+  position: absolute;
+  top: 16%;
+  left: 50%;
+  transform: translate(-50%, 14px);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.fdy-banner.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.fdy-banner span {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.42em;
+  color: var(--fdy-amber);
+}
+
+.fdy-banner strong {
+  display: block;
+  margin-top: 6px;
+  font-size: clamp(26px, 5vw, 46px);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 26px rgba(240, 169, 60, 0.45);
+}
+
+.fdy-banner i {
+  display: block;
+  width: 132px;
+  height: 2px;
+  margin: 12px auto 0;
+  background: linear-gradient(90deg, transparent, var(--fdy-amber), transparent);
+}
+
+/* ---------------------------------------------------------------- */
+/* Systems readout                                                   */
+/* ---------------------------------------------------------------- */
+
+.fdy-systems {
+  position: absolute;
+  top: 74px;
+  left: 18px;
+  padding: 11px 13px;
+  min-width: 186px;
+  background: var(--fdy-panel);
+  border: 1px solid var(--fdy-line);
+  border-left: 2px solid var(--fdy-amber);
+  backdrop-filter: blur(7px);
+}
+
+.fdy-systems > span {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #9db0b8;
+}
+
+.fdy-system {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #6f8088;
+  transition: color 0.3s ease;
+}
+
+.fdy-system i {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border: 1px solid #4b5a62;
+  transform: rotate(45deg);
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.fdy-system.online {
+  color: var(--fdy-cyan);
+}
+
+.fdy-system.online i {
+  background: var(--fdy-cyan);
+  border-color: var(--fdy-cyan);
+  box-shadow: 0 0 12px rgba(126, 244, 241, 0.8);
+}
+
+/* ---------------------------------------------------------------- */
+/* Switch prompt                                                     */
+/* ---------------------------------------------------------------- */
+
+.fdy-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 23%;
+  transform: translate(-50%, 10px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(9, 20, 24, 0.78);
+  border: 1px solid rgba(126, 244, 241, 0.4);
+  opacity: 0;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.fdy-prompt.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.fdy-prompt b {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--fdy-cyan);
+}
+
+.fdy-prompt small {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: #93a8b0;
+}
+
+.fdy-prompt i {
+  width: 10px;
+  height: 10px;
+  background: var(--fdy-cyan);
+  transform: rotate(45deg);
+  animation: fdy-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes fdy-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* ---------------------------------------------------------------- */
+/* Junction arrow                                                    */
+/* ---------------------------------------------------------------- */
+
+.fdy-junction {
+  position: absolute;
+  top: 44%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.fdy-junction.left { left: 6%; }
+.fdy-junction.right { right: 6%; flex-direction: row-reverse; }
+.fdy-junction.show { opacity: 1; }
+
+.fdy-junction u {
+  width: 0;
+  height: 0;
+  border-top: 17px solid transparent;
+  border-bottom: 17px solid transparent;
+  animation: fdy-slide 0.9s ease-in-out infinite;
+}
+
+.fdy-junction.left u { border-right: 21px solid var(--fdy-amber); }
+.fdy-junction.right u { border-left: 21px solid var(--fdy-amber); }
+.fdy-junction u:nth-child(2) { animation-delay: 0.13s; }
+.fdy-junction u:nth-child(3) { animation-delay: 0.26s; }
+
+@keyframes fdy-slide {
+  0%, 100% { opacity: 0.22; }
+  50% { opacity: 1; }
+}
+
+/* ---------------------------------------------------------------- */
+/* Escape sequence                                                   */
+/* ---------------------------------------------------------------- */
+
+.fdy-escape {
+  position: absolute;
+  top: 74px;
+  left: 50%;
+  transform: translate(-50%, -12px);
+  width: min(420px, 62vw);
+  padding: 12px 16px 14px;
+  background: rgba(26, 6, 8, 0.86);
+  border: 1px solid rgba(255, 74, 84, 0.45);
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fdy-escape.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.fdy-escape header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  color: var(--fdy-red);
+}
+
+.fdy-escape header b {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: #fff;
+}
+
+.fdy-escape .fdy-track {
+  position: relative;
+  height: 5px;
+  margin-top: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.fdy-escape .fdy-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(90deg, var(--fdy-red), var(--fdy-amber));
+  transform-origin: left center;
+  transition: transform 0.12s linear;
+}
+
+.fdy-escape small {
+  display: block;
+  margin-top: 9px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #ffb9bd;
+  min-height: 13px;
+}
+
+.fdy-escape.critical {
+  animation: fdy-alarm 0.7s steps(2) infinite;
+}
+
+@keyframes fdy-alarm {
+  0%, 100% { border-color: rgba(255, 74, 84, 0.45); }
+  50% { border-color: rgba(255, 74, 84, 1); }
+}
+
+/* Full-screen hazard vignette during the escape. */
+.fdy-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(150, 12, 20, 0.5) 100%);
+}
+
+.fdy-vignette.show { opacity: 0.7; }
+.fdy-vignette.critical { animation: fdy-breathe 0.85s ease-in-out infinite; }
+
+@keyframes fdy-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.9; }
+}
+
+/* ---------------------------------------------------------------- */
+/* Impact                                                            */
+/* ---------------------------------------------------------------- */
+
+/* Full-screen hit flash. Heaviest at the edges so it never hides the lane
+   the player is trying to read while recovering. */
+.fdy-damage {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 40, 40, 0.08) 30%, rgba(190, 12, 18, 0.82) 100%);
+  box-shadow: inset 0 0 120px rgba(255, 30, 40, 0.9);
+}
+
+.fdy-damage.hit {
+  animation: fdy-hit 0.42s ease-out;
+}
+
+@keyframes fdy-hit {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.fdy-integrity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #9db0b8;
+}
+
+.fdy-integrity .fdy-track {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.fdy-integrity .fdy-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(90deg, var(--fdy-cyan), #4fd8e0);
+  transform-origin: left center;
+  transition: transform 0.25s ease, background 0.25s ease;
+}
+
+.fdy-integrity.hurt .fdy-fill { background: linear-gradient(90deg, var(--fdy-amber), #ffd27a); }
+.fdy-integrity.critical .fdy-fill { background: linear-gradient(90deg, var(--fdy-red), #ff8a8a); }
+
+.fdy-integrity b {
+  min-width: 26px;
+  text-align: right;
+  color: #f4fbff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- */
+/* Run stats: spheres, score, combo                                  */
+/* ---------------------------------------------------------------- */
+
+.fdy-run {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  background: var(--fdy-line);
+  border: 1px solid var(--fdy-line);
+  backdrop-filter: blur(7px);
+}
+
+.fdy-stat {
+  min-width: 92px;
+  padding: 8px 14px;
+  background: var(--fdy-panel);
+  text-align: center;
+}
+
+.fdy-stat span {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: #9db0b8;
+}
+
+.fdy-stat strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-stat.spheres strong { color: var(--fdy-cyan); }
+.fdy-stat.spheres.empty strong { color: var(--fdy-red); animation: fdy-pulse 0.7s ease-in-out infinite; }
+
+.fdy-stat.combo { position: relative; overflow: hidden; }
+.fdy-stat.combo strong { color: var(--fdy-amber); }
+.fdy-stat.combo.idle strong { color: #55646c; }
+
+/* Decay bar under the combo, so the player can see the window closing. */
+.fdy-stat.combo .fdy-decay {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--fdy-amber);
+  transform-origin: left center;
+}
+
+.fdy-stat.pop strong { animation: fdy-pop 0.3s ease-out; }
+
+@keyframes fdy-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------- */
+/* Run summary                                                       */
+/* ---------------------------------------------------------------- */
+
+.fdy-summary {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 11, 0.82);
+  backdrop-filter: blur(5px);
+}
+
+.fdy-summary.show { display: flex; }
+
+.fdy-summary-card {
+  width: min(420px, 88vw);
+  padding: 26px 28px;
+  background: var(--fdy-panel);
+  border: 1px solid var(--fdy-line);
+  border-top: 2px solid var(--fdy-amber);
+  text-align: center;
+}
+
+.fdy-summary-card > span {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  color: var(--fdy-amber);
+}
+
+.fdy-summary-card > h2 {
+  margin: 8px 0 20px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.fdy-summary-card.failed { border-top-color: var(--fdy-red); }
+.fdy-summary-card.failed > span { color: var(--fdy-red); }
+
+.fdy-summary-rows {
+  display: grid;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fdy-summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 13px;
+  background: rgba(9, 14, 18, 0.9);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: #9db0b8;
+}
+
+.fdy-summary-row b {
+  color: #f4fbff;
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-summary-row.total { background: rgba(20, 30, 36, 0.95); }
+.fdy-summary-row.total b { color: var(--fdy-amber); font-size: 15px; }
+
+.fdy-summary-card > small {
+  display: block;
+  margin-top: 18px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: #6f8088;
+}
+
+/* ---------------------------------------------------------------- */
+/* Toasts and dev readout                                            */
+/* ---------------------------------------------------------------- */
+
+.fdy-toasts {
+  position: absolute;
+  right: 18px;
+  bottom: 26%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.fdy-toast {
+  padding: 7px 12px;
+  background: rgba(9, 20, 24, 0.85);
+  border-right: 2px solid var(--fdy-cyan);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  opacity: 0;
+  transform: translateX(14px);
+  animation: fdy-toast-in 0.28s ease forwards;
+}
+
+.fdy-toast b {
+  margin-left: 9px;
+  color: var(--fdy-cyan);
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-toast.leaving {
+  animation: fdy-toast-out 0.3s ease forwards;
+}
+
+@keyframes fdy-toast-in {
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fdy-toast-out {
+  to { opacity: 0; transform: translateX(14px); }
+}
+
+.fdy-dev {
+  position: absolute;
+  right: 18px;
+  top: 74px;
+  padding: 8px 11px;
+  background: rgba(6, 10, 13, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 10px;
+  line-height: 1.65;
+  letter-spacing: 0.09em;
+  color: #9db0b8;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.fdy-dev b {
+  color: #f4fbff;
+  font-weight: 700;
+}
+
+.fdy-dev[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- */
+/* Small screens                                                     */
+/* ---------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .fdy-systems { top: 66px; left: 10px; min-width: 150px; padding: 9px 10px; }
+  .fdy-escape { top: 66px; width: min(320px, 84vw); padding: 10px 12px 12px; }
+  .fdy-dev { right: 10px; top: 66px; }
+  .fdy-toasts { right: 10px; bottom: 30%; }
+  .fdy-junction.left { left: 3%; }
+  .fdy-junction.right { right: 3%; }
+}
+
+/* Respect the game's reduced-motion setting and the OS preference. */
+.foundry-ui.reduced-motion * {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.05s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foundry-ui * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
