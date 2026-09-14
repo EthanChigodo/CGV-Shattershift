@@ -16,7 +16,9 @@
         <div><strong>FRACTURE RUN</strong><small>CAUSEWAY // PROTOTYPE 01</small></div>
       </div>
       <div class="topbar-actions">
-        <button id="menuButton" class="icon-button" title="Pause and settings" aria-label="Pause and settings">MENU</button>
+        <button id="pauseButton" class="icon-button" title="Pause (Esc)" aria-label="Pause">
+          <span class="pause-glyph" aria-hidden="true"><i></i><i></i></span>PAUSE
+        </button>
         <button id="soundButton" class="icon-button" title="Toggle sound" aria-label="Toggle sound">SOUND</button>
       </div>
     </header>
@@ -32,45 +34,116 @@
     <div id="reticle" class="reticle" aria-hidden="true"><i></i><b></b></div>
     <div id="message" class="message" aria-live="polite"></div>
     <div id="caption" class="caption" aria-live="polite"></div>
+    <div id="launchControls" class="controls launch-controls" aria-label="Controls">
+      <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
+      <span><kbd>MOUSE</kbd> Aim and throw</span>
+      <span><kbd>C</kbd> Change camera</span>
+      <span><kbd>W</kbd><kbd>S</kbd> Shift gravity in Level 3</span>
+    </div>
 
-    <section id="startScreen" class="screen active">
+    <section id="storyScreen" class="screen active">
+      <div class="screen-copy compact story-copy">
+        <div id="storyPrompt">
+          <p class="eyebrow">INCOMING TRANSMISSION // ASCENSION TOWER</p>
+          <h1 class="story-title">FRACTURE RUN</h1>
+          <p class="intro">A short narrated briefing plays before your run. You can skip it at any time.</p>
+          <div class="button-row story-buttons">
+            <button id="storyBeginButton" class="primary-button">BEGIN BRIEFING</button>
+            <button id="storySkipToMenuButton" class="text-button">Skip to menu</button>
+          </div>
+          <p class="hint-inline">Narration uses your browser voice. Turn it off in Settings.</p>
+        </div>
+        <div id="storyPlayer" hidden>
+          <p class="eyebrow">TOWER STATUS // CRITICAL</p>
+          <div id="storyLine"></div>
+          <div id="storyDots" class="story-dots" aria-hidden="true"></div>
+        </div>
+      </div>
+      <button id="storySkipButton" class="icon-button story-skip" hidden>SKIP</button>
+    </section>
+
+    <section id="startScreen" class="screen">
       <div class="screen-copy">
         <p class="eyebrow">CGV SPRINT 1 // PLAYABLE CONCEPT</p>
         <h1>BREAK THE PATH.<br />REACH THE LIFT.</h1>
-        <p class="intro">A Smash Hit-inspired glass run with Temple Run-style lane movement and camera changes.</p>
-        <div class="controls" aria-label="Controls">
-          <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
-          <span><kbd>MOUSE</kbd> Aim and throw</span>
-          <span><kbd>C</kbd> Change camera</span>
-          <span><kbd>W</kbd><kbd>S</kbd> Shift gravity in Level 3</span>
-        </div>
+        <p class="intro">The tower is failing. Run, aim, and shatter your way to the core.</p>
         <div class="button-row">
           <button id="startButton" class="primary-button">START RUN</button>
-          <button id="settingsButton" class="secondary-button">SETTINGS</button>
+          <button id="settingsButton" class="text-button">Settings</button>
+          <button id="replayStoryButton" class="text-button">Replay briefing</button>
         </div>
       </div>
       <p class="hint">Best experienced with headphones</p>
+    </section>
+
+    <section id="pauseScreen" class="screen">
+      <div class="screen-copy compact">
+        <p class="eyebrow">RUN PAUSED</p>
+        <h2>HOLDING POSITION</h2>
+        <div class="pause-stats">
+          <div><span>SECTOR</span><strong id="pauseLevel">01 / 03</strong></div>
+          <div><span>SCORE</span><strong id="pauseScore">000000</strong></div>
+          <div><span>SPHERES</span><strong id="pauseAmmo">18</strong></div>
+          <div><span>INTEGRITY</span><strong id="pauseHealth">100</strong></div>
+        </div>
+        <div class="button-row">
+          <button id="resumeButton" class="primary-button">RESUME</button>
+          <button id="pauseSettingsButton" class="text-button">Settings</button>
+          <button id="restartRunButton" class="text-button">Restart run</button>
+          <button id="quitButton" class="text-button">Quit to menu</button>
+        </div>
+      </div>
+      <p class="hint">Press Esc to resume</p>
     </section>
 
     <section id="settingsScreen" class="screen">
       <div class="screen-copy compact">
         <p id="settingsEyebrow" class="eyebrow">SETTINGS</p>
         <h2 id="settingsTitle">CALIBRATE YOUR RUN</h2>
-        <div class="settings-grid">
+
+        <div class="settings-group">
+          <p class="settings-heading">Audio</p>
           <label class="setting-row">
             <span>Master volume</span>
             <input type="range" id="volumeSlider" min="0" max="100" value="80" />
           </label>
+          <label class="setting-row toggle-row">
+            <span>Story narration</span>
+            <input type="checkbox" id="narrationToggle" checked />
+          </label>
+        </div>
+
+        <div class="settings-group">
+          <p class="settings-heading">Gameplay</p>
           <label class="setting-row">
             <span>Aim sensitivity</span>
             <input type="range" id="sensitivitySlider" min="50" max="200" value="100" />
           </label>
+        </div>
+
+        <div class="settings-group">
+          <p class="settings-heading">Accessibility</p>
           <label class="setting-row toggle-row">
             <span>Reduced motion &amp; camera shake</span>
             <input type="checkbox" id="reducedMotionToggle" />
           </label>
         </div>
-        <button id="settingsBackButton" class="primary-button">BACK</button>
+
+        <div class="settings-group">
+          <p class="settings-heading">Controls</p>
+          <div class="controls settings-controls">
+            <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
+            <span><kbd>MOUSE</kbd> Aim and throw</span>
+            <span><kbd>C</kbd> Change camera</span>
+            <span><kbd>W</kbd><kbd>S</kbd> Shift gravity in Level 3</span>
+            <span><kbd>ESC</kbd> Pause</span>
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button id="settingsBackButton" class="primary-button">BACK</button>
+          <button id="resetSettingsButton" class="text-button">Reset to defaults</button>
+        </div>
       </div>
     </section>
 
@@ -80,7 +153,10 @@
         <h2 id="endTitle">CALIBRATION LIFT REACHED</h2>
         <p id="endText" class="intro">All three tower sectors are stable.</p>
         <div class="result"><span>FINAL SCORE</span><strong id="finalScore">000000</strong></div>
-        <button id="restartButton" class="primary-button">RUN AGAIN</button>
+        <div class="button-row">
+          <button id="restartButton" class="primary-button">RUN AGAIN</button>
+          <button id="endMenuButton" class="text-button">Back to menu</button>
+        </div>
       </div>
     </section>
 

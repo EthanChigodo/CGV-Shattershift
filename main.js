@@ -9,15 +9,18 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x071318);
-scene.fog = new THREE.FogExp2(0x071318, 0.018);
+scene.background = new THREE.Color(0x140b09);
+scene.fog = new THREE.FogExp2(0x140b09, 0.032);
 
-const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 280);
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 150);
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const lanes = [-3.2, 0, 3.2];
 const breakables = [];
+const structural = [];
+const RENDER_AHEAD = 95;
+const RENDER_BEHIND = 15;
 const projectiles = [];
 const shards = [];
 const obstacles = [];
@@ -50,7 +53,7 @@ const captionScript = [
   { t: 2.7, text: "REACH THE CONTROL CORE" },
 ];
 
-const settingsDefaults = { masterVolume: 80, sensitivity: 100, reducedMotion: false };
+const settingsDefaults = { masterVolume: 80, sensitivity: 100, reducedMotion: false, narration: true };
 let settings = { ...settingsDefaults };
 try {
   const saved = JSON.parse(localStorage.getItem("fractureRunSettings"));
@@ -63,72 +66,107 @@ function saveSettings() {
   try { localStorage.setItem("fractureRunSettings", JSON.stringify(settings)); } catch (error) {}
 }
 
+const synth = window.speechSynthesis;
+
+function narrate(text) {
+  if (!synth || !settings.narration || settings.masterVolume === 0) return;
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.volume = settings.masterVolume / 100;
+  utterance.rate = .92;
+  utterance.pitch = .8;
+  synth.speak(utterance);
+}
+
+function stopNarration() { if (synth) synth.cancel(); }
+
 const ui = {
   level: document.querySelector("#level"), ammo: document.querySelector("#ammo"), health: document.querySelector("#health"), score: document.querySelector("#score"),
   camera: document.querySelector("#cameraMode"), reticle: document.querySelector("#reticle"), message: document.querySelector("#message"), caption: document.querySelector("#caption"),
+  launchControls: document.querySelector("#launchControls"),
+  story: document.querySelector("#storyScreen"), storyLine: document.querySelector("#storyLine"),
+  storyPrompt: document.querySelector("#storyPrompt"), storyPlayer: document.querySelector("#storyPlayer"),
+  storyDots: document.querySelector("#storyDots"), storySkipButton: document.querySelector("#storySkipButton"),
   start: document.querySelector("#startScreen"), end: document.querySelector("#endScreen"), final: document.querySelector("#finalScore"),
   endEyebrow: document.querySelector("#endEyebrow"), endTitle: document.querySelector("#endTitle"), endText: document.querySelector("#endText"),
-  settings: document.querySelector("#settingsScreen"), settingsEyebrow: document.querySelector("#settingsEyebrow"), settingsTitle: document.querySelector("#settingsTitle"),
+  pause: document.querySelector("#pauseScreen"), pauseLevel: document.querySelector("#pauseLevel"), pauseScore: document.querySelector("#pauseScore"),
+  pauseAmmo: document.querySelector("#pauseAmmo"), pauseHealth: document.querySelector("#pauseHealth"),
+  settings: document.querySelector("#settingsScreen"),
   settingsBackButton: document.querySelector("#settingsBackButton"), volumeSlider: document.querySelector("#volumeSlider"),
-  sensitivitySlider: document.querySelector("#sensitivitySlider"), reducedMotionToggle: document.querySelector("#reducedMotionToggle")
+  sensitivitySlider: document.querySelector("#sensitivitySlider"), reducedMotionToggle: document.querySelector("#reducedMotionToggle"),
+  narrationToggle: document.querySelector("#narrationToggle"), soundButton: document.querySelector("#soundButton")
 };
 
-ui.volumeSlider.value = settings.masterVolume;
-ui.sensitivitySlider.value = settings.sensitivity;
-ui.reducedMotionToggle.checked = settings.reducedMotion;
-document.querySelector("#soundButton").textContent = muted ? "MUTED" : "SOUND";
+function applySettingsToControls() {
+  ui.volumeSlider.value = settings.masterVolume;
+  ui.sensitivitySlider.value = settings.sensitivity;
+  ui.reducedMotionToggle.checked = settings.reducedMotion;
+  ui.narrationToggle.checked = settings.narration;
+  ui.soundButton.textContent = muted ? "MUTED" : "SOUND";
+}
+applySettingsToControls();
 
-scene.add(new THREE.HemisphereLight(0xa7f6ff, 0x12222a, 1.8));
-const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+scene.add(new THREE.HemisphereLight(0xffd0a0, 0x2a1510, 1.8));
+const sun = new THREE.DirectionalLight(0xffe4c4, 2.5);
 sun.position.set(-8, 16, 12);
 scene.add(sun);
 
-const floorMaterial = new THREE.MeshPhysicalMaterial({ color: 0x19414b, roughness: 0.25, metalness: 0.45, transparent: true, opacity: 0.72 });
+const floorMaterial = new THREE.MeshPhysicalMaterial({ color: 0x4a2318, roughness: 0.25, metalness: 0.45, transparent: true, opacity: 0.72 });
+const slabGeo = new THREE.BoxGeometry(10.8, 0.2, 7.3);
+const slabEdgeGeo = new THREE.EdgesGeometry(slabGeo);
+const slabEdgeMat = new THREE.LineBasicMaterial({ color: 0xff7a3d, transparent: true, opacity: 0.32 });
 for (let z = 4; z > -438; z -= 8) {
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(10.8, 0.2, 7.3), floorMaterial);
+  const slab = new THREE.Mesh(slabGeo, floorMaterial);
   slab.position.set(0, -0.2, z);
-  scene.add(slab);
-  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(slab.geometry), new THREE.LineBasicMaterial({ color: 0x3e9aaa, transparent: true, opacity: 0.32 }));
-  edge.position.copy(slab.position); scene.add(edge);
+  scene.add(slab); structural.push(slab);
+  const edge = new THREE.LineSegments(slabEdgeGeo, slabEdgeMat);
+  edge.position.copy(slab.position); scene.add(edge); structural.push(edge);
 }
 
-const railMat = new THREE.MeshStandardMaterial({ color: 0x254854, metalness: 0.75, roughness: 0.26 });
+const railMat = new THREE.MeshStandardMaterial({ color: 0x35241c, metalness: 0.75, roughness: 0.26 });
 for (const side of [-5.2, 5.2]) {
   const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 442), railMat);
   rail.position.set(side, 1.1, -216); scene.add(rail);
 }
 
 const archGeo = new THREE.BoxGeometry(0.24, 6, 0.24);
+const archTopGeo = new THREE.BoxGeometry(10.4, .24, .24);
 for (let z = 0; z > -438; z -= 12) {
-  for (const x of [-5.1, 5.1]) { const p = new THREE.Mesh(archGeo, railMat); p.position.set(x, 2.8, z); scene.add(p); }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(10.4, .24, .24), railMat); top.position.set(0, 5.7, z); scene.add(top);
+  for (const x of [-5.1, 5.1]) { const p = new THREE.Mesh(archGeo, railMat); p.position.set(x, 2.8, z); scene.add(p); structural.push(p); }
+  const top = new THREE.Mesh(archTopGeo, railMat); top.position.set(0, 5.7, z); scene.add(top); structural.push(top);
 }
 
 const starGeo = new THREE.BufferGeometry();
 const starData = new Float32Array(900);
 for (let i = 0; i < starData.length; i += 3) { starData[i] = (Math.random() - .5) * 90; starData[i+1] = Math.random() * 40; starData[i+2] = -Math.random() * 210; }
 starGeo.setAttribute("position", new THREE.BufferAttribute(starData, 3));
-scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x91edf0, size: .08, transparent: true, opacity: .5 })));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffcf9a, size: .08, transparent: true, opacity: .5 })));
 
-const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x7ef4f1, transmission: .5, transparent: true, opacity: .52, roughness: .06, metalness: .05, thickness: .35, emissive: 0x123b42, emissiveIntensity: .5 });
-const crystalMat = new THREE.MeshPhysicalMaterial({ color: 0xffcf66, transmission: .15, roughness: .15, metalness: .1, emissive: 0x8f4a08, emissiveIntensity: 1.2 });
-const hazardMat = new THREE.MeshStandardMaterial({ color: 0x752f36, roughness: .28, metalness: .68, emissive: 0x31090d, emissiveIntensity: .6 });
+const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffb26b, transparent: true, opacity: .58, roughness: .06, metalness: .05, emissive: 0x4a1d0a, emissiveIntensity: .55 });
+const crystalMat = new THREE.MeshPhysicalMaterial({ color: 0xffb04a, roughness: .15, metalness: .1, emissive: 0xb35a10, emissiveIntensity: 1.2 });
+const hazardMat = new THREE.MeshStandardMaterial({ color: 0x8a2f2f, roughness: .28, metalness: .68, emissive: 0x4a0f0f, emissiveIntensity: .6 });
+
+const paneGeo = new THREE.BoxGeometry(2.25, 3.8, .18);
+const paneWideGeo = new THREE.BoxGeometry(2.8, 3.8, .18);
+const crystalGeo = new THREE.OctahedronGeometry(.65, 0);
+const hazardGeo = new THREE.BoxGeometry(2.4, 2.7, 1);
+let buildLevel = 1;
 
 function addPane(x, z, wide = false) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(wide ? 2.8 : 2.25, 3.8, .18), glassMat.clone());
-  mesh.position.set(x, 1.9, z); mesh.userData = { kind: "pane", alive: true, points: 150 };
+  const mesh = new THREE.Mesh(wide ? paneWideGeo : paneGeo, glassMat.clone());
+  mesh.position.set(x, 1.9, z); mesh.userData = { kind: "pane", alive: true, points: 150, level: buildLevel };
   scene.add(mesh); breakables.push(mesh); obstacles.push(mesh); return mesh;
 }
 
 function addCrystal(x, y, z) {
-  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(.65, 0), crystalMat.clone());
-  mesh.position.set(x, y, z); mesh.rotation.z = Math.PI / 4; mesh.userData = { kind: "crystal", alive: true, points: 250 };
+  const mesh = new THREE.Mesh(crystalGeo, crystalMat.clone());
+  mesh.position.set(x, y, z); mesh.rotation.z = Math.PI / 4; mesh.userData = { kind: "crystal", alive: true, points: 250, level: buildLevel };
   scene.add(mesh); breakables.push(mesh); return mesh;
 }
 
 function addHazard(x, z) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.7, 1), hazardMat);
-  mesh.position.set(x, 1.35, z); mesh.userData = { kind: "hazard", hit: false };
+  const mesh = new THREE.Mesh(hazardGeo, hazardMat);
+  mesh.position.set(x, 1.35, z); mesh.userData = { kind: "hazard", hit: false, level: buildLevel };
   scene.add(mesh); obstacles.push(mesh);
   return mesh;
 }
@@ -138,12 +176,21 @@ addPane(0, -47); addCrystal(3.2, 2.1, -55); addHazard(0, -65); addPane(-3.2, -74
 addPane(3.2, -82); addCrystal(0, 2.5, -92); addHazard(3.2, -101); addPane(0, -110, true);
 addCrystal(-3.2, 1.4, -118);
 
+const causewayWallGeo = new THREE.BoxGeometry(.15, 2.6, 11);
+for (let z = 2; z > -128; z -= 11) {
+  for (const x of [-5.25, 5.25]) {
+    const wall = new THREE.Mesh(causewayWallGeo, glassMat.clone());
+    wall.position.set(x, 1.3, z); wall.userData.level = 1;
+    scene.add(wall); structural.push(wall);
+  }
+}
+
 function addLift(z) {
   const group = new THREE.Group(); group.position.z = z;
   const liftFloor = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, .4, 8), railMat); liftFloor.position.y = .05; group.add(liftFloor);
   for (const x of [-4.3, 4.3]) { const wall = new THREE.Mesh(new THREE.BoxGeometry(.22, 6.8, 8.4), glassMat); wall.position.set(x, 3.4, 0); group.add(wall); }
   const gate = new THREE.Mesh(new THREE.BoxGeometry(6.5, 5.5, .24), glassMat); gate.position.set(0, 2.75, -3.8); group.add(gate);
-  scene.add(group); return group;
+  scene.add(group); structural.push(group); return group;
 }
 addLift(-132); addLift(-282);
 
@@ -151,16 +198,27 @@ const energyUniforms = { uTime: { value: 0 }, uLift: { value: 0 } };
 const energyMat = new THREE.ShaderMaterial({
   uniforms: energyUniforms, transparent: true, blending: THREE.AdditiveBlending,
   vertexShader: `varying vec2 vUv; varying float vWave; uniform float uTime; void main(){vUv=uv; vec3 p=position; vWave=sin(p.y*3.0+uTime*4.0)*0.06; p.x+=vWave; gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
-  fragmentShader: `varying vec2 vUv; varying float vWave; uniform float uTime; uniform float uLift; void main(){float band=0.45+0.45*sin(vUv.y*28.0-uTime*5.0); float edge=pow(abs(vUv.x-.5)*2.0,3.0); vec3 col=mix(vec3(.05,.55,.62),vec3(.55,1.0,.92),band+uLift*.25); gl_FragColor=vec4(col,(.18+band*.42+edge*.25));}`
+  fragmentShader: `varying vec2 vUv; varying float vWave; uniform float uTime; uniform float uLift; void main(){float band=0.45+0.45*sin(vUv.y*28.0-uTime*5.0); float edge=pow(abs(vUv.x-.5)*2.0,3.0); vec3 col=mix(vec3(.45,.12,.04),vec3(1.0,.62,.25),band+uLift*.25); gl_FragColor=vec4(col,(.18+band*.42+edge*.25));}`
 });
-for (const z of [-132, -282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); }
+for (const z of [-132, -282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); structural.push(core); }
 
-// Level 2: a darker mechanical foundry with moving machinery and lane hazards.
-const foundryMetal = new THREE.MeshStandardMaterial({ color: 0x263138, metalness: .88, roughness: .3 });
+// Level 2: an enclosed mechanical foundry with moving machinery and lane hazards.
+buildLevel = 2;
+const foundryMetal = new THREE.MeshStandardMaterial({ color: 0x332a24, metalness: .88, roughness: .3 });
 const furnaceMat = new THREE.MeshStandardMaterial({ color: 0x3f1710, emissive: 0xff5a19, emissiveIntensity: 1.8, roughness: .5 });
 for (let z = -152; z > -272; z -= 14) {
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); scene.add(beam);
-  const vent = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 5.2, 10), furnaceMat); vent.rotation.z = Math.PI / 2; vent.position.set(z % 28 ? -4.7 : 4.7, 2.1, z - 5); scene.add(vent);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); beam.userData.level = 2; scene.add(beam); structural.push(beam);
+  const vent = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 5.2, 10), furnaceMat); vent.rotation.z = Math.PI / 2; vent.position.set(z % 28 ? -4.7 : 4.7, 2.1, z - 5); vent.userData.level = 2; scene.add(vent); structural.push(vent);
+}
+const foundryWallGeo = new THREE.BoxGeometry(.3, 6.2, 15);
+const foundryCeilingGeo = new THREE.BoxGeometry(10.6, .3, 15);
+for (let z = -134; z > -280; z -= 15) {
+  for (const x of [-5.25, 5.25]) {
+    const wall = new THREE.Mesh(foundryWallGeo, foundryMetal); wall.position.set(x, 3.1, z); wall.userData.level = 2;
+    scene.add(wall); structural.push(wall);
+  }
+  const ceiling = new THREE.Mesh(foundryCeilingGeo, foundryMetal); ceiling.position.set(0, 6.25, z); ceiling.userData.level = 2;
+  scene.add(ceiling); structural.push(ceiling);
 }
 function addMover(x, z, range, speed) {
   const mesh = addHazard(x, z); mesh.scale.set(1.15, 1.5, 1.1); mesh.userData.mover = { base: x, range, speed, phase: Math.random() * Math.PI * 2 }; return mesh;
@@ -169,8 +227,9 @@ addPane(-3.2, -158); addMover(0, -169, 3.2, 1.4); addCrystal(3.2, 2.4, -180);
 addMover(-2.4, -192, 2.2, 1.8); addPane(3.2, -204); addHazard(0, -215);
 addCrystal(-3.2, 1.5, -225); addMover(1.5, -238, 2.8, 2.1); addPane(0, -251, true); addHazard(-3.2, -263);
 
-// Level 3: fractured rings, vertical lanes, and a reactor suspended in a storm.
-const ringMat = new THREE.MeshStandardMaterial({ color: 0x161a22, metalness: .92, roughness: .18, emissive: 0x173e4b, emissiveIntensity: .75 });
+// Level 3: fractured rings, vertical lanes, and a reactor suspended in an open storm sky.
+buildLevel = 3;
+const ringMat = new THREE.MeshStandardMaterial({ color: 0x1c1512, metalness: .92, roughness: .18, emissive: 0x5c2410, emissiveIntensity: .75 });
 const gravityRings = [];
 for (let z = -302; z > -426; z -= 18) {
   const ring = new THREE.Mesh(new THREE.TorusGeometry(6.2, .22, 10, 42), ringMat); ring.position.set(0, 3, z); ring.userData.spin = (z % 36 ? 1 : -1) * (.22 + Math.random() * .22); scene.add(ring); gravityRings.push(ring);
@@ -179,8 +238,41 @@ addCrystal(0, 1.2, -310); addPane(-3.2, -323); addHazard(3.2, -336);
 addCrystal(3.2, 3.4, -349); addPane(0, -362, true); addHazard(-3.2, -375);
 addCrystal(-3.2, 5.1, -388); addPane(3.2, -401); addPane(0, -414, true);
 
+function makeSmokeTexture() {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "rgba(255,170,110,0.45)");
+  gradient.addColorStop(1, "rgba(255,170,110,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
+const smokeTexture = makeSmokeTexture();
+const smokeSprites = [];
+for (let i = 0; i < 12; i++) {
+  const material = new THREE.SpriteMaterial({ map: smokeTexture, transparent: true, opacity: .4, blending: THREE.AdditiveBlending, depthWrite: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.setScalar(7 + Math.random() * 6);
+  sprite.userData = { speed: .3 + Math.random() * .4, phase: Math.random() * Math.PI * 2 };
+  sprite.position.set((Math.random() - .5) * 8, .5 + Math.random() * 4, 4 - i * 8);
+  scene.add(sprite); smokeSprites.push(sprite);
+}
+
+function updateSmoke(dt, time) {
+  for (const sprite of smokeSprites) {
+    sprite.position.x += Math.sin(time * sprite.userData.speed + sprite.userData.phase) * dt * .4;
+    if (sprite.position.z > runZ + 8 || sprite.position.z < runZ - RENDER_AHEAD) {
+      sprite.position.set((Math.random() - .5) * 8, .5 + Math.random() * 4, runZ - 25 - Math.random() * (RENDER_AHEAD - 25));
+    }
+  }
+}
+
 const avatar = new THREE.Group();
-const body = new THREE.Mesh(new THREE.CapsuleGeometry(.42, 1.05, 6, 12), new THREE.MeshStandardMaterial({ color: 0xe7f9fa, roughness: .3, metalness: .45 })); body.position.y = 1.1; avatar.add(body);
+const body = new THREE.Mesh(new THREE.CapsuleGeometry(.42, 1.05, 6, 12), new THREE.MeshStandardMaterial({ color: 0xffece0, roughness: .3, metalness: .45 })); body.position.y = 1.1; avatar.add(body);
 const pack = new THREE.Mesh(new THREE.BoxGeometry(.65, .8, .3), railMat); pack.position.set(0, 1.2, .42); avatar.add(pack); scene.add(avatar);
 
 function updateUI() {
@@ -207,6 +299,7 @@ function resetGame() {
 
 function beginLaunch() {
   resetStats(); state = "launch"; launchTimer = 0; captionIndex = -1; advanceCaption();
+  ui.launchControls.classList.add("show");
 }
 
 function advanceCaption() {
@@ -221,7 +314,7 @@ function fire() {
   ammo--;
   raycaster.setFromCamera(pointer, camera);
   const origin = camera.position.clone();
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.18, 14, 14), new THREE.MeshBasicMaterial({ color: 0xbaffff }));
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.18, 14, 14), new THREE.MeshBasicMaterial({ color: 0xffcf9a }));
   mesh.position.copy(origin); scene.add(mesh);
   projectiles.push({ mesh, velocity: raycaster.ray.direction.clone().multiplyScalar(34), life: 3 });
   updateUI();
@@ -233,7 +326,7 @@ function shatter(target) {
   if (target.userData.kind === "crystal") { ammo += 3; showMessage("+3 SPHERES"); } else { showMessage("GLASS FRACTURED"); }
   const count = target.userData.kind === "crystal" ? 8 : 14;
   for (let i = 0; i < count; i++) {
-    const material = new THREE.MeshBasicMaterial({ color: target.userData.kind === "crystal" ? 0xffcf66 : 0x7ef4f1, transparent: true, opacity: .78 });
+    const material = new THREE.MeshBasicMaterial({ color: target.userData.kind === "crystal" ? 0xffb04a : 0xffb26b, transparent: true, opacity: .78 });
     const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(.08 + Math.random() * .14), material);
     mesh.position.copy(target.position); scene.add(mesh);
     shards.push({ mesh, velocity: new THREE.Vector3((Math.random()-.5)*6, Math.random()*5, (Math.random()-.5)*5), life: 1.4 });
@@ -241,12 +334,22 @@ function shatter(target) {
   updateUI();
 }
 
+const sectorNames = { 1: "GLASS CAUSEWAY", 2: "SHIFTING FOUNDRY", 3: "INVERTED CORE" };
+const sectorBriefings = {
+  1: "Sector one. The Glass Causeway. Break the panes before they break you.",
+  2: "Sector two. The Shifting Foundry. The machinery will not stop for you.",
+  3: "Sector three. The Inverted Core. Gravity is only a suggestion here."
+};
+
 function endRun(won) {
-  state = "ended"; ui.final.textContent = String(score).padStart(6, "0");
-  ui.endEyebrow.textContent = won ? "SECTOR COMPLETE" : "RUN TERMINATED";
-  ui.endTitle.textContent = won ? "CALIBRATION LIFT REACHED" : "CAUSEWAY FRACTURED";
-  ui.endText.textContent = won ? "The Causeway, Foundry, and Inverted Core are stable. The full three-level prototype is complete." : "The tower rejected this run. Shift lanes earlier and preserve your spheres.";
+  state = "ended"; stopNarration(); ui.final.textContent = String(score).padStart(6, "0");
+  ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${currentLevel}`;
+  ui.endTitle.textContent = won ? "CONTROL CORE STABILISED" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
+  ui.endText.textContent = won
+    ? "The Causeway, Foundry, and Inverted Core are stable. The tower holds."
+    : `Integrity failed in the ${sectorNames[currentLevel].toLowerCase()}. Shift lanes earlier and preserve your spheres.`;
   ui.end.classList.add("active");
+  narrate(won ? "Core stabilised. The tower holds." : "Runner signal lost.");
 }
 
 function demoJump(level) {
@@ -255,7 +358,7 @@ function demoJump(level) {
   if (level === 1) { runZ = 7; cameraThird = false; }
   if (level === 2) { runZ = -146; cameraThird = true; }
   if (level === 3) { runZ = -296; cameraThird = true; }
-  showMessage(`DEMO JUMP // LEVEL ${level}`); updateUI();
+  showMessage(`DEMO JUMP // LEVEL ${level}`); narrate(sectorBriefings[level]); updateUI();
 }
 
 function updateIntroCamera(dt, time) {
@@ -274,12 +377,29 @@ function updateLaunchCamera(dt, time) {
   camera.position.lerpVectors(fromPos, new THREE.Vector3(0, 1.8, 8), ease);
   const lookAt = new THREE.Vector3(0, 2, -8).lerp(new THREE.Vector3(0, 1.7, -4), ease);
   camera.lookAt(lookAt);
-  if (launchTimer >= duration) { ui.caption.classList.remove("show"); state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); }
+  if (launchTimer >= duration) {
+    ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
+    state = "playing"; captionIndex = -1; showMessage("MOVE // AIM // THROW"); narrate(sectorBriefings[1]);
+  }
+}
+
+function isLevelVisible(level) {
+  if (level === undefined) return true;
+  if (state === "lift") return level === currentLevel || level === transitionTarget;
+  return level === currentLevel;
+}
+
+function updateCulling() {
+  for (const mesh of structural) mesh.visible = isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+  for (const ring of gravityRings) ring.visible = isLevelVisible(3) && ring.position.z <= runZ + RENDER_BEHIND && ring.position.z >= runZ - RENDER_AHEAD;
+  for (const mesh of breakables) mesh.visible = mesh.userData.alive && isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
+  for (const mesh of obstacles) if (mesh.userData.kind === "hazard") mesh.visible = isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
 }
 
 function updateGame(dt, time) {
   energyUniforms.uTime.value = time;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
+  document.body.classList.toggle("paused", paused);
   avatar.position.set(playerX, playerY, runZ + .5); avatar.visible = cameraThird || currentLevel === 3 || state === "lift" || state === "launch";
   body.rotation.z = Math.sin(time * 9) * .035;
   for (const crystal of breakables.filter(x => x.userData.kind === "crystal" && x.userData.alive)) crystal.rotation.y += dt * 1.8;
@@ -289,6 +409,8 @@ function updateGame(dt, time) {
   if (state === "intro") { updateIntroCamera(dt, time); return; }
   if (state === "launch") { updateLaunchCamera(dt, time); return; }
   if (paused) return;
+  updateCulling();
+  updateSmoke(dt, time);
 
   if (state === "playing") {
     runZ -= dt * (currentLevel === 2 ? 9.2 : currentLevel === 3 ? 8.7 : 8.1);
@@ -307,8 +429,8 @@ function updateGame(dt, time) {
         updateUI(); if (health <= 0) endRun(false);
       }
     }
-    if (currentLevel === 1 && runZ < -124) { state = "lift"; liftTimer = 0; transitionTarget = 2; showMessage("CALIBRATION LIFT // FOUNDRY"); }
-    if (currentLevel === 2 && runZ < -274) { state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("GRAVITY LIFT // CORE"); }
+    if (currentLevel === 1 && runZ < -124) { state = "lift"; liftTimer = 0; transitionTarget = 2; showMessage("CALIBRATION LIFT // FOUNDRY"); narrate("Calibration lift engaged. Foundry systems coming online."); }
+    if (currentLevel === 2 && runZ < -274) { state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("GRAVITY LIFT // CORE"); narrate("Gravity fault detected. Hold on."); }
     if (currentLevel === 3 && runZ < -422) { score += Math.max(0, ammo * 50 + health * 10); updateUI(); endRun(true); }
   } else if (state === "lift") {
     liftTimer += dt; energyUniforms.uLift.value = Math.min(1, liftTimer / 2);
@@ -318,6 +440,7 @@ function updateGame(dt, time) {
       health = 100; ammo += 4;
       if (currentLevel === 2) { runZ = -146; cameraThird = true; showMessage("LEVEL 2 // SHIFTING FOUNDRY"); }
       if (currentLevel === 3) { runZ = -296; cameraThird = true; showMessage("LEVEL 3 // INVERTED CORE"); }
+      narrate(sectorBriefings[currentLevel]);
       updateUI();
     }
   }
@@ -336,14 +459,15 @@ function updateGame(dt, time) {
   camera.position.lerp(desired, 1 - Math.exp(-dt * 7)); camera.lookAt(forward);
   if (shake > .001) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 2.4); }
 
+  const aliveBreakables = breakables.filter(x => x.userData.alive);
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(breakables.filter(x => x.userData.alive), false);
+  const hits = raycaster.intersectObjects(aliveBreakables, false);
   ui.reticle.classList.toggle("hot", hits.length > 0);
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i]; const old = p.mesh.position.clone(); p.mesh.position.addScaledVector(p.velocity, dt); p.life -= dt;
     const segment = p.mesh.position.clone().sub(old); raycaster.set(old, segment.clone().normalize()); raycaster.far = segment.length() + .35;
-    const hit = raycaster.intersectObjects(breakables.filter(x => x.userData.alive), false)[0];
+    const hit = raycaster.intersectObjects(aliveBreakables, false)[0];
     if (hit) { shatter(hit.object); p.life = 0; }
     if (p.life <= 0) { scene.remove(p.mesh); projectiles.splice(i, 1); }
   }
@@ -364,41 +488,135 @@ function animate() {
 
 function openSettings(from) {
   settingsFrom = from;
-  ui.settingsEyebrow.textContent = from === "pause" ? "RUN PAUSED" : "SETTINGS";
-  ui.settingsTitle.textContent = from === "pause" ? "CAUSEWAY ON HOLD" : "CALIBRATE YOUR RUN";
-  ui.settingsBackButton.textContent = from === "pause" ? "RESUME" : "BACK";
+  ui.settingsBackButton.textContent = from === "pause" ? "BACK TO PAUSE" : "BACK";
   if (from === "intro") ui.start.classList.remove("active");
-  if (from === "pause") paused = true;
+  if (from === "pause") ui.pause.classList.remove("active");
   ui.settings.classList.add("active");
 }
 
 function closeSettings() {
   ui.settings.classList.remove("active");
   if (settingsFrom === "intro") ui.start.classList.add("active");
-  if (settingsFrom === "pause") paused = false;
+  if (settingsFrom === "pause") ui.pause.classList.add("active");
   settingsFrom = null;
 }
+
+function openPause() {
+  if (state !== "playing" && state !== "lift") return;
+  paused = true; stopNarration();
+  ui.pauseLevel.textContent = `0${currentLevel} / 03`;
+  ui.pauseScore.textContent = String(score).padStart(6, "0");
+  ui.pauseAmmo.textContent = ammo;
+  ui.pauseHealth.textContent = health;
+  ui.pause.classList.add("active");
+}
+
+function closePause() {
+  ui.pause.classList.remove("active");
+  paused = false;
+}
+
+function quitToMenu() {
+  stopNarration(); closePause(); cancelStory();
+  ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
+  ui.settings.classList.remove("active"); ui.end.classList.remove("active");
+  resetStats(); state = "intro"; settingsFrom = null;
+  ui.story.classList.remove("active");
+  ui.start.classList.add("active");
+}
+
+const storyBeats = [
+  "Ascension Tower. Two hundred floors of glass and light.",
+  "The core lattice fractured at dawn. Every sector began to fail.",
+  "You are the last runner still inside.",
+  "Three sectors stand between you and the control core.",
+  "Break what blocks you. Reach the core before the tower comes down.",
+];
+let storyTimeouts = [];
+let storyPlaying = false;
+
+for (const _ of storyBeats) ui.storyDots.appendChild(document.createElement("i"));
+
+function showStoryBeat(index) {
+  if (index >= storyBeats.length) { finishStory(); return; }
+  const text = storyBeats[index];
+  ui.storyLine.textContent = text;
+  ui.storyLine.classList.add("show");
+  ui.storyDots.children[index].classList.add("on");
+  narrate(text);
+  const hold = Math.max(2800, text.length * 68);
+  storyTimeouts.push(setTimeout(() => {
+    ui.storyLine.classList.remove("show");
+    storyTimeouts.push(setTimeout(() => showStoryBeat(index + 1), 520));
+  }, hold));
+}
+
+function cancelStory() {
+  storyTimeouts.forEach(clearTimeout); storyTimeouts = [];
+  storyPlaying = false;
+  stopNarration();
+}
+
+function startStory() {
+  cancelStory();
+  storyPlaying = true;
+  ui.story.classList.add("active");
+  ui.start.classList.remove("active");
+  ui.storyPrompt.hidden = true;
+  ui.storyPlayer.hidden = false;
+  ui.storySkipButton.hidden = false;
+  ui.storyLine.classList.remove("show");
+  for (const dot of ui.storyDots.children) dot.classList.remove("on");
+  showStoryBeat(0);
+}
+
+function finishStory() {
+  cancelStory();
+  ui.story.classList.remove("active");
+  ui.start.classList.add("active");
+}
+
+ui.storySkipButton.addEventListener("click", finishStory);
+document.querySelector("#storyBeginButton").addEventListener("click", startStory);
+document.querySelector("#storySkipToMenuButton").addEventListener("click", finishStory);
+document.querySelector("#replayStoryButton").addEventListener("click", startStory);
 
 document.querySelector("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
 document.querySelector("#settingsButton").addEventListener("click", () => openSettings("intro"));
 document.querySelector("#settingsBackButton").addEventListener("click", closeSettings);
-document.querySelector("#menuButton").addEventListener("click", () => { if (state === "playing" || state === "lift") { paused ? closeSettings() : openSettings("pause"); } });
-document.querySelector("#restartButton").addEventListener("click", resetGame);
-document.querySelector("#soundButton").addEventListener("click", (event) => {
+document.querySelector("#pauseButton").addEventListener("click", () => { paused ? closePause() : openPause(); });
+document.querySelector("#resumeButton").addEventListener("click", closePause);
+document.querySelector("#pauseSettingsButton").addEventListener("click", () => openSettings("pause"));
+document.querySelector("#restartRunButton").addEventListener("click", () => { closePause(); resetGame(); narrate(sectorBriefings[1]); });
+document.querySelector("#quitButton").addEventListener("click", quitToMenu);
+document.querySelector("#restartButton").addEventListener("click", () => { resetGame(); narrate(sectorBriefings[1]); });
+document.querySelector("#endMenuButton").addEventListener("click", quitToMenu);
+ui.soundButton.addEventListener("click", () => {
   muted = !muted;
   settings.masterVolume = muted ? 0 : (lastVolume || 80);
   if (!muted) lastVolume = settings.masterVolume;
-  ui.volumeSlider.value = settings.masterVolume;
-  event.currentTarget.textContent = muted ? "MUTED" : "SOUND";
+  if (muted) stopNarration();
+  applySettingsToControls();
   saveSettings();
 });
 ui.volumeSlider.addEventListener("input", (event) => {
   settings.masterVolume = Number(event.target.value); muted = settings.masterVolume === 0;
   if (!muted) lastVolume = settings.masterVolume;
-  document.querySelector("#soundButton").textContent = muted ? "MUTED" : "SOUND"; saveSettings();
+  if (muted) stopNarration();
+  ui.soundButton.textContent = muted ? "MUTED" : "SOUND"; saveSettings();
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
 ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); });
+ui.narrationToggle.addEventListener("change", (event) => {
+  settings.narration = event.target.checked;
+  if (!settings.narration) stopNarration();
+  saveSettings();
+});
+document.querySelector("#resetSettingsButton").addEventListener("click", () => {
+  settings = { ...settingsDefaults };
+  muted = false; lastVolume = settingsDefaults.masterVolume;
+  stopNarration(); applySettingsToControls(); saveSettings();
+});
 
 addEventListener("pointermove", (event) => {
   const factor = settings.sensitivity / 100;
@@ -407,7 +625,14 @@ addEventListener("pointermove", (event) => {
 });
 addEventListener("pointerdown", (event) => { if (event.button === 0 && !event.target.closest("button")) fire(); });
 addEventListener("keydown", (event) => {
-  if (event.code === "Escape") { if (state === "playing" || state === "lift") { paused ? closeSettings() : openSettings("pause"); } else if (settingsFrom === "intro") closeSettings(); }
+  if (event.code === "Escape") {
+    if (ui.settings.classList.contains("active")) closeSettings();
+    else if (storyPlaying) finishStory();
+    else if (paused) closePause();
+    else openPause();
+    return;
+  }
+  if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
   if (event.code === "Digit1") demoJump(1);
   if (event.code === "Digit2") demoJump(2);
   if (event.code === "Digit3") demoJump(3);
