@@ -429,6 +429,14 @@
 
 .fdy-stat.pop strong { animation: fdy-pop 0.3s ease-out; }
 
+/* Embedded in the main game, which has its own HUD bar along the bottom and
+   already shows spheres. Lift clear of it and drop the duplicate stat. */
+.foundry-ui.embedded .fdy-run { bottom: 104px; }
+.foundry-ui.embedded .fdy-stat.spheres,
+.foundry-ui.embedded .fdy-stat.score { display: none; }
+.foundry-ui.embedded .fdy-integrity { display: none; }
+.foundry-ui.embedded .fdy-prompt { bottom: 30%; }
+
 @keyframes fdy-pop {
   0% { transform: scale(1); }
   40% { transform: scale(1.3); }

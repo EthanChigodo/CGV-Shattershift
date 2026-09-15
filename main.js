@@ -1,4 +1,6 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+import * as THREE from "./src/three.js";
+import { FoundryLevel } from "./src/levels/foundry/index.js";
+import { FoundryHud } from "./src/ui/foundry-hud.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -45,6 +47,18 @@ let captionIndex = -1;
 let settingsFrom = null;
 let shake = 0;
 let lastVolume = 80;
+// Jump and slide. Level 2's barriers need them: a low barrier is hurdled and a
+// high one is slid under, and each is cleared by exactly one of the two.
+let jumpVelocity = 0;
+let jumpHeight = 0;
+let sliding = 0;
+/**
+ * Set when the player is teleported - a demo jump, or arriving in a sector that
+ * lives elsewhere in world space. The chase camera eases toward its target,
+ * which crawls across hundreds of metres after a jump and leaves the player
+ * staring at the level from outside it.
+ */
+let snapCamera = true;
 
 const LAUNCH_DURATION = 4.2;
 const captionScript = [
@@ -106,7 +120,9 @@ function applySettingsToControls() {
 }
 applySettingsToControls();
 
-scene.add(new THREE.HemisphereLight(0xffd0a0, 0x2a1510, 1.8));
+// Named so Level 2 can dim it - the foundry brings its own lighting.
+const hemi = new THREE.HemisphereLight(0xffd0a0, 0x2a1510, 1.8);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffe4c4, 2.5);
 sun.position.set(-8, 16, 12);
 scene.add(sun);
@@ -202,30 +218,15 @@ const energyMat = new THREE.ShaderMaterial({
 });
 for (const z of [-132, -282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); structural.push(core); }
 
-// Level 2: an enclosed mechanical foundry with moving machinery and lane hazards.
+// Level 2: The Shifting Foundry.
+//
+// The placeholder foundry that used to sit here (a few beams, walls and vents
+// between z -152 and -272) has been replaced by the real level in
+// src/levels/foundry/. It is 764m long, so rather than pushing Level 3's
+// geometry back to make room it is built in unused world space and the player
+// is moved there on entry. Everything Level-2 related lives in the block
+// marked "FOUNDRY INTEGRATION" further down.
 buildLevel = 2;
-const foundryMetal = new THREE.MeshStandardMaterial({ color: 0x332a24, metalness: .88, roughness: .3 });
-const furnaceMat = new THREE.MeshStandardMaterial({ color: 0x3f1710, emissive: 0xff5a19, emissiveIntensity: 1.8, roughness: .5 });
-for (let z = -152; z > -272; z -= 14) {
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(10.5, .38, .45), foundryMetal); beam.position.set(0, 5.3, z); beam.userData.level = 2; scene.add(beam); structural.push(beam);
-  const vent = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 5.2, 10), furnaceMat); vent.rotation.z = Math.PI / 2; vent.position.set(z % 28 ? -4.7 : 4.7, 2.1, z - 5); vent.userData.level = 2; scene.add(vent); structural.push(vent);
-}
-const foundryWallGeo = new THREE.BoxGeometry(.3, 6.2, 15);
-const foundryCeilingGeo = new THREE.BoxGeometry(10.6, .3, 15);
-for (let z = -134; z > -280; z -= 15) {
-  for (const x of [-5.25, 5.25]) {
-    const wall = new THREE.Mesh(foundryWallGeo, foundryMetal); wall.position.set(x, 3.1, z); wall.userData.level = 2;
-    scene.add(wall); structural.push(wall);
-  }
-  const ceiling = new THREE.Mesh(foundryCeilingGeo, foundryMetal); ceiling.position.set(0, 6.25, z); ceiling.userData.level = 2;
-  scene.add(ceiling); structural.push(ceiling);
-}
-function addMover(x, z, range, speed) {
-  const mesh = addHazard(x, z); mesh.scale.set(1.15, 1.5, 1.1); mesh.userData.mover = { base: x, range, speed, phase: Math.random() * Math.PI * 2 }; return mesh;
-}
-addPane(-3.2, -158); addMover(0, -169, 3.2, 1.4); addCrystal(3.2, 2.4, -180);
-addMover(-2.4, -192, 2.2, 1.8); addPane(3.2, -204); addHazard(0, -215);
-addCrystal(-3.2, 1.5, -225); addMover(1.5, -238, 2.8, 2.1); addPane(0, -251, true); addHazard(-3.2, -263);
 
 // Level 3: fractured rings, vertical lanes, and a reactor suspended in an open storm sky.
 buildLevel = 3;
@@ -286,6 +287,11 @@ function showMessage(text) { ui.message.textContent = text; ui.message.classList
 function resetStats() {
   ammo = 18; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0; heightLane = 0;
   runZ = 7; cameraThird = false; liftTimer = 0; currentLevel = 1; transitionTarget = 0; shake = 0;
+  jumpHeight = 0; jumpVelocity = 0; sliding = 0; combo = 1; comboTimer = 0; snapCamera = true;
+  // Rebuild the foundry from scratch so a restart gets a fresh set of switches
+  // and gates. dispose() frees the old one's GPU resources.
+  buildFoundry();
+  setFoundryActive(false);
   for (const mesh of breakables) { mesh.visible = true; mesh.userData.alive = true; mesh.scale.setScalar(1); }
   for (const mesh of obstacles) mesh.userData.hit = false;
   for (const p of projectiles) scene.remove(p.mesh); projectiles.length = 0;
@@ -320,18 +326,201 @@ function fire() {
   updateUI();
 }
 
+const shatterAt = new THREE.Vector3();
+
 function shatter(target) {
   if (!target.userData.alive) return;
-  target.userData.alive = false; target.visible = false; score += target.userData.points;
-  if (target.userData.kind === "crystal") { ammo += 3; showMessage("+3 SPHERES"); } else { showMessage("GLASS FRACTURED"); }
-  const count = target.userData.kind === "crystal" ? 8 : 14;
+
+  // Foundry targets must go through the level, because breaking a switch is
+  // what opens a gate or restores a system - hiding the mesh here would break
+  // the glass and leave the route shut.
+  const isFoundry = target.userData.kind === "switch" || target.userData.kind === "cell";
+  let gainedSpheres = 0;
+
+  if (isFoundry) {
+    const result = foundry?.breakTarget(target);
+    if (!result) return;
+    score += result.points * combo;
+    gainedSpheres = result.spheres ?? 0;
+    shatterAt.copy(result.position);
+    combo = Math.min(9, combo + 1);
+    comboTimer = 2.6;
+    if (result.kind === "switch") showMessage(`${result.label} // ONLINE`);
+  } else {
+    target.userData.alive = false; target.visible = false;
+    score += target.userData.points;
+    shatterAt.copy(target.position);
+    if (target.userData.kind === "crystal") gainedSpheres = 3;
+    showMessage(gainedSpheres ? "+3 SPHERES" : "GLASS FRACTURED");
+  }
+
+  if (gainedSpheres) ammo += gainedSpheres;
+
+  const crystal = target.userData.kind === "crystal";
+  const count = crystal || target.userData.kind === "cell" ? 8 : 14;
   for (let i = 0; i < count; i++) {
-    const material = new THREE.MeshBasicMaterial({ color: target.userData.kind === "crystal" ? 0xffb04a : 0xffb26b, transparent: true, opacity: .78 });
+    const material = new THREE.MeshBasicMaterial({ color: isFoundry ? 0x9ff4f0 : crystal ? 0xffb04a : 0xffb26b, transparent: true, opacity: .78 });
     const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(.08 + Math.random() * .14), material);
-    mesh.position.copy(target.position); scene.add(mesh);
+    mesh.position.copy(shatterAt); scene.add(mesh);
     shards.push({ mesh, velocity: new THREE.Vector3((Math.random()-.5)*6, Math.random()*5, (Math.random()-.5)*5), life: 1.4 });
   }
   updateUI();
+}
+
+/* ==================================================================== */
+/* FOUNDRY INTEGRATION - Level 2                                         */
+/* ==================================================================== */
+
+/**
+ * The foundry is 764m long and the old Level 2 slot was about 128m, so it is
+ * built far out in unused world space and the player is teleported there when
+ * Level 2 begins. Level 3's geometry keeps its original position, and the
+ * existing per-level culling already hides everything that is not the current
+ * sector.
+ */
+const FOUNDRY_ORIGIN_Z = -1200;
+
+/** Matches the pacing tuned in the level design sheet. */
+const FOUNDRY_SPEED_ZONES = [
+  { until: 0.5, speed: 6.8 },
+  { until: 0.75, speed: 9.0 },
+  { until: 1.01, speed: 11.6 },
+];
+
+let foundry = null;
+const foundryHud = new FoundryHud({ dev: false, reducedMotion: settings.reducedMotion });
+// Sits alongside the game's own HUD rather than owning the screen.
+foundryHud.root.classList.add("embedded");
+const foundryBox = new THREE.Box3();
+const foundryCentre = new THREE.Vector3();
+const foundrySize = new THREE.Vector3();
+const foundryGrazed = new Map();
+let foundryInvulnerable = 0;
+let foundrySlow = 0;
+let combo = 1;
+let comboTimer = 0;
+
+/** Distance along the foundry route, derived from the game's own runZ. */
+function foundryDistance() {
+  return FOUNDRY_ORIGIN_Z - runZ;
+}
+
+function foundrySpeed() {
+  if (!foundry) return 9.2;
+  const progress = foundryDistance() / foundry.route.totalLength;
+  return (FOUNDRY_SPEED_ZONES.find((zone) => progress < zone.until) ?? FOUNDRY_SPEED_ZONES[2]).speed;
+}
+
+function buildFoundry() {
+  if (foundry) {
+    foundryHud.unbind();
+    foundry.dispose();
+  }
+
+  foundry = new FoundryLevel({
+    origin: new THREE.Vector3(0, 0, FOUNDRY_ORIGIN_Z),
+    // The game's player moves along -Z and does not follow a curve yet, so the
+    // junctions are off. Flip this to false once PlayerController follows
+    // route.sample(distance) - see the level design sheet.
+    straightRoute: true,
+    shadows: false,
+    brightness: 1.6,
+    runSpeed: FOUNDRY_SPEED_ZONES[2].speed,
+  });
+  foundry.addTo(scene);
+  foundry.root.visible = false;
+
+  foundryHud.bind(foundry);
+  foundry.events.on("complete", () => {
+    if (currentLevel !== 2 || state !== "playing") return;
+    score += Math.max(0, foundry.state.systemsOnline * 500 + health * 10);
+    state = "lift"; liftTimer = 0; transitionTarget = 3;
+    showMessage("GRAVITY LIFT // CORE");
+    narrate("Gravity fault detected. Hold on.");
+    updateUI();
+  });
+  foundry.events.on("escape-end", ({ survived }) => {
+    if (survived || currentLevel !== 2) return;
+    health = 0; updateUI(); endRun(false);
+  });
+
+  foundryGrazed.clear();
+  foundryInvulnerable = 0;
+  foundrySlow = 0;
+}
+
+/** Called when the player enters or leaves Level 2. */
+function setFoundryActive(active) {
+  if (!foundry) return;
+  foundry.root.visible = active;
+  if (active) {
+    foundryHud.show();
+    foundryHud.setIntegrity(health);
+    // The global sun and hemisphere are tuned for the causeway and wash the
+    // foundry flat; the level brings its own lighting.
+    sun.intensity = 0.35;
+    hemi.intensity = 0.35;
+    scene.fog.density = 0.0115;
+    scene.fog.color.set(0x141d23);
+    scene.background.set(0x121a20);
+  } else {
+    foundryHud.hide();
+    sun.intensity = 2.5;
+    hemi.intensity = 1.8;
+    scene.fog.density = 0.032;
+    scene.fog.color.set(0x140b09);
+    scene.background.set(0x140b09);
+  }
+}
+
+/** Player bounds for the foundry's own collision test. */
+function updateFoundryBox() {
+  const height = sliding > 0 ? 1.0 : 1.9;
+  foundryCentre.set(playerX, 0.18 + playerY + jumpHeight + height / 2, runZ);
+  foundrySize.set(0.9, height, 0.9);
+  foundryBox.setFromCenterAndSize(foundryCentre, foundrySize);
+}
+
+function updateFoundry(dt, time) {
+  const distance = foundryDistance();
+
+  foundryInvulnerable = Math.max(0, foundryInvulnerable - dt);
+  foundrySlow = Math.max(0, foundrySlow - dt);
+  for (const [mesh, left] of foundryGrazed) {
+    if (left - dt <= 0) foundryGrazed.delete(mesh);
+    else foundryGrazed.set(mesh, left - dt);
+  }
+
+  updateFoundryBox();
+  foundry.update({ dt, time, distance, playerPosition: foundryCentre });
+
+  if (state !== "playing" || paused) return;
+
+  const { hits, grazes } = foundry.probe(foundryBox, distance);
+
+  for (const mesh of grazes) {
+    if (foundryGrazed.has(mesh)) continue;
+    foundryGrazed.set(mesh, 1.4);
+    score += 25 * combo;
+    updateUI();
+  }
+
+  if (hits.length && foundryInvulnerable <= 0) {
+    const hazard = hits[0];
+    health -= 18;
+    foundryInvulnerable = 1.1;
+    foundrySlow = 0.55;
+    combo = 1; comboTimer = 0;
+    foundry.impact(1);
+    foundryHud.setIntegrity(Math.max(0, health));
+    triggerShake(0.45);
+    showMessage(hazard.userData.barrier === "high" ? "LOW CLEARANCE" : "INTEGRITY DAMAGED");
+    updateUI();
+    if (health <= 0) endRun(false);
+  }
+
+  foundryHud.update({ distance, level: foundry });
+  foundryHud.setRun({ score, combo, spheres: ammo, comboRatio: comboTimer / 2.6 });
 }
 
 const sectorNames = { 1: "GLASS CAUSEWAY", 2: "SHIFTING FOUNDRY", 3: "INVERTED CORE" };
@@ -355,9 +544,10 @@ function endRun(won) {
 function demoJump(level) {
   if (state !== "playing") return;
   currentLevel = level; playerY = 0; heightLane = 0; health = 100;
-  if (level === 1) { runZ = 7; cameraThird = false; }
-  if (level === 2) { runZ = -146; cameraThird = true; }
-  if (level === 3) { runZ = -296; cameraThird = true; }
+  jumpHeight = 0; jumpVelocity = 0; sliding = 0; snapCamera = true;
+  if (level === 1) { runZ = 7; cameraThird = false; setFoundryActive(false); }
+  if (level === 2) { runZ = FOUNDRY_ORIGIN_Z; cameraThird = true; setFoundryActive(true); }
+  if (level === 3) { runZ = -296; cameraThird = true; setFoundryActive(false); }
   showMessage(`DEMO JUMP // LEVEL ${level}`); narrate(sectorBriefings[level]); updateUI();
 }
 
@@ -400,7 +590,18 @@ function updateGame(dt, time) {
   energyUniforms.uTime.value = time;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
   document.body.classList.toggle("paused", paused);
-  avatar.position.set(playerX, playerY, runZ + .5); avatar.visible = cameraThird || currentLevel === 3 || state === "lift" || state === "launch";
+  // The foundry HUD is its own overlay, so it has to follow the game's menu
+  // states too - otherwise it shows through the briefing and pause screens.
+  if (foundry) {
+    foundryHud.root.hidden = !(
+      currentLevel === 2 && (state === "playing" || state === "lift") && !paused && !storyPlaying
+    );
+  }
+  avatar.position.set(playerX, playerY + jumpHeight, runZ + .5);
+  avatar.visible = cameraThird || currentLevel === 3 || state === "lift" || state === "launch";
+  // Blink through the mercy window after a foundry impact.
+  if (foundryInvulnerable > 0 && Math.floor(time * 14) % 2 === 0) avatar.visible = false;
+  body.scale.y = sliding > 0 ? 0.55 : 1;
   body.rotation.z = Math.sin(time * 9) * .035;
   for (const crystal of breakables.filter(x => x.userData.kind === "crystal" && x.userData.alive)) crystal.rotation.y += dt * 1.8;
   for (const ring of gravityRings) { ring.rotation.z += dt * ring.userData.spin; ring.rotation.x = Math.sin(time * .4 + ring.position.z) * .18; }
@@ -413,14 +614,29 @@ function updateGame(dt, time) {
   updateSmoke(dt, time);
 
   if (state === "playing") {
-    runZ -= dt * (currentLevel === 2 ? 9.2 : currentLevel === 3 ? 8.7 : 8.1);
+    const baseSpeed = currentLevel === 2 ? foundrySpeed() : currentLevel === 3 ? 8.7 : 8.1;
+    runZ -= dt * baseSpeed * (currentLevel === 2 && foundrySlow > 0 ? 0.45 : 1);
     playerX += (lanes[lane] - playerX) * Math.min(1, dt * 9);
+
+    // Jump arc and slide timer.
+    jumpVelocity -= 19 * dt;
+    jumpHeight = Math.max(0, jumpHeight + jumpVelocity * dt);
+    if (jumpHeight <= 0) jumpVelocity = 0;
+    sliding = Math.max(0, sliding - dt);
+
+    // Combo decays on its own; a miss or an impact resets it elsewhere.
+    if (comboTimer > 0) { comboTimer = Math.max(0, comboTimer - dt); if (comboTimer === 0) combo = 1; }
+
+    // playerY is the lane height; the jump arc is added on top where it is
+    // used, so Level 3's gravity lanes and the jump do not fight each other.
     const targetY = currentLevel === 3 ? [0, 2.1, 4.1][heightLane] : 0;
     playerY += (targetY - playerY) * Math.min(1, dt * 6);
     for (const item of obstacles) if (item.userData.mover) {
       const m = item.userData.mover; item.position.x = m.base + Math.sin(time * m.speed + m.phase) * m.range;
     }
-    for (const item of obstacles) {
+    // Level 2 runs its own collision - the foundry's hazards are nested inside
+    // groups, so a flat position check against item.position would miss them.
+    for (const item of currentLevel === 2 ? [] : obstacles) {
       const playerCentreY = playerY + 1.35;
       if (!item.userData.hit && Math.abs(item.position.z - runZ) < .65 && Math.abs(item.position.x - playerX) < 1.3 && Math.abs(item.position.y - playerCentreY) < 2.1) {
         item.userData.hit = true;
@@ -429,17 +645,24 @@ function updateGame(dt, time) {
         updateUI(); if (health <= 0) endRun(false);
       }
     }
+    if (currentLevel === 2) updateFoundry(dt, time);
+
     if (currentLevel === 1 && runZ < -124) { state = "lift"; liftTimer = 0; transitionTarget = 2; showMessage("CALIBRATION LIFT // FOUNDRY"); narrate("Calibration lift engaged. Foundry systems coming online."); }
-    if (currentLevel === 2 && runZ < -274) { state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("GRAVITY LIFT // CORE"); narrate("Gravity fault detected. Hold on."); }
+    // Level 2 exits on the foundry's own `complete` event - breaking the
+    // extraction valve - rather than on a hard-coded z. If the player somehow
+    // runs past the end, fall through to the lift anyway.
+    if (currentLevel === 2 && foundry && foundryDistance() > foundry.route.totalLength - 4) {
+      state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("GRAVITY LIFT // CORE"); narrate("Gravity fault detected. Hold on.");
+    }
     if (currentLevel === 3 && runZ < -422) { score += Math.max(0, ammo * 50 + health * 10); updateUI(); endRun(true); }
   } else if (state === "lift") {
     liftTimer += dt; energyUniforms.uLift.value = Math.min(1, liftTimer / 2);
     avatar.position.y = Math.min(6, liftTimer * 1.3);
     if (liftTimer > 3.6) {
-      currentLevel = transitionTarget; state = "playing"; liftTimer = 0; playerY = 0; heightLane = 0;
+      currentLevel = transitionTarget; state = "playing"; liftTimer = 0; playerY = 0; heightLane = 0; snapCamera = true;
       health = 100; ammo += 4;
-      if (currentLevel === 2) { runZ = -146; cameraThird = true; showMessage("LEVEL 2 // SHIFTING FOUNDRY"); }
-      if (currentLevel === 3) { runZ = -296; cameraThird = true; showMessage("LEVEL 3 // INVERTED CORE"); }
+      if (currentLevel === 2) { runZ = FOUNDRY_ORIGIN_Z; cameraThird = true; setFoundryActive(true); showMessage("LEVEL 2 // SHIFTING FOUNDRY"); }
+      if (currentLevel === 3) { runZ = -296; cameraThird = true; setFoundryActive(false); showMessage("LEVEL 3 // INVERTED CORE"); }
       narrate(sectorBriefings[currentLevel]);
       updateUI();
     }
@@ -456,10 +679,16 @@ function updateGame(dt, time) {
     const liftZ = transitionTarget === 2 ? -132 : -282;
     desired.set(Math.sin(liftTimer * .9) * 8, 4 + liftTimer * .5, liftZ + 8 + Math.cos(liftTimer * .9) * 4); forward.set(0, 3.5 + liftTimer, liftZ);
   }
-  camera.position.lerp(desired, 1 - Math.exp(-dt * 7)); camera.lookAt(forward);
+  if (snapCamera) { camera.position.copy(desired); snapCamera = false; }
+  else camera.position.lerp(desired, 1 - Math.exp(-dt * 7));
+  camera.lookAt(forward);
   if (shake > .001) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 2.4); }
 
-  const aliveBreakables = breakables.filter(x => x.userData.alive);
+  // In Level 2 the shootable targets belong to the foundry, not to this file's
+  // `breakables` array, so both lists are offered to the raycast.
+  const aliveBreakables = currentLevel === 2 && foundry
+    ? foundry.breakables.filter(x => x.userData.alive)
+    : breakables.filter(x => x.userData.alive);
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(aliveBreakables, false);
   ui.reticle.classList.toggle("hot", hits.length > 0);
@@ -469,6 +698,7 @@ function updateGame(dt, time) {
     const segment = p.mesh.position.clone().sub(old); raycaster.set(old, segment.clone().normalize()); raycaster.far = segment.length() + .35;
     const hit = raycaster.intersectObjects(aliveBreakables, false)[0];
     if (hit) { shatter(hit.object); p.life = 0; }
+    else if (p.life <= 0 && currentLevel === 2) { combo = 1; comboTimer = 0; }
     if (p.life <= 0) { scene.remove(p.mesh); projectiles.splice(i, 1); }
   }
 
@@ -633,6 +863,11 @@ addEventListener("keydown", (event) => {
     return;
   }
   if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
+  if (event.code === "Space" && state === "playing" && !paused) {
+    event.preventDefault();
+    if (jumpHeight <= 0.01) jumpVelocity = 7.4;
+  }
+  if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && state === "playing" && !paused) sliding = 0.65;
   if (event.code === "Digit1") demoJump(1);
   if (event.code === "Digit2") demoJump(2);
   if (event.code === "Digit3") demoJump(3);
@@ -644,6 +879,29 @@ addEventListener("keydown", (event) => {
 });
 addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
+buildFoundry();
 updateUI();
 camera.position.set(0, 1.8, 8);
 animate();
+
+/**
+ * Read-only handle on game state, for the check harness and for poking at a
+ * run from the console during a demo. Not used by the game itself.
+ */
+globalThis.__dbg = {
+  get state() { return state; },
+  get currentLevel() { return currentLevel; },
+  get runZ() { return runZ; },
+  get health() { return health; },
+  get ammo() { return ammo; },
+  get score() { return score; },
+  get combo() { return combo; },
+  get foundry() { return foundry; },
+  foundryDistance,
+  demoJump,
+  shatter,
+  setRunZ(z) { runZ = z; },
+  setLane(index) { lane = index; playerX = lanes[index]; },
+  get playerX() { return playerX; },
+  renderer, scene, camera, THREE,
+};
