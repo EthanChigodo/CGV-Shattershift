@@ -174,3 +174,78 @@ kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border);
   .setting-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .setting-row input[type="range"] { width: 100%; }
 }
+
+/* ---- Level 1 additions: fade, preview bar, field manual, progress ---- */
+.fade-overlay { position: fixed; inset: 0; z-index: 9; background: #000; opacity: 0; pointer-events: none; }
+.preview-bar {
+  position: fixed; left: 50%; bottom: 26px; z-index: 7; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 16px; padding: 10px 14px;
+  border: 1px solid var(--accent-border); border-radius: 6px; background: var(--panel-bg); backdrop-filter: blur(10px);
+  color: var(--text-dim); font-size: 12px; font-weight: 700;
+}
+body.cw-preview .cw-ui > :not(.cw-labels) { display: none !important; }
+.progress-line { margin: 18px 0 0; color: var(--text-dimmer); font-size: 11px; font-weight: 700; white-space: pre-wrap; }
+.text-button:disabled { opacity: .45; cursor: not-allowed; text-decoration: none; }
+.end-stats { margin: -12px 0 22px; color: var(--text-dim); font-size: 12px; font-weight: 700; white-space: pre-wrap; }
+.pause-missions { margin: 0 0 22px; padding: 0; list-style: none; display: grid; gap: 6px; color: var(--text-dim); font-size: 12px; font-weight: 700; }
+.pause-missions:empty { display: none; }
+.pause-missions li.done { color: #b8ffcb; text-decoration: line-through; }
+.pause-missions b { color: var(--text); }
+#settingsScreen select { width: 220px; height: 34px; padding: 0 8px; border: 1px solid var(--accent-border); border-radius: 4px; background: rgba(18, 10, 8, .8); color: var(--text); font: inherit; }
+
+.manual-copy { width: min(1080px, 100%); }
+.manual-copy h2 { font-size: clamp(28px, 3.6vw, 44px); line-height: 1.05; max-width: 720px; }
+.manual-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin: 26px 0 0; }
+.manual-grid.tools { margin: 12px 0 26px; }
+.manual-grid article { --tone: #5ef0ff; padding: 14px 16px; border: 1px solid var(--accent-border-soft); border-left: 3px solid var(--tone); background: var(--panel-bg); }
+.manual-grid article[data-tone="hazard"] { --tone: #ff4a3d; }
+.manual-grid article[data-tone="fire"] { --tone: #ff8a1f; }
+.manual-grid article[data-tone="blue"] { --tone: #4d8dff; }
+.manual-grid article[data-tone="green"] { --tone: #7dff9a; }
+.manual-grid article[data-tone="serum"] { --tone: #ff5ad0; }
+.manual-grid article[data-tone="white"] { --tone: #ffffff; }
+.manual-grid article[data-tone="amber"] { --tone: #ffd23f; }
+.manual-grid.tools article { --tone: #b273ff; }
+.manual-grid h3 { margin: 0 0 6px; font-size: 14px; color: var(--text); }
+.manual-grid p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+.reticle b { background: var(--ball, var(--accent)); box-shadow: 0 0 10px var(--ball, var(--accent)); }
+body.cw-active .brand-mark { background: #5ef0ff; }
+
+/* ---- View menu and start-screen briefing ------------------------------ */
+.topbar { z-index: 6; }
+.view-menu {
+  position: absolute; top: 58px; right: 22px; z-index: 12; width: 280px; padding: 12px 14px;
+  border: 1px solid var(--accent-border); border-radius: 6px; background: rgba(12, 8, 6, 0.94);
+  backdrop-filter: blur(10px); pointer-events: auto; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+.view-menu[hidden] { display: none; }
+.view-menu-title { margin: 0 0 6px; color: var(--text); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.view-menu .setting-row { min-height: 30px; font-size: 12px; }
+.view-menu-hint { margin: 8px 0 0; color: var(--text-dimmer); font-size: 11px; }
+.briefing-card {
+  position: absolute; right: clamp(20px, 5vw, 70px); top: 50%; transform: translateY(-50%);
+  width: min(360px, 34vw); padding: 20px 22px; border: 1px solid var(--accent-border);
+  border-left: 3px solid #5ef0ff; border-radius: 6px; background: rgba(8, 10, 12, 0.78); backdrop-filter: blur(10px);
+}
+.briefing-card h3 { margin: 6px 0 8px; font-size: 24px; color: var(--text); }
+.briefing-card > p { margin: 0 0 12px; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+.briefing-card .eyebrow { margin: 0; color: #5ef0ff; }
+.briefing-label { margin: 14px 0 6px !important; color: var(--text) !important; font-size: 10px !important; font-weight: 800; letter-spacing: .14em; }
+.briefing-card ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.briefing-card li { position: relative; padding-left: 16px; color: var(--text); font-size: 13px; font-weight: 700; }
+.briefing-card li::before { content: ""; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border: 1px solid #5ef0ff; transform: rotate(45deg); }
+.briefing-card li.done { color: #b8ffcb; }
+.briefing-card li.done::after { content: " (done before)"; font-weight: 600; color: var(--text-dimmer); }
+.briefing-keys { font-size: 12px !important; line-height: 2 !important; }
+.briefing-keys kbd { margin-right: 2px; }
+@media (max-width: 1000px) { .briefing-card { position: static; transform: none; width: auto; margin: 0 20px 20px; } #startScreen { flex-direction: column; } }
+
+/* ---- Aiming: the crosshair follows the pointer ----------------------- */
+body.aiming, body.aiming #game { cursor: none; }
+body.aiming button, body.aiming .view-menu, body.aiming .view-menu * { cursor: pointer; }
+.reticle { transition: width .12s ease, height .12s ease; }
+.reticle::before, .reticle::after, .reticle i::before, .reticle i::after { transition: background .12s ease; }
+.reticle.hot::before, .reticle.hot::after, .reticle.hot i::before, .reticle.hot i::after { background: var(--accent-hot); }
+/* Aim assist lock: a ring around the crosshair. */
+.reticle.assist::after { box-shadow: none; }
+.reticle.assist { outline: 1.5px solid var(--accent-hot); outline-offset: 4px; border-radius: 50%; }
