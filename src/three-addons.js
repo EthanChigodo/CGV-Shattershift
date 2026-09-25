@@ -20,3 +20,5 @@ export { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 export { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 export * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
 export { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+export * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
+export { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";

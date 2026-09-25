@@ -14,6 +14,7 @@
 
 import * as THREE from "../../three.js";
 import { GLTFLoader, BufferGeometryUtils } from "../../three-addons.js";
+import { buildCharacterTemplate, cloneCharacter } from "./characters.js";
 
 /**
  * Models that arrive as many small meshes sharing a few materials. Every mesh
@@ -75,7 +76,25 @@ export const MELTDOWN_ASSETS = {
   industrialPipes: "industrial_pipes.glb",
   experimentRing: "experiment_ring.glb",
   launcher: "launcher.glb",
+  // People (see characters.js): normalised, atlas-merged, and rigged.
+  patient: "patient.glb",
 };
+
+/**
+ * Characters, and the profile each is prepared with. `scientist_colossus.glb`
+ * is deliberately absent: its textures carry Nazi insignia (helmet, badge,
+ * boots) - see docs/credits.md.
+ */
+export const CHARACTER_ASSETS = {
+  patient: { file: "patient.glb", profile: "patient" },
+  playerFemale: { file: "player_female.glb", profile: "playerFemale" },
+  playerMale: { file: "player_male.glb", profile: "playerMale" },
+  scientistRadioman: { file: "scientist_radioman.glb", profile: "scientistRadioman" },
+  scientistRust: { file: "scientist_rust.glb", profile: "scientistRust" },
+};
+
+/** Loaded once per page and shared by every level instance (and a restart). */
+const cache = new Map();
 
 /**
  * Load every asset. Each result is a template Group whose origin sits at the
@@ -83,49 +102,21 @@ export const MELTDOWN_ASSETS = {
  * where the source file put its pivot.
  * @returns {Promise<Map<string, {template: THREE.Group, size: THREE.Vector3}>>}
  */
-export async function loadMeltdownAssets(baseUrl, { onProgress } = {}) {
+export async function loadMeltdownAssets(baseUrl, { onProgress, names } = {}) {
   const loader = new GLTFLoader();
-  const entries = Object.entries(MELTDOWN_ASSETS);
+  const wanted = names ?? Object.keys(MELTDOWN_ASSETS);
+  const entries = wanted.map((name) => [name, CHARACTER_ASSETS[name]?.file ?? MELTDOWN_ASSETS[name]]).filter(([, file]) => file);
   const assets = new Map();
   let done = 0;
 
   await Promise.all(
     entries.map(async ([name, file]) => {
       try {
-        const gltf = await loader.loadAsync(new URL(file, baseUrl).href);
-        let scene = gltf.scene;
-        if (MERGE_BY_MATERIAL.has(name)) {
-          try {
-            scene = mergeByMaterial(scene);
-          } catch (error) {
-            console.warn(`[meltdown] could not merge "${name}", using it as-is`, error);
-          }
-        }
-        scene.updateMatrixWorld(true);
-        const box = new THREE.Box3().setFromObject(scene);
-        const size = box.getSize(new THREE.Vector3());
-        const centre = box.getCenter(new THREE.Vector3());
-        scene.position.set(-centre.x, -box.min.y, -centre.z);
-        scene.traverse((o) => {
-          if (o.isMesh) {
-            o.castShadow = false;
-            o.receiveShadow = false;
-            // Exported PBR materials default to fully rough; a touch of
-            // metal response lets the fire and alarm lights read on them.
-            if (o.material && o.material.isMeshStandardMaterial) {
-              o.material.envMapIntensity = 0.6;
-              if (KILL_EMISSIVE.has(name)) {
-                o.material.emissive.setRGB(0, 0, 0);
-                o.material.emissiveIntensity = 0;
-              }
-            }
-          }
-        });
-        const template = new THREE.Group();
-        template.name = `Asset_${name}`;
-        template.add(scene);
-        assets.set(name, { template, size });
+        if (!cache.has(name)) cache.set(name, loadOne(loader, baseUrl, name, file));
+        const asset = await cache.get(name);
+        if (asset) assets.set(name, asset);
       } catch (error) {
+        cache.delete(name);
         console.warn(`[meltdown] asset "${name}" failed to load, keeping stand-in`, error);
       } finally {
         done += 1;
@@ -135,6 +126,55 @@ export async function loadMeltdownAssets(baseUrl, { onProgress } = {}) {
   );
 
   return assets;
+}
+
+async function loadOne(loader, baseUrl, name, file) {
+  const gltf = await loader.loadAsync(new URL(file, baseUrl).href);
+  const character = CHARACTER_ASSETS[name];
+  if (character) {
+    const template = buildCharacterTemplate(gltf.scene, character.profile);
+    template.name = `Character_${name}`;
+    const size = new THREE.Box3().setFromObject(template, true).getSize(new THREE.Vector3());
+    size.y = template.userData.character.height;
+    return { template, size, character: true };
+  }
+  let scene = gltf.scene;
+  if (MERGE_BY_MATERIAL.has(name)) {
+    try {
+      scene = mergeByMaterial(scene);
+    } catch (error) {
+      console.warn(`[meltdown] could not merge "${name}", using it as-is`, error);
+    }
+  }
+  scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  scene.position.set(-centre.x, -box.min.y, -centre.z);
+  scene.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = false;
+      o.receiveShadow = false;
+      // Exported PBR materials default to fully rough; a touch of
+      // metal response lets the fire and alarm lights read on them.
+      if (o.material && o.material.isMeshStandardMaterial) {
+        o.material.envMapIntensity = 0.6;
+        if (KILL_EMISSIVE.has(name)) {
+          o.material.emissive.setRGB(0, 0, 0);
+          o.material.emissiveIntensity = 0;
+        }
+      }
+    }
+  });
+  const template = new THREE.Group();
+  template.name = `Asset_${name}`;
+  template.add(scene);
+  return { template, size };
+}
+
+/** A fresh, independently posable copy of a loaded character. */
+export function instantiateCharacter(asset) {
+  return cloneCharacter(asset.template);
 }
 
 /**
@@ -174,6 +214,21 @@ export function fillAssetSlots(root, assets) {
     const spec = slot.userData.assetSlot;
     const asset = assets.get(spec.name);
     if (!asset) continue;
+
+    if (asset.character) {
+      // People keep their real height and their own skeleton; they are
+      // placed feet-down at the slot, facing the slot's +Z.
+      const person = cloneCharacter(asset.template);
+      if (spec.rotateY) person.rotation.y = spec.rotateY;
+      if (spec.size?.[1] > 0) person.scale.setScalar(spec.size[1] / asset.size.y);
+      slot.add(person);
+      slot.userData.filled = true;
+      slot.userData.model = person;
+      for (const p of slot.userData.placeholders ?? []) p.visible = false;
+      slot.userData.onFilled?.(person);
+      filled += 1;
+      continue;
+    }
 
     const model = asset.template.clone(true);
     const inner = new THREE.Group();
@@ -227,6 +282,7 @@ export function fillAssetSlots(root, assets) {
     slot.userData.filled = true;
     slot.userData.model = holder;
     for (const p of slot.userData.placeholders ?? []) p.visible = false;
+    slot.userData.onFilled?.(holder);
     filled += 1;
   }
 

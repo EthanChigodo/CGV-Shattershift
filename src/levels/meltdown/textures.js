@@ -572,6 +572,39 @@ function crackOverlayCanvas(size = 256) {
 }
 
 /**
+ * Roughness for the floors: mostly scuffed, with blotches of water from the
+ * sprinklers and burst pipes. Dark = glossy, so the puddles pick up the fire
+ * and the alarm lights - the cheapest "reflective wet floor" there is, with
+ * the scene's environment map and point lights doing the rest.
+ */
+function puddleCanvas(size = 256) {
+  const canvas = createCanvas(size);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#b4b4b4";
+  ctx.fillRect(0, 0, size, size);
+  const random = seededRandom(771);
+  ctx.filter = "blur(7px)";
+  for (let i = 0; i < 16; i += 1) {
+    const x = random() * size;
+    const y = random() * size;
+    const r = 10 + random() * 34;
+    const g = Math.round(28 + random() * 50);
+    ctx.fillStyle = `rgb(${g},${g},${g})`;
+    // Draw with wrap-around copies so the tile repeats seamlessly.
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) {
+        ctx.beginPath();
+        ctx.ellipse(x + ox, y + oy, r * (1 + random() * 0.6), r * 0.6, random() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.filter = "none";
+  grain(ctx, size, 26, 91);
+  return canvas;
+}
+
+/**
  * Build every baked texture the level needs, once per level instance. Owns
  * its textures and disposes them on unload.
  */
@@ -598,6 +631,7 @@ export function createMeltdownTextures() {
   textures.steelWallNormal = finish(heightToNormal(steelPanelCanvas(256), 1.8), { repeat: [2, 1] });
   textures.concreteWallNormal = finish(heightToNormal(concreteCanvas(256), 2.2), { repeat: [2, 1] });
   textures.labFloorNormal = finish(heightToNormal(labFloorCanvas(256), 1.6), { repeat: [3, 2] });
+  textures.floorRoughness = finish(puddleCanvas(), { repeat: [1.5, 1] });
 
   textures.dispose = () => {
     for (const value of Object.values(textures)) {

@@ -42,19 +42,28 @@ export function createMeltdownAmbience({ brightness = 1.5 } = {}) {
   group.add(key);
 
   let danger = 0;
+  let power = 1;
   let currentBrightness = brightness;
 
   const apply = () => {
     hemisphere.color.copy(coolFill).lerp(dangerFill, danger);
     hemisphere.groundColor.copy(coolGround).lerp(dangerGround, danger);
-    hemisphere.intensity = 0.68 * Math.sqrt(currentBrightness);
+    hemisphere.intensity = 0.68 * Math.sqrt(currentBrightness) * power;
     key.color.copy(coolKey).lerp(dangerKey, danger);
-    key.intensity = (0.9 - danger * 0.25) * currentBrightness;
+    key.intensity = (0.9 - danger * 0.25) * currentBrightness * power;
   };
   apply();
 
   group.userData.setBrightness = (value) => {
     currentBrightness = value;
+    apply();
+  };
+
+  /** 1 = mains on; toward 0 in the blacked-out beat. Only touches intensities. */
+  group.userData.setPower = (value) => {
+    const next = THREE.MathUtils.clamp(value, 0, 1);
+    if (Math.abs(next - power) < 1e-4) return;
+    power = next;
     apply();
   };
 
@@ -69,4 +78,49 @@ export function createMeltdownAmbience({ brightness = 1.5 } = {}) {
   };
 
   return group;
+}
+
+/**
+ * Dim the scene's environment reflections with the power.
+ *
+ * The environment map (RoomEnvironment) is what keeps metal from rendering
+ * black - but it is image-based light, not a light, so it ignores the
+ * blackout entirely: in the dark beat every steel wall and duct still shone
+ * as if lit. Swapping `scene.environment` out would change every material's
+ * shader and recompile mid-run, so instead each standard material's own
+ * `envMapIntensity` is scaled (a uniform - free). Materials are collected
+ * lazily and re-collected on `refresh()`, after models stream in.
+ */
+export function createEnvironmentDimmer(scene) {
+  let entries = null;
+  let level = 1;
+  const collect = () => {
+    entries = [];
+    const seen = new Set();
+    scene.traverse((o) => {
+      const list = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of list) {
+        if (!m || seen.has(m) || !m.isMeshStandardMaterial) continue;
+        seen.add(m);
+        entries.push({ material: m, base: m.userData.baseEnvIntensity ?? m.envMapIntensity });
+        m.userData.baseEnvIntensity = m.userData.baseEnvIntensity ?? m.envMapIntensity;
+      }
+    });
+  };
+  return {
+    refresh() {
+      entries = null;
+      const k = level;
+      level = -1;
+      this.set(k);
+    },
+    /** 1 = full reflections, 0 = none. Only touches materials when it changes. */
+    set(value) {
+      const k = THREE.MathUtils.clamp(value, 0, 1);
+      if (Math.abs(k - level) < 0.01) return;
+      level = k;
+      if (!entries) collect();
+      for (const e of entries) e.material.envMapIntensity = e.base * k;
+    },
+  };
 }

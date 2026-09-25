@@ -26,6 +26,8 @@ export const HALL_THEMES = {
   experiment: { name: "EXPERIMENT CHAMBER", wall: "steelWall", height: 17, pillars: false, vents: false, fans: false },
   archive: { name: "RECORDS ARCHIVE", wall: "concreteWall", height: 12, pillars: true, vents: false, fans: true },
   boiler: { name: "BOILER HALL", wall: "concreteWall", height: 14, pillars: true, vents: true, fans: false },
+  // The blacked-out beat's hall: where the building's power came from.
+  substation: { name: "EMERGENCY SUBSTATION", wall: "steelWall", height: 13, pillars: true, vents: true, fans: false, dark: true },
 };
 
 /**
@@ -49,6 +51,8 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
   const hall = new THREE.Group();
   hall.name = `Hall_${theme}`;
   const ticking = [];
+  /** Beam-shy patients: the level needs them to test the flashlight against. */
+  const watchers = [];
   const owned = { materials: [], textures: [] };
 
   let value = seed * 7919 + 17;
@@ -69,10 +73,13 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
   /** A material clone whose textures repeat per `tile` metres over a w x h face. */
   const tiled = (base, w, h, tile = 4) => {
     const m = base.clone();
-    for (const key of ["map", "normalMap"]) {
+    for (const key of ["map", "normalMap", "roughnessMap"]) {
       if (!base[key]) continue;
       const t = base[key].clone();
-      t.repeat.set(Math.max(1, w / tile), Math.max(1, h / tile));
+      // Puddles are big and irregular; tiling them at the tile size reads
+      // as a camouflage pattern, so wet patches repeat every ~10 m instead.
+      const size = key === "roughnessMap" ? Math.max(tile, 10) : tile;
+      t.repeat.set(Math.max(1, w / size), Math.max(1, h / size));
       t.needsUpdate = true;
       m[key] = t;
       owned.textures.push(t);
@@ -109,13 +116,26 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
   for (let z = -L / 2 + 3; z < L / 2; z += 6) hall.add(box(W * 2, 0.6, 0.5, mat.darkMetal, H - 0.6, 0, z));
   for (const side of [-1, 1]) hall.add(box(0.6, 0.8, L, mat.darkMetal, H - 1.4, side * W * 0.45));
 
-  // Hanging work lamps - real pooled-light emitters.
+  // Hanging work lamps - real pooled-light emitters. In a dark hall they
+  // hang dead, and only a couple of battery lamps glow red.
   for (let z = -L / 2 + 6; z < L / 2 - 2; z += 11) {
     for (const side of [-1, 1]) {
       const lamp = new THREE.Group();
       lamp.add(box(0.05, 2, 0.05, mat.trim, H - 2));
       const shade = box(1.2, 0.25, 1.2, mat.darkMetal, H - 2.25);
       lamp.add(shade);
+      if (T.dark) {
+        lamp.add(box(0.9, 0.05, 0.9, mat.lightTubeDead, H - 2.3));
+        if (random() < 0.25) {
+          const anchor = new THREE.Object3D();
+          anchor.position.y = H - 2.6;
+          lamp.add(anchor);
+          lamp.userData.emitter = { kind: "point", anchor, color: 0xff2410, base: 2, distance: 9, intensityAt: () => 2 };
+        }
+        hall.add(lamp);
+        lamp.position.set(side * W * 0.45, 0, z);
+        continue;
+      }
       lamp.add(box(0.9, 0.05, 0.9, mat.lightTube, H - 2.3));
       const anchor = new THREE.Object3D();
       anchor.position.y = H - 2.6;
@@ -136,7 +156,7 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
         const x = side * (c + 1.5);
         hall.add(box(1.0, H, 1.0, mat.darkMetal, 0, x, z));
         hall.add(box(1.15, 1.3, 1.15, mat.hazard, 0, x, z));
-        if (random() < 0.5) put(kit.alarmBeacon({ x: 0, y: 4.2, speed: 3 + random() * 2, phase: random() * 6 }), x - side * 0.6, z);
+        if (!T.dark && random() < 0.5) put(kit.alarmBeacon({ x: 0, y: 4.2, speed: 3 + random() * 2, phase: random() * 6 }), x - side * 0.6, z);
       }
     }
   }
@@ -151,7 +171,7 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
 
   for (const side of [-1, 1]) {
     for (let z = -L / 2 + 4; z < L / 2; z += 16) {
-      put(kit.securityCam({ side }), side * (W - 0.35), z + random() * 3, { y: H * 0.6 });
+      put(kit.securityCam({ side, dead: T.dark }), side * (W - 0.35), z + random() * 3, { y: H * 0.6 });
     }
   }
 
@@ -238,6 +258,70 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
       put(kit.labBench({ scope: false }), -(c + 2), 6, { rotY: Math.PI / 2 });
     },
 
+    substation() {
+      // Switchgear: banks of cabinets along both walls, a few doors hanging
+      // open, some still arcing. Big transformers caged off behind them.
+      for (const side of [-1, 1]) {
+        for (let z = -L / 2 + 3; z < L / 2 - 3; z += 1.3) {
+          const cabinet = new THREE.Group();
+          cabinet.add(box(1.2, 2.5, 0.85, mat.paintedMetal));
+          cabinet.add(box(1.05, 0.9, 0.05, mat.screenDead, 1.3, 0, 0.44));
+          cabinet.add(box(1.1, 0.08, 0.9, mat.hazard, 2.5));
+          if (random() < 0.2) {
+            const door = box(1.1, 2.2, 0.05, mat.paintedMetal, 0.15, 0.5, 0.5);
+            door.rotation.y = 1.1;
+            cabinet.add(door);
+          }
+          put(cabinet, sideZone(side, 1.2), z, { rotY: -side * Math.PI / 2 });
+        }
+        for (let i = 0; i < 3; i += 1) {
+          const z = -L / 2 + 8 + i * 13;
+          const transformer = new THREE.Group();
+          const tank = kit.box(2.6, 3.2, 2.2, mat.darkMetal);
+          transformer.add(tank);
+          for (let f = -1; f <= 1; f += 0.25) transformer.add(box(0.06, 2.6, 2.4, mat.paintedMetal, 0.3, f * 1.3));
+          for (const x of [-0.7, 0, 0.7]) {
+            const bushing = box(0.22, 1.1, 0.22, mat.trim, 3.2, x);
+            transformer.add(bushing);
+          }
+          put(transformer, sideZone(side, 5.2), z);
+          put(kit.cagePanel({ length: 6 }), sideZone(side, 7.2), z);
+        }
+        // Arcing cabinets: the only moving light in the room.
+        for (let i = 0; i < 2; i += 1) {
+          const arc = new THREE.Group();
+          const sparks = kit.emberJet({ count: 18 });
+          sparks.position.y = 1.6;
+          arc.add(sparks);
+          const anchor = new THREE.Object3D();
+          anchor.position.y = 1.6;
+          arc.add(anchor);
+          const phase = random() * 10;
+          arc.userData.emitter = {
+            kind: "point", anchor, color: 0xa8c8ff, base: 6, distance: 11,
+            intensityAt: (t) => (Math.sin(t * 23 + phase) > 0.55 || Math.sin(t * 3.1 + phase) > 0.97 ? 7 : 0.2),
+          };
+          arc.userData.tick = (dt, t) => {
+            sparks.userData.tick(dt);
+            sparks.visible = Math.sin(t * 23 + phase) > 0.3;
+          };
+          put(arc, sideZone(side, 2), -L / 2 + 10 + i * 20 + random() * 4);
+        }
+        // Battery strips along the route edges, as in the corridor.
+        for (let z = -L / 2 + 1; z < L / 2; z += 4) hall.add(box(0.12, 0.05, 3.2, mat.emergencyStrip, 0.02, side * (c - 0.55), z));
+        // People in the dark, between the cabinets and the transformers.
+        for (let i = 0; i < 2; i += 1) {
+          const watcher = kit.patientWatcher({ side, seed: seed * 7 + i * 3 + side });
+          put(watcher, sideZone(side, 3.3), -L / 2 + 9 + i * 18 + random() * 6);
+          watchers.push(watcher);
+        }
+      }
+      // Cable trays overhead, some sagging free.
+      for (const x of [-W * 0.3, W * 0.3]) hall.add(box(1.2, 0.2, L - 4, mat.darkMetal, H - 3, x));
+      for (let i = 0; i < 3; i += 1) put(kit.hangingCables({ seed: seed + i * 11 }), (random() - 0.5) * (c * 2 + 6), -L / 2 + 8 + i * 13);
+      put(kit.fireSpot({ width: 1.6, depth: 1.2, height: 1.8 }), sideZone(1, 3.5), -4);
+    },
+
     boiler() {
       for (const side of [-1, 1]) {
         put(kit.pipeWall({ length: L - 4, height: 11 }), side * (W - 0.9), 0);
@@ -255,14 +339,14 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
   dress[theme]?.();
 
   // Every hall is on fire somewhere, and full of smoke up in the roof.
-  const fires = theme === "boiler" || theme === "archive" ? 0 : 3;
+  const fires = theme === "boiler" || theme === "archive" || T.dark ? 0 : 3;
   for (let i = 0; i < fires; i += 1) {
     const side = random() < 0.5 ? -1 : 1;
     put(kit.fireSpot({ width: 1.8 + random(), depth: 1.5, height: 2 + random() * 1.2 }), side * (c + 1 + random() * (W - c - 3)), -L / 2 + 5 + random() * (L - 10));
   }
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < (T.dark ? 7 : 4); i += 1) {
     const smoke = kit.smokeJet({ count: 12 });
-    put(smoke, (random() - 0.5) * W * 1.4, -L / 2 + 5 + random() * (L - 10), { y: H * 0.55 });
+    put(smoke, (random() - 0.5) * W * 1.4, -L / 2 + 5 + random() * (L - 10), { y: T.dark ? H * 0.35 : H * 0.55 });
   }
 
   bakeStatic(hall);
@@ -275,6 +359,7 @@ export function buildHall(kit, { theme = "lab", length = 44, halfWidth = 16, cor
     for (const t of owned.textures) t.dispose();
   };
   hall.userData.hallName = T.name;
+  hall.userData.watchers = watchers;
   return hall;
 }
 

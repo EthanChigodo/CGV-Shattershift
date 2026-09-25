@@ -8,7 +8,10 @@
  *
  * Debris is what breaking looks like: pooled shards with velocity, spin,
  * gravity, floor bounce and friction; spark bursts; dust puffs. Everything is
- * allocated once up front and recycled, so a big shatter costs no garbage.
+ * allocated once up front and recycled, so a big shatter costs no garbage -
+ * and shards are drawn as one InstancedMesh per material, so a 70-shard pane
+ * costs one draw call, not seventy (it used to spike the frame on every
+ * big break).
  */
 
 import * as THREE from "../../three.js";
@@ -40,6 +43,12 @@ export class Projectiles {
     this._dir = new THREE.Vector3();
     this._next = new THREE.Vector3();
     this._normal = new THREE.Vector3();
+  }
+
+  /** Brightness of the balls' glow: raised in the dark, where balls are flares. */
+  setGlow(value) {
+    this.material.emissiveIntensity = 0.35 * value;
+    this.glowMaterial.opacity = Math.min(0.9, 0.35 * value);
   }
 
   fire(origin, direction, speed = 70, { power = 1, inherit } = {}) {
@@ -175,14 +184,28 @@ export class Debris {
     this.ballGeo = new THREE.SphereGeometry(0.12, 10, 8);
     this.materials = Object.fromEntries(Object.entries(DEBRIS_MATERIALS).map(([k, f]) => [k, f()]));
 
+    // One instanced mesh per material; pieces are plain state, written into
+    // whichever mesh their kind uses each frame.
+    this.batches = {};
+    for (const [kind, material] of Object.entries(this.materials)) {
+      const batch = new THREE.InstancedMesh(kind === "ball" ? this.ballGeo : this.shardGeo, material, shards);
+      batch.name = `Debris_${kind}`;
+      batch.count = 0;
+      batch.frustumCulled = false;
+      batch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(batch);
+      this.batches[kind] = batch;
+    }
     this.pieces = [];
     for (let i = 0; i < shards; i += 1) {
-      const mesh = new THREE.Mesh(this.shardGeo, this.materials.glass);
-      mesh.visible = false;
-      mesh.frustumCulled = false;
-      scene.add(mesh);
-      this.pieces.push({ mesh, v: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0, max: 1, size: 1, active: false, rest: false });
+      this.pieces.push({
+        kind: "glass", position: new THREE.Vector3(), rotation: new THREE.Euler(), scale: 1,
+        v: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0, max: 1, size: 1, active: false, rest: false,
+      });
     }
+    this._matrix = new THREE.Matrix4();
+    this._quat = new THREE.Quaternion();
+    this._scale = new THREE.Vector3();
 
     // Sparks: one Points object, per-particle state in typed arrays.
     this.sparkCount = sparks;
@@ -226,35 +249,32 @@ export class Debris {
    * @param {THREE.Vector3} [o.push] bias velocity (e.g. the ball's direction)
    */
   burst(position, { kind = "glass", count = 24, speed = 5, size = 0.28, area = null, right = null, push = null, up = 3 } = {}) {
-    const material = this.materials[kind] ?? this.materials.glass;
+    if (!this.batches[kind]) kind = "glass";
     let spawned = 0;
     for (const piece of this.pieces) {
       if (spawned >= count) break;
       if (piece.active) continue;
       piece.active = true;
+      piece.kind = kind;
       piece.rest = false;
       piece.life = 0;
       piece.max = 1.8 + Math.random() * 1.4;
-      piece.size = size * (0.4 + Math.random() * 1.1);
-      const m = piece.mesh;
-      m.geometry = kind === "ball" ? this.ballGeo : this.shardGeo;
-      m.material = material;
-      m.position.copy(position);
+      piece.size = kind === "ball" ? 1 : size * (0.4 + Math.random() * 1.1);
+      piece.scale = piece.size;
+      const p = piece.position.copy(position);
       if (area) {
         // Spread across the pane: along its `right` axis (the route's
         // lateral direction there) and up its height.
         const across = (Math.random() - 0.5) * area[0];
-        if (right) m.position.addScaledVector(right, across);
-        else m.position.x += across;
-        m.position.y += (Math.random() - 0.5) * area[1];
+        if (right) p.addScaledVector(right, across);
+        else p.x += across;
+        p.y += (Math.random() - 0.5) * area[1];
       }
-      m.scale.setScalar(kind === "ball" ? 1 : piece.size);
-      m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+      piece.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
       piece.v.set((Math.random() - 0.5) * 2, Math.random() * 0.8 + 0.2, (Math.random() - 0.5) * 2).normalize().multiplyScalar(speed * (0.4 + Math.random()));
       piece.v.y += up * Math.random();
       if (push) piece.v.addScaledVector(push, 0.3 + Math.random() * 0.5);
       piece.spin.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18);
-      m.visible = true;
       spawned += 1;
     }
     return spawned;
@@ -289,36 +309,42 @@ export class Debris {
   }
 
   update(dt) {
+    for (const batch of Object.values(this.batches)) batch.count = 0;
     for (const piece of this.pieces) {
       if (!piece.active) continue;
       piece.life += dt;
-      const m = piece.mesh;
       if (piece.life > piece.max) {
         piece.active = false;
-        m.visible = false;
         continue;
       }
+      const p = piece.position;
       if (!piece.rest) {
         piece.v.y += GRAVITY * dt;
-        m.position.addScaledVector(piece.v, dt);
-        m.rotation.x += piece.spin.x * dt;
-        m.rotation.y += piece.spin.y * dt;
-        m.rotation.z += piece.spin.z * dt;
-        if (m.position.y < FLOOR_Y + 0.03) {
-          m.position.y = FLOOR_Y + 0.03;
+        p.addScaledVector(piece.v, dt);
+        piece.rotation.x += piece.spin.x * dt;
+        piece.rotation.y += piece.spin.y * dt;
+        piece.rotation.z += piece.spin.z * dt;
+        if (p.y < FLOOR_Y + 0.03) {
+          p.y = FLOOR_Y + 0.03;
           piece.v.y *= -0.3;
           piece.v.x *= 0.55;
           piece.v.z *= 0.55;
           piece.spin.multiplyScalar(0.5);
           if (Math.abs(piece.v.y) < 0.6) {
             piece.rest = true;
-            m.rotation.x = Math.PI / 2;
+            piece.rotation.x = Math.PI / 2;
           }
         }
       }
       const fade = piece.max - piece.life;
-      if (fade < 0.4) m.scale.setScalar(Math.max(0.001, (fade / 0.4) * (m.geometry === this.ballGeo ? 1 : piece.size)));
+      const scale = fade < 0.4 ? Math.max(0.001, (fade / 0.4) * piece.size) : piece.size;
+      const batch = this.batches[piece.kind];
+      this._quat.setFromEuler(piece.rotation);
+      this._matrix.compose(p, this._quat, this._scale.setScalar(scale));
+      batch.setMatrixAt(batch.count, this._matrix);
+      batch.count += 1;
     }
+    for (const batch of Object.values(this.batches)) if (batch.count) batch.instanceMatrix.needsUpdate = true;
 
     for (let i = 0; i < this.sparkCount; i += 1) {
       if (this.sparkLife[i] <= 0) continue;
@@ -354,10 +380,8 @@ export class Debris {
   }
 
   clear() {
-    for (const p of this.pieces) {
-      p.active = false;
-      p.mesh.visible = false;
-    }
+    for (const p of this.pieces) p.active = false;
+    for (const batch of Object.values(this.batches)) batch.count = 0;
     this.sparkLife.fill(0);
     for (let i = 0; i < this.sparkCount; i += 1) this.sparkPos[i * 3 + 1] = -999;
     for (const p of this.puffs) {

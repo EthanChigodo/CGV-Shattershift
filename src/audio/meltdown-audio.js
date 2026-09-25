@@ -9,7 +9,10 @@
  *                     fire crackle, heartbeat at low vitality.
  * One-shots:          launcher shot, glass crack/shatter, concrete crash,
  *                     metal clang, player stumble, pickup, power-up,
- *                     overheat whine + lockout clunk, duct push, warp.
+ *                     overheat whine + lockout clunk, duct push, warp,
+ *                     power failure, patient groan / hit / fall, the
+ *                     stinger when your beam finds someone in the dark,
+ *                     the beam clicking on.
  *
  * Browsers only allow audio after a user gesture, so nothing starts until
  * `start()` is called from a click/keypress handler.
@@ -63,7 +66,7 @@ export class MeltdownAudio {
     this.danger = Math.max(0, Math.min(1, d));
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.sirenGain.gain.setTargetAtTime(0.05 + this.danger * 0.06, t, 0.3);
+    this.sirenGain.gain.setTargetAtTime(this._sirenDucked ? 0.008 : 0.05 + this.danger * 0.06, t, 0.3);
     this.fireFilter.frequency.setTargetAtTime(380 + this.danger * 900 + this.fireNear * 900, t, 0.3);
     this.fireGain.gain.setTargetAtTime(0.1 + this.danger * 0.22 + this.fireNear * 0.35, t, 0.3);
     this.heart = this.danger > 0.72 ? (this.danger - 0.72) / 0.28 : 0;
@@ -315,6 +318,69 @@ export class MeltdownAudio {
     const t = this._now();
     this._tone(t, { freq: 60, to: 900, duration: 2.5, gain: 0.2, type: "sawtooth" });
     this._tone(t + 0.3, { freq: 1200, to: 80, duration: 3, gain: 0.12, type: "sine" });
+  }
+
+  /** The grid dying: everything winds down, a relay slams, the siren chokes. */
+  powerDown() {
+    if (!this.ctx) return;
+    const t = this._now();
+    this._tone(t, { freq: 120, to: 30, duration: 2.2, gain: 0.35, type: "sawtooth" });
+    this._tone(t, { freq: 60, to: 22, duration: 2.6, gain: 0.3 });
+    this._burst(t + 0.05, { duration: 0.12, gain: 0.45, type: "bandpass", freq: 900 });
+    this._tone(t + 0.1, { freq: 95, to: 50, duration: 0.25, gain: 0.4, type: "square" });
+    this.sirenGain?.gain.setTargetAtTime(0.008, t, 0.4);
+    this._sirenDucked = true;
+  }
+
+  /** Emergency power: the siren comes back. */
+  powerUp() {
+    if (!this.ctx || !this._sirenDucked) return;
+    this._sirenDucked = false;
+    const t = this._now();
+    this._tone(t, { freq: 40, to: 160, duration: 1.2, gain: 0.25, type: "sawtooth" });
+    this._burst(t + 1.1, { duration: 0.1, gain: 0.35, type: "bandpass", freq: 1200 });
+  }
+
+  /** The launcher's light snapping on. */
+  beamOn() {
+    if (!this.ctx) return;
+    const t = this._now();
+    this._burst(t, { duration: 0.04, gain: 0.25, type: "highpass", freq: 4000 });
+    this._tone(t + 0.02, { freq: 7800, to: 7000, duration: 0.5, gain: 0.015 });
+  }
+
+  /** A patient stepping out: a wet, rising moan. */
+  groan(strength = 1) {
+    if (!this.ctx) return;
+    const t = this._now();
+    const f = 85 + Math.random() * 40;
+    this._tone(t, { freq: f, to: f * 1.5, duration: 0.7, gain: 0.16 * strength, type: "sawtooth" });
+    this._tone(t, { freq: f * 1.02, to: f * 1.35, duration: 0.8, gain: 0.12 * strength, type: "triangle" });
+    this._burst(t, { duration: 0.6, gain: 0.08 * strength, type: "bandpass", freq: 500, q: 3 });
+  }
+
+  /** A ball into a body. */
+  thud() {
+    if (!this.ctx) return;
+    const t = this._now();
+    this._tone(t, { freq: 140, to: 60, duration: 0.14, gain: 0.35 });
+    this._burst(t, { duration: 0.1, gain: 0.2, type: "lowpass", freq: 700 });
+  }
+
+  /** A body hitting the floor. */
+  bodyFall() {
+    if (!this.ctx) return;
+    const t = this._now();
+    this._tone(t + 0.35, { freq: 90, to: 40, duration: 0.3, gain: 0.4 });
+    this._burst(t + 0.35, { duration: 0.35, gain: 0.25, type: "lowpass", freq: 500 });
+  }
+
+  /** The beam lands on someone standing in the dark. */
+  stinger() {
+    if (!this.ctx) return;
+    const t = this._now();
+    for (const f of [311, 330, 466]) this._tone(t, { freq: f * 2, to: f * 2.03, duration: 1.4, gain: 0.05, type: "sawtooth" });
+    this._burst(t, { duration: 0.8, gain: 0.12, type: "highpass", freq: 2500, sweepTo: 6000 });
   }
 
   stop() {

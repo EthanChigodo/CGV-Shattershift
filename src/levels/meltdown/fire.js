@@ -172,6 +172,8 @@ export function createFireMaterials() {
     fire,
     smoke,
     quad,
+    /** The shared clock uniform, for other shaders that animate with the fire. */
+    time: shared.uTime,
     setTime(time) {
       shared.uTime.value = time;
     },

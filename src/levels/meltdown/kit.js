@@ -21,6 +21,8 @@
  *                 ceilingChunk, airDuct, floorGap, pendulum, laserGrid,
  *                 fireVent, topplingShelf, rollingCylinder, slidingCart,
  *                 glassPane (shoot it or crash through it)
+ * People:         lurcher (a patient who steps into a lane - shoot or dodge),
+ *                 patientWatcher (stands in the dark until the beam finds them)
  * Pickups:        sack, powerup
  * Lab dressing:   labBench, shelfUnit, cagePanel, labCell, specimenTank,
  *                 labGurney, ivStand, curtainRail, consolePanel,
@@ -34,6 +36,7 @@ import * as THREE from "../../three.js";
 import { createMeltdownTextures, createSignTexture } from "./textures.js";
 import { createFire } from "./fire.js";
 import { assetSlot } from "./assets.js";
+import { HumanoidRig } from "./characters.js";
 
 export function createMeltdownKit({ shadows = false, fire } = {}) {
   const textures = createMeltdownTextures();
@@ -52,7 +55,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
 
   const materials = {
     tile: std({ map: textures.tileColour, normalMap: textures.tileNormal, metalness: 0.12, roughness: 0.82 }),
-    floor: std({ map: textures.labFloor, normalMap: textures.labFloorNormal, normalScale: new THREE.Vector2(0.8, 0.8), metalness: 0.2, roughness: 0.62 }),
+    floor: std({ map: textures.labFloor, normalMap: textures.labFloorNormal, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: textures.floorRoughness, metalness: 0.2, roughness: 0.95 }),
     wardWall: std({ map: textures.wardWall, normalMap: textures.wardWallNormal, metalness: 0.05, roughness: 0.55 }),
     steelWall: std({ map: textures.steelWall, normalMap: textures.steelWallNormal, metalness: 0.7, roughness: 0.42 }),
     concreteWall: std({ map: textures.concreteWall, normalMap: textures.concreteWallNormal, metalness: 0.02, roughness: 0.92 }),
@@ -94,6 +97,10 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     roomBack: std({ color: 0x0f1411, emissive: 0x1a3a30, emissiveIntensity: 0.6, roughness: 0.9 }),
     fireBehind: std({ color: 0x100502, emissive: 0xff5a14, emissiveIntensity: 1.8, roughness: 0.9 }),
     lightTube: std({ color: 0xffffff, emissive: 0xfff2d8, emissiveIntensity: 1.05 }),
+    lightTubeDead: std({ color: 0x3a3c3e, metalness: 0.3, roughness: 0.35 }),
+    // Unlit on purpose: battery strips have to read as light in total dark.
+    emergencyStrip: new THREE.MeshBasicMaterial({ color: 0xff3a22 }),
+    screenDead: std({ color: 0x07090a, metalness: 0.4, roughness: 0.15 }),
     beaker: std({ color: 0x5affa0, transparent: true, opacity: 0.55, emissive: 0x2aff80, emissiveIntensity: 0.9, depthWrite: false }),
     cylinderRed: std({ color: 0x8a1812, metalness: 0.6, roughness: 0.35 }),
     cylinderGreen: std({ color: 0x1d5a2c, metalness: 0.6, roughness: 0.35 }),
@@ -1072,6 +1079,15 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       head.scale.setScalar(0.36);
       head.position.y = 2.2;
       group.add(head);
+      // The test subject themself, suspended in the fluid, head bowed. Posed
+      // once when the model arrives; it never moves again.
+      const occupant = assetSlot("patient", { size: [0, 1.66, 0], rotateY: ((seed % 5) - 2) * 0.5 }, [figure, head]);
+      occupant.position.y = 0.52;
+      occupant.userData.onFilled = (person) => {
+        const rig = new HumanoidRig(person);
+        if (rig.valid) rig.pose({ reach: 0.12, headNod: 0.9, headTilt: ((seed % 3) - 1) * 0.3, elbow: 0.6, spread: 0.1, lean: 0.15 });
+      };
+      group.add(occupant);
     }
     if (broken) {
       const shards = new THREE.Group();
@@ -1179,7 +1195,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     return group;
   }
 
-  function consolePanel({ side = 1 } = {}) {
+  function consolePanel({ side = 1, dead = false } = {}) {
     const group = new THREE.Group();
     group.name = "ConsolePanel";
     // Facing lives on an inner group: route.place() owns the outer rotation.
@@ -1190,11 +1206,12 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     const body = box(1.5, 1.15, 0.5, materials.consoleBody, 0.8);
     body.rotation.x = -0.35;
     inner.add(body);
-    const screen = mesh(geometries.unitPlane, materials.consoleScreen, { cast: false, receive: false });
+    const screen = mesh(geometries.unitPlane, dead ? materials.screenDead : materials.consoleScreen, { cast: false, receive: false });
     screen.scale.set(1.2, 0.75, 1);
     screen.position.set(0, 1.42, 0.3);
     screen.rotation.x = -0.35;
     inner.add(screen);
+    if (dead) return group;
     group.userData.tick = (dt, time) => {
       materials.consoleScreen.emissiveIntensity = 0.85 + Math.sin(time * 6) * 0.2 + (Math.random() < 0.02 ? 0.8 : 0);
     };
@@ -1202,7 +1219,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   }
 
   /** A cracked window into a dim room you never enter - depth for free. */
-  function observationWindow({ side = 1, fireBehind = false } = {}) {
+  function observationWindow({ side = 1, fireBehind = false, dark = false } = {}) {
     const group = new THREE.Group();
     group.name = "ObservationWindow";
     group.add(box(0.3, 0.25, 3.4, materials.darkMetal, 1.1));
@@ -1218,7 +1235,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     crack.rotation.y = Math.PI / 2;
     crack.position.set(-side * 0.03, 2.4, 0);
     group.add(crack);
-    const back = box(0.1, 3.6, 4.4, fireBehind ? materials.fireBehind : materials.roomBack, 0.3, side * 3.2);
+    const back = box(0.1, 3.6, 4.4, fireBehind ? materials.fireBehind : dark ? materials.pitBlack : materials.roomBack, 0.3, side * 3.2);
     group.add(back);
     if (fireBehind) {
       const f = fireSpot({ width: 2.4, depth: 1.5, height: 2.4, smoke: false });
@@ -1374,7 +1391,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   }
 
   /** Wall-mounted security camera, slowly panning. `side` = which wall. */
-  function securityCam({ side = 1 } = {}) {
+  function securityCam({ side = 1, dead = false } = {}) {
     const group = new THREE.Group();
     group.name = "SecurityCam";
     group.add(box(0.1, 0.1, 0.4, materials.trim, -0.05, 0, 0));
@@ -1384,10 +1401,14 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     const stand = box(0.2, 0.2, 0.5, materials.paintedMetal, -0.1);
     head.add(stand);
     head.add(assetSlot("securityCamera", { size: [0, 0.35, 0], align: "top" }, [stand]));
-    const led = mesh(geometries.unitSphere, materials.warning);
+    const led = mesh(geometries.unitSphere, dead ? materials.trim : materials.warning);
     led.scale.setScalar(0.05);
     led.position.set(0, -0.05, 0.3);
     head.add(led);
+    if (dead) {
+      head.rotation.x = 0.5; // drooped on its mount
+      return group;
+    }
     const phase = Math.random() * 6;
     const base = head.rotation.y;
     group.userData.tick = (dt, time) => {
@@ -1515,6 +1536,198 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     return group;
   }
 
+
+  /* ============================================================== */
+  /* PEOPLE                                                          */
+  /* ============================================================== */
+
+  /** A dark standing figure: shown until the patient model arrives. */
+  function personStandIn() {
+    const group = new THREE.Group();
+    const body = mesh(geometries.capsule, materials.silhouette);
+    body.scale.set(1.1, 1.25, 0.8);
+    body.position.y = 0.95;
+    group.add(body);
+    const head = mesh(geometries.unitSphere, materials.silhouette);
+    head.scale.setScalar(0.34);
+    head.position.y = 1.62;
+    group.add(head);
+    return group;
+  }
+
+  /**
+   * An escaped test subject, standing against the wall until the player is
+   * close, then lurching out into `lane` and staying there, arms out. Two
+   * shots put them down (they fall back and stop blocking); otherwise it is
+   * a person-shaped wall in that lane. `fromSide` is the wall they start at.
+   *
+   * The body sways on its own when the model is still a stand-in, and runs
+   * a procedural shamble on the patient's real skeleton once it arrives.
+   */
+  function lurcher({ lane = 0, fromSide = 1, seed = 0 } = {}) {
+    const group = new THREE.Group();
+    group.name = "Lurcher";
+    const startX = fromSide * 6.1;
+    const mover = new THREE.Group();
+    mover.position.x = startX;
+    group.add(mover);
+    const body = new THREE.Group();
+    mover.add(body);
+    const standIn = personStandIn();
+    body.add(standIn);
+    const slot = assetSlot("patient", { size: [0, 1.74, 0] }, [standIn]);
+    body.add(slot);
+    let rig = null;
+    slot.userData.onFilled = (person) => {
+      const r = new HumanoidRig(person);
+      rig = r.valid ? r : null;
+    };
+
+    const hit = collider(1.0, 1.95, 0.9, 0, { patient: true });
+    mover.add(hit);
+    const hurt = collider(1.0, 1.95, 0.9, 0);
+    hurt.userData = { kind: "patient", breakable: true, alive: true, hp: 2, maxHp: 2, label: "PATIENT", node: group };
+    mover.add(hurt);
+
+    const phase0 = (seed % 17) * 0.37;
+    const dir = Math.sign(lane - startX) || -fromSide;
+    let state = "idle";
+    let t = 0;
+    let stagger = 0;
+    let fall = 0;
+    const world = new THREE.Vector3();
+
+    group.userData.lurch = () => {
+      if (state === "idle") {
+        state = "lurch";
+        t = 0;
+      }
+    };
+    group.userData.hit = (power = 1) => {
+      if (!hurt.userData.alive) return false;
+      hurt.userData.hp = Math.max(0, hurt.userData.hp - power);
+      stagger = 1;
+      if (hurt.userData.hp > 0) return false;
+      hurt.userData.alive = false;
+      hit.userData.disabled = true;
+      state = "down";
+      fall = 0;
+      return true;
+    };
+    group.userData.state = () => state;
+    group.userData.worldPosition = () => mover.getWorldPosition(world).clone();
+
+    group.userData.tick = (dt, time) => {
+      t += dt;
+      stagger = Math.max(0, stagger - dt * 2.5);
+      if (state === "lurch") {
+        const k = Math.min(1, t / 1.35);
+        mover.position.x = THREE.MathUtils.lerp(startX, lane, k * k * (3 - 2 * k));
+        if (k >= 1) state = "stand";
+      }
+      // Face the way they are walking while crossing, then turn on you.
+      const yaw = state === "lurch" ? dir * Math.PI * 0.35 : state === "idle" ? -fromSide * 0.5 : 0;
+      body.rotation.y += (yaw - body.rotation.y) * Math.min(1, dt * 6);
+      if (state === "down") {
+        fall = Math.min(1, fall + dt * 1.7);
+        body.rotation.x = -fall * fall * Math.PI * 0.47;
+        body.position.y = Math.sin(fall * Math.PI) * 0.1;
+      } else {
+        body.rotation.x = -stagger * 0.35;
+      }
+      if (!rig) {
+        body.rotation.z = Math.sin(time * 1.3 + phase0) * 0.06;
+        return;
+      }
+      if (state === "idle") {
+        rig.pose({ phase: time + phase0, reach: 0.2, headTilt: Math.sin(time * 0.7 + phase0) * 0.35, headNod: 0.45, lean: 0.12, elbow: 0.4 });
+      } else if (state === "lurch") {
+        rig.pose({ phase: time * 7 + phase0, stride: 0.5, knee: 0.8, reach: 0.85, lean: 0.35, headTilt: 0.4, spread: 0.05 });
+      } else if (state === "stand") {
+        rig.pose({
+          phase: time * 2.2 + phase0, stride: 0.12, knee: 0.3, reach: (0.95 + Math.sin(time * 3 + phase0) * 0.1) * (1 - stagger),
+          lean: 0.3 - stagger * 0.9, headTilt: Math.sin(time * 1.3 + phase0) * 0.3, headNod: 0.2 - stagger * 0.6, spread: 0.06,
+        });
+      } else {
+        rig.pose({ reach: 0.25 * (1 - fall), headNod: -0.7 * fall, elbow: 0.9, lean: -0.4 * fall, spread: 0.18 * fall });
+      }
+    };
+    group.userData.hazardMesh = hit;
+    group.userData.breakableMeshes = [hurt];
+    return group;
+  }
+
+  /**
+   * A patient standing motionless in the dark by the wall. The level asks
+   * `inBeam(flashlight)` every frame in the blacked-out beat; the first time
+   * the beam finds them they jerk their head up at you, then turn and walk
+   * off into the dark and are gone. Never a hazard - just someone else down
+   * here with you.
+   */
+  function patientWatcher({ side = 1, seed = 0 } = {}) {
+    const group = new THREE.Group();
+    group.name = "PatientWatcher";
+    const mover = new THREE.Group();
+    mover.rotation.y = -side * Math.PI * 0.32;
+    group.add(mover);
+    const standIn = personStandIn();
+    mover.add(standIn);
+    const slot = assetSlot("patient", { size: [0, 1.7, 0] }, [standIn]);
+    mover.add(slot);
+    let rig = null;
+    slot.userData.onFilled = (person) => {
+      const r = new HumanoidRig(person);
+      rig = r.valid ? r : null;
+    };
+
+    const phase0 = (seed % 13) * 0.5;
+    let state = "lurking";
+    let t = 0;
+    const head = new THREE.Vector3();
+    const toHead = new THREE.Vector3();
+
+    group.userData.worldPosition = () => mover.getWorldPosition(new THREE.Vector3());
+    group.userData.inBeam = (f) => {
+      if (state !== "lurking") return false;
+      mover.getWorldPosition(head);
+      head.y += 1.4;
+      toHead.subVectors(head, f.position);
+      const d = toHead.length();
+      if (d > f.range || d < 0.5) return false;
+      return toHead.divideScalar(d).dot(f.direction) > f.cos;
+    };
+    group.userData.spot = () => {
+      if (state !== "lurking") return false;
+      state = "spotted";
+      t = 0;
+      return true;
+    };
+    group.userData.tick = (dt, time) => {
+      t += dt;
+      if (state === "spotted" && t > 0.55) {
+        state = "leaving";
+        t = 0;
+      }
+      if (state === "leaving") {
+        // Turn away down the corridor (local -Z, the way you are running)
+        // and walk off faster than feels right.
+        mover.rotation.y += (Math.PI - mover.rotation.y) * Math.min(1, dt * 5);
+        mover.position.z -= dt * 3.2 * Math.min(1, t * 2);
+        mover.position.x += (-side * 0.2 - mover.position.x) * dt;
+        if (t > 2.4) {
+          state = "gone";
+          // The level's distance culling owns group.visible; hide inside it.
+          mover.visible = false;
+        }
+      }
+      if (!rig) return;
+      if (state === "lurking") rig.pose({ phase: time * 0.8 + phase0, headNod: 0.9, headTilt: 0.25 * Math.sin(time * 0.4 + phase0), elbow: 0.2, lean: 0.1 });
+      else if (state === "spotted") rig.pose({ headNod: -0.2, headTilt: 0.5 * Math.sin(t * 40) * (1 - t / 0.55), elbow: 0.3, reach: 0.15 });
+      else if (state === "leaving") rig.pose({ phase: t * 8, stride: 0.45, knee: 0.8, armSwing: 0.4, lean: 0.25, headNod: 0.4 });
+    };
+    return group;
+  }
+
   /* -------------------------------------------------------------- */
 
   function dispose() {
@@ -1542,6 +1755,10 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     rollingCylinder,
     slidingCart,
     glassPane,
+    // people
+    lurcher,
+    patientWatcher,
+    personStandIn,
     // pickups
     sack,
     powerup,

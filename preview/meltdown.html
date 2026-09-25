@@ -113,6 +113,21 @@
       .start-overlay h1 { margin: 0; font-size: clamp(28px, 6vw, 56px); letter-spacing: 0.14em; text-shadow: 0 0 30px rgba(255, 70, 20, 0.6); }
       .start-overlay p { margin: 14px 0 0; font-size: 12px; letter-spacing: 0.3em; color: #ffb03c; animation: reticle-overheat 1s ease-in-out infinite; }
       .start-overlay small { display: block; margin-top: 22px; font-size: 10px; letter-spacing: 0.18em; color: #b39a8e; line-height: 1.9; }
+      .start-picks { display: flex; gap: 12px; justify-content: center; margin-top: 26px; }
+      .start-picks button {
+        min-width: 150px;
+        padding: 10px 16px;
+        border: 1px solid rgba(63, 143, 136, 0.55);
+        background: rgba(8, 20, 19, 0.7);
+        color: #b8d8d4;
+        font: inherit;
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .start-picks button b { display: block; margin-top: 4px; font-size: 9px; color: #7fa8a3; letter-spacing: 0.22em; }
+      .start-picks button.picked { border-color: #6fe0d4; color: #ffffff; box-shadow: 0 0 18px rgba(63, 200, 186, 0.35); }
       @media (max-width: 640px) {
         .preview-bar { font-size: 9px; gap: 10px; padding: 8px 10px; }
         .preview-keys { display: none; }
@@ -125,11 +140,11 @@
     <div class="preview-bar">
       <strong>SECTOR 03</strong>
       <em>THE MELTDOWN</em>
-      <span>ENVIRONMENT + UI PREVIEW - PHASE A</span>
+      <span>PREVIEW - PHASE A</span>
       <div class="preview-keys">
         <span><b>A</b>/<b>D</b> lane</span>
-        <span><b>SPACE</b> jump / push duct</span>
-        <span><b>SHIFT</b> slide</span>
+        <span><b>SPACE</b>/<b>W</b> jump / push duct</span>
+        <span><b>SHIFT</b>/<b>S</b> slide (in the air: slam)</span>
         <span><b>HOLD CLICK</b> fire</span>
         <span><b>C</b> camera</span>
         <span><b>B</b> bloom</span>
@@ -142,10 +157,15 @@
       <div>
         <h1>The Meltdown</h1>
         <p>Click to wake up</p>
+        <div class="start-picks" role="group" aria-label="Choose your patient">
+          <button type="button" data-character="playerFemale">Patient 0417<b>Female</b></button>
+          <button type="button" data-character="playerMale">Patient 0932<b>Male</b></button>
+        </div>
         <small>
           Hold click to fire - it overheats<br />
-          Shoot glass, sacks and vials // jump, slide, change lanes<br />
-          Mash space at fallen ducts // the fire is right behind you
+          Shoot glass, sacks, vials and anyone in your way // jump, slide, change lanes<br />
+          Mash space at fallen ducts // the fire is right behind you<br />
+          When the power goes, your launcher is your light
         </small>
       </div>
     </div>

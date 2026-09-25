@@ -14,7 +14,15 @@
  *   TURN left
  *   BEAT B  CONTAINMENT CORRIDOR  containment block -> the experiment (tier 2)
  *   TURN right
+ *   BEAT D  BLACKED OUT           emergency substation, no power   (dark)
+ *   TURN left
  *   BEAT C  STAIRWELL ASCENT      records archive -> boiler hall    (tier 3)
+ *
+ * The experiment's warp takes the building's power out, so the beat after it
+ * is dark: mains lights are dead, smoke hangs low, and the launcher's beam
+ * and glowing balls are the player's light (host-side - see flashlight.js).
+ * The level reports how dark it is at any point (`darknessAt`) and which way
+ * the beam points (`setFlashlight`) so the patients in the dark can react.
  *
  * The level owns: environment, hazards and their collision, breakables, the
  * hidden phase timer (only ever shown on evac signs), the chasing fire front's
@@ -38,7 +46,8 @@ import { createMeltdownKit } from "./kit.js";
 import { createRoute, straightSegments } from "../foundry/route.js";
 import { LightPool, createMeltdownAmbience } from "./lighting.js";
 import { createFireMaterials, createFire } from "./fire.js";
-import { buildHall } from "./halls.js";
+import { buildHall, HALL_THEMES } from "./halls.js";
+import { SmokeCeiling } from "./smoke.js";
 import { loadMeltdownAssets, fillAssetSlots } from "./assets.js";
 
 const TURN_RADIUS = 9;
@@ -49,34 +58,52 @@ export const CORRIDOR_HALF = 7;
 export const CORRIDOR_HEIGHT = 8.4;
 export const LANES = [-3.2, 0, 3.2];
 
-export const BEAT_LENGTHS = { ward: 240, corridor: 280, stairwell: 240 };
+export const BEAT_LENGTHS = { ward: 240, corridor: 280, blackout: 150, stairwell: 240 };
 
-/** `drain` is passive vitality loss per second; `tier` sets obstacle difficulty. */
-// Drain is budgeted against a clean run (~38 s / 21 s / 17 s per beat at the
-// preview's speed zones): ~39 vitality lost to the fire over a perfect run,
-// leaving room for about three hits (20 each) before the fourth is fatal.
-export const BEATS = [
-  { key: "ward", name: "RECOVERY WARD", start: 0, end: BEAT_LENGTHS.ward, drain: 0.35, tier: 1, wall: "wardWall" },
-  {
-    key: "corridor", name: "CONTAINMENT CORRIDOR", drain: 0.55, tier: 2, wall: "steelWall",
-    start: BEAT_LENGTHS.ward + ARC,
-    end: BEAT_LENGTHS.ward + ARC + BEAT_LENGTHS.corridor,
-  },
-  {
-    key: "stairwell", name: "STAIRWELL ASCENT", drain: 0.8, tier: 3, wall: "concreteWall",
-    start: BEAT_LENGTHS.ward + BEAT_LENGTHS.corridor + ARC * 2,
-    end: BEAT_LENGTHS.ward + BEAT_LENGTHS.corridor + BEAT_LENGTHS.stairwell + ARC * 2,
-  },
+/**
+ * The beats, in route order, with the turn that follows each one.
+ *
+ * `drain` is passive vitality loss per second; `tier` sets obstacle
+ * difficulty; `speed` is the running speed the host should settle to there
+ * (the dark beat is deliberately slower - you can only see as far as your
+ * beam). Drain is budgeted against a clean run (~29 s / 25 s / 16 s / 17 s per
+ * beat): ~47 vitality lost to the fire over a perfect run, leaving room for
+ * two to three hits (20 each) before the next is fatal.
+ */
+const BEAT_SPECS = [
+  { key: "ward", name: "RECOVERY WARD", drain: 0.35, tier: 1, wall: "wardWall", speed: 8.2, turn: QUARTER },
+  { key: "corridor", name: "CONTAINMENT CORRIDOR", drain: 0.55, tier: 2, wall: "steelWall", speed: 11, turn: -QUARTER },
+  // The experiment's reality-warp blew the building's power. Emergency
+  // strips, sparks and fire are the only light; the launcher's beam is yours.
+  { key: "blackout", name: "BLACKED OUT", drain: 0.4, tier: 2, wall: "steelWall", speed: 9.4, turn: QUARTER, dark: true, patterns: "blackout" },
+  { key: "stairwell", name: "STAIRWELL ASCENT", drain: 0.8, tier: 3, wall: "concreteWall", speed: 14 },
 ];
 
-const TOTAL_LENGTH = BEATS[BEATS.length - 1].end;
+export const BEATS = [];
+{
+  let cursor = 0;
+  for (const spec of BEAT_SPECS) {
+    const length = BEAT_LENGTHS[spec.key];
+    BEATS.push({ ...spec, start: cursor, end: cursor + length });
+    cursor += length + (spec.turn ? ARC : 0);
+  }
+}
 
-/** Two halls per beat, positioned as a fraction of that beat. */
+const SEGMENTS = BEAT_SPECS.flatMap((spec) => {
+  const straight = { type: "straight", length: BEAT_LENGTHS[spec.key] };
+  return spec.turn ? [straight, { type: "arc", radius: TURN_RADIUS, angle: spec.turn }] : [straight];
+});
+
+const TOTAL_LENGTH = BEATS[BEATS.length - 1].end;
+const DARK_BEAT = BEATS.find((b) => b.dark);
+
+/** Two halls per lit beat, one in the dark beat; positioned as a fraction of that beat. */
 const HALLS = [
   { beat: "ward", at: 0.34, theme: "ward" },
   { beat: "ward", at: 0.78, theme: "lab" },
   { beat: "corridor", at: 0.24, theme: "containment" },
   { beat: "corridor", at: 0.66, theme: "experiment", halfWidth: 18 },
+  { beat: "blackout", at: 0.56, theme: "substation" },
   { beat: "stairwell", at: 0.3, theme: "archive" },
   { beat: "stairwell", at: 0.74, theme: "boiler" },
 ];
@@ -88,6 +115,8 @@ const FALLING = {
   duct: { range: 17, duration: 0.85 },
   shelf: { range: 24, duration: 1.05 },
 };
+/** Patients step out of the wall into a lane once you are this close. */
+const LURCH = { range: 22, duration: 1.35 };
 const WARP_DURATION = 9;
 
 function createEmitter() {
@@ -122,9 +151,9 @@ export class MeltdownLevel {
     heading = 0,
     shadows = false,
     straightRoute = false,
-    // ~1.3x a clean run (~77 s of running + a few seconds per duct), so the
+    // ~1.3x a clean run (~87 s of running + a few seconds per duct), so the
     // clock is a real threat rather than decoration.
-    phaseSeconds = 105,
+    phaseSeconds = 124,
     brightness = 1.5,
   } = {}) {
     this.options = { halfWidth: CORRIDOR_HALF, lanes: LANES, shadows, brightness, straightRoute };
@@ -143,23 +172,20 @@ export class MeltdownLevel {
       this.root.add(group);
     }
 
-    const segments = straightRoute
-      ? straightSegments(TOTAL_LENGTH)
-      : [
-          { type: "straight", length: BEAT_LENGTHS.ward },
-          { type: "arc", radius: TURN_RADIUS, angle: QUARTER },
-          { type: "straight", length: BEAT_LENGTHS.corridor },
-          { type: "arc", radius: TURN_RADIUS, angle: -QUARTER },
-          { type: "straight", length: BEAT_LENGTHS.stairwell },
-        ];
+    const segments = straightRoute ? straightSegments(TOTAL_LENGTH) : SEGMENTS;
     this.route = createRoute(segments, { origin, heading });
 
     this.fire = createFireMaterials();
     this.kit = createMeltdownKit({ shadows, fire: this.fire });
 
+    this.smoke = new SmokeCeiling(this.fire.time);
+    this.root.add(this.smoke.group);
+
     this.ambience = createMeltdownAmbience({ brightness });
     this.root.add(this.ambience);
-    this.lights = new LightPool({ points: 9, spots: 1, shadows, brightness });
+    // No kit piece registers a spot emitter, so the pool carries none: an
+    // unused spot light still costs shading work on every lit pixel.
+    this.lights = new LightPool({ points: 9, spots: 0, shadows, brightness });
     this.root.add(this.lights.group);
 
     /** Meshes a projectile can hit: sacks, power-ups, glass panes. */
@@ -175,6 +201,9 @@ export class MeltdownLevel {
     this._pushables = [];
     this._signs = [];
     this._setPieces = [];
+    this._lurchers = [];
+    this._watchers = [];
+    this._flashlight = { active: false, position: new THREE.Vector3(), direction: new THREE.Vector3(0, 0, -1), cos: 0.92, range: 26 };
 
     this.state = {
       beatIndex: -1,
@@ -185,6 +214,7 @@ export class MeltdownLevel {
       complete: false,
       alarm: 0,
       warp: { active: false, elapsed: 0, fired: false },
+      darkness: 0,
     };
 
     this._planHalls();
@@ -196,6 +226,7 @@ export class MeltdownLevel {
     this._buildJunctions();
     this._buildBeatWard();
     this._buildBeatCorridor();
+    this._buildBeatBlackout();
     this._buildBeatStairwell();
     this._buildPatterns();
     this._buildCorridorDressing();
@@ -204,6 +235,7 @@ export class MeltdownLevel {
     this._registerEmitters();
 
     this._playerWorld = new THREE.Vector3();
+    this._spill = new THREE.Color(0x8fa6c8);
     this._grazeBox = new THREE.Box3();
     this._landPos = new THREE.Vector3();
   }
@@ -238,6 +270,36 @@ export class MeltdownLevel {
     return this.hallAt(distance)?.halfWidth ?? CORRIDOR_HALF;
   }
 
+  /** Inside the blacked-out beat (including its hall)? */
+  isDarkStretch(distance) {
+    return Boolean(DARK_BEAT && distance >= DARK_BEAT.start - 1 && distance <= DARK_BEAT.end + 1);
+  }
+
+  /**
+   * 0 (lit) .. 1 (no power) at a route distance. Ramps in over the first
+   * metres of the dark beat - through the doorway the lights just die - and
+   * back out as emergency power returns at the stairwell.
+   */
+  darknessAt(distance) {
+    if (!DARK_BEAT) return 0;
+    const into = THREE.MathUtils.smoothstep(distance, DARK_BEAT.start - 6, DARK_BEAT.start + 12);
+    const out = 1 - THREE.MathUtils.smoothstep(distance, DARK_BEAT.end - 10, DARK_BEAT.end + ARC * 0.6);
+    return into * out;
+  }
+
+  /**
+   * Where the player's beam is pointing, from the host each frame. Patients
+   * standing in the dark react when it lands on them.
+   */
+  setFlashlight({ active = true, position, direction, cos = 0.92, range = 26 } = {}) {
+    const f = this._flashlight;
+    f.active = active;
+    if (position) f.position.copy(position);
+    if (direction) f.direction.copy(direction).normalize();
+    f.cos = cos;
+    f.range = range;
+  }
+
   _isArc(distance) {
     return this.route.nodeAt(distance + 0.01).node.type === "arc";
   }
@@ -264,6 +326,7 @@ export class MeltdownLevel {
       let type;
       if (beat.key === "ward") type = roll < 0.45 ? "window" : roll < 0.8 ? "door-ajar" : "door";
       else if (beat.key === "corridor") type = roll < 0.4 ? "window-fire" : roll < 0.7 ? "window" : "door-fire";
+      else if (beat.dark) type = roll < 0.45 ? "window-dark" : roll < 0.8 ? "door-dark" : "breach";
       else type = roll < 0.5 ? "breach" : roll < 0.8 ? "door-fire" : "window-fire";
       // `distance` is provisional: _buildShell snaps it to the centre of the
       // wall station that actually gets the hole, so piece and hole line up.
@@ -379,6 +442,7 @@ export class MeltdownLevel {
         isArc,
         inHall: Boolean(hall && centre > hall.start + 1 && centre < hall.end - 1),
         wall: (this.beatAt(centre) ?? BEATS[0]).wall,
+        dark: this.isDarkStretch(centre),
       });
       distance += step;
       index += 1;
@@ -396,7 +460,13 @@ export class MeltdownLevel {
       { key: "pipeR1", geometry: geo.pipe, material: mat.ductMetal, offset: [hw - 0.5, H - 1.6, 0], rot: [Math.PI / 2, 0, 0], edge: true },
       { key: "trayR", geometry: geo.kerb, material: mat.darkMetal, offset: [hw - 0.6, H - 0.9, 0], scale: [1.4, 0.4, 1], edge: true },
       { key: "conduit", geometry: geo.conduit, material: mat.trim, offset: [1.4, H - 0.15, 0], rot: [Math.PI / 2, 0, 0] },
-      { key: "lightTube", geometry: geo.ceilingPanel, material: mat.lightTube, offset: [0, H - 0.05, 0], scale: [0.35, 1, 1.4], every: 2 },
+      { key: "lightTube", geometry: geo.ceilingPanel, material: mat.lightTube, offset: [0, H - 0.05, 0], scale: [0.35, 1, 1.4], every: 2, lit: true },
+      // The dead tubes of the blacked-out stretch: the same fittings, unlit.
+      { key: "lightTubeDead", geometry: geo.ceilingPanel, material: mat.lightTubeDead, offset: [0, H - 0.05, 0], scale: [0.35, 1, 1.4], every: 2, dark: true },
+      // Battery emergency strips along both kerbs - the only thing marking
+      // the lane edges when the power is out.
+      { key: "stripL", geometry: geo.kerb, material: mat.emergencyStrip, offset: [-(hw - 0.55), 0.03, 0], scale: [0.12, 0.05, 0.8], edge: true, dark: true },
+      { key: "stripR", geometry: geo.kerb, material: mat.emergencyStrip, offset: [hw - 0.55, 0.03, 0], scale: [0.12, 0.05, 0.8], edge: true, dark: true },
       { key: "laneLineL", geometry: geo.kerb, material: mat.hazard, offset: [-5, 0.005, 0], scale: [0.3, 0.03, 1] },
       { key: "laneLineR", geometry: geo.kerb, material: mat.hazard, offset: [5, 0.005, 0], scale: [0.3, 0.03, 1] },
     ];
@@ -439,6 +509,8 @@ export class MeltdownLevel {
       for (const [i, station] of stations.entries()) {
         if (station.inHall) continue;
         if (spec.every && i % spec.every !== 0) continue;
+        if (spec.lit && station.dark) continue;
+        if (spec.dark && !station.dark) continue;
         const [ox0, oy, oz] = spec.offset;
         const [sx0, sy, sz] = spec.scale ?? [1, 1, 1];
         const ox = spec.edge ? ox0 * station.widen : ox0;
@@ -469,20 +541,32 @@ export class MeltdownLevel {
     }
     for (const [wall, matrices] of wallSets) addInstanced(`wall_${wall}`, geo.wallPanel, mat[wall], matrices);
 
-    // Ceiling lights feed the light pool every third station.
+    // Ceiling lights feed the light pool every third station. In the dark
+    // stretch there is no mains power: only the first few fittings sputter as
+    // the last charge drains, then dim red battery lamps every so often.
+    const dark = DARK_BEAT;
     for (const [i, station] of stations.entries()) {
       if (station.inHall || i % 3 !== 0) continue;
       const anchor = new THREE.Object3D();
       this.route.place(anchor, station.distance, 0, H - 0.6);
       this.groups.shell.add(anchor);
-      const flicker = i % 4 === 0;
-      this._pendingEmitters.push({
-        emitter: {
+      let emitter;
+      if (!station.dark) {
+        const flicker = i % 4 === 0;
+        emitter = {
           kind: "point", anchor, color: 0xffd0a0, base: 8, distance: 15,
           intensityAt: (t) => (flicker && Math.sin(t * 11 + i) > 0.8 ? 1 : 7),
-        },
-        distance: station.distance,
-      });
+        };
+      } else if (dark && station.distance < dark.start + 30) {
+        // Dying: long dark gaps, a sick blue-white stutter now and then.
+        emitter = {
+          kind: "point", anchor, color: 0xc8dcff, base: 6, distance: 13,
+          intensityAt: (t) => (Math.sin(t * 2.3 + i * 1.7) > 0.93 || Math.sin(t * 17 + i) > 0.985 ? 6 : 0),
+        };
+      } else if (i % 6 === 0) {
+        emitter = { kind: "point", anchor, color: 0xff2a1a, base: 2.2, distance: 8, intensityAt: (t) => 1.7 + Math.sin(t * 1.4 + i) * 0.4 };
+      }
+      if (emitter) this._pendingEmitters.push({ emitter, distance: station.distance });
     }
   }
 
@@ -498,6 +582,8 @@ export class MeltdownLevel {
       });
       hall.name = group.userData.hallName;
       this._add(this.groups.shell, group, hall.centre, 0);
+      // Hall-local -Z is the direction of travel, so z maps to route distance.
+      for (const watcher of group.userData.watchers ?? []) this._watchers.push({ distance: hall.centre - watcher.position.z, group: watcher });
     }
   }
 
@@ -512,6 +598,8 @@ export class MeltdownLevel {
       else if (type === "door") piece = this.kit.doorway({ side, state: "shut" });
       else if (type === "door-ajar") piece = this.kit.doorway({ side, state: "ajar" });
       else if (type === "door-fire") piece = this.kit.doorway({ side, state: "fire" });
+      else if (type === "window-dark") piece = this.kit.observationWindow({ side, dark: true });
+      else if (type === "door-dark") piece = this.kit.doorway({ side, state: this._rng(Math.round(distance))() < 0.5 ? "ajar" : "shut", dark: true });
       else piece = this.kit.wallBreach({ side });
       this._add(this.groups.shell, piece, distance, side * hw);
     }
@@ -569,9 +657,53 @@ export class MeltdownLevel {
     this._falling(this.kit.ceilingChunk({ seed: 4 }), at(0.93), 0, "chunk");
   }
 
+  /**
+   * BEAT D - BLACKED OUT. The warp took the power out. Fewer hazards than
+   * the corridor before it, but you have to find each one with the beam:
+   * a pane in the dark, a patient who was standing there all along, the
+   * mandatory crossing with only the fire under the gap to see it by.
+   */
+  _buildBeatBlackout() {
+    if (!DARK_BEAT) return;
+    const base = DARK_BEAT.start;
+    const L = BEAT_LENGTHS.blackout;
+    const at = (f) => this._mark(base + L * f);
+    const hw = CORRIDOR_HALF;
+    this._hazard(this.kit.glassPane({ lanes: LANES, hp: 2 }), at(0.12), 0);
+    this._lurcher(at(0.2), 0, -1);
+    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.26), 3.2, 0.4);
+    this._crossing(at(0.33));
+    this._pickup(this.kit.powerup({ kind: "adrenaline" }), at(0.45), 0, 0);
+    this._lurcher(at(0.53), 3.2, 1);
+    this._lurcher(at(0.53), -3.2, -1);
+    this._falling(this.kit.ceilingChunk({ seed: 8 }), at(0.63), 0, "chunk");
+    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.8), -3.2, 0.4);
+    this._lurcher(at(0.86), 0, 1);
+    this._falling(this.kit.airDuct({ mode: "blocker", halfWidth: hw }), at(0.94), 0, "duct");
+  }
+
+  /**
+   * A patient standing against the wall who lurches into `lane` as the
+   * player closes in: shoot them down, or be somewhere else.
+   */
+  _lurcher(distance, lane, fromSide) {
+    const piece = this.kit.lurcher({ lane, fromSide, seed: Math.round(distance * 7) });
+    this._hazard(piece, distance, 0);
+    this._lurchers.push({ distance, group: piece, triggered: false, elapsed: 0 });
+    return piece;
+  }
+
+  /** A patient in the dark who is only there when the beam finds them. */
+  _watcher(distance, side) {
+    const piece = this.kit.patientWatcher({ side, seed: Math.round(distance * 13) });
+    this._add(this.groups.shell, piece, distance, side * (CORRIDOR_HALF - 1.3));
+    this._watchers.push({ distance, group: piece });
+    return piece;
+  }
+
   /** BEAT C - STAIRWELL ASCENT. Everything at once; ends at the roof door. */
   _buildBeatStairwell() {
-    const base = BEATS[2].start;
+    const base = BEATS.find((b) => b.key === "stairwell").start;
     const L = BEAT_LENGTHS.stairwell;
     const at = (f) => this._mark(base + L * f);
     const hw = CORRIDOR_HALF;
@@ -662,6 +794,14 @@ export class MeltdownLevel {
         this._hazard(k.floorGap({ mandatory: false }), d, a);
         this._hazard(k.rubbleWall({ burning: true }), d, b);
       },
+      lurcher: (d, r) => {
+        const lane = LANES[Math.floor(r() * 3)];
+        // Step out from the nearer wall, so the walk crosses as few lanes as possible.
+        const side = lane === 0 ? (r() < 0.5 ? -1 : 1) : Math.sign(lane);
+        this._lurcher(d, lane, side);
+        const others = lanesExcept(lane);
+        this._hazard(k.rubbleWall({ burning: false }), d + 1.5, others[Math.floor(r() * 2)]);
+      },
       highAndGap: (d, r) => {
         const [a, b, c] = shuffle(LANES, r);
         this._hazard(k.barrier({ kind: "high" }), d, a);
@@ -672,16 +812,20 @@ export class MeltdownLevel {
 
     const TIERS = {
       1: ["rubblePair", "laserLow", "laserHigh", "concreteRow", "barrierMix", "glassWall", "cylinder", "rubblePair"],
-      2: ["rubblePair", "laserSweep", "vents", "cart", "shelf", "pendulumRubble", "fireGap", "glassGate", "barrierMix", "cylinder", "laserHigh"],
-      3: ["vents", "laserSweep", "shelf", "cart", "glassGate", "highAndGap", "fireGap", "pendulumRubble", "cylinder", "rubblePair", "glassWall"],
+      2: ["rubblePair", "laserSweep", "vents", "cart", "shelf", "pendulumRubble", "fireGap", "glassGate", "barrierMix", "lurcher", "laserHigh"],
+      3: ["vents", "laserSweep", "shelf", "cart", "glassGate", "highAndGap", "fireGap", "pendulumRubble", "lurcher", "rubblePair", "glassWall"],
+      // In the dark: lasers and vents announce themselves; rubble, glass and
+      // patients have to be found with the beam.
+      blackout: ["rubblePair", "laserLow", "lurcher", "glassGate", "laserHigh", "barrierMix", "vents", "lurcher"],
     };
-    const SPACING = { 1: 17, 2: 13.5, 3: 11.5 };
+    const SPACING = { 1: 17, 2: 13.5, 3: 11.5, blackout: 15 };
 
     const clear = (d) => !this._setPieces.some((s) => Math.abs(s - d) < 9) && !this._isArc(d) && !this._isArc(d - 5) && !this._isArc(d + 5);
 
     for (const beat of BEATS) {
-      const random = this._rng(4001 + beat.tier * 977);
-      const names = TIERS[beat.tier];
+      const set = beat.patterns ?? beat.tier;
+      const random = this._rng(4001 + (beat.patterns ? 7 : beat.tier) * 977);
+      const names = TIERS[set];
       let last = null;
       let d = beat.start + 14;
       while (d < beat.end - 10) {
@@ -696,7 +840,7 @@ export class MeltdownLevel {
             d += 6;
           }
         }
-        d += SPACING[beat.tier] * (0.85 + random() * 0.3);
+        d += SPACING[set] * (0.85 + random() * 0.3);
       }
     }
   }
@@ -710,7 +854,7 @@ export class MeltdownLevel {
     const hw = CORRIDOR_HALF;
     const k = this.kit;
     const random = this._rng(77123);
-    const FIRE_EVERY = { ward: 34, corridor: 22, stairwell: 13 };
+    const FIRE_EVERY = { ward: 34, corridor: 22, blackout: 38, stairwell: 13 };
     const openingAt = (d) => this._openings.find((o) => o.claimed && Math.abs(o.distance - d) < 3.5);
 
     let side = 1;
@@ -719,9 +863,23 @@ export class MeltdownLevel {
       side *= -1;
       const opening = openingAt(d);
       if (opening && opening.side === side) side *= -1;
-      const beat = this.beatAt(d).key;
+      const beatInfo = this.beatAt(d);
+      const beat = beatInfo.key;
       const x = side * (hw - 0.9);
       const roll = random();
+
+      if (beatInfo.dark) {
+        // No power: dead consoles, cables spitting sparks (the only moving
+        // light), smoke pouring out of the walls, and people in the dark.
+        if (roll < 0.2) this._add(this.groups.shell, k.hangingCables({ seed: Math.round(d) }), d, side * 3);
+        else if (roll < 0.36) this._add(this.groups.shell, k.consolePanel({ side, dead: true }), d, x);
+        else if (roll < 0.52) this._add(this.groups.shell, k.smokeJet({ count: 14 }), d, side * 4, 2.5);
+        else if (roll < 0.66) this._watcher(d, side);
+        else if (roll < 0.78) this._add(this.groups.shell, k.labGurney({ tipped: 0.7 }), d, side * (hw - 1.2));
+        else if (roll < 0.9) this._add(this.groups.shell, k.specimenTank({ seed: Math.round(d), broken: true }), d, side * (hw - 1.3));
+        else this._add(this.groups.shell, k.securityCam({ side, dead: true }), d, side * (hw - 0.35), 5.6);
+        continue;
+      }
 
       if (roll < 0.14) this._add(this.groups.shell, k.utilityBoxUnit(), d, side * (hw - 0.45));
       else if (roll < 0.24) this._add(this.groups.shell, k.securityCam({ side }), d, side * (hw - 0.35), 5.6);
@@ -796,6 +954,12 @@ export class MeltdownLevel {
     const lick = createFire(set, { width: width * 0.9, depth: 2, height: 2.4, count: 18, smoke: false, light: false, seed: 17 });
     lick.position.z = -2.2;
     front.add(back, mid, lick);
+    // Embers thrown forward off the wall of fire, toward the player.
+    const embers = this.kit.emberJet({ count: 70 });
+    embers.scale.set(6, 2.2, 3);
+    embers.position.set(0, 0.4, -1.5);
+    front.add(embers);
+    front.userData.embers = embers;
     const light = new THREE.PointLight(0xff5a1a, 60, 38, 1.6);
     light.position.set(0, 3, -3);
     front.add(light);
@@ -840,6 +1004,43 @@ export class MeltdownLevel {
     return this.assets;
   }
 
+  /**
+   * Compile every shader and upload every texture now, while the loading bar
+   * is up, instead of on the frame each thing first comes into view.
+   *
+   * Three compiles a material's program and uploads its textures lazily, the
+   * first time it is drawn. With the far end of the level culled, that meant
+   * a new hall or a freshly swapped-in model cost a visible hitch the moment
+   * it appeared at running speed. `renderer.compile` only walks visible
+   * objects, so everything culled is shown for the duration of the call.
+   */
+  prewarm(renderer, camera) {
+    const hidden = [];
+    for (const entry of this._culled) {
+      if (!entry.piece.visible) {
+        entry.piece.visible = true;
+        hidden.push(entry.piece);
+      }
+    }
+    const scene = this.root.parent ?? this.root;
+    renderer.compile(scene, camera);
+    const seen = new Set();
+    this.root.traverse((o) => {
+      const list = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of list) {
+        for (const key of ["map", "normalMap", "emissiveMap", "roughnessMap", "alphaMap", "metalnessMap"]) {
+          const t = m[key];
+          if (t && !seen.has(t)) {
+            seen.add(t);
+            renderer.initTexture(t);
+          }
+        }
+      }
+    });
+    for (const piece of hidden) piece.visible = false;
+    return seen.size;
+  }
+
   /* ================================================================ */
   /* Runtime                                                           */
   /* ================================================================ */
@@ -880,6 +1081,17 @@ export class MeltdownLevel {
       if (obstacle >= 0) this.obstacles.splice(obstacle, 1);
       const result = { kind: "glass", label: "GLASS", position, size: [3.0, 3.5] };
       this.events.emit("glass-broken", result);
+      return result;
+    }
+
+    if (data.kind === "patient") {
+      if (!data.node.userData.hit(power)) {
+        this.events.emit("patient-hit", { position });
+        return { partial: true, kind: "patient", position };
+      }
+      remove();
+      const result = { kind: "patient", label: "DOWN", position };
+      this.events.emit("patient-down", result);
       return result;
     }
 
@@ -987,7 +1199,17 @@ export class MeltdownLevel {
   }
 
   beatAt(distance) {
-    return BEATS.find((beat) => distance >= beat.start && distance <= beat.end) ?? (distance < BEATS[1].start ? BEATS[0] : distance < BEATS[2].start ? BEATS[1] : BEATS[2]);
+    const inside = BEATS.find((beat) => distance >= beat.start && distance <= beat.end);
+    if (inside) return inside;
+    // In a turn: it still belongs to the beat before it.
+    let last = BEATS[0];
+    for (const beat of BEATS) if (distance >= beat.start) last = beat;
+    return last;
+  }
+
+  /** The running speed the host should settle to here (see BEAT_SPECS). */
+  speedAt(distance) {
+    return this.beatAt(distance).speed ?? 10;
   }
 
   drainRateAt(distance) {
@@ -1051,6 +1273,29 @@ export class MeltdownLevel {
       if (t >= 1 && entry.kind === "duct") entry.group.userData.blocking = true;
     }
 
+    for (const entry of this._lurchers) {
+      const gap = entry.distance - distance;
+      if (!entry.triggered) {
+        if (gap > LURCH.range || gap < -2) continue;
+        entry.triggered = true;
+        entry.group.userData.lurch();
+        this.events.emit("patient-lurch", { distance: entry.distance, position: entry.group.userData.worldPosition() });
+      }
+    }
+
+    // Darkness, and what the beam lands on in it.
+    const darkness = this.darknessAt(distance);
+    this.state.darkness = darkness;
+    this.ambience.userData.setPower?.(1 - darkness * 0.93);
+    if (this._watchers.length && darkness > 0.2) {
+      const f = this._flashlight;
+      for (const entry of this._watchers) {
+        if (Math.abs(entry.distance - distance) > f.range + 4) continue;
+        const lit = f.active && entry.group.userData.inBeam(f);
+        if (lit && entry.group.userData.spot()) this.events.emit("patient-seen", { position: entry.group.userData.worldPosition() });
+      }
+    }
+
     if (!this.state.warp.fired && distance >= this._warpTrigger) {
       this.state.warp.fired = true;
       this.state.warp.active = true;
@@ -1076,13 +1321,35 @@ export class MeltdownLevel {
     }
 
     const flicker = 1 + Math.sin(time * 13) * 0.12 + Math.sin(time * 29) * 0.08;
-    this.fireFront.userData.light.intensity = 60 * flicker;
+    // In the dark beat the smoke between you and the fire swallows most of
+    // its glow: you see the flames behind you, but they do not light the way.
+    const smother = 1 - darkness * 0.8;
+    this.fireFront.userData.light.intensity = 60 * flicker * smother;
+    this.fireFront.userData.light.distance = 38 - darkness * 18;
+    this.fireFront.userData.embers.userData.tick(dt);
+
+    const theme = hall ? HALL_THEMES[hall.theme] : null;
+    const fireNear = THREE.MathUtils.clamp(1 - (distance - this._fireFrontDistance) / 45, 0, 1);
+    this.smoke.update(
+      player,
+      {
+        ceiling: theme ? Math.min(theme.height, 12.5) : CORRIDOR_HEIGHT,
+        darkness,
+        burn: THREE.MathUtils.clamp(distance / this.route.totalLength, 0, 1),
+        light: 1 - darkness * 0.85,
+        fireNear,
+      },
+      dt
+    );
 
     this.lights.update(player, time);
     // The shared pool's travelling light is tuned for Level 2's dark metal;
     // here, right over a light-coloured player in pale-tiled rooms, full
-    // strength just blows the player out. Keep it as a soft fill.
-    this.lights.playerLight.intensity *= 0.35;
+    // strength just blows the player out. Keep it as a soft fill - and in
+    // the dark, almost nothing: the beam has to do the work.
+    // (Not nothing: a faint cool spill keeps the runner readable in chase view.)
+    this.lights.playerLight.intensity *= 0.35 * (1 - darkness * 0.72);
+    if (darkness > 0.01) this.lights.playerLight.color.lerp(this._spill, darkness * 0.8);
 
     if (!this.state.complete && distance >= this.route.totalLength - 2) {
       this.state.complete = true;
@@ -1111,6 +1378,7 @@ export class MeltdownLevel {
     this.kit.dispose();
     this.fire.dispose();
     this._frontFire?.dispose();
+    this.smoke.dispose();
     this.root.parent?.remove(this.root);
     this.breakables.length = 0;
     this.obstacles.length = 0;
@@ -1118,6 +1386,8 @@ export class MeltdownLevel {
     this._culled.length = 0;
     this._hazardIndex.length = 0;
     this._fallingHazards.length = 0;
+    this._lurchers.length = 0;
+    this._watchers.length = 0;
     this._pushables.length = 0;
     this._signs.length = 0;
     this.events.clear();
