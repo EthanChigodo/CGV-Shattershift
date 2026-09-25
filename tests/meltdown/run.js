@@ -12,7 +12,7 @@
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
-import { serve, openPage } from "./lib.js";
+import { serve, launch, openPage } from "./lib.js";
 import * as route from "./checks/route.js";
 import * as fairness from "./checks/fairness.js";
 import * as roof from "./checks/roof.js";
@@ -43,11 +43,14 @@ async function main() {
   const server = await serve(ROOT);
   const url = `${server.origin}/preview/meltdown.html`;
   console.log(`serving ${ROOT}\nchecking ${url}\n`);
-  const { browser, page, errors } = await openPage(chromium);
+  const browser = await launch(chromium);
+  const errors = [];
   let failed = 0;
 
   for (const check of CHECKS) {
     process.stdout.write(`${check.name} ... `);
+    const tab = await openPage(browser);
+    const page = tab.page;
     try {
       await page.goto(url, { waitUntil: "load" });
       await page.waitForFunction(() => globalThis.__meltdown?.level, null, { timeout: 60000 });
@@ -63,10 +66,13 @@ async function main() {
       console.log("ERROR");
       console.log(`  x ${error.message}`);
     }
+    errors.push(...tab.errors);
+    await page.close();
     console.log();
   }
 
   if (wantShots) {
+    const { page, errors: shotErrors } = await openPage(browser);
     const dir = path.join(ROOT, "docs/images");
     await mkdir(dir, { recursive: true });
     await page.goto(url, { waitUntil: "load" });
@@ -78,6 +84,8 @@ async function main() {
       await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 82 });
       console.log(`shot docs/images/${name}.jpg`);
     }
+    errors.push(...shotErrors);
+    await page.close();
     console.log();
   }
 

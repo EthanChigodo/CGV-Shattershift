@@ -45,12 +45,20 @@ export async function serve(root) {
   return { origin: `http://127.0.0.1:${port}`, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
-export async function openPage(chromium, { width = 1280, height = 720 } = {}) {
-  const launch = {
+export async function launch(chromium) {
+  const options = {
     args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
   };
-  if (process.env.MELTDOWN_CHROMIUM) launch.executablePath = process.env.MELTDOWN_CHROMIUM;
-  const browser = await chromium.launch(launch);
+  if (process.env.MELTDOWN_CHROMIUM) options.executablePath = process.env.MELTDOWN_CHROMIUM;
+  return chromium.launch(options);
+}
+
+/**
+ * A fresh tab per check. Navigating one tab between checks aborted the
+ * previous page's background model loads, and the loader reports those as
+ * texture errors - noise that looked like real failures.
+ */
+export async function openPage(browser, { width = 1280, height = 720 } = {}) {
   const page = await browser.newPage({ viewport: { width, height } });
   const threeDir = process.env.MELTDOWN_THREE_DIR;
   if (threeDir) {
@@ -64,5 +72,5 @@ export async function openPage(chromium, { width = 1280, height = 720 } = {}) {
   page.on("console", (message) => {
     if (message.type() === "error" && !/favicon/i.test(message.text())) errors.push(message.text());
   });
-  return { browser, page, errors };
+  return { page, errors };
 }
