@@ -40,7 +40,7 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 
 ## Level 1 - The Glass Causeway
 
-A research wing 212 floors up, burning at 03:47 in the morning, in three beats: the **containment ward**, the **skybridge** (which collapses behind you), and the mirrored **resonance atrium**, ending with a three-lock gate and the Calibration Lift to Level 2.
+A research wing 212 floors up, burning at 03:47 in the morning, in three beats: the **containment ward**, the **skybridge** (which collapses behind you), and the mirrored **resonance atrium**, ending with a three-lock gate and the Calibration Lift that goes down to Level 2.
 
 - **Glass everywhere, and all of it real:** ray-traced glass with Fresnel reflection, dispersion and Beer-Lambert absorption; cracks form around the exact point you hit; panes fracture into GPU-simulated shards.
 - **Fire, water, smoke:** ray-marched volumetric fire; shoot the glass bulb of a sprinkler to flood it; smoke veils the screen and burns your lungs until you break a smoke vent (the round covers with a glowing cyan ring on the walls).
