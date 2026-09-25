@@ -46,7 +46,7 @@ import { createMeltdownKit } from "./kit.js";
 import { createRoute, straightSegments } from "../foundry/route.js";
 import { LightPool, createMeltdownAmbience } from "./lighting.js";
 import { createFireMaterials, createFire } from "./fire.js";
-import { buildHall, HALL_THEMES } from "./halls.js";
+import { buildHall, bakeStatic, bakeFilled, HALL_THEMES } from "./halls.js";
 import { SmokeCeiling } from "./smoke.js";
 import { loadMeltdownAssets, fillAssetSlots } from "./assets.js";
 
@@ -232,6 +232,7 @@ export class MeltdownLevel {
     this._buildCorridorDressing();
     this._buildSigns();
     this._buildFireFront();
+    this._bakeCorridor();
     this._registerEmitters();
 
     this._playerWorld = new THREE.Vector3();
@@ -360,6 +361,8 @@ export class MeltdownLevel {
 
   _hazard(piece, distance, lateral = 0) {
     this._add(this.groups.hazards, piece, distance, lateral);
+    // Rubble, gaps and barriers never move: one mesh per material each.
+    if (piece.userData.static) bakeStatic(piece);
     const meshes = piece.userData.hazardMeshes ?? (piece.userData.hazardMesh ? [piece.userData.hazardMesh] : []);
     for (const m of meshes) {
       this.obstacles.push(m);
@@ -915,6 +918,40 @@ export class MeltdownLevel {
     }
   }
 
+  /**
+   * Merge the corridor's static dressing into one mesh per material per
+   * 40 m chunk, the way each hall is baked. Gurneys, consoles, windows and
+   * duct runs are each a handful of small meshes; left separate they were
+   * most of the level's ~500 draw calls a frame. Anything that animates,
+   * any asset slot (swapped later) and any light anchor is left alone.
+   */
+  _bakeCorridor() {
+    const CHUNK = 40;
+    const chunks = new Map();
+    for (const piece of [...this.groups.shell.children]) {
+      if (piece.isInstancedMesh || piece.name.startsWith("Hall_")) continue;
+      if (typeof piece.userData.tick === "function") continue;
+      const distance = piece.userData.routeDistance;
+      if (distance === undefined) continue;
+      const key = Math.floor(distance / CHUNK);
+      if (!chunks.has(key)) {
+        const chunk = new THREE.Group();
+        chunk.name = `CorridorChunk_${key}`;
+        chunk.userData.chunkDistance = (key + 0.5) * CHUNK;
+        this.groups.shell.add(chunk);
+        chunks.set(key, chunk);
+      }
+      chunks.get(key).add(piece); // shell sits at the origin: transforms carry over
+    }
+    for (const [key, chunk] of chunks) {
+      bakeStatic(chunk);
+      // The merged meshes are new children; cull them with the chunk.
+      for (const child of chunk.children) {
+        if (child.name === "Baked") this._culled.push({ piece: child, distance: (key + 0.5) * CHUNK, slack: CHUNK / 2 });
+      }
+    }
+  }
+
   /** Evac signs: fixed spacing, never inside a hall, text set when passed. */
   _buildSigns() {
     let side = 1;
@@ -1000,6 +1037,13 @@ export class MeltdownLevel {
   async loadAssets(baseUrl, { onProgress } = {}) {
     this.assets = await loadMeltdownAssets(baseUrl, { onProgress });
     const filled = fillAssetSlots(this.root, this.assets);
+    // Merge the swapped-in models per hall and per corridor chunk.
+    for (const group of this.groups.shell.children) {
+      if (group.name.startsWith("Hall_")) bakeFilled(group);
+      else if (group.userData.chunkDistance !== undefined) {
+        for (const mesh of bakeFilled(group)) this._culled.push({ piece: mesh, distance: group.userData.chunkDistance, slack: 20 });
+      }
+    }
     this.events.emit("assets-ready", { loaded: this.assets.size, filled });
     return this.assets;
   }
@@ -1313,7 +1357,7 @@ export class MeltdownLevel {
     }
 
     for (const entry of this._culled) {
-      entry.piece.visible = Math.abs(entry.distance - distance) < 110;
+      entry.piece.visible = Math.abs(entry.distance - distance) < 110 + (entry.slack ?? 0);
     }
     for (const entry of this._animated) {
       if (Math.abs(entry.distance - distance) > 80) continue;

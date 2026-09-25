@@ -112,6 +112,8 @@ export class MeltdownHud {
       if (kind === "shelf") this.toast("SHELF TIPPING", "", "warn", 1200);
     });
     on("hall", ({ name }) => this.showBanner("ENTERING", name, 2200));
+    on("patient-lurch", () => this.toast("PATIENT", "IN THE LANE", "warn", 1300));
+    on("patient-down", () => this.toast("DOWN", ""));
     on("warp-start", () => this.showBanner("STRUCTURAL FAILURE", "SOMETHING BROKE LOOSE"));
     on("timer-expired", () => this.toast("STRUCTURE FAILING", "", "warn"));
     on("complete", () => this.showBanner("SECTOR 03 CLEARED", "ROOF ACCESS"));

@@ -88,9 +88,12 @@ const FIRE_FRAGMENT = /* glsl */ `
     vec3 orange = vec3(1.0, 0.32, 0.02);
     vec3 yellow = vec3(1.0, 0.78, 0.25);
     vec3 core = vec3(1.0, 0.96, 0.82);
-    vec3 c = mix(ember, orange, smoothstep(0.05, 0.4, t));
-    c = mix(c, yellow, smoothstep(0.4, 0.75, t));
-    return mix(c, core, smoothstep(0.78, 1.0, t));
+    // Most of a flame is orange; yellow only in the hottest part, and the
+    // near-white core only right at the base. Overlapping tongues add up,
+    // so a ramp that goes yellow early reads as a white blob once stacked.
+    vec3 c = mix(ember, orange, smoothstep(0.05, 0.42, t));
+    c = mix(c, yellow, smoothstep(0.55, 0.85, t));
+    return mix(c, core, smoothstep(0.9, 1.0, t));
   }
 
   void main() {
@@ -111,7 +114,7 @@ const FIRE_FRAGMENT = /* glsl */ `
     // additive blending instead of clipping to white; bloom adds the glow.
     float alpha = smoothstep(0.08, 0.45, heat) * uIntensity * 0.55;
     if (alpha < 0.01) discard;
-    gl_FragColor = vec4(ramp(heat) * (0.55 + heat * 0.6), alpha);
+    gl_FragColor = vec4(ramp(heat) * (0.34 + heat * 0.46), alpha);
   }
 `;
 

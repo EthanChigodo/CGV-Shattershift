@@ -409,3 +409,61 @@ export function bakeStatic(root) {
     root.add(m);
   }
 }
+
+/**
+ * The second bake: after the imported models have been swapped in.
+ *
+ * `bakeStatic` has to leave asset slots alone, because at build time they
+ * hold stand-ins that are about to be replaced. Once `fillAssetSlots` has
+ * run, every clone of a desk, fence panel or duct section is its own set of
+ * meshes - the containment hall's cage panels alone were over a hundred
+ * draw calls. This merges the loaded models under `root` by material, the
+ * same way, skipping anything animated, hidden (the retired stand-ins) or
+ * skinned (people). Returns the merged meshes.
+ */
+export function bakeFilled(root) {
+  root.updateMatrixWorld(true);
+  const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const byMaterial = new Map();
+  const remove = [];
+
+  const eligible = (object) => {
+    let filled = false;
+    for (let o = object; o && o !== root; o = o.parent) {
+      if (!o.visible || o.userData.isPlaceholder || typeof o.userData.tick === "function") return false;
+      if (o.userData.filled) filled = true;
+    }
+    return filled;
+  };
+
+  root.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+    if (!o.material || Array.isArray(o.material) || o.material.isShaderMaterial) return;
+    if (!eligible(o)) return;
+    const geometry = o.geometry.clone();
+    geometry.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverseRoot, o.matrixWorld));
+    for (const name of Object.keys(geometry.attributes)) {
+      if (!["position", "normal", "uv"].includes(name)) geometry.deleteAttribute(name);
+    }
+    if (!geometry.attributes.normal) geometry.computeVertexNormals();
+    if (!geometry.attributes.uv) geometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
+    if (!byMaterial.has(o.material)) byMaterial.set(o.material, []);
+    byMaterial.get(o.material).push(geometry.index ? geometry.toNonIndexed() : geometry);
+    remove.push(o);
+  });
+
+  for (const o of remove) o.parent.remove(o);
+
+  const baked = [];
+  for (const [material, geometries] of byMaterial) {
+    const merged = BufferGeometryUtils.mergeGeometries(geometries, false);
+    for (const g of geometries) g.dispose();
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, material);
+    m.name = "BakedModels";
+    m.userData.disposeGeometry = merged;
+    root.add(m);
+    baked.push(m);
+  }
+  return baked;
+}

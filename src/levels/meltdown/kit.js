@@ -253,7 +253,10 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   function fireSpot({ width = 1.6, depth = 1.2, height = 2.2, count, smoke = true, light = true, seed, materialSet } = {}) {
     return createFire(materialSet ?? fire, {
       width, depth, height, smoke, light,
-      count: count ?? Math.max(6, Math.round(width * depth * 5 + 4)),
+      // ~2.5 tongues per square metre: denser stacks clip to white under
+      // additive blending, and every tongue is overdraw on a game that is
+      // fill-rate bound.
+      count: count ?? Math.max(6, Math.round(width * depth * 2.5 + 4)),
       seed: seed ?? seedCounter++,
     });
   }
@@ -288,6 +291,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       group.userData.hazardMesh = collider(2.8, 0.9, 0.6, 1.64, { barrier: "high" });
     }
     group.add(group.userData.hazardMesh);
+    group.userData.static = true;
     return group;
   }
 
@@ -317,6 +321,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     }
     group.userData.hazardMesh = collider(2.7, 3.2, 1.7, 0, { rubble: true });
     group.add(group.userData.hazardMesh);
+    group.userData.static = true;
     return group;
   }
 
@@ -519,6 +524,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     const hit = collider(3.1, height, 5.4, 0, { barrier: mandatory ? "gap-mandatory" : "low", gap: true });
     group.add(hit);
     group.userData.hazardMesh = hit;
+    group.userData.static = true;
     return group;
   }
 

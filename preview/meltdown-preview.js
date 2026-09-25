@@ -119,8 +119,7 @@ const BALL_SPEED = 72;
  * slams you down into it - the two things that make a runner feel like it
  * listens.
  */
-const LANE_STIFFNESS = 240;
-const LANE_DAMPING = 2 * Math.sqrt(LANE_STIFFNESS);
+const LANE_OMEGA = 15.5;
 const JUMP_VELOCITY = 7.6;
 const RISE_GRAVITY = 19;
 const FALL_GRAVITY = 27;
@@ -149,6 +148,19 @@ const runner = {
   fireDistance: -45, lookBack: 0, pushing: false, firing: false, fireCooldown: 0,
   hits: 0, shots: 0, breaks: 0, downs: 0, speed: 0, baseSpeed: 8.2,
 };
+
+/**
+ * One step of a critically damped spring, solved exactly rather than
+ * integrated: stable at any frame rate. (Plain Euler on a spring this stiff
+ * overshoots and oscillates once a frame takes 40-50 ms, which on lab
+ * hardware it sometimes will.) Returns [position, velocity].
+ */
+function spring(x, v, target, omega, dt) {
+  const offset = x - target;
+  const e = Math.exp(-omega * dt);
+  const k = v + omega * offset;
+  return [target + (offset + k * dt) * e, (v - omega * k * dt) * e];
+}
 
 /* ------------------------------------------------------------------ */
 /* Launcher (the supplied Javelin model)                                */
@@ -244,14 +256,10 @@ function follow(target, stiffness, dt) {
     camVelocity.set(0, 0, 0);
     return;
   }
-  const damping = 2 * Math.sqrt(stiffness);
-  const ax = (target.x - camera.position.x) * stiffness - camVelocity.x * damping;
-  const ay = (target.y - camera.position.y) * stiffness - camVelocity.y * damping;
-  const az = (target.z - camera.position.z) * stiffness - camVelocity.z * damping;
-  camVelocity.x += ax * dt;
-  camVelocity.y += ay * dt;
-  camVelocity.z += az * dt;
-  camera.position.addScaledVector(camVelocity, dt);
+  const omega = Math.sqrt(stiffness);
+  for (const axis of ["x", "y", "z"]) {
+    [camera.position[axis], camVelocity[axis]] = spring(camera.position[axis], camVelocity[axis], target[axis], omega, dt);
+  }
 }
 
 function updateCamera(dt, time) {
@@ -760,10 +768,7 @@ function updateMovement(dt, playing) {
   }
 
   // Lanes: critically damped spring toward the chosen lane.
-  const target = LANES[r.lane];
-  const accel = (target - r.lateral) * LANE_STIFFNESS - r.lateralVel * LANE_DAMPING;
-  r.lateralVel += accel * dt;
-  r.lateral += r.lateralVel * dt;
+  [r.lateral, r.lateralVel] = spring(r.lateral, r.lateralVel, LANES[r.lane], LANE_OMEGA, dt);
 
   // Buffered jump and slide.
   r.jumpBuffer = Math.max(0, r.jumpBuffer - dt);
