@@ -79,6 +79,9 @@ Difficulty comes from combining already-learned mechanics, not simply increasing
 
 ### Level 1 - The Glass Causeway
 
+> **Concept update (Level 1 sprint).** The story is now a failed resonance experiment: the player is Subject 07, escaping the lab after Dr. Vale arms the tower's demolition charges; spheres are the subject's resonance ability. Level 1 keeps its identity and one-sentence test (aiming and limited ammunition) and adds fire, sprinklers, smoke and vents, ceiling and bridge collapses, three sphere types, serum power-ups, missions, case files, and an endless mode. The plan below is the original; the built level is documented in [`level-1-causeway.md`](./level-1-causeway.md).
+
+
 **Identity:** a bright, abstract corridor of glass bridges, rotating panels, reflective walls, and open sky.
 
 **Camera:** primarily first-person to focus attention on aiming and impact.

@@ -6,6 +6,7 @@
     <meta name="description" content="Fracture Run - a playable CGV project concept demo." />
     <title>Fracture Run - CGV Demo</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
   </head>
   <body>
     <canvas id="game" aria-label="Fracture Run game canvas"></canvas>
@@ -13,13 +14,18 @@
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark"></span>
-        <div><strong>FRACTURE RUN</strong><small>CAUSEWAY // PROTOTYPE 01</small></div>
+        <div><strong>FRACTURE RUN</strong><small>SUBJECT 07 // ASCENSION TOWER</small></div>
       </div>
       <div class="topbar-actions">
         <button id="pauseButton" class="icon-button" title="Pause (Esc)" aria-label="Pause">
           <span class="pause-glyph" aria-hidden="true"><i></i><i></i></span>PAUSE
         </button>
-        <button id="soundButton" class="icon-button" title="Toggle sound" aria-label="Toggle sound">SOUND</button>
+        <button id="viewButton" class="icon-button" title="Choose what the HUD shows" aria-label="Choose what the HUD shows" aria-controls="viewMenu">VIEW</button>
+        <div id="viewMenu" class="view-menu" hidden>
+          <p class="view-menu-title">Show on screen</p>
+          <div data-hud-toggles></div>
+          <p class="view-menu-hint"><kbd>H</kbd> hides the whole HUD</p>
+        </div>
       </div>
     </header>
 
@@ -32,13 +38,19 @@
     </section>
 
     <div id="reticle" class="reticle" aria-hidden="true"><i></i><b></b></div>
+    <div id="fadeOverlay" class="fade-overlay" aria-hidden="true"></div>
+    <div id="previewBar" class="preview-bar" hidden>
+      <span>Level preview: the Glass Causeway</span>
+      <button id="previewExitButton" class="icon-button">EXIT PREVIEW (ESC)</button>
+    </div>
     <div id="message" class="message" aria-live="polite"></div>
     <div id="caption" class="caption" aria-live="polite"></div>
     <div id="launchControls" class="controls launch-controls" aria-label="Controls">
       <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
       <span><kbd>MOUSE</kbd> Aim and throw</span>
-      <span><kbd>C</kbd> Change camera</span>
-      <span><kbd>W</kbd><kbd>S</kbd> Shift gravity in Level 3</span>
+      <span><kbd>W</kbd><kbd>S</kbd> Sprint and brake</span>
+      <span><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
+      <span><kbd>RMB</kbd> Focus</span>
     </div>
 
     <section id="storyScreen" class="screen active">
@@ -51,7 +63,6 @@
             <button id="storyBeginButton" class="primary-button">BEGIN BRIEFING</button>
             <button id="storySkipToMenuButton" class="text-button">Skip to menu</button>
           </div>
-          <p class="hint-inline">Narration uses your browser voice. Turn it off in Settings.</p>
         </div>
         <div id="storyPlayer" hidden>
           <p class="eyebrow">TOWER STATUS // CRITICAL</p>
@@ -64,16 +75,28 @@
 
     <section id="startScreen" class="screen">
       <div class="screen-copy">
-        <p class="eyebrow">CGV SPRINT 1 // PLAYABLE CONCEPT</p>
-        <h1>BREAK THE PATH.<br />REACH THE LIFT.</h1>
-        <p class="intro">The tower is failing. Run, aim, and shatter your way to the core.</p>
+        <p class="eyebrow">ASCENSION TOWER // LEVEL 212 // DEMOLITION ARMED</p>
+        <h1>BREAK THE GLASS.<br />REACH THE LIFT.</h1>
+        <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Shatter your way out before the tower comes down.</p>
         <div class="button-row">
           <button id="startButton" class="primary-button">START RUN</button>
+          <button id="endlessButton" class="text-button">Endless lab</button>
+          <button id="previewButton" class="text-button">Preview level</button>
+          <button id="manualButton" class="text-button">Field manual</button>
           <button id="settingsButton" class="text-button">Settings</button>
           <button id="replayStoryButton" class="text-button">Replay briefing</button>
         </div>
+        <p id="progressLine" class="progress-line"></p>
       </div>
-      <p class="hint">Best experienced with headphones</p>
+      <aside class="briefing-card" aria-label="Sector 1 briefing">
+        <p class="eyebrow">SECTOR 01 OF 03 // 03:47</p>
+        <h3>The Glass Causeway</h3>
+        <p>The observation wing is burning and the demolition charges are armed. Cross the ward and the skybridge, break the three gate locks in order, and reach the Calibration Lift.</p>
+        <p class="briefing-label">This run's missions</p>
+        <ul id="briefingMissions"></ul>
+        <p class="briefing-label">Controls</p>
+        <p class="briefing-keys"><kbd>A</kbd><kbd>D</kbd> lanes &nbsp; <kbd>W</kbd><kbd>S</kbd> sprint / brake &nbsp; <kbd>Click</kbd> throw &nbsp; <kbd>RMB</kbd> focus &nbsp; <kbd>Q</kbd><kbd>E</kbd> sphere type &nbsp; <kbd>V</kbd> choose what the HUD shows</p>
+      </aside>
     </section>
 
     <section id="pauseScreen" class="screen">
@@ -86,6 +109,7 @@
           <div><span>SPHERES</span><strong id="pauseAmmo">18</strong></div>
           <div><span>INTEGRITY</span><strong id="pauseHealth">100</strong></div>
         </div>
+        <ol id="pauseMissions" class="pause-missions"></ol>
         <div class="button-row">
           <button id="resumeButton" class="primary-button">RESUME</button>
           <button id="pauseSettingsButton" class="text-button">Settings</button>
@@ -102,15 +126,8 @@
         <h2 id="settingsTitle">CALIBRATE YOUR RUN</h2>
 
         <div class="settings-group">
-          <p class="settings-heading">Audio</p>
-          <label class="setting-row">
-            <span>Master volume</span>
-            <input type="range" id="volumeSlider" min="0" max="100" value="80" />
-          </label>
-          <label class="setting-row toggle-row">
-            <span>Story narration</span>
-            <input type="checkbox" id="narrationToggle" checked />
-          </label>
+          <p class="settings-heading">Interface - what the HUD shows (also the VIEW button)</p>
+          <div data-hud-toggles></div>
         </div>
 
         <div class="settings-group">
@@ -118,6 +135,23 @@
           <label class="setting-row">
             <span>Aim sensitivity</span>
             <input type="range" id="sensitivitySlider" min="50" max="200" value="100" />
+          </label>
+          <label class="setting-row toggle-row">
+            <span>Aim assist (small targets near the crosshair count as aimed at)</span>
+            <input type="checkbox" id="aimAssistToggle" checked />
+          </label>
+        </div>
+
+        <div class="settings-group">
+          <p class="settings-heading">Graphics</p>
+          <label class="setting-row">
+            <span>Quality</span>
+            <select id="qualitySelect">
+              <option value="auto">Auto (adapts to your GPU)</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low (no post-processing)</option>
+            </select>
           </label>
         </div>
 
@@ -134,8 +168,13 @@
           <div class="controls settings-controls">
             <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
             <span><kbd>MOUSE</kbd> Aim and throw</span>
+            <span><kbd>RMB</kbd> Focus (slow time)</span>
+            <span><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
+            <span><kbd>W</kbd><kbd>S</kbd> Sprint / brake (L1), gravity (L3)</span>
+            <span><kbd>SPACE</kbd><kbd>SHIFT</kbd> Jump / slide</span>
             <span><kbd>C</kbd> Change camera</span>
-            <span><kbd>W</kbd><kbd>S</kbd> Shift gravity in Level 3</span>
+            <span><kbd>P</kbd> Photo mode</span>
+            <span><kbd>M</kbd> Minimap</span>
             <span><kbd>ESC</kbd> Pause</span>
           </div>
         </div>
@@ -153,9 +192,42 @@
         <h2 id="endTitle">CALIBRATION LIFT REACHED</h2>
         <p id="endText" class="intro">All three tower sectors are stable.</p>
         <div class="result"><span>FINAL SCORE</span><strong id="finalScore">000000</strong></div>
+        <p id="endStats" class="end-stats"></p>
         <div class="button-row">
           <button id="restartButton" class="primary-button">RUN AGAIN</button>
           <button id="endMenuButton" class="text-button">Back to menu</button>
+        </div>
+        <p class="hint-inline">Press R to run again</p>
+      </div>
+    </section>
+
+    <section id="manualScreen" class="screen manual-screen" aria-label="Field manual">
+      <div class="screen-copy manual-copy">
+        <p class="eyebrow">FIELD MANUAL // SECTOR 01</p>
+        <h2>Everything in the Causeway, and what it does</h2>
+        <div class="manual-grid">
+          <article data-tone="glass"><h3>Glass pane</h3><p>Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity.</p></article>
+          <article data-tone="glass"><h3>Reinforced glass and doors</h3><p>Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one.</p></article>
+          <article data-tone="cyan"><h3>Sphere cache</h3><p>Floating crystal. Shoot it for +3 spheres. Your only real source of ammunition.</p></article>
+          <article data-tone="hazard"><h3>Solid hazards</h3><p>Dark steel with amber stripes: carts, cabinets, racks, fallen beams. They never break. Change lanes.</p></article>
+          <article data-tone="fire"><h3>Fire</h3><p>Burns integrity while you stand in it and thickens the smoke. Put it out with a sprinkler or a cryo sphere.</p></article>
+          <article data-tone="blue"><h3>Sprinkler bulb</h3><p>The small red glass bulb on the ceiling. Shoot it to flood the area and put out the fires below it.</p></article>
+          <article data-tone="green"><h3>Air vent</h3><p>A round frosted cover in the wall with a glowing cyan ring and a SMOKE VENT sign, angled toward you. The ring pulses when the air is smoky. Throw a sphere at it to pull the smoke out; the ring turns green.</p></article>
+          <article data-tone="hazard"><h3>Ceiling collapse</h3><p>A red ring on the floor means something is about to fall there. Beams block the lane. Falling glass can be shot mid-air.</p></article>
+          <article data-tone="glass"><h3>Rotating sculpture</h3><p>A steel pole blocks the centre lane; glass blades sweep the outer lanes. Shoot the blades or time your lane.</p></article>
+          <article data-tone="serum"><h3>Serum capsules</h3><p>Prism split (triple throw), thermal sight (see through smoke), kinetic shield (absorbs two hits), overdrive (free throws, faster).</p></article>
+          <article data-tone="amber"><h3>Case files</h3><p>Five gold holograms, each standing in a column of light: two in the ward, one on the skybridge, two in the atrium. Run through one or shoot it to read what happened here.</p></article>
+          <article data-tone="white"><h3>Specimen tanks</h3><p>Glass tanks along the walls. Optional score.</p></article>
+          <article data-tone="amber"><h3>Lift gate</h3><p>Break locks I, II, III in order. Wrong order is rejected. You have nine seconds once you reach the gate.</p></article>
+        </div>
+        <div class="manual-grid tools">
+          <article><h3>Glass sphere // 1</h3><p>Standard throw. Punches through panes and keeps going.</p></article>
+          <article><h3>Cryo sphere // 2</h3><p>Puts out every fire within 4.8 m and freezes falling debris.</p></article>
+          <article><h3>Shock sphere // 3</h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
+          <article><h3>Sprint, brake, focus</h3><p>W sprints, S brakes (the bridge collapses behind you, so do not brake long). Hold right mouse to slow time.</p></article>
+        </div>
+        <div class="button-row">
+          <button id="manualBackButton" class="primary-button">BACK</button>
         </div>
       </div>
     </section>
