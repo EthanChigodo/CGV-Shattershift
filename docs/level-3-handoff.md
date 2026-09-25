@@ -271,6 +271,31 @@ Not done. When someone does it:
 
 ---
 
+## 7b. Second asset batch (characters, weapons, helicopter)
+
+Twelve more Sketchfab models were converted into `assets/meltdown/` but are
+**not wired into anything yet** and are **not** in `MELTDOWN_ASSETS` in
+`assets.js` (add them there when you use them). Details and full attribution
+in `docs/credits.md` and `tools/assets/README.md`.
+
+- **Main characters (user's decision):** `player_female.glb` and
+  `player_male.glb` (renamed from the SCP scientist models). The obvious next
+  step is replacing the preview's capsule avatar with one of these.
+  **They are not rigged** - no skeleton, no animations - so they can only be
+  shown as a static pose for now. A running animation needs them rigged first
+  (Mixamo's free auto-rigger is the usual route), then an animation clip.
+- **Phase B enemy candidates:** `scientist_radioman`, `scientist_colossus`,
+  `scientist_rust` (all rigged, no animations), plus weapons/gadgets
+  (`weapon`, `steampunk_weapon`, `dead_end_weapons`, `weapon_set`,
+  `dragon_flail`).
+- **Phase B rescue helicopter:** `helicopter.glb` (Hind).
+- **`patient.glb`**: a test-subject figure - good for the occupied specimen
+  tanks and holding cells.
+- All are **CC-BY-4.0**: attribution is legally required *in the game's
+  credits screen*, not just `docs/credits.md`.
+
+---
+
 ## 8. Loose ends / known TODOs
 
 - **`docs/credits.md`**: 4 asset rows (ventilation kit, Javelin launcher,

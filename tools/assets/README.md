@@ -41,5 +41,32 @@ blender -b --factory-startup --python tools/assets/javelin.py -- Jav3.FBX "<text
 | `industrial_pipes.glb` | Geothermal Steam Factory_Blender_2.8.blend | `--only=pipes_Low.001`; its lava-red emission is switched off at load (assets.js) |
 | `experiment_ring.glb` | Geothermal Steam Factory_Blender_2.8.blend | `--only=Ring_Low` |
 
+### Second batch: Sketchfab `.glb` downloads
+
+`convert.py` also imports `.glb`/`.gltf`, and keeps armatures selected so rigged
+models export *with* their skeletons (verified: all 6 rigs survived). None of
+these files contain animations.
+
+| Output | Source file | Settings | Rigged |
+| --- | --- | --- | --- |
+| `player_female.glb` | scp_scientist_female_2.glb | 1024, 12000 | No |
+| `player_male.glb` | scp_scientist_male_2.glb | 1024, 12000 | No |
+| `scientist_radioman.glb` | scientist_radiomanskibidi_toilet.glb | 1024, 12000 | Yes |
+| `scientist_colossus.glb` | scientist_-_wolf._new_colossus.glb | **512**, 10000 | Yes |
+| `scientist_rust.glb` | rust_scientist_blue.glb | 1024, 10000 | Yes |
+| `patient.glb` | patient_-_silent_hill_4.glb | 1024, 8000 | Yes |
+| `helicopter.glb` | hind_attack_helicopter.glb | 1024, 8000 | No |
+| `weapon.glb` | weapon.glb | 1024, 8000 | No |
+| `steampunk_weapon.glb` | steampunk_weapon.glb | 1024, 8000 | No |
+| `dead_end_weapons.glb` | dead_end_weapons.glb | 1024, 8000 | Yes (2) |
+| `weapon_set.glb` | weapon_set.glb | 1024, 8000 | No |
+| `dragon_flail.glb` | dragon_flail.glb | 1024, 8000 | No |
+
+~238 MB of source became ~22 MB. Units vary wildly between files (the
+characters are in centimetres, the helicopter is ~1,900 units long, the
+steampunk weapon ~3.5 cm) - that is fine, `fillAssetSlots` scales everything by
+measured size. Rigged meshes were not decimated (it can tear skin weights), so
+`scientist_colossus.glb` is still ~65k triangles.
+
 Not used: the supplied smoke `.glb` (3,459 separately animated planes - about
 3,500 draw calls a frame; the level's fire/smoke are a custom shader instead).

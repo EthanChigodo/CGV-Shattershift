@@ -24,6 +24,8 @@ else:
         bpy.ops.import_scene.fbx(filepath=src)
     elif ext == ".obj":
         bpy.ops.wm.obj_import(filepath=src)
+    elif ext in (".glb", ".gltf"):
+        bpy.ops.import_scene.gltf(filepath=src)
 
 def tri_count(obj):
     return sum(max(1, len(p.vertices) - 2) for p in obj.data.polygons)
@@ -77,7 +79,11 @@ for o in meshes:
 
 # 3. Export selected meshes only (no cameras/lights from the source scene).
 bpy.ops.object.select_all(action="DESELECT")
-for o in meshes:
+# Rigged models: the armature must be selected too, or the exporter writes
+# the mesh with no skin. (The exporter's "apply modifiers" skips Armature
+# modifiers, so decimation and skinning coexist.)
+armatures = [o for o in bpy.context.scene.objects if o.type == "ARMATURE" and o.name in in_layer]
+for o in meshes + armatures:
     o.hide_set(False)
     o.hide_viewport = False
     o.select_set(True)
@@ -95,6 +101,7 @@ bpy.ops.export_scene.gltf(
     export_cameras=False,
     export_lights=False,
     export_animations=False,
+    export_skins=True,
 )
 summary["out_bytes"] = os.path.getsize(out)
 summary["tris_after"] = sum(min(tri_count(o), max_tris) for o in meshes)
