@@ -374,3 +374,31 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Credits panel (src/levels/meltdown/credits.js). */
+.mlt-credits {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 4, 3, 0.86);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #e9ddd6;
+}
+.mlt-credits[hidden] { display: none; }
+.mlt-credits-card {
+  width: min(860px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 22px 26px;
+  border: 1px solid rgba(255, 140, 60, 0.35);
+  background: rgba(20, 12, 9, 0.92);
+}
+.mlt-credits h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: 0.2em; text-transform: uppercase; color: #ffb03c; }
+.mlt-credits ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.55; }
+.mlt-credits li { margin-bottom: 8px; }
+.mlt-credits li span { color: #a8928a; font-size: 11px; }
+.mlt-credits a { color: #8fd8d0; word-break: break-all; }
+.mlt-credits p { font-size: 11px; color: #a8928a; }
+.mlt-credits small { display: block; margin-top: 10px; font-size: 10px; letter-spacing: 0.2em; color: #8a7168; }

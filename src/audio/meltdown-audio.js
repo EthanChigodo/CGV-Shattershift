@@ -383,6 +383,79 @@ export class MeltdownAudio {
     this._burst(t, { duration: 0.8, gain: 0.12, type: "highpass", freq: 2500, sweepTo: 6000 });
   }
 
+  /* ------------------------------------------------------------ */
+  /* The roof                                                      */
+  /* ------------------------------------------------------------ */
+
+  /**
+   * The helicopter, 0 (not yet) .. 1 (overhead): low noise chopped at the
+   * blade rate, with a turbine whine on top. Built on first use.
+   */
+  setRotor(level) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.rotorGain) {
+      const ctx = this.ctx;
+      const src = ctx.createBufferSource();
+      src.buffer = this.brown;
+      src.loop = true;
+      const low = ctx.createBiquadFilter();
+      low.type = "lowpass";
+      low.frequency.value = 520;
+      const chop = ctx.createGain();
+      chop.gain.value = 0.5;
+      const lfo = ctx.createOscillator();
+      lfo.type = "square";
+      lfo.frequency.value = 5.6;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.45;
+      lfo.connect(depth).connect(chop.gain);
+      this.rotorGain = ctx.createGain();
+      this.rotorGain.gain.value = 0;
+      src.connect(low).connect(chop).connect(this.rotorGain).connect(this.master);
+      const whine = ctx.createOscillator();
+      whine.type = "sawtooth";
+      whine.frequency.value = 1650;
+      const whineGain = ctx.createGain();
+      whineGain.gain.value = 0.006;
+      whine.connect(whineGain).connect(this.rotorGain);
+      src.start();
+      lfo.start();
+      whine.start();
+    }
+    this.rotorGain.gain.setTargetAtTime(Math.max(0, Math.min(1, level)) ** 1.6 * 0.9, t, 0.4);
+  }
+
+  /** A scientist's gadget discharging. */
+  zap() {
+    if (!this.ctx) return;
+    const t = this._now();
+    this._tone(t, { freq: 1800, to: 240, duration: 0.35, gain: 0.12, type: "sawtooth" });
+    this._burst(t, { duration: 0.2, gain: 0.12, type: "bandpass", freq: 3000, sweepTo: 800 });
+  }
+
+  /** The telegraph before a patient charges. */
+  growl() {
+    if (!this.ctx) return;
+    const t = this._now();
+    this._tone(t, { freq: 70, to: 140, duration: 0.6, gain: 0.25, type: "sawtooth" });
+    this._burst(t, { duration: 0.6, gain: 0.16, type: "bandpass", freq: 380, q: 2 });
+  }
+
+  /** Over the edge. */
+  scream() {
+    if (!this.ctx) return;
+    const t = this._now();
+    this._tone(t, { freq: 620, to: 180, duration: 1.4, gain: 0.12, type: "sawtooth" });
+    this._tone(t, { freq: 640, to: 190, duration: 1.4, gain: 0.08, type: "triangle" });
+  }
+
+  /** A sidestep. */
+  whoosh() {
+    if (!this.ctx) return;
+    this._burst(this._now(), { duration: 0.25, gain: 0.18, type: "bandpass", freq: 900, sweepTo: 2600 });
+  }
+
   stop() {
     clearTimeout(this._loop);
     this.ctx?.close();

@@ -8,6 +8,9 @@
  * projectiles, debris, the launcher's light, the grading pass, audio - lives
  * in src/ already; this file wires them together.
  *
+ * Phase B (the roof) runs in the same page: finishing Phase A fades to black,
+ * hides the corridor, and brings up `RoofLevel` - or press P to skip there.
+ *
  * Serve the repository over HTTP and open /preview/meltdown.html.
  */
 
@@ -20,6 +23,8 @@ import { PlayerAvatar } from "../src/levels/meltdown/player.js";
 import { LauncherLight } from "../src/levels/meltdown/flashlight.js";
 import { createGradePass } from "../src/levels/meltdown/post.js";
 import { createEnvironmentDimmer } from "../src/levels/meltdown/lighting.js";
+import { RoofLevel, ROOF_SPAWN } from "../src/levels/meltdown/roof.js";
+import { createCreditsPanel } from "../src/levels/meltdown/credits.js";
 import { MeltdownHud } from "../src/ui/meltdown-hud.js";
 import { MeltdownAudio } from "../src/audio/meltdown-audio.js";
 
@@ -81,6 +86,7 @@ const debris = new Debris(scene);
 const beam = new LauncherLight(scene);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const environment = createEnvironmentDimmer(scene);
+const credits = createCreditsPanel();
 
 const ui = {
   cameraName: document.querySelector("#cameraName"),
@@ -90,6 +96,8 @@ const ui = {
   heatBar: document.querySelector("#heatBar"),
   start: document.querySelector("#startOverlay"),
   picks: [...document.querySelectorAll("[data-character]")],
+  fade: document.querySelector("#fade"),
+  letterbox: document.querySelector("#letterbox"),
 };
 
 /* ------------------------------------------------------------------ */
@@ -148,6 +156,37 @@ const runner = {
   fireDistance: -45, lookBack: 0, pushing: false, firing: false, fireCooldown: 0,
   hits: 0, shots: 0, breaks: 0, downs: 0, speed: 0, baseSpeed: 8.2,
 };
+
+/*
+ * Phase B. On the roof the player moves freely: WASD relative to the camera
+ * (which looks north, toward the helipad), the mouse aims, Space dodges -
+ * a quick sidestep with a moment of invulnerability, which is also how you
+ * make a charging patient miss and carry on over the ledge.
+ */
+let phase = "run"; // run | fade | roof | ending | over
+let roof = null;
+let roofAssets = null;
+let roofAssetsPromise = null;
+/** Dev/test overrides for the roof, e.g. { heliSeconds: 10 }. */
+let roofOptions = {};
+const ROOF_SPEED = 6.4;
+const DODGE_SPEED = 13;
+const DODGE_SECONDS = 0.24;
+const hero = {
+  position: new THREE.Vector3(),
+  velocity: new THREE.Vector3(),
+  knock: new THREE.Vector3(),
+  dodge: 0,
+  dodgeCooldown: 0,
+  dodgeDir: new THREE.Vector3(),
+  yaw: 0,
+  lastShot: 99,
+  aim: new THREE.Vector3(),
+  roofStart: 0,
+  runStart: 0,
+};
+const held = new Set();
+const aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.15);
 
 /**
  * One step of a critically damped spring, solved exactly rather than
@@ -353,7 +392,8 @@ function currentPower() {
 }
 
 function shoot() {
-  if (!runner.alive || runner.finished || !level) return;
+  if (!runner.alive || !level) return;
+  if (phase === "run" && runner.finished) return;
   if (runner.lockout > 0) return;
   if (runner.balls <= 0) {
     audio.dry();
@@ -375,14 +415,23 @@ function shoot() {
   // Aim where the reticle points: the first breakable or hazard under it,
   // or 60 m out. The ball then flies from the muzzle toward that point.
   raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(level.breakables, false)[0];
-  if (hit) aim.copy(hit.point);
-  else aim.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, 60);
+  if (phase === "run") {
+    const hit = raycaster.intersectObjects(level.breakables, false)[0];
+    if (hit) aim.copy(hit.point);
+    else aim.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, 60);
+  } else {
+    aim.copy(hero.aim);
+  }
 
   launcher.muzzle.getWorldPosition(muzzleWorld);
   fireDir.copy(aim).sub(muzzleWorld).normalize();
-  const sample = level.route.sample(runner.distance);
-  forwardVel.set(-Math.sin(sample.heading), 0, -Math.cos(sample.heading)).multiplyScalar(runner.speed);
+  if (phase === "run") {
+    const sample = level.route.sample(runner.distance);
+    forwardVel.set(-Math.sin(sample.heading), 0, -Math.cos(sample.heading)).multiplyScalar(runner.speed);
+  } else {
+    forwardVel.copy(hero.velocity).multiplyScalar(0.5);
+    hero.lastShot = 0;
+  }
   projectiles.fire(muzzleWorld, fireDir, BALL_SPEED, { power: currentPower(), inherit: forwardVel });
   if (runner.overchargeShots > 0) runner.overchargeShots -= 1;
   launcher.recoil = 1;
@@ -403,6 +452,7 @@ function applyPowerup(kind) {
 }
 
 function onBallBreakable(object, point, ball) {
+  if (phase !== "run") return onRoofBreakable(object, point, ball);
   const result = level.breakTarget(object, ball.power);
   if (!result) return true;
   if (result.partial) {
@@ -565,6 +615,18 @@ async function loadLevel() {
     hud.unbind();
     level.dispose();
   }
+  if (roof) {
+    roof.dispose();
+    roof = null;
+  }
+  phase = "run";
+  fade(false);
+  ui.letterbox?.classList.remove("on");
+  hud.vitals.style.visibility = "";
+  audio.setRotor(0);
+  avatar.setVisible(true);
+  scene.fog.density = 0.012;
+  renderer.toneMappingExposure = BASE_EXPOSURE;
   projectiles.clear();
   debris.clear();
   assetsReady = false;
@@ -575,7 +637,7 @@ async function loadLevel() {
   hud.hideSummary();
   hud.show();
 
-  level.events.on("complete", () => finishRun(true, "ROOF ACCESS"));
+  level.events.on("complete", () => startRoof());
   level.events.on("timer-expired", () => {
     finishRun(false, "THE BUILDING WENT UP");
     runner.vitality = 0;
@@ -642,6 +704,8 @@ async function loadLevel() {
   level.prewarm(renderer, camera);
   environment.refresh();
   assetsReady = true;
+  // The roof's models stream in behind Phase A.
+  loadRoofAssets();
 }
 
 /* ------------------------------------------------------------------ */
@@ -683,8 +747,13 @@ addEventListener("pointermove", (event) => {
   ui.reticle.style.top = `${event.clientY}px`;
 });
 
+document.querySelector("#creditsButton")?.addEventListener("pointerdown", (event) => {
+  event.stopPropagation();
+  credits.toggle(true);
+});
+
 addEventListener("pointerdown", (event) => {
-  if (event.target.closest?.("[data-character]")) return;
+  if (event.target.closest?.("[data-character]") || event.target.closest?.(".mlt-credits")) return;
   begin();
   if (event.button === 0) {
     runner.firing = true;
@@ -710,9 +779,42 @@ function slide() {
   runner.slideBuffer = INPUT_BUFFER;
 }
 
+addEventListener("keyup", (event) => held.delete(event.code));
+addEventListener("blur", () => held.clear());
+
 addEventListener("keydown", (event) => {
+  held.add(event.code);
   if (event.repeat && event.code !== "Space") return;
+  if (event.code === "KeyK") {
+    credits.toggle();
+    return;
+  }
   begin();
+  if (event.code === "KeyR") {
+    loadLevel();
+    return;
+  }
+  if (event.code === "KeyP" && phase === "run") {
+    startRoof();
+    return;
+  }
+  if (phase !== "run") {
+    // The roof: WASD is movement (read from `held` each frame); Space dodges.
+    if (event.code === "Space" && phase === "roof") {
+      event.preventDefault();
+      if (hero.dodgeCooldown <= 0) {
+        const dir = hero.velocity.lengthSq() > 0.5 ? hero.velocity.clone() : hero.aim.clone().sub(hero.position).setY(0);
+        hero.dodgeDir.copy(dir.normalize());
+        hero.dodge = DODGE_SECONDS;
+        hero.dodgeCooldown = 0.75;
+        runner.invulnerable = Math.max(runner.invulnerable, 0.32);
+        audio.whoosh();
+      }
+    }
+    if (event.code === "KeyB") bloom.enabled = !bloom.enabled;
+    if (event.code === "KeyF") hud.setDevVisible(hud.dev.hidden);
+    return;
+  }
   if (event.code === "KeyA" || event.code === "ArrowLeft") runner.lane = Math.max(0, runner.lane - 1);
   if (event.code === "KeyD" || event.code === "ArrowRight") runner.lane = Math.min(2, runner.lane + 1);
   if (event.code === "Space" || event.code === "KeyW" || event.code === "ArrowUp") {
@@ -732,7 +834,6 @@ addEventListener("keydown", (event) => {
     hud.setDevVisible(hud.dev.hidden);
     if (ui.heatBar) ui.heatBar.hidden = hud.dev.hidden;
   }
-  if (event.code === "KeyR") loadLevel();
 });
 
 addEventListener("resize", () => {
@@ -805,6 +906,271 @@ function updateMovement(dt, playing) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Phase B - the roof                                                   */
+/* ------------------------------------------------------------------ */
+
+const ROOF_NAMES = ["scientistRadioman", "scientistRust", "patient", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight"];
+const FOG_ROOF = new THREE.Color(0x0c0d12);
+
+/** Roof models load in the background while Phase A is being played. */
+function loadRoofAssets() {
+  roofAssetsPromise ??= loadMeltdownAssets(ASSET_BASE, { names: ROOF_NAMES }).then((map) => (roofAssets = map));
+  return roofAssetsPromise;
+}
+
+function fade(on) {
+  ui.fade?.classList.toggle("on", on);
+}
+
+/**
+ * Up the stairs: fade out, swap the corridor for the roof, compile its
+ * shaders while the screen is black (the scene's light count changes, so
+ * everything recompiles once - better here than mid-fight), fade back in.
+ */
+async function startRoof() {
+  if (phase !== "run") return;
+  phase = "fade";
+  runner.firing = false;
+  fade(true);
+  const wait = new Promise((resolve) => setTimeout(resolve, 650));
+  await Promise.all([wait, loadRoofAssets()]);
+
+  level.root.visible = false;
+  projectiles.clear();
+  debris.clear();
+  roof?.dispose();
+  roof = new RoofLevel({ assets: roofAssets, ...roofOptions });
+  roof.addTo(scene);
+  bindRoofEvents();
+
+  hero.position.copy(ROOF_SPAWN);
+  hero.velocity.set(0, 0, 0);
+  hero.knock.set(0, 0, 0);
+  hero.yaw = 0;
+  hero.roofStart = performance.now();
+  avatar.root.position.copy(hero.position);
+  avatar.root.rotation.y = 0;
+  avatar.setVisible(true);
+  avatar.shadow.visible = true;
+  // A breath at the top of the stairs: a partial refill, not a reset.
+  runner.vitality = Math.min(START_VITALITY, runner.vitality + 25);
+  runner.alive = true;
+  runner.finished = false;
+  runner.invulnerable = 1.5;
+  runner.heat = 0;
+  runner.lockout = 0;
+
+  scene.fog.color.copy(FOG_ROOF);
+  // Night haze: enough that the city recedes instead of standing around you.
+  scene.fog.density = 0.0105;
+  scene.background.copy(FOG_ROOF);
+  renderer.toneMappingExposure = 1.0;
+  environment.refresh();
+  environment.set(0.8);
+  snapCamera = true;
+  updateRoofCamera(0.016);
+  roof.prewarm(renderer, camera);
+
+  phase = "roof";
+  fade(false);
+  hud.showBanner("SECTOR 03 // THE ROOF", "HOLD ON", 3200);
+  setTimeout(() => hud.toast("WASD MOVE", "SPACE DODGE", "", 4200), 1200);
+  setTimeout(() => hud.toast("LURE THEM", "OFF THE EDGE", "", 4200), 3000);
+}
+
+function bindRoofEvents() {
+  roof.events.on("wave", ({ index }) => {
+    hud.showBanner(index === 1 ? "THEY WERE WAITING" : "MORE OF THEM", index === 1 ? "THEY'RE LETTING THEM OUT" : "THE MACHINE ROOM", 2600);
+    audio.groan(1);
+  });
+  roof.events.on("patient-windup", () => audio.growl());
+  roof.events.on("patient-stunned", ({ position }) => {
+    debris.dust(position.clone().setY(1), { size: 2 });
+    audio.clang();
+  });
+  roof.events.on("enemy-fall", () => {
+    audio.scream();
+    hud.toast("OVER THE EDGE", "");
+  });
+  roof.events.on("enemy-down", ({ enemy }) => {
+    audio.bodyFall();
+    hud.toast("DOWN", enemy.kind === "scientist" ? "SCIENTIST" : "");
+  });
+  roof.events.on("orb-fired", () => audio.zap());
+  roof.events.on("orb-burst", ({ position }) => debris.sparks(position, { count: 22, speed: 5 }));
+  roof.events.on("clear", () => hud.showBanner("ROOF CLEAR", "HERE IT COMES", 3000));
+  roof.events.on("heli-arrived", ({ ending }) => {
+    roof.beginEnding(hero.position);
+    phase = "ending";
+    runner.firing = false;
+    ui.letterbox?.classList.add("on");
+    hud.vitals.style.visibility = "hidden";
+    hud.showBanner(ending === "victory" ? "EXTRACTION" : "IT CAN'T LAND", ending === "victory" ? "YOUR RIDE" : "JUMP FOR IT", 3000);
+  });
+}
+
+function onRoofBreakable(object, point, ball) {
+  const result = roof.breakTarget(object, ball.power, avatar.root.position);
+  if (!result) return true;
+  if (result.kind === "sack") {
+    if (result.partial) return true;
+    runner.balls = Math.min(MAX_BALLS, runner.balls + (result.spheres ?? 0));
+    debris.burst(result.position, { kind: "sack", count: 26, speed: 4 });
+    hud.toast("BALLS", `+${result.spheres}`);
+    audio.glassShatter(false);
+    audio.pickup();
+    return true;
+  }
+  // A ball into a person: an impact, a burst, a stagger - not a shatter.
+  debris.burst(point, { kind: "concrete", count: result.partial ? 6 : 12, speed: 3, size: 0.1 });
+  debris.dust(point, { size: result.partial ? 1.2 : 2.2, life: 0.7, color: 0x5a2a22 });
+  debris.sparks(point, { count: 8, speed: 3 });
+  audio.thud();
+  runner.breaks += result.partial ? 0 : 1;
+  if (!result.partial) runner.downs += 1;
+  return true;
+}
+
+function updateRoofCamera(dt) {
+  // High and behind (south of) the player, looking north over their head,
+  // leaning a little toward where they aim.
+  cameraDesired.copy(hero.position).add(new THREE.Vector3(0, 11.5, 8.5));
+  lookTarget.copy(hero.position).add(new THREE.Vector3(0, 0.6, -3.4)).lerp(hero.aim, 0.16);
+  follow(cameraDesired, 60, dt);
+  if (snapCamera) smoothedLook.copy(lookTarget);
+  else smoothedLook.lerp(lookTarget, 1 - Math.exp(-dt * 10));
+  camera.up.copy(UP);
+  camera.lookAt(smoothedLook);
+  if (Math.abs(camera.fov - BASE_FOV) > 0.01) {
+    camera.fov = BASE_FOV;
+    camera.updateProjectionMatrix();
+  }
+  trauma = Math.max(0, trauma - dt * 1.5);
+  if (trauma > 0.001) {
+    const amount = trauma * trauma * (reducedMotion ? 0.25 : 1);
+    camera.position.x += (Math.random() * 2 - 1) * amount * 0.4;
+    camera.position.y += (Math.random() * 2 - 1) * amount * 0.3;
+  }
+  snapCamera = false;
+}
+
+function roofHit(hit) {
+  if (runner.invulnerable > 0 || phase !== "roof") return;
+  runner.vitality = Math.max(0, runner.vitality - hit.damage);
+  runner.hits += 1;
+  runner.invulnerable = 1.0;
+  hero.knock.subVectors(hero.position, hit.from).setY(0).normalize().multiplyScalar(hit.knock);
+  trauma = Math.min(1, trauma + (hit.source === "patient" ? 0.8 : 0.45));
+  hitFlash = 1;
+  hud.flashDamage();
+  hud.toast("HIT", "", "warn");
+  audio.stumble();
+  debris.sparks(avatar.root.position.clone().setY(1.2), { count: 16 });
+  if (runner.vitality <= 0) {
+    runner.alive = false;
+    phase = "over";
+    showRoofSummary(false, "THEY GOT YOU");
+  }
+}
+
+function showRoofSummary(escaped, title) {
+  hud.vitals.style.visibility = "";
+  const total = (performance.now() - runner.startedAt) / 1000;
+  const onRoof = (performance.now() - hero.roofStart) / 1000;
+  hud.showSummary({
+    title,
+    eyebrow: escaped ? "LEVEL 3 COMPLETE" : "SECTOR 03 // THE ROOF",
+    failed: !escaped,
+    rows: [
+      ["Total time", `${total.toFixed(1)}s`],
+      ["On the roof", `${onRoof.toFixed(1)}s`],
+      ["Shot down (both phases)", runner.downs],
+      ["Sent over the edge", roof ? roof.state.falls : 0],
+      ["Hits taken", runner.hits],
+      ["Balls left", runner.balls, true],
+    ],
+  });
+}
+
+function updateRoofFrame(dt, time) {
+  const cut = roof.cutscene;
+  const slow = phase === "ending" && cut ? cut.timeScale : 1;
+  const sdt = dt * slow;
+
+  if (phase === "roof") {
+    // Movement, camera-relative (the camera looks down -Z).
+    const ix = (held.has("KeyD") || held.has("ArrowRight") ? 1 : 0) - (held.has("KeyA") || held.has("ArrowLeft") ? 1 : 0);
+    const iz = (held.has("KeyS") || held.has("ArrowDown") ? 1 : 0) - (held.has("KeyW") || held.has("ArrowUp") ? 1 : 0);
+    const input = new THREE.Vector3(ix, 0, iz);
+    if (input.lengthSq() > 1) input.normalize();
+    const k = 1 - Math.exp(-dt * 12);
+    hero.velocity.lerp(input.multiplyScalar(ROOF_SPEED), k);
+    hero.dodge = Math.max(0, hero.dodge - dt);
+    hero.dodgeCooldown = Math.max(0, hero.dodgeCooldown - dt);
+    hero.knock.multiplyScalar(Math.max(0, 1 - dt * 6));
+    hero.position.addScaledVector(hero.velocity, dt).addScaledVector(hero.knock, dt);
+    if (hero.dodge > 0) hero.position.addScaledVector(hero.dodgeDir, DODGE_SPEED * dt);
+    roof.clampPlayer(hero.position);
+    hero.position.y = 0;
+
+    // Aim: an enemy or sack under the cursor, else a point at chest height.
+    raycaster.setFromCamera(pointer, camera);
+    const hit = raycaster.intersectObjects(roof.breakables, false)[0];
+    if (hit) hero.aim.copy(hit.point);
+    else if (!raycaster.ray.intersectPlane(aimPlane, hero.aim)) hero.aim.copy(hero.position).add(new THREE.Vector3(0, 1.15, -10));
+    ui.reticle.classList.toggle("hot", Boolean(hit));
+
+    // Face the aim while shooting, otherwise the way you move.
+    hero.lastShot += dt;
+    const face = hero.lastShot < 0.6 || runner.firing ? hero.aim.clone().sub(hero.position) : hero.velocity.lengthSq() > 0.5 ? hero.velocity.clone() : null;
+    if (face) {
+      const want = Math.atan2(-face.x, -face.z);
+      let delta = want - hero.yaw;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      hero.yaw += delta * Math.min(1, dt * 14);
+    }
+    avatar.root.position.copy(hero.position);
+    avatar.root.rotation.y = hero.yaw;
+    const speed = hero.velocity.length() + (hero.dodge > 0 ? DODGE_SPEED : 0);
+    avatar.update(dt, { speed, lateralVel: 0, height: 0, sliding: hero.dodge > 0, aiming: runner.firing });
+
+    const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
+    for (const h of hits) roofHit(h);
+    updateRoofCamera(dt);
+  } else if (phase === "ending" || phase === "over") {
+    roof.update({ dt: sdt, time, player: hero.position, playerVelocity: hero.velocity });
+    if (cut) {
+      avatar.root.position.copy(cut.player);
+      avatar.root.rotation.y = cut.playerYaw;
+      avatar.setVisible(!cut.hidePlayer);
+      avatar.shadow.visible = !cut.hidePlayer && cut.action !== "jump" && cut.action !== "hang";
+      avatar.update(sdt, { speed: cut.action === "run" ? 9 : 0, height: cut.action === "jump" ? 1 : 0, aiming: false, stumble: cut.action === "hang" ? 1 : 0 });
+      if (snapCamera) camera.position.copy(cut.camera);
+      else camera.position.lerp(cut.camera, 1 - Math.exp(-dt * 3));
+      smoothedLook.lerp(cut.look, 1 - Math.exp(-dt * 4));
+      camera.lookAt(smoothedLook);
+      snapCamera = false;
+      if (cut.done && phase === "ending") {
+        phase = "over";
+        const escaped = roof.state.ending;
+        ui.letterbox?.classList.remove("on");
+        showRoofSummary(true, escaped === "victory" ? "EXTRACTED" : "BARELY OUT");
+      }
+    } else {
+      updateRoofCamera(dt);
+    }
+  }
+
+  placeLauncher(false);
+  // Balls fly through the cutscene's slow motion too.
+  projectiles.update(sdt, { breakables: roof.breakables, solids: roof.solids, onBreakable: onBallBreakable, onSolid: onBallSolid });
+  debris.update(sdt);
+  launcher.muzzle.getWorldPosition(muzzleWorld);
+  beam.update(dt, { origin: muzzleWorld, target: hero.aim, darkness: 0, time, projectiles });
+  audio.setRotor(roof.rotorLevel);
+}
+
+/* ------------------------------------------------------------------ */
 /* Loop                                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -826,8 +1192,9 @@ function animate() {
   }
   if (!level) return;
 
-  const playing = started && runner.alive && !runner.finished;
-  updateMovement(dt, playing);
+  const onRoof = phase !== "run";
+  const playing = onRoof ? phase === "roof" && runner.alive : started && runner.alive && !runner.finished;
+  if (!onRoof) updateMovement(dt, playing);
 
   // Launcher: held trigger, heat, lockout, weakened window.
   launcher.recoil = Math.max(0, launcher.recoil - dt * 7);
@@ -850,6 +1217,31 @@ function animate() {
   runner.adrenaline = Math.max(0, runner.adrenaline - dt);
   runner.barrierShield = Math.max(0, runner.barrierShield - dt);
   runner.lookBack = Math.max(0, runner.lookBack - dt);
+
+  if (onRoof) {
+    runner.invulnerable = Math.max(0, runner.invulnerable - dt);
+    if (roof) updateRoofFrame(dt, time);
+    const danger = 1 - runner.vitality / START_VITALITY;
+    hud.setDanger(danger);
+    audio.setFireProximity(0.25);
+    audio.setDanger(danger * 0.8);
+    hitFlash = Math.max(0, hitFlash - dt * 3);
+    const g = grade.uniforms;
+    g.uTime.value = time;
+    g.uDanger.value = danger;
+    g.uDark.value = 0.15;
+    g.uHeat.value = 0;
+    g.uHit.value = reducedMotion ? hitFlash * 0.3 : hitFlash;
+    ui.reticle.classList.toggle("overheated", runner.lockout > 0);
+    ui.reticle.classList.toggle("weak", runner.weakened > 0);
+    hud.setVitality(runner.vitality, START_VITALITY);
+    hud.setBalls(runner.balls);
+    hud.setPrompt(runner.balls <= 0 && playing ? "NO BALLS" : null);
+    hud.update({ fps, renderer });
+    ui.beatName.textContent = "THE ROOF";
+    composer.render();
+    return;
+  }
 
   // The fire: vitality drains steadily, and the fire front's distance
   // behind you is that vitality made visible.
@@ -979,4 +1371,22 @@ globalThis.__meltdown = {
     snapCamera = true;
   },
   pickCharacter,
+  get roof() {
+    return roof;
+  },
+  get phase() {
+    return phase;
+  },
+  hero,
+  startRoof,
+  set roofOptions(value) {
+    roofOptions = value ?? {};
+  },
+  loadRoofAssets,
 };
+
+// ?roof in the URL starts on the roof (demos, testing Phase B on its own).
+if (new URLSearchParams(location.search).has("roof")) {
+  const go = () => (assetsReady ? startRoof() : setTimeout(go, 300));
+  go();
+}

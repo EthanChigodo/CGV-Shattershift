@@ -15,10 +15,11 @@ import { mkdir } from "node:fs/promises";
 import { serve, openPage } from "./lib.js";
 import * as route from "./checks/route.js";
 import * as fairness from "./checks/fairness.js";
+import * as roof from "./checks/roof.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
-const CHECKS = [route, fairness];
+const CHECKS = [route, fairness, roof];
 
 /** Documentation shots: [name, route distance, camera mode]. */
 const SHOTS = [

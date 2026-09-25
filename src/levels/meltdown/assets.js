@@ -15,13 +15,14 @@
 import * as THREE from "../../three.js";
 import { GLTFLoader, BufferGeometryUtils } from "../../three-addons.js";
 import { buildCharacterTemplate, cloneCharacter } from "./characters.js";
+import { buildHelicopterTemplate } from "./helicopter.js";
 
 /**
  * Models that arrive as many small meshes sharing a few materials. Every mesh
  * is a draw call; the ventilation network alone is 79 of them. Merging by
  * material collapses each of these to a handful.
  */
-const MERGE_BY_MATERIAL = new Set(["officeDesk", "launcher", "ventFan"]);
+const MERGE_BY_MATERIAL = new Set(["officeDesk", "launcher", "ventFan", "gadgetBrass", "gadgetCoil"]);
 
 /**
  * Models whose source scene gave them a glow that makes no sense here. The
@@ -93,6 +94,16 @@ export const CHARACTER_ASSETS = {
   scientistRust: { file: "scientist_rust.glb", profile: "scientistRust" },
 };
 
+/**
+ * Phase B (the roof) only: the rescue helicopter and the scientists'
+ * gadgets. Loaded in the background during Phase A.
+ */
+export const ROOF_ASSETS = {
+  helicopter: "helicopter.glb",
+  gadgetBrass: "steampunk_weapon.glb",
+  gadgetCoil: "weapon.glb",
+};
+
 /** Loaded once per page and shared by every level instance (and a restart). */
 const cache = new Map();
 
@@ -105,7 +116,7 @@ const cache = new Map();
 export async function loadMeltdownAssets(baseUrl, { onProgress, names } = {}) {
   const loader = new GLTFLoader();
   const wanted = names ?? Object.keys(MELTDOWN_ASSETS);
-  const entries = wanted.map((name) => [name, CHARACTER_ASSETS[name]?.file ?? MELTDOWN_ASSETS[name]]).filter(([, file]) => file);
+  const entries = wanted.map((name) => [name, CHARACTER_ASSETS[name]?.file ?? MELTDOWN_ASSETS[name] ?? ROOF_ASSETS[name]]).filter(([, file]) => file);
   const assets = new Map();
   let done = 0;
 
@@ -137,6 +148,10 @@ async function loadOne(loader, baseUrl, name, file) {
     const size = new THREE.Box3().setFromObject(template, true).getSize(new THREE.Vector3());
     size.y = template.userData.character.height;
     return { template, size, character: true };
+  }
+  if (name === "helicopter") {
+    const template = buildHelicopterTemplate(gltf.scene);
+    return { template, size: template.userData.helicopter.size.clone() };
   }
   let scene = gltf.scene;
   if (MERGE_BY_MATERIAL.has(name)) {
