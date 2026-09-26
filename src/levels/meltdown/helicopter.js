@@ -11,8 +11,9 @@
  *  - everything else is merged into one mesh per material (the model uses
  *    one texture set, so the whole airframe is a single draw call);
  *  - it is scaled from centimetres to metres, nose toward -Z;
- *  - a searchlight and anchors for the door and the skid (where the player
- *    boards, or grabs on) are added.
+ *  - a searchlight, anchors for the door and the skid, and a rope ladder
+ *    hanging from the side door (what the player climbs, or jumps for) are
+ *    added.
  */
 
 import * as THREE from "../../three.js";
@@ -147,6 +148,37 @@ export class Helicopter {
     this.root.add(this.searchlight, this.searchlight.target);
     this.searchlight.target.position.set(0, -10, -this.size.z * 0.6);
 
+    this.root.rotation.order = "YXZ"; // yaw, then pitch, then bank
+
+    // The rope ladder, hanging from the door side. Two ropes and instanced
+    // rungs; it hangs straight down from a pivot and swings.
+    this.ladderLength = 7.2;
+    this.ladder = new THREE.Group();
+    this.ladder.name = "RopeLadder";
+    this.ladder.position.set(1.25, 0.9, -1.2);
+    const rope = new THREE.MeshStandardMaterial({ color: 0x6e5a3e, roughness: 0.95 });
+    const rung = new THREE.MeshStandardMaterial({ color: 0x9aa0a2, metalness: 0.7, roughness: 0.4 });
+    this.ladderMaterials = [rope, rung];
+    this.ladderGeometry = new THREE.BoxGeometry(1, 1, 1);
+    for (const z of [-0.24, 0.24]) {
+      const r = new THREE.Mesh(this.ladderGeometry, rope);
+      r.scale.set(0.045, this.ladderLength, 0.045);
+      r.position.set(0, -this.ladderLength / 2, z);
+      this.ladder.add(r);
+    }
+    const rungs = Math.floor(this.ladderLength / 0.38);
+    const steps = new THREE.InstancedMesh(this.ladderGeometry, rung, rungs);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < rungs; i += 1) {
+      m.compose(new THREE.Vector3(0, -0.3 - i * 0.38, 0), new THREE.Quaternion(), new THREE.Vector3(0.05, 0.05, 0.52));
+      steps.setMatrixAt(i, m);
+    }
+    this.ladder.add(steps);
+    this.root.add(this.ladder);
+    this._sway = new THREE.Vector2();
+    this._swayV = new THREE.Vector2();
+    this._lastPos = null;
+
     this.door = new THREE.Object3D();
     this.door.position.set(this.size.x * 0.22, 1.2, -this.size.z * 0.12);
     this.skid = new THREE.Object3D();
@@ -154,7 +186,43 @@ export class Helicopter {
     this.root.add(this.door, this.skid);
   }
 
+  /**
+   * Point the nose along `dir` (world), with a nose-down pitch for speed and
+   * a bank into turns. Set explicitly as yaw/pitch/bank - an earlier
+   * lookAt-then-rotateY version decomposed to a 180-degree roll whenever the
+   * bank was written afterwards, and the helicopter flew in upside down.
+   */
+  orient(dir, { pitch = 0, bank = 0 } = {}) {
+    const yaw = Math.atan2(-dir.x, -dir.z);
+    this.root.rotation.set(pitch, yaw, bank);
+  }
+
+  /** A point on the ladder, `fromBottom` metres up from its lowest rung. */
+  ladderPoint(fromBottom, target = new THREE.Vector3()) {
+    this.root.updateMatrixWorld(true);
+    return this.ladder.localToWorld(target.set(0, -this.ladderLength + 0.2 + fromBottom, 0));
+  }
+
   update(dt, { rotor = 1, light = 1 } = {}) {
+    // The ladder trails behind the helicopter's motion and settles back:
+    // a damped pendulum driven by the airframe's acceleration.
+    const pos = this.root.getWorldPosition(new THREE.Vector3());
+    if (this._lastPos && dt > 0) {
+      const vx = (pos.x - this._lastPos.x) / dt;
+      const vz = (pos.z - this._lastPos.z) / dt;
+      this._swayV.x += (-this._sway.x * 9 - this._swayV.x * 1.4) * dt - (vx - (this._vx ?? vx)) * 0.02;
+      this._swayV.y += (-this._sway.y * 9 - this._swayV.y * 1.4) * dt - (vz - (this._vz ?? vz)) * 0.02;
+      this._vx = vx;
+      this._vz = vz;
+    }
+    this._lastPos = pos;
+    // Rotor wash keeps it moving a little even in a hover.
+    this._swayV.x += Math.sin(this.spin * 0.07) * 0.02;
+    this._sway.x += this._swayV.x * dt;
+    this._sway.y += this._swayV.y * dt;
+    this._sway.clampScalar(-0.35, 0.35);
+    this.ladder.rotation.set(this._sway.y, 0, -this._sway.x);
+
     this.spin += dt * rotor * 28;
     this.mainRotor.rotation[this.mainAxis] = this.spin;
     this.tailRotor.rotation[this.tailAxis] = this.spin * 2.3;

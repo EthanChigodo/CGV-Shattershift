@@ -22,8 +22,11 @@ the roof, where the scientists are waiting and a helicopter is inbound.
 
 - **Phase A - "the escape"**: a 952 m run, four beats (Recovery Ward,
   Containment Corridor, **Blacked Out**, Stairwell Ascent). **Built.**
-- **Phase B - "the roof"**: two waves of scientists + patients, open ledges
-  to lure chargers off, a hidden helicopter timer, two endings. **Built.**
+- **Phase B - "the roof"**: three waves of scientists + patients, open
+  ledges to lure chargers off, chaos that ramps up (fire patches,
+  explosions, tremors), a hidden 40-58 s helicopter timer, and a rope ladder
+  you climb (roof cleared) or have to jump for from the ledge (still
+  fighting) - or it leaves without you. **Built.**
 
 Both live in the standalone preview. **Neither is wired into `main.js` yet**
 (see §7). This supersedes the old "Inverted Core" concept still written in
@@ -40,6 +43,11 @@ Both live in the standalone preview. **Neither is wired into `main.js` yet**
 - **Patients**: in tanks/cells, as lurching obstacles, as watchers in the
   dark, and on the roof as the melee enemies the scientists send at you.
 - **Enemy animation**: procedural, in code (no Mixamo clips needed).
+- Round 2 feedback: the player visibly holds the launcher (two-handed);
+  the helicopter must not arrive upside down; boarding is by rope ladder,
+  and in the survive case the player has to jump for it themselves; longer
+  wait for the helicopter with escalating chaos; blackout smoke must not
+  show as lines.
 - **Level 3 stays isolated from the other levels** - other developers own
   Levels 1 and 2. Don't touch `src/levels/foundry/*` (Level 3 reuses its
   `route.js` and `LightPool` read-only).
@@ -93,11 +101,14 @@ src/levels/meltdown/
   player.js      PlayerAvatar - the player's body (model + shader rig +
                  contact shadow + launcher mount). Host-owned, reusable.
   roof.js        RoofLevel - Phase B: arena, enemies + AI, orbs, waves,
-                 helicopter timer, both ending cutscenes (as data).
-  helicopter.js  The Hind, disarmed, merged, with spinning rotors.
+                 chaos, helicopter timer, extraction window (canGrab /
+                 grab / extractionHint), ending cutscenes (as data).
+  helicopter.js  The Hind, disarmed, merged, spinning rotors, a swinging
+                 rope ladder, orient() (explicit yaw/pitch/bank).
   flashlight.js  LauncherLight - beam spot, volumetric cone shader, ball flares.
   post.js        The grading pass (heat haze, hit split, vignette, grain).
-  smoke.js       SmokeCeiling - noise-shaded smoke layers over the player.
+  smoke.js       SmokeBank - soft instanced smoke puffs anchored along the
+                 route (the old flat sheets drew hard lines at the walls).
   credits.js     In-game credits data + panel (CC-BY attribution).
   fire.js        GLSL fire/smoke (ramp re-balanced; exposes its clock).
   effects.js     Projectiles (+ setGlow) and Debris (now instanced).

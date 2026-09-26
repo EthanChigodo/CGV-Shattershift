@@ -6,17 +6,22 @@
  * out, and they send the last of their test subjects at you. Somewhere a
  * rescue helicopter is inbound - you are never told when.
  *
- *   - Two waves, each a scientist with a gadget (ranged: telegraphs, then
- *     fires a slow orb you can dodge) who lets two patients loose (melee:
- *     they stalk you, wind up, then charge in a straight line).
+ *   - Three waves, each a scientist with a gadget (ranged: telegraphs, then
+ *     fires a slow orb you can dodge) who lets patients loose (melee: they
+ *     stalk you, wind up, then charge in a straight line).
  *   - The east and west ledges are open: the parapet has collapsed and the
  *     fire is climbing the facade below. Sidestep a charging patient near
  *     one and they go straight over - a kill that costs no balls.
- *   - The helicopter timer is hidden and random (25-45 s). The only tells
+ *   - The helicopter timer is hidden and random (40-58 s). The only tells
  *     are the rotor sound growing and, late, the helicopter itself.
- *   - Clear the roof: the helicopter lands and you board (victory). Still
- *     fighting when it arrives: it cannot land, and you have to run and
- *     jump for the skid as it pulls away (survived).
+ *   - It gets worse the longer you are up here (`chaos`): fire patches break
+ *     out across the roof, the facade explodes, the building shudders,
+ *     embers fill the air, and the last wave comes all at once.
+ *   - Clear the roof: the helicopter comes down over the pad and you climb
+ *     its rope ladder (victory). Still fighting when it arrives: it cannot
+ *     land, so it hangs off the east ledge with the ladder down, and you
+ *     have to get to the edge and jump for it before it gives up on you
+ *     (survived - or left behind).
  *
  * The level owns the arena, the enemies and their AI, their projectiles, the
  * helicopter and both endings (including where the camera goes). The host
@@ -49,6 +54,9 @@ export const ROOF_SPAWN = new THREE.Vector3(0, 0, 8);
 
 const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
 const MACHINE_DOOR = new THREE.Vector3(12.5, 0, -12.5);
+
+/** Seconds the helicopter waits at the ledge for you to jump for the ladder. */
+export const EXTRACT_WINDOW = 16;
 
 const PATIENT = { hp: 2, stalk: 2.3, charge: 10, windup: 0.62, chargeRange: 22, damage: 14, notice: 12 };
 const SCIENTIST = { hp: 3, walk: 2.8, aim: 0.85, orbSpeed: 11, damage: 10 };
@@ -603,13 +611,15 @@ export class RoofLevel {
     this.state = {
       time: 0,
       wave: 0,
-      heliAt: heliSeconds ?? 25 + this.random() * 20,
+      heliAt: heliSeconds ?? 40 + this.random() * 18,
       heliSeen: false,
       heliArrived: false,
       cleared: false,
       ending: null,
       downs: 0,
       falls: 0,
+      chaos: 0,
+      extractT: 0,
     };
 
     this._buildSet();
@@ -619,6 +629,7 @@ export class RoofLevel {
     this._buildPickups();
     this._buildOrbs();
     this._buildHelicopter();
+    this._buildChaos();
     fillAssetSlots(this.root, this.assets);
   }
 
@@ -985,9 +996,13 @@ export class RoofLevel {
 
   _spawnWave(index) {
     this.state.wave = index;
-    const spec = index === 1
-      ? { scientist: "scientistRadioman", gadget: "gadgetBrass", at: new THREE.Vector3(-3, 0, -10), enter: null, hatches: [0, 1] }
-      : { scientist: "scientistRust", gadget: "gadgetCoil", at: MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)), enter: new THREE.Vector3(6, 0, -6), hatches: [2, 3] };
+    const SPECS = {
+      1: { scientist: "scientistRadioman", gadget: "gadgetBrass", at: new THREE.Vector3(-3, 0, -10), enter: null, hatches: [0, 1] },
+      2: { scientist: "scientistRust", gadget: "gadgetCoil", at: MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)), enter: new THREE.Vector3(6, 0, -6), hatches: [2, 3] },
+      // The last of them: everyone left, at once, as the helicopter nears.
+      3: { scientist: "scientistRadioman", gadget: "gadgetCoil", at: MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)), enter: new THREE.Vector3(-5, 0, -4), hatches: [0, 1, 3] },
+    };
+    const spec = SPECS[index];
     const scientist = new Scientist(this, {
       model: this._character(spec.scientist),
       position: spec.at,
@@ -1107,11 +1122,14 @@ export class RoofLevel {
     s.time += dt;
     this.fire.setTime(time);
     const hits = [];
-    const frozen = Boolean(s.ending);
+    // Enemies keep fighting while the helicopter waits at the ledge; they
+    // only stand down for the cutscenes and once it has gone.
+    const frozen = s.ending === "victory" || s.ending === "survive" || s.ending === "left";
     const ctx = { player, playerVelocity, hits, frozen };
 
     if (!frozen && s.wave === 0 && s.time > 1.2) this._spawnWave(1);
     if (!frozen && s.wave === 1 && (s.time > 19 || (s.time > 4 && this.enemiesAlive === 0))) this._spawnWave(2);
+    if (!frozen && s.wave === 2 && (s.time > 36 || (s.time > 24 && this.enemiesAlive === 0))) this._spawnWave(3);
 
     for (const enemy of this.enemies) {
       if (enemy.removed) continue;
@@ -1126,143 +1144,405 @@ export class RoofLevel {
       if (enemy.removed) enemy.root.visible = false;
     }
     this._updateOrbs(dt, ctx);
+    this._updateChaos(dt, time, ctx);
     for (const piece of this._ticking) piece.userData.tick?.(dt, time);
 
     for (const p of this.points) {
-      if (p.flicker) p.light.intensity = p.base * (0.8 + Math.sin(time * 11 + p.light.position.x) * 0.12 + Math.sin(time * 23) * 0.08);
+      if (p.flicker) {
+        p.flash = Math.max(0, (p.flash ?? 0) - dt * 3);
+        p.light.intensity = p.base * (0.8 + Math.sin(time * 11 + p.light.position.x) * 0.12 + Math.sin(time * 23) * 0.08) * (1 + s.chaos * 0.8 + p.flash * 6);
+      }
     }
 
     // The roof is clear: the helicopter stops circling and comes in now.
-    if (!s.cleared && s.wave === 2 && this.enemiesAlive === 0) {
+    const everyone = s.wave === 3 && this.enemiesAlive === 0;
+    if (!s.cleared && everyone) {
       s.cleared = true;
-      s.heliAt = Math.min(s.heliAt, s.time + 8);
       this.events.emit("clear", {});
+      if (!s.heliArrived) s.heliAt = Math.min(s.heliAt, s.time + 8);
+      else if (s.ending === "extraction") this._startVictory();
     }
 
     this._updateHelicopter(dt, time);
-    if (s.ending) this._updateEnding(dt, time);
+    if (s.ending === "victory" || s.ending === "survive") this._updateEnding(dt, time);
     return hits;
   }
 
   /** 0 (silent) .. 1 (overhead): how loud the rotors should be. */
   get rotorLevel() {
-    const lead = this.state.heliAt - this.state.time;
-    return this.state.ending ? 1 : THREE.MathUtils.clamp(1 - lead / 16, 0, 1);
+    const s = this.state;
+    if (s.ending === "left") return Math.max(0, 1 - s.extractT / 6);
+    const lead = s.heliAt - s.time;
+    return s.ending ? 1 : THREE.MathUtils.clamp(1 - lead / 16, 0, 1);
   }
+
+  /* ---------------- Chaos ---------------- */
+
+  /**
+   * The roof gets worse the longer you are on it: `chaos` runs 0 -> 1 as the
+   * hidden timer runs down. The fire under the ledges climbs higher; burning
+   * patches break out across the roof (a scorch mark glows first, then it
+   * catches - standing in one hurts); explosions tear out of the facade;
+   * the building shudders; embers and ash fill the air. The host reads
+   * `chaos` for fog, shake and sound.
+   */
+  _buildChaos() {
+    this.patches = [];
+    this.scorchMaterial = this._track(new THREE.MeshBasicMaterial({ color: 0xff5a14, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.scorchGeometry = new THREE.CircleGeometry(1.2, 24);
+    this.scorchGeometry.rotateX(-Math.PI / 2);
+    this.owned.geometries.push(this.scorchGeometry);
+    this.state.patchTimer = 9;
+    this.state.blastTimer = 7;
+    this.state.tremorTimer = 13;
+
+    // Embers and ash: one Points cloud over the whole roof.
+    const count = 260;
+    const positions = new Float32Array(count * 3);
+    this.emberSpeed = new Float32Array(count);
+    const r = rng(99);
+    for (let i = 0; i < count; i += 1) {
+      positions[i * 3] = (r() - 0.5) * 44;
+      positions[i * 3 + 1] = r() * 14;
+      positions[i * 3 + 2] = (r() - 0.5) * 44;
+      this.emberSpeed[i] = 0.6 + r() * 1.8;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    this.owned.geometries.push(geometry);
+    this.embers = new THREE.Points(geometry, this.kit.materials.ember.clone());
+    this._track(this.embers.material);
+    this.embers.material.opacity = 0;
+    this.embers.frustumCulled = false;
+    this.groups.hazards.add(this.embers);
+    this.edgeFires = this.groups.hazards.children.filter((c) => c.name === "Fire");
+  }
+
+  _spawnPatch(player) {
+    for (let i = 0; i < 12; i += 1) {
+      const p = new THREE.Vector3((this.random() - 0.5) * 26, 0, (this.random() - 0.5) * 26);
+      if (p.distanceTo(_v.copy(player).setY(0)) < 4) continue;
+      if (this.blocked(p, 1.3)) continue;
+      if (p.distanceTo(HELIPAD) < 3 || this.patches.some((q) => q.position.distanceTo(p) < 3)) continue;
+      const scorch = new THREE.Mesh(this.scorchGeometry, this.scorchMaterial.clone());
+      this._track(scorch.material);
+      scorch.position.copy(p).setY(0.03);
+      scorch.scale.setScalar(0.2);
+      this.groups.hazards.add(scorch);
+      this.patches.push({ position: p, t: 0, scorch, fire: null });
+      return;
+    }
+  }
+
+  _updateChaos(dt, time, ctx) {
+    const s = this.state;
+    const chaos = s.heliArrived ? 1 : THREE.MathUtils.clamp(s.time / s.heliAt, 0, 1);
+    s.chaos = chaos;
+    const live = s.ending !== "left" && s.ending !== "victory";
+
+    // Burning patches: more of them, sooner, as it goes on.
+    s.patchTimer -= dt;
+    if (live && s.time > 8 && s.patchTimer <= 0 && this.patches.length < 2 + chaos * 8) {
+      this._spawnPatch(ctx.player);
+      s.patchTimer = 7.5 - chaos * 5.5;
+    }
+    for (const patch of this.patches) {
+      patch.t += dt;
+      const warm = Math.min(1, patch.t / 1.4);
+      patch.scorch.scale.setScalar(0.2 + warm * 0.9);
+      patch.scorch.material.opacity = (patch.fire ? 0.25 : warm * (0.4 + Math.sin(time * 18) * 0.2));
+      if (!patch.fire && patch.t > 1.4) {
+        patch.fire = this.kit.fireSpot({ width: 2, depth: 2, height: 2.2, light: false, smoke: true });
+        patch.fire.position.copy(patch.position);
+        this.groups.hazards.add(patch.fire);
+        this.events.emit("roof-fire", { position: patch.position.clone() });
+      }
+      if (patch.fire && !ctx.frozen && _v.copy(ctx.player).setY(0).distanceTo(patch.position) < 1.2) {
+        ctx.hits.push({ damage: 7, from: patch.position.clone(), knock: 2.5, source: "fire" });
+      }
+    }
+
+    // Explosions tearing out of the facade below the ledges.
+    s.blastTimer -= dt;
+    if (live && s.time > 5 && s.blastTimer <= 0) {
+      const side = this.random() < 0.5 ? -1 : 1;
+      const position = new THREE.Vector3(side * (EDGE + 0.8), -1 - this.random() * 5, (this.random() - 0.5) * 28);
+      this.events.emit("explosion", { position, strength: 0.5 + chaos * 0.7 });
+      const glow = this.points.find((p) => p.flicker && Math.sign(p.light.position.x) === side);
+      if (glow) glow.flash = 1;
+      s.blastTimer = 9 - chaos * 6 + this.random() * 2;
+    }
+
+    // The building shudders.
+    s.tremorTimer -= dt;
+    if (live && s.time > 10 && s.tremorTimer <= 0) {
+      this.events.emit("tremor", { strength: 0.3 + chaos * 0.5 });
+      s.tremorTimer = 15 - chaos * 8 + this.random() * 3;
+    }
+
+    // Embers and ash, and the fire under the ledges climbing higher.
+    this.embers.material.opacity = 0.15 + chaos * 0.8;
+    const array = this.embers.geometry.attributes.position.array;
+    for (let i = 0; i < this.emberSpeed.length; i += 1) {
+      array[i * 3 + 1] += this.emberSpeed[i] * dt * (0.6 + chaos);
+      array[i * 3] += Math.sin(time * 0.7 + i) * dt * 0.8 + dt * 1.2;
+      if (array[i * 3 + 1] > 14) {
+        array[i * 3 + 1] = -2;
+        array[i * 3] = (this.random() - 0.5) * 44;
+      }
+    }
+    this.embers.geometry.attributes.position.needsUpdate = true;
+    for (const f of this.edgeFires) f.scale.y = 1 + chaos * 0.9;
+  }
+
+  /* ---------------- The helicopter ---------------- */
 
   _updateHelicopter(dt, time) {
     const s = this.state;
     if (!this.heli) {
       if (!s.heliArrived && s.time >= s.heliAt) this._arrive();
+      else if (s.ending === "extraction" || s.ending === "left") this._updateExtraction(dt, time);
       return;
     }
+    const heli = this.heli;
     const lead = s.heliAt - s.time;
     const flight = 12; // seconds from first glimpse to the hover
-    if (!s.ending) {
+    if (!s.heliArrived) {
       if (lead < flight) {
         const t = THREE.MathUtils.clamp(1 - lead / flight, 0, 1);
         const eased = 1 - Math.pow(1 - t, 2.2);
-        this.heliPath.getPointAt(eased, this.heli.root.position);
-        const ahead = this.heliPath.getPointAt(Math.min(1, eased + 0.02));
-        this.heli.root.lookAt(ahead.x, this.heli.root.position.y, ahead.z);
-        this.heli.root.rotateY(Math.PI); // nose is -Z
-        this.heli.root.rotation.z = Math.sin(time * 0.9) * 0.03;
-        this.heli.root.visible = true;
+        this.heliPath.getPointAt(eased, heli.root.position);
+        const ahead = this.heliPath.getPointAt(Math.min(1, eased + 0.02)).sub(heli.root.position);
+        if (ahead.lengthSq() > 1e-4) {
+          // Nose down while it is going fast, flattening out into the hover.
+          heli.orient(ahead, { pitch: -0.16 * (1 - eased), bank: Math.sin(time * 0.9) * 0.03 + (1 - eased) * 0.1 });
+          this._heliYaw = heli.root.rotation.y;
+        }
+        heli.root.visible = true;
         if (!s.heliSeen) {
           s.heliSeen = true;
           this.events.emit("heli-seen", {});
         }
       }
-      if (!s.heliArrived && s.time >= s.heliAt) this._arrive();
+      if (s.time >= s.heliAt) this._arrive();
+    } else if (s.ending === "extraction" || s.ending === "left") {
+      this._updateExtraction(dt, time);
     }
-    if (this.heli.root.visible) this.heli.update(dt, { rotor: 1, light: 1 });
+    if (heli.root.visible) heli.update(dt, { rotor: 1, light: 1 });
   }
 
   _arrive() {
     const s = this.state;
     s.heliArrived = true;
-    s.ending = this.enemiesAlive === 0 ? "victory" : "survive";
+    if (s.cleared || this.enemiesAlive === 0) {
+      this._startVictory();
+    } else {
+      // It cannot land with them still up here. It swings out beyond the
+      // east ledge and waits, ladder down - for a while.
+      s.ending = "extraction";
+      s.extractT = 0;
+      this._extractFrom = this.heli ? this.heli.root.position.clone() : new THREE.Vector3();
+      this.events.emit("heli-arrived", { ending: "extraction", window: EXTRACT_WINDOW });
+    }
+  }
+
+  _startVictory() {
+    const s = this.state;
+    s.ending = "victory";
     s.endingT = 0;
-    this.events.emit("heli-arrived", { ending: s.ending });
+    this.cutscene = null;
+    this._victoryFrom = this.heli ? this.heli.root.position.clone() : HELIPAD.clone();
+    this.events.emit("heli-arrived", { ending: "victory" });
+  }
+
+  /** Where the helicopter holds while it waits for you at the east ledge. */
+  get _holdPoint() {
+    // Nose to +Z (yaw pi), so its door side - and the ladder - faces the roof.
+    return new THREE.Vector3(EDGE + 3.45, 7.1, -2.5);
+  }
+
+  _updateExtraction(dt, time) {
+    const s = this.state;
+    const heli = this.heli;
+    s.extractT += dt;
+    const t = s.extractT;
+    const hold = this._holdPoint;
+    if (!heli) {
+      if (s.ending === "extraction" && t > EXTRACT_WINDOW) {
+        s.ending = "left";
+        s.extractT = 0;
+        this.events.emit("heli-left", {});
+      }
+      return;
+    }
+    if (s.ending === "extraction") {
+      const k = THREE.MathUtils.smoothstep(t, 0, 3);
+      heli.root.position.lerpVectors(this._extractFrom, hold, k);
+      heli.root.position.y += Math.sin(time * 1.3) * 0.25 * k;
+      heli.root.position.z += Math.sin(time * 0.6) * 0.4 * k;
+      const yaw = THREE.MathUtils.lerp(this._heliYaw ?? 0, Math.PI, k);
+      heli.root.rotation.set(0, yaw, Math.sin(time * 0.8) * 0.04);
+      // Still here, still waiting... then it has to go.
+      if (t > EXTRACT_WINDOW) {
+        s.ending = "left";
+        s.extractT = 0;
+        this._leaveFrom = heli.root.position.clone();
+        this.events.emit("heli-left", {});
+      }
+    } else {
+      const k = t;
+      heli.root.position.copy(this._leaveFrom).add(new THREE.Vector3(k * k * 1.6, k * k * 1.1, k * 3));
+      heli.root.rotation.set(-0.15, Math.PI - Math.min(0.6, k * 0.2), -0.1);
+      if (k > 12) heli.root.visible = false;
+    }
+  }
+
+  /**
+   * A point on the ladder, `h` metres up from its foot (world). Without the
+   * helicopter model (tests, or a failed load) the ladder is where it would
+   * hang, so every ending still plays.
+   */
+  ladderPoint(h, target = new THREE.Vector3()) {
+    if (this.heli) return this.heli.ladderPoint(h, target);
+    const base = this.state.ending === "victory" ? new THREE.Vector3(HELIPAD.x + 0.25, 0.05, HELIPAD.z + 1.2) : new THREE.Vector3(EDGE + 2.2, 1.0, -1.3);
+    return target.copy(base).setY(base.y + h);
+  }
+
+  ladderBottom(target = new THREE.Vector3()) {
+    return this.ladderPoint(0, target);
+  }
+
+  /**
+   * While the helicopter waits at the ledge: "go" (get over there) or
+   * "jump" (close enough - press jump), else null.
+   */
+  extractionHint(player) {
+    const s = this.state;
+    if (s.ending !== "extraction" || s.extractT < 2.6) return s.ending === "extraction" ? "go" : null;
+    return this.canGrab(player) ? "jump" : "go";
+  }
+
+  /** Close enough to the ledge and the ladder to jump for it? */
+  canGrab(player) {
+    const s = this.state;
+    if (s.ending !== "extraction" || s.extractT < 2.6) return false;
+    const bottom = this.ladderBottom(_w);
+    const dx = bottom.x - player.x;
+    const dz = bottom.z - player.z;
+    return player.x > EDGE - 4.5 && Math.hypot(dx, dz) < 4.6;
+  }
+
+  /** The player jumped for it: play the leap and carry them off. */
+  grab(player) {
+    const s = this.state;
+    if (!this.canGrab(player)) return false;
+    s.ending = "survive";
+    s.endingT = 0;
+    this.cutscene = null;
+    this._playerAtEnding = player.clone();
+    this._leaveFrom = this.heli ? this.heli.root.position.clone() : this._holdPoint;
+    this.events.emit("ladder-grab", {});
+    return true;
   }
 
   /* ---------------- Endings ---------------- */
 
   /**
-   * The ending, as data the host applies: where the camera is and looks,
-   * and where the player is and what they are doing. Both run ~8 s.
+   * The cutscenes, as data the host applies: where the camera is and looks,
+   * and where the player is, which way they face, and what their arms are
+   * doing (`hold` on the launcher, `reachUp` for the ladder).
    *
-   * Victory: the helicopter sets down over the pad, the player walks to the
-   * open door and climbs in, and it lifts away. Survive: it cannot land -
-   * patients and a scientist are still up here - so it slides out beyond
-   * the east ledge; the player sprints for the edge and jumps (slow motion
-   * at the top of the leap), catches the skid, and is carried off.
+   * Victory: the helicopter comes down over the pad until its ladder
+   * touches, the player runs to it and climbs, and it lifts away.
+   * Survive: the player has jumped from the ledge for the ladder - the leap
+   * in slow motion, the catch, and the helicopter hauling them off with the
+   * patients still on the roof.
    */
   _updateEnding(dt, time) {
     const s = this.state;
     s.endingT += dt * (this.cutscene?.timeScale ?? 1);
     const t = s.endingT;
     const heli = this.heli;
-    const out = this.cutscene ?? (this.cutscene = { camera: new THREE.Vector3(), look: new THREE.Vector3(), player: new THREE.Vector3(), playerYaw: 0, action: "run", timeScale: 1, done: false, hidePlayer: false, playerStart: null });
+    const out = this.cutscene ?? (this.cutscene = { camera: new THREE.Vector3(), look: new THREE.Vector3(), player: new THREE.Vector3(), playerYaw: 0, action: "run", timeScale: 1, done: false, hidePlayer: false, playerStart: null, hold: 1, reachUp: 0 });
     if (!out.playerStart) out.playerStart = this._playerAtEnding?.clone() ?? ROOF_SPAWN.clone();
     const start = out.playerStart;
 
     if (s.ending === "victory") {
-      const hover = new THREE.Vector3(HELIPAD.x, 7.5, HELIPAD.z - 1);
-      const land = new THREE.Vector3(HELIPAD.x, 1.6, HELIPAD.z - 1);
-      const descent = THREE.MathUtils.smoothstep(t, 0, 3);
-      const lift = THREE.MathUtils.smoothstep(t, 6.2, 8.5);
+      // Down until the ladder's foot is on the pad.
+      const low = new THREE.Vector3(HELIPAD.x + 1.5, 6.25, HELIPAD.z);
+      const come = THREE.MathUtils.smoothstep(t, 0, 3.2);
+      const lift = THREE.MathUtils.smoothstep(t, 7.4, 10);
       if (heli) {
-        heli.root.position.lerpVectors(hover, land, descent);
-        heli.root.position.y += lift * 14;
-        heli.root.position.z -= lift * lift * 12;
-        heli.root.rotation.set(-lift * 0.12, 0, Math.sin(time) * 0.02);
-        heli.update(dt, { rotor: 1, light: 1 - descent * 0.6 });
+        heli.root.position.lerpVectors(this._victoryFrom, low, come);
+        heli.root.position.y += lift * 16 + Math.sin(time * 1.2) * 0.08 * (1 - lift);
+        heli.root.position.z -= lift * lift * 14;
+        heli.root.rotation.set(-lift * 0.14, THREE.MathUtils.lerp(this._heliYaw ?? 0, 0, come), Math.sin(time) * 0.02);
       }
-      const door = heli ? heli.door.getWorldPosition(new THREE.Vector3()) : land.clone().add(new THREE.Vector3(2, 0, 0));
-      door.y = 0;
-      const walk = THREE.MathUtils.smoothstep(t, 2.4, 5.6);
-      out.player.lerpVectors(start, door, walk);
-      _v.subVectors(door, start);
-      out.playerYaw = Math.atan2(-_v.x, -_v.z);
-      out.action = walk > 0 && walk < 1 ? "run" : "idle";
-      out.hidePlayer = t > 5.9;
-      const orbit = t * 0.12 + 0.6;
-      out.camera.set(HELIPAD.x + Math.sin(orbit) * 16, 5 + t * 0.4, HELIPAD.z + Math.cos(orbit) * 16);
-      out.look.copy(heli ? heli.root.position : land).lerp(out.player, 0.35);
-      out.done = t > 9;
-    } else {
-      // Survive: the helicopter holds off the east ledge, drifting away.
-      const hold = new THREE.Vector3(EDGE + 6.5, 3.2, -1);
-      const drift = Math.max(0, t - 3.6);
-      if (heli) {
-        const from = this.heliPath.getPointAt(1);
-        heli.root.position.lerpVectors(from, hold, THREE.MathUtils.smoothstep(t, 0, 2.4));
-        heli.root.position.x += drift * drift * 0.8;
-        heli.root.position.y += drift * drift * 0.9;
-        heli.root.rotation.set(0, -Math.PI / 2, 0.12 - drift * 0.03);
-        heli.update(dt, { rotor: 1, light: 0.8 });
-      }
-      const edge = new THREE.Vector3(EDGE - 0.3, 0, hold.z);
-      const sprint = THREE.MathUtils.smoothstep(t, 0.6, 3.4);
-      const leap = THREE.MathUtils.clamp((t - 3.4) / 1.3, 0, 1);
-      if (leap <= 0) {
-        out.player.lerpVectors(start, edge, sprint);
-        out.action = "run";
+      const foot = this.ladderPoint(0);
+      foot.y = Math.max(0, foot.y);
+      const run = THREE.MathUtils.smoothstep(t, 1.6, 4.4);
+      const climb = THREE.MathUtils.clamp((t - 4.5) / 2.6, 0, 1);
+      if (climb <= 0) {
+        out.player.lerpVectors(start, foot.clone().setY(0), run);
+        _v.subVectors(foot, start);
+        out.playerYaw = Math.atan2(-_v.x, -_v.z);
+        out.action = run > 0 && run < 1 ? "run" : "idle";
+        out.reachUp = 0;
+        out.hold = 1;
       } else {
-        const skid = heli ? heli.skid.getWorldPosition(new THREE.Vector3()) : hold.clone();
-        out.player.lerpVectors(edge, skid, leap);
-        out.player.y += Math.sin(leap * Math.PI) * 1.6 - leap * 1.2;
-        out.action = leap < 1 ? "jump" : "hang";
+        // Hand over hand up the rungs: hands 2.1 m above the feet.
+        this.ladderPoint(0.2 + climb * 4.6, out.player);
+        out.player.y -= 1.9;
+        out.player.y += Math.abs(Math.sin(climb * 18)) * 0.08;
+        const centre = heli ? heli.root.getWorldPosition(new THREE.Vector3()) : low.clone();
+        _v.subVectors(centre, out.player).setY(0).normalize();
+        out.playerYaw = Math.atan2(-_v.x, -_v.z);
+        // Body just in front of the rungs, facing them - not inside them.
+        out.player.addScaledVector(_v, -0.32);
+        out.action = "climb";
+        out.reachUp = 1;
+        out.hold = 0;
       }
-      _v.subVectors(edge, start);
+      out.hidePlayer = t > 7.3;
+      const orbit = t * 0.1 + 0.6;
+      out.camera.set(HELIPAD.x + Math.sin(orbit) * 15, 3.5 + t * 0.45, HELIPAD.z + Math.cos(orbit) * 15);
+      out.look.copy(heli ? heli.root.position : low).lerp(out.player, 0.5);
+      out.done = t > 10.5;
+    } else {
+      // Survive: from wherever they jumped, to the rungs 2.8 m up.
+      const leap = Math.min(1, t / 0.95);
+      const away = Math.max(0, t - 0.95);
+      if (heli) {
+        heli.root.position.copy(this._leaveFrom).add(new THREE.Vector3(away * away * 1.2, away * away * 0.9 + away * 0.4, away * 1.5));
+        heli.root.rotation.set(-0.12 * Math.min(1, away), Math.PI - Math.min(0.5, away * 0.15), -0.08 * Math.min(1, away));
+      }
+      const grip = this.ladderPoint(2.8);
+      grip.y -= 2.05; // hands on the rung, body hanging below
+      if (leap < 1) {
+        out.player.lerpVectors(start, grip.clone().setX(grip.x - 0.32), leap);
+        out.player.y += Math.sin(leap * Math.PI) * 1.1;
+        out.action = "jump";
+        out.reachUp = THREE.MathUtils.smoothstep(leap, 0.1, 0.7);
+        out.hold = 1 - out.reachUp;
+      } else {
+        out.player.copy(grip);
+        out.player.x -= 0.32; // hanging on the roof side of the rungs, facing them
+        out.player.z += Math.sin(time * 2.1) * 0.08;
+        out.action = "hang";
+        out.reachUp = 1;
+        out.hold = 0;
+      }
+      _v.set(1, 0, 0);
       out.playerYaw = Math.atan2(-_v.x, -_v.z);
       // Slow motion over the gap.
-      out.timeScale = leap > 0.15 && leap < 0.75 ? 0.35 : 1;
-      const side = THREE.MathUtils.smoothstep(t, 2.6, 3.6);
-      out.camera.set(THREE.MathUtils.lerp(start.x - 3, EDGE - 4, side), THREE.MathUtils.lerp(4.5, 2.4, side), THREE.MathUtils.lerp(start.z + 7, hold.z + 8, side));
-      out.look.copy(out.player).lerp(heli ? heli.root.position : hold, 0.4 + side * 0.3);
-      out.done = t > 8;
+      out.timeScale = leap > 0.15 && leap < 0.8 ? 0.3 : 1;
+      // First watching from the roof, then riding along beside the ladder
+      // as it hauls you out over the burning city.
+      const fixed = start.clone().add(new THREE.Vector3(-5.5, 2.2, 6.5));
+      const trail = out.player.clone().add(new THREE.Vector3(-6.5, 1.2, 7));
+      out.camera.lerpVectors(fixed, trail, THREE.MathUtils.smoothstep(away, 0.5, 2.5));
+      out.look.copy(out.player).lerp(heli ? heli.root.position : grip, 0.3);
+      out.done = t > 7;
     }
   }
 

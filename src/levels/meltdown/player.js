@@ -7,7 +7,7 @@
  *
  *  - the vertex-shader rig (characters.js `rigPlayerMesh`) driven from the
  *    runner's real state: stride and cadence from running speed, arms swing
- *    against the legs, the launcher arm held up, knees tucked in a jump,
+ *    against the legs, both hands on the launcher, knees tucked in a jump,
  *    body dropped and leaning back in a slide;
  *  - a lean into lane changes and a lurch on a stumble;
  *  - a soft contact shadow, because nothing else in this level casts one
@@ -73,6 +73,10 @@ export class PlayerAvatar {
     this.tuck = 0;
     this.crouch = 0;
     this.lurch = 0;
+    /** 1 = both hands on the launcher (default); 0 = arms free. */
+    this.hold = 1;
+    /** 0..1 arms overhead - set by the host for the ladder. */
+    this.reachUp = 0;
   }
 
   /** Swap in a prepared character template (from loadMeltdownAssets). */
@@ -93,6 +97,7 @@ export class PlayerAvatar {
     this.standIn.visible = false;
     // Seat the launcher on the right shoulder (model -X, so +X once turned).
     this.shoulder.position.set(body.shoulderX + 0.08, body.shoulderY + 0.12, 0.02);
+    this.shoulderBase = this.shoulder.position.clone();
     this.bodyInfo = body;
   }
 
@@ -131,7 +136,22 @@ export class PlayerAvatar {
       u.uLean.value = (running ? 0.12 + speed * 0.008 : 0) + (pushing ? 0.35 : 0) - this.crouch * 0.55;
       u.uCrouch.value = this.crouch;
       u.uTuck.value = this.tuck;
-      u.uHoldR.value = aiming ? 0.95 : 0.7;
+      u.uHold.value = this.hold;
+      u.uReachUp.value = this.reachUp;
+      // The shader leans the torso about the hips and drops the body into a
+      // slide; the launcher on the shoulder has to go with it or the hands
+      // slide off the tube. (Model faces +Z, the body faces -Z, so a
+      // model-space lean of +a about X is -a here.)
+      if (this.shoulderBase && this.bodyInfo) {
+        const angle = -(u.uLean.value + u.uCrouch.value * 0.25);
+        const hip = this.bodyInfo.hipY;
+        const y = this.shoulderBase.y - hip;
+        const z = this.shoulderBase.z;
+        const c = Math.cos(angle);
+        const s = Math.sin(angle);
+        this.shoulder.position.set(this.shoulderBase.x, hip + y * c - z * s - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, y * s + z * c);
+        this.shoulder.rotation.x = angle;
+      }
     } else {
       this.standIn.scale.y = 1 - this.crouch * 0.45;
       this.standIn.rotation.z = running ? Math.sin(this.phase * 2) * 0.05 : 0;

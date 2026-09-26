@@ -92,7 +92,8 @@ Every obstacle is placed as a **pattern** that forces a decision (a single hazar
 ### The player
 
 - **Your patient.** Pick on the start screen: Patient 0417 (female) or 0932 (male), both the supplied SCP models recoloured to teal patient scrubs (on the texture atlas, see §6). Remembered between visits. The default is 0417.
-- **The models are not rigged**, so their skeleton lives in the vertex shader (`rigPlayerMesh` in `characters.js`): hip, knee, shoulder and elbow pivots are *measured from the mesh's own silhouette*, and legs, arms and torso rotate about them. Stride and cadence follow running speed, arms swing against the legs, the launcher arm is held up (higher while firing), knees tuck in a jump, the body drops and leans back in a slide, and the whole body leans into lane changes. A soft contact shadow grounds it.
+- **The models are not rigged**, so their skeleton lives in the vertex shader (`rigPlayerMesh` in `characters.js`): hip, knee, shoulder and elbow pivots are *measured from the mesh's own silhouette*, and legs, arms and torso rotate about them. Stride and cadence follow running speed, knees tuck in a jump, the body drops and leans back in a slide, and the whole body leans into lane changes. A soft contact shadow grounds it.
+- **Holding the launcher:** a two-handed shoulder-launcher hold - the right hand on the grip just under the tube, elbow tucked; the left arm reaching forward and across to cradle the tube further out. The launcher sits on the right shoulder with most of the tube out in front, and its mount follows the torso's lean, the slide and the jump tuck, so the hands stay on it at a run. On the ladder the arms go overhead and the launcher is slung across the back.
 
 ### The fire
 
@@ -146,28 +147,40 @@ A helipad rooftop at night (`src/levels/meltdown/roof.js`), 32 x 32 m. Parapets 
 
 ### Enemies
 
-Two waves, each a **scientist** who lets two **patients** out of the roof hatches. The second wave comes out of the machine room when the first is down, or after 19 s regardless.
+Three waves, each a **scientist** who lets **patients** out of the roof hatches. The second comes out of the machine room when the first is down (or after 19 s); the third - a scientist and three patients at once - when the second is down (after 24 s) or at 36 s regardless.
 
 - **Scientists** (the Radioman and Rust models, each with a supplied gadget in hand - brass for one, the coil rifle for the other): keep 9-13 m away on a ring around you, off the ledges. Telegraph (the gadget glows for 0.85 s), then fire a slow orb (11 m/s) aimed a little ahead of you - standing still is how you get hit. 3 hits to put down; a hit spoils a shot being lined up.
 - **Patients** (melee rushers): stalk you, and when they have a clear line inside 12 m they **wind up** (crouch, scream, arms thrown back - 0.62 s) and **charge** in a straight line at 10 m/s, direction locked at the end of the wind-up. Connect: -14 and knockback. Miss into cover or a parapet: stunned for 1.5 s - shoot them now. **Miss near an open ledge: they go straight over it**, a kill that costs no balls. 2 hits to put down.
 - All animation is procedural on the models' real skeletons (`HumanoidRig`, §6).
 
+### Chaos
+
+The roof gets worse the longer you are on it (`chaos` runs 0 -> 1 as the hidden timer runs down):
+
+- **Fire patches** break out across the roof - a scorch mark glows for 1.4 s, then it catches. Standing in one burns (-7, with a knock). More of them, more often: up to ~10 by the end.
+- **Explosions** tear out of the facade below the ledges - debris, sparks, a flash on the ledge fire lights, a shake scaled by distance.
+- **Tremors** - the building shudders.
+- Embers and ash fill the air, the fire under the ledges climbs higher, the haze thickens, the heat ripples, and everything gets louder.
+- The **third wave** lands in the middle of it.
+
 ### Helicopter timer
 
-Hidden, randomised per attempt in 25-45 s. The only tells are the rotor sound (a chopped, filtered noise bed that swells over the last 16 s) and, from 12 s out, the helicopter itself flying in over the city. **Clear the roof and it stops circling**: it arrives within 8 s.
+Hidden, randomised per attempt in **40-58 s**. The only tells are the rotor sound (a chopped, filtered noise bed that swells over the last 16 s) and, from 12 s out, the helicopter itself flying in over the city - nose down, banking, flattening into a hover. **Clear the roof (all three waves) and it stops circling**: it arrives within 8 s.
 
 ### Endings
 
-1. **All enemies defeated -> victory ("EXTRACTED").** The helicopter sets down over the pad, the camera orbits, you walk to the open door and climb in, and it lifts away.
-2. **The helicopter arrives with enemies still alive -> survive ("BARELY OUT").** It cannot land. It slides out beyond the east ledge and starts to pull away; you sprint for the edge and jump - slow motion over the gap - catch the skid, and are carried off over the burning city.
+The helicopter carries a **rope ladder** that hangs from its side door and swings with the airframe's motion.
 
-Both are letterboxed, scripted cutscenes: the level returns where the camera is and looks, and where the player is and what they are doing, and the host applies it (the same data-driven pattern as the `state === "launch"` intro in `main.js`). Losing is the same as elsewhere: vitality to 0 ("THEY GOT YOU").
+1. **All enemies defeated -> victory ("EXTRACTED").** It comes down over the pad until the ladder's foot touches, you run to it and climb, and it lifts away. (A cutscene.)
+2. **It arrives with enemies still alive -> it cannot land.** It hangs off the east ledge with the ladder down, about 2 m out from the edge, and waits - **16 s**. This is *not* a cutscene: the fight carries on, the prompt tells you to get to the east ledge, and once you are close enough ("SPACE - JUMP FOR THE LADDER!") Space is the jump. Make it and you get the survive ending ("BARELY OUT"): the leap in slow motion, the catch, the helicopter hauling you off over the burning city with the patients still on the roof. Miss the window and it leaves without you ("LEFT BEHIND"). Clear the roof while it waits and it comes down for you instead (victory).
+
+Cutscenes are letterboxed and scripted: the level returns where the camera is and looks, where the player is, which way they face and what their arms are doing (on the launcher, or up on the ladder), and the host applies it (the same data-driven pattern as the `state === "launch"` intro in `main.js`). Losing is otherwise the same as elsewhere: vitality to 0 ("THEY GOT YOU").
 
 ![The leap](images/meltdown-roof-leap.jpg)
 
 ### Controls on the roof
 
-`WASD` moves relative to the camera (high and behind, looking north over your head, leaning toward your aim). The mouse aims - over an enemy or sack, at them; otherwise at chest height on the roof. `SPACE` is a **dodge**: a quick sidestep (13 m/s for 0.24 s) with 0.32 s of invulnerability, 0.75 s cooldown. It is how you make a charge miss - and near a ledge, how you make it fall. You cannot fall off yourself.
+`WASD` moves relative to the camera (high and behind, looking north over your head, leaning toward your aim). The mouse aims - over an enemy or sack, at them; otherwise at chest height on the roof. `SPACE` is a **dodge**: a quick sidestep (13 m/s for 0.24 s) with 0.32 s of invulnerability, 0.75 s cooldown. It is how you make a charge miss - and near a ledge, how you make it fall. You cannot fall off yourself. With the helicopter waiting and the ladder in reach, `SPACE` is the jump for the ladder instead.
 
 ---
 

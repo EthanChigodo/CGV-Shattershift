@@ -669,7 +669,8 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uLean;
   uniform float uCrouch;
   uniform float uTuck;
-  uniform float uHoldR;
+  uniform float uHold;
+  uniform float uReachUp;
   uniform float uHipY;
   uniform float uKneeY;
   uniform float uShoulderX;
@@ -699,17 +700,28 @@ const PLAYER_RIG_MAIN = /* glsl */ `
   // height gate keeps the chest from being dragged along with the arm.
   float armW = smoothstep(uShoulderX - 0.03, uShoulderX + 0.07, ax) * smoothstep(uShoulderY - 0.2, uShoulderY - 0.09, rigP.y);
   if (armW > 0.0) {
-    float hold = side < 0.0 ? uHoldR : 0.0;
-    float swing = -sin(uPhase) * side * uArmSwing * (1.0 - hold);
+    // Two-handed shoulder-launcher hold: the right hand (model -X) on the
+    // grip just under the tube, elbow tucked; the left arm reaching forward
+    // and across to cradle the tube further out. uReachUp raises both arms
+    // overhead (hanging from, and climbing, the ladder).
+    bool right = side < 0.0;
+    float free = (1.0 - uHold) * (1.0 - uReachUp);
+    float swing = -sin(uPhase) * side * uArmSwing * free;
+    float fold = right ? 0.35 + uHold * 1.5 : 0.35 + uHold * 0.2;
+    float pitch = right ? uHold * 0.95 : uHold * 1.5;
+    float inward = right ? uHold * 0.12 : uHold * 0.42;
+    fold = fold * (1.0 - uReachUp * 0.85) + max(0.0, swing) * 0.5;
+    pitch += uReachUp * 2.75;
     float elbowW = smoothstep(uElbowX - 0.05, uElbowX + 0.05, ax);
     vec3 elbow = vec3(side * uElbowX, uShoulderY, 0.0);
     // Forearm folds forward (about Y in the T-pose frame).
-    turn(rigP, rigN, elbow, rotY(-side * (0.35 + hold * 1.1 + max(0.0, swing) * 0.5) * elbowW));
+    turn(rigP, rigN, elbow, rotY(-side * fold * elbowW));
     vec3 shoulder = vec3(side * uShoulderX, uShoulderY, 0.0);
     // Drop the arm to the side (about Z), weighted so the shoulder seam blends.
     turn(rigP, rigN, shoulder, rotZ(-side * uArmDrop * armW));
-    // Swing (about X): forward/back, and the launcher arm raised to aim.
-    turn(rigP, rigN, shoulder, rotX((-swing - hold * 1.2) * armW));
+    // Swing / raise (about X), then bring the arm in across the body (about Y).
+    turn(rigP, rigN, shoulder, rotX((-swing - pitch) * armW));
+    turn(rigP, rigN, shoulder, rotY(-side * inward * armW));
   }
 
   // ---- Legs: knee then hip, per side, blended across the crotch. ----
@@ -729,7 +741,8 @@ const PLAYER_RIG_MAIN = /* glsl */ `
 
   // ---- Torso lean from the hips, and the whole body dropping into a slide. ----
   float torsoW = smoothstep(uHipY - 0.05, uHipY + 0.1, rigP.y);
-  turn(rigP, rigN, vec3(0.0, uHipY, 0.0), rotX(-(uLean + uCrouch * 0.25) * torsoW));
+  // Positive lean tips the torso forward (+Z, the way the model faces).
+  turn(rigP, rigN, vec3(0.0, uHipY, 0.0), rotX((uLean + uCrouch * 0.25) * torsoW));
   rigP.y -= uCrouch * 0.42 + uTuck * 0.15;
 
   transformed = rigP;
@@ -739,7 +752,8 @@ const PLAYER_RIG_MAIN = /* glsl */ `
 /**
  * Give a static player mesh its shader rig. Returns the uniforms the host
  * drives each frame: uPhase (run cycle), uStride, uArmSwing, uLean, uCrouch
- * (slide), uTuck (jump), uHoldR (right arm raised holding the launcher).
+ * (slide), uTuck (jump), uHold (both hands on the launcher), uReachUp
+ * (arms overhead: hanging from or climbing the ladder).
  */
 export function rigPlayerMesh(mesh) {
   const body = measureBody(mesh.geometry);
@@ -750,7 +764,8 @@ export function rigPlayerMesh(mesh) {
     uLean: { value: 0 },
     uCrouch: { value: 0 },
     uTuck: { value: 0 },
-    uHoldR: { value: 0.8 },
+    uHold: { value: 1 },
+    uReachUp: { value: 0 },
     uHipY: { value: body.hipY },
     uKneeY: { value: body.kneeY },
     uShoulderX: { value: body.shoulderX },

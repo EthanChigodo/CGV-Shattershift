@@ -47,7 +47,7 @@ import { createRoute, straightSegments } from "../foundry/route.js";
 import { LightPool, createMeltdownAmbience } from "./lighting.js";
 import { createFireMaterials, createFire } from "./fire.js";
 import { buildHall, bakeStatic, bakeFilled, HALL_THEMES } from "./halls.js";
-import { SmokeCeiling } from "./smoke.js";
+import { SmokeBank } from "./smoke.js";
 import { loadMeltdownAssets, fillAssetSlots } from "./assets.js";
 
 const TURN_RADIUS = 9;
@@ -178,7 +178,7 @@ export class MeltdownLevel {
     this.fire = createFireMaterials();
     this.kit = createMeltdownKit({ shadows, fire: this.fire });
 
-    this.smoke = new SmokeCeiling(this.fire.time);
+    this.smoke = new SmokeBank(this.fire.time);
     this.root.add(this.smoke.group);
 
     this.ambience = createMeltdownAmbience({ brightness });
@@ -1375,7 +1375,8 @@ export class MeltdownLevel {
     const theme = hall ? HALL_THEMES[hall.theme] : null;
     const fireNear = THREE.MathUtils.clamp(1 - (distance - this._fireFrontDistance) / 45, 0, 1);
     this.smoke.update(
-      player,
+      this.route,
+      distance,
       {
         ceiling: theme ? Math.min(theme.height, 12.5) : CORRIDOR_HEIGHT,
         darkness,

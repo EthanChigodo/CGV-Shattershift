@@ -254,8 +254,16 @@ function placeLauncher(firstPerson) {
     launcher.rig.rotation.set(0.04 + launcher.recoil * 0.2, 0.05, bob * 0.02);
   } else {
     if (launcher.rig.parent !== avatar.shoulder) avatar.shoulder.add(launcher.rig);
-    launcher.rig.position.set(0, 0, 0.1 + launcher.recoil * 0.1);
-    launcher.rig.rotation.set(launcher.recoil * 0.15, 0, 0);
+    if (avatar.hold > 0.5) {
+      // Sat on the shoulder, most of the tube out in front, where both
+      // hands of the hold pose (characters.js) close on it.
+      launcher.rig.position.set(-0.04, -0.07, -0.18 + launcher.recoil * 0.1);
+      launcher.rig.rotation.set(launcher.recoil * 0.15, 0, 0);
+    } else {
+      // Hands busy (the ladder): slung diagonally across the back.
+      launcher.rig.position.set(-0.3, -0.35, 0.2);
+      launcher.rig.rotation.set(0, Math.PI / 2, 0.85);
+    }
   }
   const glow = runner.lockout > 0 ? 1.2 : runner.heat / 100;
   for (const m of launcher.heatMaterials) m.emissiveIntensity = glow * 1.4;
@@ -623,6 +631,8 @@ async function loadLevel() {
   fade(false);
   ui.letterbox?.classList.remove("on");
   hud.vitals.style.visibility = "";
+  avatar.hold = 1;
+  avatar.reachUp = 0;
   audio.setRotor(0);
   avatar.setVisible(true);
   scene.fog.density = 0.012;
@@ -802,6 +812,8 @@ addEventListener("keydown", (event) => {
     // The roof: WASD is movement (read from `held` each frame); Space dodges.
     if (event.code === "Space" && phase === "roof") {
       event.preventDefault();
+      // At the ledge with the ladder in reach, Space is the jump for it.
+      if (roof?.grab(hero.position)) return;
       if (hero.dodgeCooldown <= 0) {
         const dir = hero.velocity.lengthSq() > 0.5 ? hero.velocity.clone() : hero.aim.clone().sub(hero.position).setY(0);
         hero.dodgeDir.copy(dir.normalize());
@@ -1000,13 +1012,55 @@ function bindRoofEvents() {
   roof.events.on("orb-burst", ({ position }) => debris.sparks(position, { count: 22, speed: 5 }));
   roof.events.on("clear", () => hud.showBanner("ROOF CLEAR", "HERE IT COMES", 3000));
   roof.events.on("heli-arrived", ({ ending }) => {
-    roof.beginEnding(hero.position);
-    phase = "ending";
-    runner.firing = false;
-    ui.letterbox?.classList.add("on");
-    hud.vitals.style.visibility = "hidden";
-    hud.showBanner(ending === "victory" ? "EXTRACTION" : "IT CAN'T LAND", ending === "victory" ? "YOUR RIDE" : "JUMP FOR IT", 3000);
+    if (ending === "victory") {
+      roof.beginEnding(hero.position);
+      startCutscene();
+      hud.showBanner("EXTRACTION", "CLIMB THE LADDER", 3000);
+    } else {
+      // Not a cutscene: it waits off the east ledge and you have to get there.
+      hud.showBanner("IT CAN'T LAND", "JUMP FOR THE LADDER", 3200);
+      audio.stinger();
+    }
   });
+  roof.events.on("ladder-grab", () => {
+    startCutscene();
+    audio.whoosh();
+  });
+  roof.events.on("heli-left", () => {
+    hud.showBanner("IT COULDN'T WAIT", "LEFT BEHIND", 3000);
+    runner.firing = false;
+    setTimeout(() => {
+      if (phase !== "roof" || !roof) return;
+      phase = "over";
+      showRoofSummary(false, "LEFT BEHIND");
+    }, 3000);
+  });
+  // The roof coming apart.
+  roof.events.on("explosion", ({ position, strength }) => {
+    debris.burst(position.clone().setY(Math.max(0.3, position.y + 2)), { kind: "concrete", count: 24, speed: 7, up: 5 });
+    debris.sparks(position.clone().setY(0.5), { count: 40, speed: 9 });
+    debris.dust(position.clone().setY(1), { size: 7, life: 2.2, color: 0x3a2e28 });
+    const near = Math.max(0.2, 1 - position.distanceTo(hero.position) / 30);
+    trauma = Math.min(1, trauma + strength * near * 0.7);
+    audio.crash(0.4 + near * strength * 0.6);
+  });
+  roof.events.on("tremor", ({ strength }) => {
+    trauma = Math.min(1, trauma + strength * 0.55);
+    audio.crash(0.25 + strength * 0.3);
+    hud.toast("THE BUILDING IS GOING", "", "warn", 1400);
+  });
+  roof.events.on("roof-fire", ({ position }) => {
+    debris.sparks(position.clone().setY(0.3), { count: 20, speed: 4 });
+    audio.crash(0.15);
+  });
+}
+
+function startCutscene() {
+  phase = "ending";
+  runner.firing = false;
+  ui.letterbox?.classList.add("on");
+  hud.vitals.style.visibility = "hidden";
+  hud.setPrompt(null);
 }
 
 function onRoofBreakable(object, point, ball) {
@@ -1063,7 +1117,7 @@ function roofHit(hit) {
   trauma = Math.min(1, trauma + (hit.source === "patient" ? 0.8 : 0.45));
   hitFlash = 1;
   hud.flashDamage();
-  hud.toast("HIT", "", "warn");
+  hud.toast(hit.source === "fire" ? "BURNING" : "HIT", "", "warn");
   audio.stumble();
   debris.sparks(avatar.root.position.clone().setY(1.2), { count: 16 });
   if (runner.vitality <= 0) {
@@ -1144,7 +1198,9 @@ function updateRoofFrame(dt, time) {
       avatar.root.rotation.y = cut.playerYaw;
       avatar.setVisible(!cut.hidePlayer);
       avatar.shadow.visible = !cut.hidePlayer && cut.action !== "jump" && cut.action !== "hang";
-      avatar.update(sdt, { speed: cut.action === "run" ? 9 : 0, height: cut.action === "jump" ? 1 : 0, aiming: false, stumble: cut.action === "hang" ? 1 : 0 });
+      avatar.hold = cut.hold ?? 1;
+      avatar.reachUp = cut.reachUp ?? 0;
+      avatar.update(sdt, { speed: cut.action === "run" ? 9 : cut.action === "climb" ? 2.5 : 0, height: cut.action === "jump" ? 1 : 0, aiming: false });
       if (snapCamera) camera.position.copy(cut.camera);
       else camera.position.lerp(cut.camera, 1 - Math.exp(-dt * 3));
       smoothedLook.lerp(cut.look, 1 - Math.exp(-dt * 4));
@@ -1155,6 +1211,8 @@ function updateRoofFrame(dt, time) {
         const escaped = roof.state.ending;
         ui.letterbox?.classList.remove("on");
         showRoofSummary(true, escaped === "victory" ? "EXTRACTED" : "BARELY OUT");
+        avatar.hold = 1;
+        avatar.reachUp = 0;
       }
     } else {
       updateRoofCamera(dt);
@@ -1223,20 +1281,24 @@ function animate() {
     if (roof) updateRoofFrame(dt, time);
     const danger = 1 - runner.vitality / START_VITALITY;
     hud.setDanger(danger);
-    audio.setFireProximity(0.25);
-    audio.setDanger(danger * 0.8);
+    // The roof coming apart: thicker smoke, heat haze, louder everything.
+    const chaos = roof?.state.chaos ?? 0;
+    scene.fog.density = 0.0105 + chaos * 0.011;
+    audio.setFireProximity(0.25 + chaos * 0.5);
+    audio.setDanger(Math.max(danger * 0.8, chaos * 0.65));
     hitFlash = Math.max(0, hitFlash - dt * 3);
     const g = grade.uniforms;
     g.uTime.value = time;
     g.uDanger.value = danger;
-    g.uDark.value = 0.15;
-    g.uHeat.value = 0;
+    g.uDark.value = 0.15 + (roof?.state.chaos ?? 0) * 0.1;
+    g.uHeat.value = reducedMotion ? 0 : (roof?.state.chaos ?? 0) * 0.35;
     g.uHit.value = reducedMotion ? hitFlash * 0.3 : hitFlash;
     ui.reticle.classList.toggle("overheated", runner.lockout > 0);
     ui.reticle.classList.toggle("weak", runner.weakened > 0);
     hud.setVitality(runner.vitality, START_VITALITY);
     hud.setBalls(runner.balls);
-    hud.setPrompt(runner.balls <= 0 && playing ? "NO BALLS" : null);
+    const hint = phase === "roof" ? roof?.extractionHint(hero.position) : null;
+    hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : runner.balls <= 0 && playing ? "NO BALLS" : null);
     hud.update({ fps, renderer });
     ui.beatName.textContent = "THE ROOF";
     composer.render();
