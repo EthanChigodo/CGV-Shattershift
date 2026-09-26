@@ -9,6 +9,7 @@ import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
+import { MusicManager } from "./src/audio/music-manager.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -93,9 +94,14 @@ function saveSettings() {
   try { localStorage.setItem("fractureRunSettings", JSON.stringify(settings)); } catch (error) {}
 }
 
-// Sound and voice are out of scope for this build (another team member owns
-// audio). Levels emit events - "explosion", "lock", "lift-enter", ... - for the
-// audio workstream to hook into.
+// Music belongs to the application shell, not a level: Level 1 can be rebuilt
+// by Play Again while its soundtrack and playback position remain untouched.
+// Level 3's existing synthesized effects remain independent.
+const music = new MusicManager();
+music.showMenu();
+const unlockMusic = () => { music.unlock(); };
+addEventListener("pointerdown", unlockMusic, { passive: true });
+addEventListener("keydown", unlockMusic);
 
 const $ = (selector) => document.querySelector(selector);
 const ui = {
@@ -741,6 +747,7 @@ function updateCausewayLift(dt) {
 
 /** Hand-off to Level 2. Mirrors the old prototype's lift exit exactly. */
 function finishCausewayLift() {
+  music.fadeOut();
   currentLevel = 2;
   state = "playing";
   liftTimer = 0; playerY = 0; snapCamera = true;
@@ -1342,6 +1349,7 @@ function resetStats(mode = causewayMode) {
 
 function resetGame(mode = causewayMode) {
   resetStats(mode); state = "playing";
+  music.playRound1();
   causewayHud.show();
   if (mode === "endless") causewayHud.title("Endless lab", "Randomised. Faster every 250 m.", 2.2);
 }
@@ -1353,6 +1361,7 @@ function resetGame(mode = causewayMode) {
  */
 function beginLaunch() {
   resetStats("story"); state = "launch"; launchTimer = 0;
+  music.playRound1();
 }
 
 function startEndless() {
@@ -1431,6 +1440,7 @@ const failReasons = {
 function endRun(won, reason = null, detail = null) {
   if (state === "ended") return;
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
+  if (currentLevel === 1) music.gameOverDuck();
   causewayHud.warning(null);
   ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${currentLevel}`;
   ui.endTitle.textContent = won ? "CONTROL CORE STABILISED" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
@@ -1462,6 +1472,7 @@ function endRun(won, reason = null, detail = null) {
 function demoJump(level) {
   if (state !== "playing") return;
   if (level === 1 || level === 4) { resetGame(level === 4 ? "endless" : "story"); return; }
+  music.fadeOut();
   if (currentLevel === 1 && causeway) setCausewayActive(false);
   if (currentLevel === 3) leaveMeltdown(level);
   if (level === 3) {
@@ -1726,6 +1737,7 @@ function closeSettings() {
 function openPause() {
   if (state !== "playing" && state !== "lift") return;
   paused = true;  run.focusing = false;
+  music.pauseDuck();
   if (currentLevel === 3) meltdown?.setPaused(true);
   ui.pauseLevel.textContent = `0${currentLevel} / 03`;
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
@@ -1738,8 +1750,10 @@ function openPause() {
 }
 
 function closePause() {
+  const wasPaused = paused;
   ui.pause.classList.remove("active");
   paused = false;
+  if (wasPaused) music.restore();
   if (currentLevel === 3) meltdown?.setPaused(false);
 }
 
@@ -1767,6 +1781,7 @@ function quitToMenu() {
   refreshMenuProgress();
   ui.story.classList.remove("active");
   ui.start.classList.add("active");
+  music.showMenu();
 }
 
 const storyBeats = [
@@ -2035,6 +2050,7 @@ globalThis.__dbg = {
   get arsenal() { return arsenal; },
   get missions() { return missions; },
   get postfx() { return postfx; },
+  get music() { return music.snapshot(); },
   foundryDistance,
   causewayDistance,
   demoJump,

@@ -60,7 +60,7 @@ The title screen idles on a slow drift through the ward. From it you can start a
 
 The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play, and **Play as** chooses your character (female or male patient; Level 3 shows them, and the choice is remembered).
 
-**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. There is no sound in this build; audio is a separate task.
+**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. The briefing/menu and Level 1 have looping background music; Level 3 retains its generated Web Audio effects.
 
 ## Play locally
 
@@ -135,7 +135,7 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 to 2, and a fade from the end of Level 2 into Level 3, which opens with the player stepping out of a lift (Level 3's lifts and their cutscenes are placeholders a teammate is replacing - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Sound, music and voice are not part of this build (another team member owns audio; the levels emit events for it to hook into). Frame rates still need to be measured on lab hardware with the `F` overlay.
+Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 to 2, and a fade from the end of Level 2 into Level 3, which opens with the player stepping out of a lift (Level 3's lifts and their cutscenes are placeholders a teammate is replacing - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Menu and Level 1 music is managed by `src/audio/music-manager.js`; gameplay effects remain event hooks for the audio workstream, except for Level 3's generated Web Audio effects. Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 
