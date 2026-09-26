@@ -1,0 +1,143 @@
+/**
+ * Elevator ride HUD.
+ *
+ * Scoped under .elevator-ui so it sits on top of the game HUD without
+ * touching styles.css. Cyan is the colour every breakable object in the
+ * game shares; red is the fault.
+ */
+
+.elevator-ui {
+  --elv-cyan: #7ef4f1;
+  --elv-red: #ff4a54;
+  --elv-green: #7dff9a;
+  --elv-panel: rgba(6, 10, 14, 0.78);
+  --elv-line: rgba(126, 244, 241, 0.3);
+
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #f4fbff;
+  text-transform: uppercase;
+}
+
+.elevator-ui[hidden] {
+  display: none !important;
+}
+
+.elv-panel {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 250px;
+  padding: 10px 16px 12px;
+  background: var(--elv-panel);
+  border: 1px solid var(--elv-line);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.elv-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.elv-eyebrow {
+  color: var(--elv-cyan);
+}
+
+.elv-title {
+  color: rgba(244, 251, 255, 0.65);
+}
+
+.elv-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.elv-label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(244, 251, 255, 0.55);
+}
+
+.elv-floor {
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 34px;
+  line-height: 1;
+  color: var(--elv-cyan);
+  text-shadow: 0 0 12px rgba(126, 244, 241, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+
+.elv-arrow {
+  font-size: 16px;
+  color: var(--elv-cyan);
+}
+
+.elv-arrow.down {
+  color: var(--elv-red);
+}
+
+.elv-speed {
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 13px;
+  color: rgba(244, 251, 255, 0.7);
+  min-width: 70px;
+  text-align: left;
+}
+
+.elv-alert {
+  position: absolute;
+  top: 118px;
+  left: 50%;
+  transform: translate(-50%, -6px);
+  padding: 7px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.elv-alert.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.elv-alert.info {
+  color: var(--elv-cyan);
+}
+
+.elv-alert.good {
+  color: var(--elv-green);
+}
+
+.elv-alert.danger {
+  color: #fff;
+  background: rgba(255, 74, 84, 0.22);
+  border: 1px solid rgba(255, 74, 84, 0.6);
+  animation: elv-blink 0.6s steps(2, start) infinite;
+}
+
+@keyframes elv-blink {
+  to {
+    border-color: rgba(255, 74, 84, 0.15);
+  }
+}
+
+@media (max-width: 600px) {
+  .elv-panel {
+    min-width: 0;
+    width: calc(100% - 32px);
+  }
+}

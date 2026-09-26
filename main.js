@@ -9,6 +9,7 @@ import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
+import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -76,6 +77,8 @@ let sliding = 0;
 let snapCamera = true;
 /** Level 3 (src/levels/meltdown/game.js), built on the way into it. */
 let meltdown = null;
+/** The Level 2 -> 3 lift ride (src/elevators/gravity-fault.js), while it runs. */
+let gravityLift = null;
 
 
 const settingsDefaults = {
@@ -276,7 +279,7 @@ function buildFoundry() {
     if (currentLevel !== 2 || state !== "playing") return;
     score += Math.max(0, foundry.state.systemsOnline * 500 + health * 10);
     state = "lift"; liftTimer = 0; transitionTarget = 3;
-    showMessage("GRAVITY LIFT // CORE");
+    showMessage("GRAVITY LIFT // SECTOR 03");
     updateUI();
   });
   foundry.events.on("escape-end", ({ survived }) => {
@@ -1309,10 +1312,68 @@ function updateProjectiles(dt) {
 }
 
 /* ==================================================================== */
+/* GRAVITY LIFT - the Level 2 -> 3 elevator ride                         */
+/* ==================================================================== */
+
+/**
+ * The Gravity Fault lift (src/elevators/gravity-fault.js) is its own scene,
+ * like Level 3: this block builds it once the Foundry has faded out, renders
+ * it instead of the main scene while it runs, and hands over to Level 3 when
+ * it is done. Level 3's models keep streaming in while it runs.
+ */
+function startGravityLift() {
+  if (gravityLift) return;
+  currentLevel = 2; state = "lift"; transitionTarget = 3; liftTimer = 0;
+  // Free Level 2 now rather than on the way into Level 3.
+  setFoundryActive(false);
+  if (foundry) { foundryHud.unbind(); foundry.dispose(); foundry = null; }
+  preloadMeltdown();
+  gravityLift = new GravityFaultRide({ renderer, spheres: ammo, reducedMotion: settings.reducedMotion });
+  gravityLift.onPointerMove(pointer.x, pointer.y);
+  // The ride has its own alerts; clear the game's message line for them.
+  ui.message.classList.remove("show"); messageTimer = 0;
+  updateUI();
+}
+
+function updateGravityLiftFrame(dt, time) {
+  gravityLift.update(dt, time);
+  ui.fade.style.opacity = gravityLift.fade.toFixed(3);
+  document.body.classList.remove("aiming");
+  if (gravityLift.result.done) finishGravityLift();
+}
+
+/** The ride is over: its bonus into the score, then into Level 3. */
+function finishGravityLift() {
+  const { bonus, spheres } = gravityLift.result;
+  score += bonus;
+  ammo = spheres;
+  leaveGravityLift();
+  updateUI();
+  enterMeltdown();
+}
+
+/** Free the ride (finished, restart, quit or a demo jump). */
+function leaveGravityLift() {
+  if (!gravityLift) return;
+  gravityLift.dispose();
+  gravityLift = null;
+}
+
+/** Demo key 5: straight into the lift ride from anywhere in a run. */
+function demoGravityLift() {
+  if (state !== "playing") return;
+  if (currentLevel === 3) leaveMeltdown(2);
+  if (currentLevel === 1 && causeway) setCausewayActive(false);
+  ammo = Math.max(ammo, 8);
+  startGravityLift();
+}
+
+/* ==================================================================== */
 /* Game flow                                                            */
 /* ==================================================================== */
 
 function resetStats(mode = causewayMode) {
+  leaveGravityLift();
   if (currentLevel === 3 || meltdown?.visible) leaveMeltdown(1);
   ammo = START_SPHERES; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0;
   cameraThird = false; liftTimer = 0; currentLevel = 1; transitionTarget = 0; shake = 0;
@@ -1462,6 +1523,7 @@ function endRun(won, reason = null, detail = null) {
 function demoJump(level) {
   if (state !== "playing") return;
   if (level === 1 || level === 4) { resetGame(level === 4 ? "endless" : "story"); return; }
+  leaveGravityLift();
   if (currentLevel === 1 && causeway) setCausewayActive(false);
   if (currentLevel === 3) leaveMeltdown(level);
   if (level === 3) {
@@ -1546,6 +1608,8 @@ function updateGame(dt, time) {
   if (paused) return;
   // Level 3 runs its own world, camera and HUD (src/levels/meltdown/game.js).
   if (currentLevel === 3) { updateMeltdownFrame(dt, time); return; }
+  // So does the lift ride between Levels 2 and 3 (src/elevators/).
+  if (gravityLift) { updateGravityLiftFrame(dt, time); return; }
 
   // Time dilation for Level 1: focus (bullet time) and hit-stop on big breaks.
   let simDt = dt;
@@ -1594,12 +1658,11 @@ function updateGame(dt, time) {
     causeway.update({ dt, time: simTime, distance: causewayDistance(), player: playerWorld(_playerPos), playing: false });
     updateCausewayLift(dt);
   } else if (state === "lift" && transitionTarget === 3) {
-    // Level 2 -> 3: fade to black; Level 3 opens with the player stepping
-    // out of its own lift (see enterMeltdown). A teammate's elevator
-    // cutscene can replace this fade.
+    // Level 2 -> 3: fade to black, then the Gravity Fault lift ride (see
+    // GRAVITY LIFT below), then Level 3 opens with the lift arriving.
     liftTimer += dt;
-    ui.fade.style.opacity = Math.min(1, liftTimer / 1.1).toFixed(3);
-    if (liftTimer > 1.2) enterMeltdown();
+    ui.fade.style.opacity = Math.min(1, liftTimer / 0.6).toFixed(3);
+    if (liftTimer > 0.7) startGravityLift();
   } else if (state === "ended" && inCauseway) {
     // Keep the world alive behind the end screen.
     causeway.update({ dt, time: simTime, distance: causewayDistance(), player: playerWorld(_playerPos), playing: false });
@@ -1686,6 +1749,7 @@ function updatePerformance(rawDt) {
 }
 
 function renderFrame() {
+  if (gravityLift?.visible) { gravityLift.render(); return; }
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
   postfx.render(scene, camera, glass);
@@ -1909,6 +1973,7 @@ addEventListener("pointermove", (event) => {
   pointer.y = THREE.MathUtils.clamp((-(event.clientY / innerHeight) * 2 + 1) * factor, -1, 1);
   placeReticle();
   meltdown?.onPointerMove(event.clientX, event.clientY);
+  gravityLift?.onPointerMove(pointer.x, pointer.y);
 });
 
 /**
@@ -1973,6 +2038,7 @@ addEventListener("keydown", (event) => {
   if (event.code === "Digit2") demoJump(2);
   if (event.code === "Digit3") demoJump(3);
   if (event.code === "Digit4") demoJump(4);
+  if (event.code === "Digit5") demoGravityLift();
   if (event.code === "KeyA" || event.code === "ArrowLeft") lane = Math.max(0, lane - 1);
   if (event.code === "KeyD" || event.code === "ArrowRight") lane = Math.min(2, lane + 1);
   if (event.code === "KeyW" || event.code === "ArrowUp") {
@@ -2027,6 +2093,8 @@ globalThis.__dbg = {
   get causeway() { return causeway; },
   get meltdown() { return meltdown; },
   enterMeltdown,
+  get gravityLift() { return gravityLift; },
+  demoGravityLift,
   get run() { return run; },
   causewayPace,
   resolveAim: () => resolveAim(aliveTargets(), currentLevel === 1 && causeway ? causeway.solids : []),
