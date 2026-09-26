@@ -402,3 +402,34 @@
 .mlt-credits a { color: #8fd8d0; word-break: break-all; }
 .mlt-credits p { font-size: 11px; color: #a8928a; }
 .mlt-credits small { display: block; margin-top: 10px; font-size: 10px; letter-spacing: 0.2em; color: #8a7168; }
+
+/* ---- Game chrome owned by MeltdownGame (src/levels/meltdown/game.js) ---- */
+/* Below the host's menu screens (z-index 8), above the level HUD. */
+
+.mlt-reticle {
+  position: fixed;
+  z-index: 7;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 1px solid rgba(10, 255, 106, 0.85);
+  border-radius: 50%;
+  pointer-events: none;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.mlt-reticle[hidden] { display: none; }
+.mlt-reticle.hot { border-color: #0aff6a; transform: scale(1.45); box-shadow: 0 0 16px rgba(10, 255, 106, 0.7); }
+.mlt-reticle.weak { border-style: dashed; border-color: #ffb03c; }
+.mlt-reticle.overheated { border-color: #ff3a1e; box-shadow: 0 0 16px rgba(255, 58, 30, 0.8); animation: mlt-reticle-hot 0.5s ease-in-out infinite; }
+@keyframes mlt-reticle-hot { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+.mlt-fade { position: fixed; inset: 0; z-index: 7; background: #000; opacity: 0; pointer-events: none; }
+
+.mlt-letterbox::before, .mlt-letterbox::after { content: ""; position: fixed; left: 0; right: 0; height: 0; z-index: 7; background: #000; transition: height 0.8s ease; }
+.mlt-letterbox::before { top: 0; }
+.mlt-letterbox::after { bottom: 0; }
+.mlt-letterbox.on::before, .mlt-letterbox.on::after { height: 11vh; }
+
+/* While Level 3 runs inside the full game, its HUD replaces the game's own. */
+body.mlt-active #hud,
+body.mlt-active #reticle { display: none !important; }

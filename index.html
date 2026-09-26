@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Fracture Run - a playable CGV project concept demo." />
     <title>Fracture Run - CGV Demo</title>
+    <!-- Three.js add-ons (Level 3's model loader and post-processing) import
+         the bare name "three"; it must resolve to the exact URL src/three.js
+         uses, or the page ends up with two copies of Three. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
   </head>
@@ -85,6 +96,11 @@
           <button id="manualButton" class="text-button">Field manual</button>
           <button id="settingsButton" class="text-button">Settings</button>
           <button id="replayStoryButton" class="text-button">Replay briefing</button>
+        </div>
+        <div class="subject-pick" role="group" aria-label="Choose your character">
+          <span>PLAY AS</span>
+          <button type="button" class="subject-button" data-character="playerFemale">Female</button>
+          <button type="button" class="subject-button" data-character="playerMale">Male</button>
         </div>
         <p id="progressLine" class="progress-line"></p>
       </div>
@@ -170,10 +186,14 @@
             <span><kbd>MOUSE</kbd> Aim and throw</span>
             <span><kbd>RMB</kbd> Focus (slow time)</span>
             <span><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
-            <span><kbd>W</kbd><kbd>S</kbd> Sprint / brake (L1), gravity (L3)</span>
+            <span><kbd>W</kbd><kbd>S</kbd> Sprint / brake (L1)</span>
             <span><kbd>SPACE</kbd><kbd>SHIFT</kbd> Jump / slide</span>
             <span><kbd>C</kbd> Change camera</span>
-            <span><kbd>P</kbd> Photo mode</span>
+            <span><kbd>HOLD CLICK</kbd> Fire the launcher (L3) - it overheats</span>
+            <span><kbd>SPACE</kbd> Push a fallen duct (mash, L3)</span>
+            <span><kbd>WASD</kbd> Move on the roof, <kbd>SPACE</kbd> dodge / jump for the ladder (L3)</span>
+            <span><kbd>B</kbd> Bloom, <kbd>K</kbd> credits (L3)</span>
+            <span><kbd>P</kbd> Photo mode (L1, L2)</span>
             <span><kbd>M</kbd> Minimap</span>
             <span><kbd>ESC</kbd> Pause</span>
           </div>

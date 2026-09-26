@@ -18,7 +18,7 @@
     <link rel="stylesheet" href="../styles.css" />
     <style>
       /* Preview-only chrome. None of this ships with the level. */
-      .preview-bar {
+      .mlt-bar {
         position: fixed;
         top: 0;
         left: 0;
@@ -36,37 +36,12 @@
         color: #b39a8e;
         pointer-events: none;
       }
-      .preview-bar strong { color: #ffb03c; }
-      .preview-bar em { font-style: normal; color: #fdf3ee; }
-      .preview-keys { margin-left: auto; display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
-      .preview-keys span { color: #8a7168; }
-      .preview-keys b { color: #fdf3ee; }
-      .preview-reticle {
-        position: fixed;
-        width: 20px;
-        height: 20px;
-        margin: -10px 0 0 -10px;
-        border: 1px solid rgba(10, 255, 106, 0.85);
-        border-radius: 50%;
-        pointer-events: none;
-        z-index: 7;
-        transition: border-color 0.12s ease, transform 0.12s ease;
-      }
-      .preview-reticle.hot {
-        border-color: #0aff6a;
-        transform: scale(1.45);
-        box-shadow: 0 0 16px rgba(10, 255, 106, 0.7);
-      }
-      .preview-reticle.overheated {
-        border-color: #ff3a1e;
-        box-shadow: 0 0 16px rgba(255, 58, 30, 0.8);
-        animation: reticle-overheat 0.5s ease-in-out infinite;
-      }
-      @keyframes reticle-overheat {
-        0%, 100% { opacity: 0.5; }
-        50% { opacity: 1; }
-      }
-      .preview-status {
+      .mlt-bar strong { color: #ffb03c; }
+      .mlt-bar em { font-style: normal; color: #fdf3ee; }
+      .mlt-keys { margin-left: auto; display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+      .mlt-keys span { color: #8a7168; }
+      .mlt-keys b { color: #fdf3ee; }
+      .mlt-status {
         position: fixed;
         left: 18px;
         bottom: 18px;
@@ -76,26 +51,8 @@
         text-transform: uppercase;
         color: #b39a8e;
       }
-      .preview-status b { color: #fdf3ee; }
-      .preview-heat {
-        position: fixed;
-        left: 18px;
-        bottom: 40px;
-        z-index: 7;
-        width: 160px;
-        height: 4px;
-        background: rgba(255, 255, 255, 0.12);
-      }
-      .preview-heat i {
-        display: block;
-        height: 100%;
-        width: 100%;
-        transform-origin: left center;
-        transform: scaleX(0);
-        background: linear-gradient(90deg, #ffb03c, #ff3a1e);
-      }
-      .preview-heat[hidden] { display: none; }
-      .preview-reticle.weak { border-style: dashed; border-color: #ffb03c; }
+      .mlt-status b { color: #fdf3ee; }
+      @keyframes start-blink { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
       body { cursor: none; }
       .start-overlay {
         position: fixed;
@@ -111,7 +68,7 @@
         cursor: pointer;
       }
       .start-overlay h1 { margin: 0; font-size: clamp(28px, 6vw, 56px); letter-spacing: 0.14em; text-shadow: 0 0 30px rgba(255, 70, 20, 0.6); }
-      .start-overlay p { margin: 14px 0 0; font-size: 12px; letter-spacing: 0.3em; color: #ffb03c; animation: reticle-overheat 1s ease-in-out infinite; }
+      .start-overlay p { margin: 14px 0 0; font-size: 12px; letter-spacing: 0.3em; color: #ffb03c; animation: start-blink 1s ease-in-out infinite; }
       .start-overlay small { display: block; margin-top: 22px; font-size: 10px; letter-spacing: 0.18em; color: #b39a8e; line-height: 1.9; }
       .start-picks { display: flex; gap: 12px; justify-content: center; margin-top: 26px; }
       .start-picks button {
@@ -128,26 +85,20 @@
       }
       .start-picks button b { display: block; margin-top: 4px; font-size: 9px; color: #7fa8a3; letter-spacing: 0.22em; }
       .start-picks button.picked { border-color: #6fe0d4; color: #ffffff; box-shadow: 0 0 18px rgba(63, 200, 186, 0.35); }
-      .fade { position: fixed; inset: 0; z-index: 8; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.6s ease; }
-      .fade.on { opacity: 1; }
-      .letterbox::before, .letterbox::after { content: ""; position: fixed; left: 0; right: 0; height: 0; z-index: 7; background: #000; transition: height 0.8s ease; }
-      .letterbox::before { top: 0; }
-      .letterbox::after { bottom: 0; }
-      .letterbox.on::before, .letterbox.on::after { height: 11vh; }
       @media (max-width: 640px) {
-        .preview-bar { font-size: 9px; gap: 10px; padding: 8px 10px; }
-        .preview-keys { display: none; }
+        .mlt-bar { font-size: 9px; gap: 10px; padding: 8px 10px; }
+        .mlt-keys { display: none; }
       }
     </style>
   </head>
   <body>
     <canvas id="game" aria-label="Meltdown preview canvas"></canvas>
 
-    <div class="preview-bar">
+    <div class="mlt-bar">
       <strong>SECTOR 03</strong>
       <em>THE MELTDOWN</em>
-      <span>PREVIEW - PHASE A + B</span>
-      <div class="preview-keys">
+      <span>PREVIEW - PHASE A + B (ALSO LEVEL 3 OF THE FULL GAME)</span>
+      <div class="mlt-keys">
         <span><b>A</b>/<b>D</b> lane</span>
         <span><b>SPACE</b>/<b>W</b> jump / push duct</span>
         <span><b>SHIFT</b>/<b>S</b> slide (in the air: slam)</span>
@@ -179,13 +130,7 @@
       </div>
     </div>
 
-    <div id="reticle" class="preview-reticle"></div>
-    <div id="fade" class="fade"></div>
-    <div id="letterbox" class="letterbox"></div>
-    <div id="heatBar" class="preview-heat" title="Launcher heat (dev-only readout - not shown to the player)" hidden>
-      <i id="heatFill"></i>
-    </div>
-    <div class="preview-status">
+    <div class="mlt-status">
       CAMERA <b id="cameraName">CHASE</b> &nbsp;//&nbsp; BEAT <b id="beatName">RECOVERY WARD</b>
     </div>
 

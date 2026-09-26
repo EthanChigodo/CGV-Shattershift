@@ -45,12 +45,21 @@ import { createFireMaterials } from "./fire.js";
 import { fillAssetSlots } from "./assets.js";
 import { cloneCharacter, HumanoidRig } from "./characters.js";
 import { Helicopter } from "./helicopter.js";
+import { createLift, ROOF_LIFT } from "./elevator.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
 const WALK_LIMIT = EDGE - 0.7;
 const HELIPAD = new THREE.Vector3(0, 0, -8);
 export const ROOF_SPAWN = new THREE.Vector3(0, 0, 8);
+/** The lift housing's doorway (the lift you come up in; see elevator.js). */
+const LIFT_DOOR = new THREE.Vector3(0, 0, EDGE - 3.1);
+/** Seconds of the arrival: doors open, you walk out, the camera settles. */
+const ARRIVAL_SECONDS = 3.4;
+const ARRIVAL_CUT = 2.9;
+/** Where the arrival hands the camera over: the host's roof camera offsets. */
+const ARRIVAL_CAMERA = new THREE.Vector3(0, 11.5, 8.5);
+const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
 
 const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
 const MACHINE_DOOR = new THREE.Vector3(12.5, 0, -12.5);
@@ -699,12 +708,21 @@ export class RoofLevel {
       }
     }
 
-    // The stair hut you came up through, door facing the roof.
-    this._box(5, 2.9, 2.8, concrete, 0, 0, EDGE - 1.7, { solid: true, cover: true });
-    this._box(5.3, 0.2, 3.1, mat.trim, 0, 2.9, EDGE - 1.7);
-    this._box(1.5, 2.3, 0.1, mat.pitBlack, 0, 0, EDGE - 3.13);
-    this._box(1.8, 0.16, 0.2, mat.hazard, 0, 2.35, EDGE - 3.15);
-    this._put(k.alarmBeacon({ x: 0, y: 2.6, speed: 3.6 }), 1.3, 0, EDGE - 3.15);
+    // The lift housing you come up in, doors facing the roof: a hollow hut
+    // (so the open doors show the cabin) around a placeholder lift.
+    const hutZ = LIFT_DOOR.z + 1.4;
+    const hutH = 3.5;
+    this._box(5, hutH, 2.8, mat.collider, 0, 0, hutZ, { solid: true, cover: true });
+    for (const s of [-1, 1]) {
+      this._box(1.15, hutH, 0.3, concrete, s * 1.925, 0, LIFT_DOOR.z + 0.15);
+      this._box(0.25, hutH, 2.8, concrete, s * 2.375, 0, hutZ);
+    }
+    this._box(2.7, hutH - ROOF_LIFT.height, 0.3, concrete, 0, ROOF_LIFT.height, LIFT_DOOR.z + 0.15);
+    this._box(5, hutH, 0.25, concrete, 0, 0, hutZ + 1.275);
+    this._box(5.3, 0.2, 3.1, mat.trim, 0, hutH, hutZ);
+    this.lift = this._put(createLift(k, { ...ROOF_LIFT, label: "R" }), LIFT_DOOR.x, 0, LIFT_DOOR.z);
+    this.lift.userData.lift.setLight(1);
+    this._put(k.alarmBeacon({ x: 0, y: 2.6, speed: 3.6 }), 1.95, 0.35, LIFT_DOOR.z - 0.2);
 
     // The machine room the second scientist comes out of.
     this._box(7, 3.8, 5, concrete, EDGE - 4.6, 0, -EDGE + 3.6, { solid: true, cover: true });
@@ -1119,8 +1137,22 @@ export class RoofLevel {
    */
   update({ dt, time, player, playerVelocity }) {
     const s = this.state;
-    s.time += dt;
     this.fire.setTime(time);
+    if (this.cutscene?.kind === "arrival") {
+      // The arrival is over (the host has seen `done`): hand the roof over.
+      if (!this._arrival) this.cutscene = null;
+      else {
+        // Nothing starts while the doors are opening: no waves, no clock.
+        for (const piece of this._ticking) piece.userData.tick?.(dt, time);
+        this._updateArrival(dt);
+        return [];
+      }
+    }
+    if (this._liftClose < 1) {
+      this._liftClose = Math.min(1, this._liftClose + dt / 1.2);
+      this.lift?.userData.lift.setDoors(1 - this._liftClose);
+    }
+    s.time += dt;
     const hits = [];
     // Enemies keep fighting while the helicopter waits at the ledge; they
     // only stand down for the cutscenes and once it has gone.
@@ -1166,6 +1198,65 @@ export class RoofLevel {
     this._updateHelicopter(dt, time);
     if (s.ending === "victory" || s.ending === "survive") this._updateEnding(dt, time);
     return hits;
+  }
+
+  /* ---------------- Arrival (the lift) ---------------- */
+
+  /**
+   * Phase B opens on the lift housing: the doors open, the player walks out
+   * onto the roof, the camera settles behind them - then the roof starts.
+   * A cutscene like the endings: `cutscene` says where the camera and the
+   * player are, the host applies it. PLACEHOLDER staging (see elevator.js).
+   */
+  beginArrival() {
+    this._arrival = { t: 0, opened: false };
+    this._liftClose = 0;
+    this.lift?.userData.lift.setDoors(0);
+    this.cutscene = {
+      kind: "arrival", camera: new THREE.Vector3(), look: new THREE.Vector3(), player: new THREE.Vector3(),
+      playerYaw: 0, action: "stand", timeScale: 1, done: false, hidePlayer: false, hold: 1, reachUp: 0,
+    };
+    this._updateArrival(0);
+    return this.cutscene;
+  }
+
+  _updateArrival(dt) {
+    const a = this._arrival;
+    const out = this.cutscene;
+    a.t += dt;
+    const t = a.t;
+    const smooth = THREE.MathUtils.smoothstep;
+    const lift = this.lift?.userData.lift;
+    if (!a.opened && t > 0.7) {
+      a.opened = true;
+      this.events.emit("lift-open", {});
+    }
+    lift?.setDoors((t - 0.7) / 0.9);
+    lift?.setLight(t < 0.5 ? (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1);
+
+    // Walk out of the cabin to the spawn point.
+    const walk = smooth(t, 1.2, 2.8);
+    out.player.set(LIFT_DOOR.x, 0, LIFT_DOOR.z + 1.4).lerp(ROOF_SPAWN, walk);
+    out.playerYaw = 0;
+    out.action = t > 1.2 && t < 2.8 ? "run" : "stand";
+    out.speed = out.action === "run" ? 4.5 : 0;
+
+    // In front of the housing, dollying back as the player walks toward the
+    // camera; then a cut to the game camera (a swing round would turn the
+    // view through 180 degrees - the doors face away from the game camera).
+    if (t < ARRIVAL_CUT) {
+      const dolly = smooth(t, 0.9, ARRIVAL_CUT);
+      out.camera.set(-1.3, 1.8, LIFT_DOOR.z - 5.9).lerp(_w.set(-1.6, 2.0, LIFT_DOOR.z - 7.7), dolly);
+      out.look.set(0, 1.3, LIFT_DOOR.z).lerp(_w.copy(out.player).setY(1.2), smooth(t, 1.2, 2.4));
+    } else {
+      out.camera.copy(ROOF_SPAWN).add(ARRIVAL_CAMERA);
+      out.look.copy(ROOF_SPAWN).add(ARRIVAL_LOOK);
+    }
+    if (t >= ARRIVAL_SECONDS) {
+      out.done = true;
+      this._arrival = null;
+      this.events.emit("arrived", {});
+    }
   }
 
   /** 0 (silent) .. 1 (overhead): how loud the rotors should be. */
@@ -1568,6 +1659,7 @@ export class RoofLevel {
     this.root.traverse((o) => {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });
+    this.lift?.userData.dispose?.();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
     for (const g of this.owned.geometries) g.dispose();

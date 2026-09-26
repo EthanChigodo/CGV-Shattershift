@@ -28,8 +28,8 @@ the roof, where the scientists are waiting and a helicopter is inbound.
   you climb (roof cleared) or have to jump for from the ledge (still
   fighting) - or it leaves without you. **Built.**
 
-Both live in the standalone preview. **Neither is wired into `main.js` yet**
-(see §7). This supersedes the old "Inverted Core" concept still written in
+Both are in the full game (Level 3 of `index.html`, see §7) and in the
+standalone preview. This supersedes the old "Inverted Core" concept still written in
 `docs/project-brief.md` §5 - that doc hasn't been updated.
 
 ### Decisions the user made (don't re-ask)
@@ -51,6 +51,10 @@ Both live in the standalone preview. **Neither is wired into `main.js` yet**
 - **Level 3 stays isolated from the other levels** - other developers own
   Levels 1 and 2. Don't touch `src/levels/foundry/*` (Level 3 reuses its
   `route.js` and `LightPool` read-only).
+- Round 3: integrate into `main.js`; character selection at the start of the
+  game; Level 3 opens by coming out of a lift and Phase A ends by going into
+  one up to the roof (placeholders - **another group member is making the
+  real elevator and cutscenes**).
 
 ---
 
@@ -60,7 +64,9 @@ Both live in the standalone preview. **Neither is wired into `main.js` yet**
 python -m http.server 4173
 ```
 
-Open `http://localhost:4173/preview/meltdown.html`, hard-refresh
+Full game: `http://localhost:4173/`, pick **Play as**, start, and press `3`
+during the run to jump to Level 3. On its own:
+`http://localhost:4173/preview/meltdown.html`, hard-refresh
 (`Ctrl+Shift+R`), pick a patient, click to start.
 
 Phase A: `A`/`D` lane, hold left mouse to fire, `SPACE`/`W` jump (or mash at a
@@ -71,13 +77,11 @@ dodge.
 
 ---
 
-## 3. Why it's a standalone preview
+## 3. The preview and the game run the same module
 
-Same pattern Level 2 used: build and prove it as `preview/<level>.html`, then
-wire it into `main.js`. The preview's runner rules and camera rigs
-(`preview/meltdown-preview.js`) are the reference for the integration, not
-code to paste - but the pieces that should survive integration now live in
-`src/` (player body, beam, grading pass, roof, credits).
+Level 3 was built as `preview/meltdown.html` first (the pattern Level 2
+used). All of it now lives in `src/levels/meltdown/game.js`, which both the
+preview and `main.js` run - fix something once and it is fixed in both.
 
 ---
 
@@ -85,6 +89,12 @@ code to paste - but the pieces that should survive integration now live in
 
 ```
 src/levels/meltdown/
+  game.js        MeltdownGame - the whole level as one module: scene, camera,
+                 post, HUD, audio, runner rules, camera rigs, roof input,
+                 lift cutscenes, hand-over to the roof. main.js and the
+                 preview both drive it.
+  elevator.js    PLACEHOLDER lifts (createLift) - the seam for the real
+                 elevator; cutscene timelines live in index.js / roof.js.
   index.js       MeltdownLevel - Phase A. Data-driven beats (BEAT_SPECS) and
                  halls (HALLS) -> route with 3 turns; shell, openings, set
                  pieces, obstacle patterns, dressing, signs, fire front;
@@ -124,8 +134,9 @@ src/audio/meltdown-audio.js  + power down/up, beam on, groan, thud, fall,
 src/ui/meltdown-hud.js/.css  + patient toasts, credits panel styles.
 src/three-addons.js          + SkeletonUtils, ShaderPass.
 
-preview/meltdown.html/.js    Host: Phase A runner + roof mode + transitions,
-                             character picker, credits button.
+preview/meltdown.html/.js    Thin host around MeltdownGame: start screen with
+                             the character picker, status line, dev keys.
+main.js                      MELTDOWN INTEGRATION block (see §7).
 tests/meltdown/              run.js + checks (route, fairness, roof) + lib.
 docs/images/meltdown-*.jpg   Screenshots (regenerate: run.js --shots).
 ```
@@ -177,25 +188,36 @@ patients can be lured off the ledge; draw-call counts before/after.
 
 ---
 
-## 7. Wiring into `main.js` - what that involves
+## 7. How it is wired into `main.js` (done)
 
-Not done (and Level 1/2 owners are separate - coordinate before touching
-shared code). When someone does it:
+Level 3 is one module, `src/levels/meltdown/game.js` (`MeltdownGame`): its own
+scene, camera, composer, HUD, audio, runner rules, camera rigs and roof input
+(everything that used to be in the preview's host script). Both hosts drive
+it the same way - give it the renderer, forward input, call `update` and
+`render`:
 
-1. `index.html` needs the import map from `preview/meltdown.html` (add-ons
-   import the bare `"three"`, which must resolve to the URL `src/three.js`
-   uses).
-2. Replace the old Level 3 stub in `main.js` (the gravity-tilt camera code,
-   `currentLevel === 3`) with `MeltdownLevel` + `MeltdownHud`, following the
-   `FoundryLevel`/`FoundryHud` pattern there. Use `PlayerAvatar`,
-   `LauncherLight`, `createGradePass`, `createEnvironmentDimmer` and
-   `createCreditsPanel` as they are; take the runner rules, springs and roof
-   input from `preview/meltdown-preview.js`.
-3. Phase B: on `complete`, run the same fade -> hide -> `new RoofLevel({
-   assets })` -> `prewarm` -> fade sequence the preview does.
-4. `loadAssets` is async and cached; start loading the roof set
-   (`ROOF_NAMES` in the preview) once Phase A's models are in.
-5. The game-wide credits screen must include `MELTDOWN_CREDITS` (CC-BY).
+- **`preview/meltdown-preview.js`** is now a thin wrapper (start screen,
+  status line, dev keys R/P, `__meltdown` for the harness).
+- **`main.js`** has a `MELTDOWN INTEGRATION - Level 3` block:
+  - Level 2's `complete` -> the `lift` state fades to black -> `enterMeltdown()`
+    builds it (models were preloaded when Level 2 started) -> fade in inside
+    the arrival lift. Digit `3` (demo jump) does the same.
+  - While `currentLevel === 3`, `updateGame` hands the frame to the module and
+    `renderFrame` renders it instead of the main scene; its HUD replaces the
+    game's (`body.mlt-active`). Keys it uses are not also acted on by
+    `main.js`; `Esc` still pauses (and suspends its audio).
+  - Its `complete` / `failed` events become the game's score and end screen
+    (`finishMeltdown`, `endRun(won, reason, detail)`).
+  - Restart / quit / demo jumps call `leaveMeltdown()` (frees it, gives the
+    renderer its pixel ratio back - Level 3 renders at ratio 1).
+  - `MELTDOWN_AUDIO` switches its sound off (see §8).
+- `index.html` has the import map, and **Play as** (female/male) on the start
+  screen; the choice is shared with the preview (`localStorage`).
+- The old "Inverted Core" prototype (gravity lanes, rings, the old lift at
+  z = -282) was removed from `main.js`.
+
+The lifts at both ends of Phase A and on the roof are placeholders for a
+teammate's elevator and cutscenes - see `level-3-meltdown.md` §3, "The lifts".
 
 ---
 
@@ -212,6 +234,10 @@ shared code). When someone does it:
   from the first asset batch (outside the repo).
 - `project-brief.md` still describes the old Level 3.
 - No human playtest; spatial audio not done.
+- **Audio:** the rest of the game has no sound by team decision; Level 3
+  keeps its own. Ask the team; `MELTDOWN_AUDIO` in `main.js` turns it off.
+- "Run again" after dying in Level 3 restarts the whole game from Level 1
+  (the game's existing behaviour for every level); `3` jumps back in.
 
 ---
 

@@ -18,7 +18,9 @@
  *   CAUSEWAY_CHROMIUM     path to a Chromium binary
  *   CAUSEWAY_SOFTWARE_GL  set to 0 to use the real GPU
  *   CAUSEWAY_THREE_LOCAL  path to three.module.js to serve instead of the CDN
- *                         (for offline machines)
+ *                         (for offline machines) - <package>/build/three.module.js
+ *                         of an unpacked three@0.160.0, whose examples/jsm/
+ *                         add-ons are served too (Level 3 uses them)
  */
 
 import { fileURLToPath } from "node:url";
@@ -64,6 +66,13 @@ async function main() {
   if (process.env.CAUSEWAY_THREE_LOCAL) {
     const body = await readFile(process.env.CAUSEWAY_THREE_LOCAL);
     await page.route("**/three.module.js", (route) => route.fulfill({ body, contentType: "text/javascript" }));
+    // Level 3's add-ons (loaders, post-processing) come from the same package:
+    // CAUSEWAY_THREE_LOCAL is <package>/build/three.module.js.
+    const pkg = path.resolve(path.dirname(process.env.CAUSEWAY_THREE_LOCAL), "..");
+    await page.route("**/three@0.160.0/examples/jsm/**", (route) => {
+      const rel = new URL(route.request().url()).pathname.replace(/^.*\/three@0\.160\.0\//, "");
+      route.fulfill({ path: path.join(pkg, rel), contentType: "text/javascript" });
+    });
   }
   const bot = await readFile(path.join(HERE, "checks/bot.js"), "utf8");
 

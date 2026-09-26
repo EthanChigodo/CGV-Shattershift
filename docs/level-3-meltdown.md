@@ -1,12 +1,13 @@
 # Level design sheet - Level 3: The Meltdown
 
 Owner: Level 3 workstream
-Status: **Phase A (the escape) and Phase B (the roof) are both built** and play end to end in the standalone preview. Integration into `main.js` is pending (the same stage Level 2 reached before its integration). Supersedes the "Inverted Core" gravity/boss concept in `project-brief.md` §5; see "Relationship to the project brief".
+Status: **Phase A (the escape) and Phase B (the roof) are both built, and Level 3 is integrated into the game** (`main.js`): finishing Level 2 fades into it, and it ends on the game's own end screen. It also runs on its own in the preview. Supersedes the "Inverted Core" gravity/boss concept in `project-brief.md` §5 (that prototype has been removed from `main.js`); see "Relationship to the project brief".
 
-**Run it:** from the repo root, `python -m http.server 4173`, then open `http://localhost:4173/preview/meltdown.html` in Chrome, pick a patient and click to start. Hard-refresh (`Ctrl+Shift+R`) if you have opened it before. `?roof` in the URL (or `P` in game) skips straight to Phase B.
+**Run it:** from the repo root, `python -m http.server 4173`, then open `http://localhost:4173/` (the full game - press `3` during a run to jump straight to Level 3) or `http://localhost:4173/preview/meltdown.html` (Level 3 on its own: pick a patient and click to start; `?roof` in the URL or `P` in game skips to Phase B, `R` restarts). Hard-refresh (`Ctrl+Shift+R`) if you have opened it before. The character is chosen on the game's start screen (**Play as**) or the preview's.
 
 **Controls, Phase A:** `A`/`D` lane - hold left mouse to fire (it overheats) - `SPACE`/`W` jump, or mash it at a fallen duct - `SHIFT`/`S` slide (in the air: slam down into it) - `C` camera (chase / first person / cinematic / orbit) - `B` bloom - `F` stats - `K` credits - `R` restart.
-**Controls, Phase B:** `WASD` move - mouse aim, hold left mouse to fire - `SPACE` dodge.
+**Controls, Phase B:** `WASD` move - mouse aim, hold left mouse to fire - `SPACE` dodge (or, with the helicopter waiting, jump for the ladder).
+In the full game `Esc` pauses as everywhere else, and `R` (restart) and `P` (skip to the roof) are preview-only - `P` is the game's photo mode, which Level 3 does not support.
 
 **Check it:** `node tests/meltdown/run.js` (see "Testing").
 
@@ -33,6 +34,16 @@ You regain consciousness mid-collapse: sirens, smoke alarms, the building coming
 ## 3. Phase A - the escape (as built)
 
 ![Recovery ward](images/meltdown-ward.jpg)
+
+### The lifts (placeholders)
+
+Level 3 opens with the player **stepping out of a freight lift** - it jolts to a stop, the cabin light stutters, the doors open on the burning ward and you run out - and Phase A ends with the player **running into another lift**: it is waiting with its doors open, you run in and turn round, the doors close with the fire right behind you, it goes up, black. Phase B opens on the **roof's lift housing**: the doors open and you walk out onto the roof.
+
+These are **placeholders**: a teammate is building the real elevator and its cutscenes. Everything to replace is in one place:
+
+- `src/levels/meltdown/elevator.js` - `createLift()` builds the lift (door surround, sliding leaves, cabin, floor indicator) and returns `setDoors` / `setLight` / `setIndicator` / `dispose`. Swap the model and keep that API.
+- The cutscenes are data, like the roof endings: `MeltdownLevel.beginArrival()` / `updateArrival()` and `beginDeparture()` / `updateDeparture()`, and `RoofLevel.beginArrival()` / `_updateArrival()`, return where the camera is and looks, where the player is and what they are doing, a fade and a shake; `game.js` applies them. Restage by rewriting those timelines.
+- Events at each step - `lift-arrived`, `lift-open`, `lift-exit`, `lift-close`, `lift-depart` (Phase A) and `lift-open`, `arrived` (roof) - for sound and for triggering a real cutscene.
 
 ### Layout
 
@@ -112,7 +123,7 @@ Every obstacle is placed as a **pattern** that forces a decision (a single hazar
 - **Jumps** rise under normal gravity and fall under heavier gravity - snappier, same 1.5 m apex the colliders are tuned for. **Input is buffered** (0.16 s): a jump pressed just before landing still happens; slide pressed in the air **slams** you down into the slide. A jump cancels a slide.
 - **Chase camera** is a spring (it glides through the 90-degree turns instead of cutting the corner), pulls back a little with speed, widens its FOV from 72 to ~79 degrees flat out, dips on hard landings, and leans a touch into lane changes. First person gets a stride bob and a swaying viewmodel. All of it is skipped or scaled down under reduced motion.
 
-### Player rules (host-side, in the preview)
+### Player rules (host-side, in `game.js`)
 
 | | Value |
 | --- | --- |
@@ -139,11 +150,11 @@ Only balls and vitality are persistent on screen. Heat shows on the launcher its
 
 ![The roof](images/meltdown-roof.jpg)
 
-Through the roof door the screen fades to black, the corridor is hidden, the roof comes up (its shaders compiled while the screen is black) and you walk out of the stair hut. Vitality carries over with a +25 refill; balls carry over.
+The lift doors close, the screen goes black, the corridor is hidden, the roof comes up (its shaders compiled while the screen is black), and the doors of the roof's lift housing open - you walk out onto the roof. Nothing on the roof starts until you are out. Vitality carries over with a +25 refill; balls carry over.
 
 ### Setup
 
-A helipad rooftop at night (`src/levels/meltdown/roof.js`), 32 x 32 m. Parapets north and south; the **east and west parapets have collapsed** - a painted warning line, rubble on the lip, and fire climbing the facade below, flames licking over the edge. Cover: four AC units, a water tank, vents, the stair hut you came out of, and the machine room. Three ball sacks. Around you, the city is lit below in the smoke, under a sky shader (orange at the horizon from the fires, drifting smoke, a few stars).
+A helipad rooftop at night (`src/levels/meltdown/roof.js`), 32 x 32 m. Parapets north and south; the **east and west parapets have collapsed** - a painted warning line, rubble on the lip, and fire climbing the facade below, flames licking over the edge. Cover: four AC units, a water tank, vents, the lift housing you came out of, and the machine room. Three ball sacks. Around you, the city is lit below in the smoke, under a sky shader (orange at the horizon from the fires, drifting smoke, a few stars).
 
 ### Enemies
 
@@ -187,6 +198,8 @@ Cutscenes are letterboxed and scripted: the level returns where the camera is an
 ## 5. Audio (as built)
 
 Everything is synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`) - no sample files, nothing to credit, and every bed reacts to game state.
+
+**Team decision pending:** the rest of the game has no sound (audio is another member's workstream). Level 3 keeps its own in the integrated game; `MELTDOWN_AUDIO = false` in `main.js` silences it (the game runs a no-op stand-in instead).
 
 | Cue | Behaviour |
 | --- | --- |
@@ -235,6 +248,8 @@ What did it: corridor dressing baked into 40 m chunks (one mesh per material per
 
 ## 8. Testing
 
+The full game's Level 1 harness (`tests/causeway/run.js`) drives `index.html`, so it also covers `main.js` loading Level 3's modules (offline, its `CAUSEWAY_THREE_LOCAL` now serves the add-ons from the same package too).
+
 `tests/meltdown/run.js` (Playwright + headless Chromium; `--shots` regenerates the screenshots in this doc). Three checks:
 
 - **route** - builds the level and steps it along all 952 m: every beat, hall, sign, fall, warp and completion event fires once, every patient lurches, the dark beat is dark (and nothing else is).
@@ -259,6 +274,6 @@ Where jsDelivr is unreachable, point `MELTDOWN_THREE_DIR` at an unpacked `three@
 ## 10. Still to do
 
 - **Credits:** fill in source and licence for the four **TODO** rows in `docs/credits.md` (ventilation kit, Javelin, alarm light, geothermal factory) and confirm the Poly Haven rows.
-- **Integration** into `main.js` - see `docs/level-3-handoff.md` §7.
+- **The real lifts and their cutscenes** (a teammate) - see "The lifts (placeholders)" in §3.
 - **Playtest and balance pass.**
 - Spatial audio.

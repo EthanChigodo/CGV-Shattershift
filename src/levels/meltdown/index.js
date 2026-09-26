@@ -18,6 +18,11 @@
  *   TURN left
  *   BEAT C  STAIRWELL ASCENT      records archive -> boiler hall    (tier 3)
  *
+ * It starts with the player stepping out of a freight lift (arriving from
+ * Level 2) and ends with them running into another one, up to the roof -
+ * placeholder lifts and cutscenes, see elevator.js (`arrivalCutscene`,
+ * `departureCutscene`).
+ *
  * The experiment's warp takes the building's power out, so the beat after it
  * is dark: mains lights are dead, smoke hangs low, and the launcher's beam
  * and glowing balls are the player's light (host-side - see flashlight.js).
@@ -49,6 +54,10 @@ import { createFireMaterials, createFire } from "./fire.js";
 import { buildHall, bakeStatic, bakeFilled, HALL_THEMES } from "./halls.js";
 import { SmokeBank } from "./smoke.js";
 import { loadMeltdownAssets, fillAssetSlots } from "./assets.js";
+import { createLift } from "./elevator.js";
+
+const _liftCam = new THREE.Vector3();
+const _liftLook = new THREE.Vector3();
 
 const TURN_RADIUS = 9;
 const QUARTER = Math.PI / 2;
@@ -228,6 +237,7 @@ export class MeltdownLevel {
     this._buildBeatCorridor();
     this._buildBeatBlackout();
     this._buildBeatStairwell();
+    this._buildLifts();
     this._buildPatterns();
     this._buildCorridorDressing();
     this._buildSigns();
@@ -704,7 +714,7 @@ export class MeltdownLevel {
     return piece;
   }
 
-  /** BEAT C - STAIRWELL ASCENT. Everything at once; ends at the roof door. */
+  /** BEAT C - STAIRWELL ASCENT. Everything at once; ends at the lift to the roof. */
   _buildBeatStairwell() {
     const base = BEATS.find((b) => b.key === "stairwell").start;
     const L = BEAT_LENGTHS.stairwell;
@@ -718,8 +728,143 @@ export class MeltdownLevel {
     this._falling(this.kit.ceilingChunk({ seed: 7 }), at(0.58), -3.2, "chunk");
     this._falling(this.kit.airDuct({ mode: "blocker", halfWidth: hw }), at(0.87), 0, "duct");
     this._pickup(this.kit.sack({ hp: 3, spheres: 7 }), at(0.91), 3.2, 0.4);
-    // The roof-access door: reinforced glass, the last thing between you and air.
-    this._hazard(this.kit.glassPane({ lanes: LANES, hp: 3 }), at(0.97), 0);
+    // Reinforced glass, the last thing between you and the lift up.
+    this._hazard(this.kit.glassPane({ lanes: LANES, hp: 3 }), at(0.94), 0);
+  }
+
+  /**
+   * The lifts: the one the player arrives in, behind the start of the route,
+   * and the one at the end that takes them to the roof. Placeholders (see
+   * elevator.js) set into walls that close off both ends of the corridor.
+   */
+  _buildLifts() {
+    const wall = { wallHalfWidth: CORRIDOR_HALF + 0.4, wallHeight: CORRIDOR_HEIGHT + 0.6 };
+    this.startLift = this._add(this.groups.shell, createLift(this.kit, { ...wall, label: "B2" }), 0, 0);
+    this.endLift = this._add(this.groups.shell, createLift(this.kit, { ...wall, cabinAhead: true, label: "R" }), this.route.totalLength, 0);
+    this.startLift.userData.lift.setLight(1);
+    this.endLift.userData.lift.setLight(1);
+    // Keep patterns clear of the doors at both ends.
+    this._mark(4);
+    this._mark(this.route.totalLength - 4);
+  }
+
+  /**
+   * The start of the level as a cutscene: the lift jolts to a stop, the
+   * doors open on the burning ward, the player runs out and the camera
+   * drops in behind them. Returns the same shape as the roof's cutscenes -
+   * camera, look target, player position/yaw/action - for the host to apply;
+   * call `updateArrival(dt)` each frame until `done`. PLACEHOLDER staging.
+   */
+  beginArrival() {
+    this._arrival = { t: 0, events: new Set() };
+    this.startLift.userData.lift.setDoors(0);
+    this.cutscene = this._newCutscene("arrival");
+    this.updateArrival(0);
+    return this.cutscene;
+  }
+
+  updateArrival(dt) {
+    const a = this._arrival;
+    const out = this.cutscene;
+    if (!a || !out) return null;
+    a.t += dt;
+    const t = a.t;
+    const smooth = THREE.MathUtils.smoothstep;
+    const lift = this.startLift;
+    const api = lift.userData.lift;
+    const once = (name, at) => {
+      if (t >= at && !a.events.has(name)) {
+        a.events.add(name);
+        this.events.emit(name, { position: lift.position.clone() });
+      }
+    };
+    once("lift-arrived", 0.35);
+    once("lift-open", 1.1);
+    api.setLight(t < 0.35 ? 1 : t < 1.0 ? (Math.sin(t * 47) > -0.2 ? 0.9 : 0.15) : 1);
+    api.setDoors((t - 1.1) / 1.0);
+    out.shake = t > 0.35 && t < 0.6 ? 0.5 : 0;
+
+    // Run out: from the middle of the cabin to the doorway, speeding up.
+    const u = THREE.MathUtils.clamp((t - 1.8) / 1.1, 0, 1);
+    const start = api.cabinCentre.z * 0.7;
+    lift.localToWorld(out.player.set(0, 0, start * (1 - u * u)));
+    out.playerYaw = lift.rotation.y;
+    out.action = u > 0 && u < 1 ? "run" : "stand";
+    out.speed = u * 7.5;
+
+    // From over the shoulder in the cabin to the chase camera's spot.
+    const settle = smooth(t, 1.9, 2.9);
+    lift.localToWorld(out.camera.set(1.5, 2.3, start + 3.2).lerp(_liftCam.set(0, 2.8, 6.4), settle));
+    lift.localToWorld(out.look.set(0, 1.6, -6).lerp(_liftLook.set(0, 1.6, -12), settle));
+    if (u >= 1) {
+      out.done = true;
+      this._arrival = null;
+      this.events.emit("lift-exit", {});
+      this._startLiftClose = 0;
+    }
+    return out;
+  }
+
+  /**
+   * The end of Phase A as a cutscene: run into the lift, turn round, the
+   * doors close with the fire right behind you, the lift goes up, fade.
+   * `fire` is where the host should hold the fire front; `fade` is 0..1.
+   */
+  beginDeparture(fromCamera) {
+    this._departure = { t: 0, events: new Set(), from: fromCamera.clone() };
+    this.cutscene = this._newCutscene("departure");
+    this.updateDeparture(0);
+    return this.cutscene;
+  }
+
+  updateDeparture(dt) {
+    const a = this._departure;
+    const out = this.cutscene;
+    if (!a || !out) return null;
+    a.t += dt;
+    const t = a.t;
+    const smooth = THREE.MathUtils.smoothstep;
+    const lift = this.endLift;
+    const api = lift.userData.lift;
+    const once = (name, at) => {
+      if (t >= at && !a.events.has(name)) {
+        a.events.add(name);
+        this.events.emit(name, { position: lift.position.clone() });
+      }
+    };
+    // Into the cabin (the cabin is ahead: local -Z), slowing down...
+    const u = THREE.MathUtils.clamp(t / 0.9, 0, 1);
+    const inside = api.cabinCentre.z * 0.85;
+    lift.localToWorld(out.player.set(0, 0, 2 + (inside - 2) * (1 - (1 - u) * (1 - u))));
+    // ...and round to face the doors.
+    out.playerYaw = lift.rotation.y + Math.PI * smooth(t, 0.8, 1.4);
+    out.action = u < 1 ? "run" : "stand";
+    out.speed = (1 - u) * 9;
+    once("lift-close", 1.5);
+    api.setDoors(1 - (t - 1.5) / 1.1);
+    once("lift-depart", 2.8);
+    api.setLight(t > 2.8 && t < 3.1 ? 0.3 : 1);
+    out.shake = t > 2.8 && t < 3.2 ? 0.35 : 0;
+
+    // The camera stops short of the doors and watches them close.
+    const settle = smooth(t, 0, 1.2);
+    lift.localToWorld(_liftCam.set(1.6, 2.1, 8.6));
+    out.camera.copy(a.from).lerp(_liftCam, settle);
+    lift.localToWorld(out.look.set(0, 1.7, -2.5));
+    out.fire = this.route.totalLength - 30 + 17 * smooth(t, 0, 2.6);
+    out.fade = smooth(t, 2.9, 3.5);
+    if (t >= 3.6) {
+      out.done = true;
+      this._departure = null;
+    }
+    return out;
+  }
+
+  _newCutscene(kind) {
+    return {
+      kind, camera: new THREE.Vector3(), look: new THREE.Vector3(), player: new THREE.Vector3(),
+      playerYaw: 0, action: "stand", speed: 0, hold: 1, reachUp: 0, shake: 0, fade: 0, fire: null, done: false,
+    };
   }
 
   /** Fire below both outer lanes; a fallen duct bridges the centre. */
@@ -930,7 +1075,7 @@ export class MeltdownLevel {
     const chunks = new Map();
     for (const piece of [...this.groups.shell.children]) {
       if (piece.isInstancedMesh || piece.name.startsWith("Hall_")) continue;
-      if (typeof piece.userData.tick === "function") continue;
+      if (typeof piece.userData.tick === "function" || piece.userData.lift) continue;
       const distance = piece.userData.routeDistance;
       if (distance === undefined) continue;
       const key = Math.floor(distance / CHUNK);
@@ -1396,6 +1541,14 @@ export class MeltdownLevel {
     this.lights.playerLight.intensity *= 0.35 * (1 - darkness * 0.72);
     if (darkness > 0.01) this.lights.playerLight.color.lerp(this._spill, darkness * 0.8);
 
+    // The lift at the end is waiting with its doors open; the one you came
+    // out of shuts behind you.
+    if (!this._departure) this.endLift.userData.lift.setDoors((distance - (this.route.totalLength - 70)) / 12);
+    if (this._startLiftClose !== undefined && this._startLiftClose < 1) {
+      this._startLiftClose = Math.min(1, this._startLiftClose + dt / 1.4);
+      this.startLift.userData.lift.setDoors(1 - this._startLiftClose);
+    }
+
     if (!this.state.complete && distance >= this.route.totalLength - 2) {
       this.state.complete = true;
       this.events.emit("complete", {});
@@ -1418,6 +1571,8 @@ export class MeltdownLevel {
       if (object.isPoints && object.geometry) object.geometry.dispose();
     });
     for (const hall of this.groups.shell.children) hall.userData.dispose?.();
+    this.startLift?.userData.dispose?.();
+    this.endLift?.userData.dispose?.();
     this.lights.dispose();
     this.ambience.userData.dispose?.();
     this.kit.dispose();
