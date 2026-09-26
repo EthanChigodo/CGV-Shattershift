@@ -1,6 +1,21 @@
 # Credits and asset register
 
-Documentation set item 6. Every external resource, library, technique and tool used in the project, with its source, licence, modifications, and where it is used. Add to this file whenever anything external enters the repository.
+Documentation set item 6, per `CONTRIBUTING.md`: every external resource,
+library, technique, and tool used in the project, with its source, licence,
+modifications, and where it is used. Add to this file whenever anything
+external enters the repository.
+
+Levels 1 and 2 use no external assets - all geometry is Three.js primitives
+and all textures are drawn at runtime. Level 3 is the exception: it uses
+external models, converted and listed below (`assets/meltdown/`; conversion
+steps in `tools/assets/README.md`).
+
+> **Action needed before submission:** the four rows marked **TODO** in the
+> Level 3 models table came from downloads whose source site and licence
+> can't be read from the files. Whoever downloaded them must fill in the
+> source URL and licence, and confirm the licence allows use in a university
+> project. The Poly Haven rows should also be confirmed against the actual
+> download pages.
 
 ---
 
@@ -8,22 +23,14 @@ Documentation set item 6. Every external resource, library, technique and tool u
 
 | Asset | Creator | Source | Licence | Modifications | Used in |
 | --- | --- | --- | --- | --- | --- |
-| Three.js r160 | Three.js authors | https://threejs.org (loaded from jsDelivr) | MIT | None | Whole game, imported only through `src/three.js`; Level 3 also uses the examples/jsm add-ons (GLTFLoader, EffectComposer, UnrealBloomPass, OutputPass, ShaderPass, RoomEnvironment, BufferGeometryUtils, SkeletonUtils) through `src/three-addons.js` |
+| Three.js r160 | Three.js authors | https://threejs.org (loaded from jsDelivr) | MIT | None | Whole game, imported only through `src/three.js` (core) and `src/three-addons.js` (GLTFLoader, EffectComposer, UnrealBloomPass, OutputPass, ShaderPass, RoomEnvironment, BufferGeometryUtils, SkeletonUtils) |
 | Playwright (dev only, not shipped) | Microsoft | https://playwright.dev | Apache 2.0 | None | `tests/` harnesses |
 
-## 2. Models, textures, sounds
+## 2. Level 3 models
 
-**Levels 1 and 2: none.** All geometry is built from Three.js primitives, and all textures are drawn at runtime (`src/levels/causeway/textures.js`, `src/levels/foundry/textures.js`). There are no audio files.
-
-**Level 3** uses the models below, all in `assets/meltdown/` (conversion steps in `tools/assets/README.md`). Its own sound is synthesized live (no files).
-
-> **Action needed before submission:** the four rows marked **TODO** came from
-> downloads whose source site and licence can't be read from the files. Whoever
-> downloaded them must fill in the source URL and licence, and confirm the
-> licence allows use in a university project. The Poly Haven rows should also
-> be confirmed against the actual download pages.
-
-### Level 3 - props and machinery
+Every external resource used by Level 3, per `CONTRIBUTING.md`: creator,
+source, licence, modifications, and where it is used. Lives in
+`assets/meltdown/`; conversion steps are in `tools/assets/README.md`.
 
 | Asset (file) | Creator / source | Licence | Modifications | Used in |
 | --- | --- | --- | --- | --- |
@@ -40,7 +47,7 @@ Documentation set item 6. Every external resource, library, technique and tool u
 | Alarm light (`alarm_light.glb`) | **TODO** - downloaded as `alarm-light.zip` (`Bec-Alarma-Rosu-High-Poly.fbx`) | **TODO** | FBX -> .glb, decimated to 3k tris | Rotating alarm beacons |
 | Geothermal steam factory - pipes and ring (`industrial_pipes.glb`, `experiment_ring.glb`) | **TODO** - downloaded as `46-geothermal-steam-factory_blender.zip` | **TODO** | Two objects extracted from the scene; pipe emission disabled at load | Hall pipe walls; the experiment ring |
 
-### Level 3 - characters, weapons, and vehicles (Sketchfab, CC-BY-4.0)
+### Characters, weapons, and vehicles (Sketchfab, CC-BY-4.0)
 
 Author, source and licence below were read from each file's embedded glTF
 metadata. **CC-BY-4.0 requires attribution** (author, link, licence, and a note
@@ -69,19 +76,24 @@ the game uses are credited in game (press `K` in the preview; the data is
 yet.
 
 > **Worth a team decision:** three of these are fan recreations of commercial
-> games/franchises (Silent Hill 4, Rust, Skibidi Toilet). The uploader's CC-BY licence covers *their* model, not the
+> games/franchises (Silent Hill 4, Rust,
+> Skibidi Toilet). The uploader's CC-BY licence covers *their* model, not the
 > original character designs. Usually fine for a non-commercial university
 > project, but if the game is ever published, swap these for original or
 > generic models.
 
-### Level 3 - made in code
+### Not external (Level 3)
 
 - Fire and smoke: custom GLSL shaders (`src/levels/meltdown/fire.js`).
 - Audio: synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`) - no sample files.
 - All wall/floor/signage textures: generated on canvas at runtime (`src/levels/meltdown/textures.js`).
-- Sky, smoke ceiling, launcher beam, grading pass: custom GLSL (`src/levels/meltdown/roof.js`, `smoke.js`, `flashlight.js`, `post.js`).
+- Sky, smoke bank, launcher beam, grading pass: custom GLSL (`src/levels/meltdown/roof.js`, `smoke.js`, `flashlight.js`, `post.js`).
 
-## 3. Published techniques
+## 3. Models, textures, sounds (Levels 1 and 2)
+
+**None.** All geometry is built from Three.js primitives, and all textures are drawn at runtime (`src/levels/causeway/textures.js`, `src/levels/foundry/textures.js`). There are no audio files.
+
+## 4. Published techniques
 
 These are well-known graphics techniques, implemented in our own code. They are credited because the maths or the approach comes from published work.
 
@@ -97,14 +109,13 @@ These are well-known graphics techniques, implemented in our own code. They are 
 | Rodrigues' rotation formula | Standard mathematics | GPU shard physics |
 | Sobel filter for normal maps | Standard image processing | Both levels' textures |
 
-## 4. Tools and assistance
+## 5. Tools and assistance
 
 | Tool | Use | Note |
 | --- | --- | --- |
-| Claude (Anthropic AI assistant) | Helped write Level 1's code, shaders, tests and documentation | **Declare this according to the course's policy on AI assistance.** Every team member presenting Level 1 should be able to explain the code; `docs/shaders-explained.md` is written for that purpose |
-| Claude (Anthropic AI assistant) | Helped write Level 3's code, shaders, asset pipeline, tests and documentation | Same declaration applies. `docs/level-3-meltdown.md` explains the systems |
+| Claude (Anthropic AI assistant) | Helped write Level 1's and Level 3's code, shaders, tests and documentation | **Declare this according to the course's policy on AI assistance.** Every team member presenting a level should be able to explain the code; `docs/shaders-explained.md` and `docs/level-3-handoff.md` are written for that purpose |
 
-## 5. Reference games (inspiration only, no assets used)
+## 6. Reference games (inspiration only, no assets used)
 
 | Game | Developer | What we took |
 | --- | --- | --- |
