@@ -216,7 +216,7 @@ The character models arrive in four conventions (Z-up and Y-up, metres and centi
 
 The helicopter (`helicopter.js`) is a Hind gunship model: its cannon, missiles and rocket pods are left out, the airframe is merged into one mesh, and the main and tail rotors are split out onto pivots so they spin.
 
-`scientist_colossus.glb` is **not used**: its textures carry Nazi insignia (a swastika and eagle on the helmet, Balkenkreuze, swastikas on the ID badge and boots). See `docs/credits.md`.
+A third supplied scientist model was removed from the repository: its textures carried Nazi insignia (it is a Wolfenstein asset). Don't re-add it.
 
 ---
 

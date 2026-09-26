@@ -52,7 +52,6 @@ these files contain animations.
 | `player_female.glb` | scp_scientist_female_2.glb | 1024, 12000 | No |
 | `player_male.glb` | scp_scientist_male_2.glb | 1024, 12000 | No |
 | `scientist_radioman.glb` | scientist_radiomanskibidi_toilet.glb | 1024, 12000 | Yes |
-| `scientist_colossus.glb` | scientist_-_wolf._new_colossus.glb | **512**, 10000 | Yes |
 | `scientist_rust.glb` | rust_scientist_blue.glb | 1024, 10000 | Yes |
 | `patient.glb` | patient_-_silent_hill_4.glb | 1024, 8000 | Yes |
 | `helicopter.glb` | hind_attack_helicopter.glb | 1024, 8000 | No |
@@ -65,8 +64,7 @@ these files contain animations.
 ~238 MB of source became ~22 MB. Units vary wildly between files (the
 characters are in centimetres, the helicopter is ~1,900 units long, the
 steampunk weapon ~3.5 cm) - that is fine, `fillAssetSlots` scales everything by
-measured size. Rigged meshes were not decimated (it can tear skin weights), so
-`scientist_colossus.glb` is still ~65k triangles.
+measured size. Rigged meshes were not decimated (it can tear skin weights).
 
 Not used: the supplied smoke `.glb` (3,459 separately animated planes - about
 3,500 draw calls a frame; the level's fire/smoke are a custom shader instead).

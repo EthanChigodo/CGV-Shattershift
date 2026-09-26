@@ -204,9 +204,6 @@ shared code). When someone does it:
 - **`docs/credits.md`**: 4 rows (ventilation kit, Javelin, alarm light,
   geothermal factory) still need source URL and licence from whoever
   downloaded them. Poly Haven rows want a confirm.
-- **`scientist_colossus.glb`** is in the repo but unused: Nazi insignia on
-  its textures (helmet, badge, boots). Recommend deleting it from the repo -
-  not done without the user's say-so.
 - The helicopter is a Soviet Hind (red stars on the textures; weapons are
   stripped at load). If that reads wrong for an FBI rescue, the stars could
   be painted out on an atlas the same way the scrubs are recoloured.

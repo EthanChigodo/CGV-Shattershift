@@ -81,11 +81,7 @@ export const MELTDOWN_ASSETS = {
   patient: "patient.glb",
 };
 
-/**
- * Characters, and the profile each is prepared with. `scientist_colossus.glb`
- * is deliberately absent: its textures carry Nazi insignia (helmet, badge,
- * boots) - see docs/credits.md.
- */
+/** Characters, and the profile each is prepared with. */
 export const CHARACTER_ASSETS = {
   patient: { file: "patient.glb", profile: "patient" },
   playerFemale: { file: "player_female.glb", profile: "playerFemale" },
