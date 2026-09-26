@@ -9,25 +9,57 @@ This repository contains the working concept and playable Three.js prototype for
 
 The player automatically travels through a failing glass tower, throws limited energy spheres, avoids obstacles, and uses elevator transitions to reach three distinct sectors:
 
-1. The Glass Causeway - first-person shooting and breakable routes.
-2. The Shifting Foundry - third-person chase camera and moving machinery.
-3. The Inverted Core - orbit camera, vertical gravity lanes, rotating rings, and the reactor finale.
+1. **The Glass Causeway** - first-person aiming and resource management in a burning lab. *Playable.*
+2. **The Shifting Foundry** - third-person chase camera and moving machinery. *Playable.*
+3. **The Inverted Core** - orbit camera, vertical gravity lanes, rotating rings, and the reactor finale. *Prototype.*
+
+## Story
+
+Ascension Tower, level 212. A resonance experiment failed at dawn and its subject did not die. You are **Subject 07**: glass shatters at your touch, and you can throw that resonance as spheres of energy. Dr. Vale has armed the tower's demolition charges to bury what she made. Escape the lab across the Causeway, ride the Calibration Lift up through the Foundry, and reach the control core before the tower comes down.
 
 ## Controls
 
-- `A` / `D` or left / right arrows: change lane.
-- Mouse movement: aim.
-- Left mouse button: throw a sphere.
-- `C`: switch between first-person and chase cameras where applicable.
-- `W` / `S` or up / down arrows: move between gravity heights in Level 3.
-- `Esc` or the `MENU` button: pause and open settings mid-run.
-- `1`, `2`, `3`: jump directly to a level during a project demonstration.
+| Input | Action |
+| --- | --- |
+| Mouse | Aim - the crosshair follows the mouse; aim assist (Settings) helps with small targets |
+| Left mouse | Throw a sphere |
+| Right mouse (hold) | Focus - slow time to aim (Level 1) |
+| `A` / `D` or left / right | Change lane |
+| `W` / `S` or up / down | Sprint / brake (Level 1), gravity height (Level 3) |
+| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock (Level 1) |
+| `Space` / `Shift` | Jump / slide |
+| `C` | First-person / chase camera |
+| `M` | Minimap |
+| `V` / VIEW button | Choose which HUD panels show |
+| `H` | Hide the whole HUD |
+| `P` | Photo mode (filters, save photo, save 360° panorama) |
+| `F` | Performance overlay |
+| `Esc` | Pause and settings |
+| `R` | Run again from the end screen |
+| `1` `2` `3` `4` | Demo: restart Level 1, jump to Level 2, jump to Level 3, start Endless lab |
 
-## Intro and settings
+## Level 1 - The Glass Causeway
 
-Selecting **Start Run** plays a short scripted launch sequence (a sweeping establishing shot of the Causeway with staged caption text) before handing control to the player, rather than cutting straight into gameplay. The title screen itself idles on a slow cinematic drift through the opening corridor instead of a static shot.
+A research wing 212 floors up, burning at 03:47 in the morning, in three beats: the **containment ward**, the **skybridge** (which collapses behind you), and the mirrored **resonance atrium**, ending with a three-lock gate and the Calibration Lift that goes down to Level 2.
 
-A **SETTINGS** screen is reachable from the title screen, and the same panel doubles as the pause menu (`Esc` or the `MENU` button during a run). It exposes master volume, aim sensitivity, and a **Reduced motion & camera shake** toggle for players sensitive to camera movement or impact shake; choices persist locally between sessions.
+- **Glass everywhere, and all of it real:** ray-traced glass with Fresnel reflection, dispersion and Beer-Lambert absorption; cracks form around the exact point you hit; panes fracture into GPU-simulated shards.
+- **Fire, water, smoke:** ray-marched volumetric fire; shoot the glass bulb of a sprinkler to flood it; smoke veils the screen and burns your lungs until you break a smoke vent (the round covers with a glowing cyan ring on the walls).
+- **Five case files:** gold holograms standing in columns of light - run through one or shoot it to piece together what happened.
+- **From sedated to running for your life:** the run starts slow and blurred as Subject 07 staggers out of the pod, and builds to full pace as the adrenaline kicks in; explosions scare you into a sprint.
+- **The building coming down:** telegraphed ceiling collapses, a distant tower falling, the skybridge collapsing behind you, the atrium detonating below the lift.
+- **Tools:** three sphere types, four serum power-ups (prism split, thermal sight, kinetic shield, overdrive), sprint/brake, bullet-time focus.
+- **Extras:** orthographic minimap, field manual, level preview flythrough, three missions per run, five collectible case files, photo mode with 360° export, and an **Endless lab** mode of randomised chunks (unlocked by clearing Level 1).
+- **Graphics pipeline:** custom multi-pass post-processing (screen-space refraction, bloom, FXAA, heat haze, thermal vision, power-up looks), dynamic ray-marched sky, reflection probe, sun shadows, wet reflective floors, and Auto quality with dynamic resolution for lab machines.
+
+See [`docs/level-1-causeway.md`](./docs/level-1-causeway.md) and [`docs/shaders-explained.md`](./docs/shaders-explained.md).
+
+## Menus and settings
+
+The title screen idles on a slow drift through the ward. From it you can start a run, start Endless lab, preview the level, read the field manual, open settings, or replay the briefing. **Start Run** plays a 2.5-second wake-up (the pod shatters, the camera drops into first person); any key or click skips it.
+
+The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play.
+
+**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. There is no sound in this build; audio is a separate task.
 
 ## Play locally
 
@@ -53,12 +85,28 @@ Stop the server with `Ctrl+C`.
 
 ## Demo shortcuts
 
-After selecting **Start Run**, press `1`, `2`, or `3` to jump directly to a level. These shortcuts are included for project demonstrations and development testing.
+During a run, press `1`, `2`, `3` or `4` (see Controls). These shortcuts are included for project demonstrations and development testing.
 
 ## Project documents
 
 - [`docs/project-brief.md`](./docs/project-brief.md) - editable concept, level plan, rubric mapping, architecture, risks, and Sprint 1 backlog.
 - [`docs/project-guide.pdf`](./docs/project-guide.pdf) - formatted PDF version of the project guide.
+- [`docs/level-1-causeway.md`](./docs/level-1-causeway.md) - Level 1 design sheet: story, map, mechanics, cameras, integration contract, performance budget.
+- [`docs/shaders-explained.md`](./docs/shaders-explained.md) - every Level 1 shader explained stage by stage, with a demonstration script.
+- [`docs/level-transition.md`](./docs/level-transition.md) - how the Calibration Lift hands over to Level 2 and what changed in `main.js`.
+- [`docs/test-plan-level-1.md`](./docs/test-plan-level-1.md) - automated checks, bug log, manual test checklist.
+- [`docs/level-2-foundry.md`](./docs/level-2-foundry.md) and [`docs/test-plan-level-2.md`](./docs/test-plan-level-2.md) - Level 2.
+- [`docs/credits.md`](./docs/credits.md) - credits and asset register.
+- [`docs/pull-request-level-1.md`](./docs/pull-request-level-1.md) - pull request description and push steps for Level 1.
+
+## Automated checks
+
+```text
+npm install --no-save playwright
+npx playwright install chromium
+node tests/causeway/run.js
+node tests/foundry/run.js
+```
 
 ## Team workflow
 
@@ -86,13 +134,13 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-This is a concept prototype for discussing the game direction and demonstrating the planned mechanics. It is not yet the final assessed game. Models, detailed sound, a full menu/options system, production balancing, accessibility settings, and final performance work still need to be developed by the group.
+Levels 1 and 2 are playable and connected by the Calibration Lift. Level 3 is still the concept prototype. Sound, music and voice are not part of this build (another team member owns audio; the levels emit events for it to hook into). Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 
 - Three.js and WebGL for rendering
 - JavaScript for gameplay and state
 - HTML/CSS for the interface
-- Custom GLSL vertex and fragment shaders for the tower energy effect
+- Custom GLSL vertex and fragment shaders: ray-traced glass, ray-marched fire, clouds and SDF serums, GPU shard physics and particles, and a custom post-processing pipeline
 
 No Unity or other game engine is used.

@@ -1,9 +1,21 @@
 # Credits and asset register
 
-Every external resource in the project, per `CONTRIBUTING.md`: creator, source,
-licence, modifications, and where it is used. Levels 1 and 2 use no external
-assets (all procedural). Everything below is used by Level 3 and lives in
-`assets/meltdown/`; conversion steps are in `tools/assets/README.md`.
+Documentation set item 6. Every external resource, library, technique and tool used in the project, with its source, licence, modifications, and where it is used. Add to this file whenever anything external enters the repository.
+
+---
+
+## 1. Libraries
+
+| Asset | Creator | Source | Licence | Modifications | Used in |
+| --- | --- | --- | --- | --- | --- |
+| Three.js r160 | Three.js authors | https://threejs.org (loaded from jsDelivr) | MIT | None | Whole game, imported only through `src/three.js`; Level 3 also uses the examples/jsm add-ons (GLTFLoader, EffectComposer, UnrealBloomPass, OutputPass, ShaderPass, RoomEnvironment, BufferGeometryUtils, SkeletonUtils) through `src/three-addons.js` |
+| Playwright (dev only, not shipped) | Microsoft | https://playwright.dev | Apache 2.0 | None | `tests/` harnesses |
+
+## 2. Models, textures, sounds
+
+**Levels 1 and 2: none.** All geometry is built from Three.js primitives, and all textures are drawn at runtime (`src/levels/causeway/textures.js`, `src/levels/foundry/textures.js`). There are no audio files.
+
+**Level 3** uses the models below, all in `assets/meltdown/` (conversion steps in `tools/assets/README.md`). Its own sound is synthesized live (no files).
 
 > **Action needed before submission:** the four rows marked **TODO** came from
 > downloads whose source site and licence can't be read from the files. Whoever
@@ -11,7 +23,7 @@ assets (all procedural). Everything below is used by Level 3 and lives in
 > licence allows use in a university project. The Poly Haven rows should also
 > be confirmed against the actual download pages.
 
-## Models
+### Level 3 - props and machinery
 
 | Asset (file) | Creator / source | Licence | Modifications | Used in |
 | --- | --- | --- | --- | --- |
@@ -28,14 +40,13 @@ assets (all procedural). Everything below is used by Level 3 and lives in
 | Alarm light (`alarm_light.glb`) | **TODO** - downloaded as `alarm-light.zip` (`Bec-Alarma-Rosu-High-Poly.fbx`) | **TODO** | FBX -> .glb, decimated to 3k tris | Rotating alarm beacons |
 | Geothermal steam factory - pipes and ring (`industrial_pipes.glb`, `experiment_ring.glb`) | **TODO** - downloaded as `46-geothermal-steam-factory_blender.zip` | **TODO** | Two objects extracted from the scene; pipe emission disabled at load | Hall pipe walls; the experiment ring |
 
-## Characters, weapons, and vehicles (Sketchfab, CC-BY-4.0)
+### Level 3 - characters, weapons, and vehicles (Sketchfab, CC-BY-4.0)
 
 Author, source and licence below were read from each file's embedded glTF
 metadata. **CC-BY-4.0 requires attribution** (author, link, licence, and a note
 of changes) wherever the work is shown - so these must also appear in the
 game's credits screen, not only here. All were converted with
-`tools/assets/convert.py` (textures cut to 1024 px, 512 px for the Colossus
-scientist; rigs preserved) and renamed as shown.
+`tools/assets/convert.py` (textures cut to 1024 px; rigs preserved) and renamed as shown.
 
 | File (renamed from) | Title / author / source | Modifications | Planned use |
 | --- | --- | --- | --- |
@@ -57,17 +68,45 @@ the game uses are credited in game (press `K` in the preview; the data is
 `dead_end_weapons.glb`, `weapon_set.glb` and `dragon_flail.glb` are not used
 yet.
 
-> **Worth a team decision:** four of these are fan recreations of commercial
-> games/franchises (Silent Hill 4, Wolfenstein: The New Colossus, Rust,
-> Skibidi Toilet). The uploader's CC-BY licence covers *their* model, not the
+> **Worth a team decision:** three of these are fan recreations of commercial
+> games/franchises (Silent Hill 4, Rust, Skibidi Toilet). The uploader's CC-BY licence covers *their* model, not the
 > original character designs. Usually fine for a non-commercial university
 > project, but if the game is ever published, swap these for original or
 > generic models.
 
-## Not external
+### Level 3 - made in code
 
 - Fire and smoke: custom GLSL shaders (`src/levels/meltdown/fire.js`).
 - Audio: synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`) - no sample files.
 - All wall/floor/signage textures: generated on canvas at runtime (`src/levels/meltdown/textures.js`).
 - Sky, smoke ceiling, launcher beam, grading pass: custom GLSL (`src/levels/meltdown/roof.js`, `smoke.js`, `flashlight.js`, `post.js`).
-- Three.js r160 (MIT) and its examples/jsm add-ons (GLTFLoader, EffectComposer, UnrealBloomPass, OutputPass, ShaderPass, RoomEnvironment, BufferGeometryUtils, SkeletonUtils), loaded from jsDelivr.
+
+## 3. Published techniques
+
+These are well-known graphics techniques, implemented in our own code. They are credited because the maths or the approach comes from published work.
+
+| Technique | Source | Where |
+| --- | --- | --- |
+| Fresnel approximation | C. Schlick, "An Inexpensive BRDF Model for Physically-based Rendering", 1994 | Glass, shards |
+| Snell's law refraction, Beer-Lambert absorption | Standard optics | Glass |
+| Ray/box intersection (slab method) | T. Kay and J. Kajiya, "Ray Tracing Complex Scenes", SIGGRAPH 1986 | Fire |
+| Smooth minimum, SDF normals by tetrahedral differences, 3D value noise from a 2D texture | Inigo Quilez, articles at https://iquilezles.org | Serum capsule, noise lattice |
+| FXAA | T. Lottes, NVIDIA, 2009 | Composite pass |
+| ACES filmic tone-mapping curve (fitted) | K. Narkowicz, 2016 | 360° capture |
+| Gaussian blur with linear sampling | D. Rákos, 2010 | Bloom |
+| Rodrigues' rotation formula | Standard mathematics | GPU shard physics |
+| Sobel filter for normal maps | Standard image processing | Both levels' textures |
+
+## 4. Tools and assistance
+
+| Tool | Use | Note |
+| --- | --- | --- |
+| Claude (Anthropic AI assistant) | Helped write Level 1's code, shaders, tests and documentation | **Declare this according to the course's policy on AI assistance.** Every team member presenting Level 1 should be able to explain the code; `docs/shaders-explained.md` is written for that purpose |
+| Claude (Anthropic AI assistant) | Helped write Level 3's code, shaders, asset pipeline, tests and documentation | Same declaration applies. `docs/level-3-meltdown.md` explains the systems |
+
+## 5. Reference games (inspiration only, no assets used)
+
+| Game | Developer | What we took |
+| --- | --- | --- |
+| Smash Hit | Mediocre AB | Throwing spheres, glass destruction, limited ammunition |
+| Temple Run 2 | Imangi Studios | Chase camera, lanes, obstacle anticipation |
