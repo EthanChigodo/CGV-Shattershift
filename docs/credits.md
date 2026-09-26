@@ -91,7 +91,12 @@ yet.
 
 ## 3. Models, textures, sounds (Levels 1 and 2)
 
-**None.** All geometry is built from Three.js primitives, and all textures are drawn at runtime (`src/levels/causeway/textures.js`, `src/levels/foundry/textures.js`). There are no audio files.
+All geometry is built from Three.js primitives, and all textures are drawn at runtime (`src/levels/causeway/textures.js`, `src/levels/foundry/textures.js`).
+
+Background music supplied to the project:
+
+- Menu / briefing: `852268__holizna__trap-melody-loop-5-ebmin-165-bpm.wav` — Holizna.
+- Level 1: `GalacticTemple.ogg` — source and licence details must be added by the asset supplier before release.
 
 ## 4. Published techniques
 
