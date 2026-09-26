@@ -8,6 +8,7 @@ import { Minimap } from "./src/fx/minimap.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
+import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -39,9 +40,7 @@ raycaster.layers.enableAll();
 const pointer = new THREE.Vector2();
 const lanes = [-3.2, 0, 3.2];
 const breakables = [];
-const structural = [];
 const RENDER_AHEAD = 95;
-const RENDER_BEHIND = 15;
 const projectiles = [];
 const shards = [];
 const obstacles = [];
@@ -57,7 +56,6 @@ let liftTimer = 0;
 let messageTimer = 0;
 let currentLevel = 1;
 let transitionTarget = 0;
-let heightLane = 0;
 let playerY = 0;
 let paused = false;
 let launchTimer = 0;
@@ -76,6 +74,8 @@ let sliding = 0;
  * staring at the level from outside it.
  */
 let snapCamera = true;
+/** Level 3 (src/levels/meltdown/game.js), built on the way into it. */
+let meltdown = null;
 
 
 const settingsDefaults = {
@@ -152,100 +152,13 @@ const sun = new THREE.DirectionalLight(0xffe4c4, 2.5);
 sun.position.set(-8, 16, 12);
 scene.add(sun);
 
-/* -------------------------------------------------------------------- */
-/* Shared route geometry (Level 3 runs on it)                            */
-/* -------------------------------------------------------------------- */
-// Level 1's old greybox panes, walls, and lift lived here. Level 1 is now
-// src/levels/causeway/, built in its own world space, so only the pieces
-// Level 3 still uses remain.
-
-const floorMaterial = new THREE.MeshPhysicalMaterial({ color: 0x4a2318, roughness: 0.25, metalness: 0.45, transparent: true, opacity: 0.72 });
-const slabGeo = new THREE.BoxGeometry(10.8, 0.2, 7.3);
-const slabEdgeGeo = new THREE.EdgesGeometry(slabGeo);
-const slabEdgeMat = new THREE.LineBasicMaterial({ color: 0xff7a3d, transparent: true, opacity: 0.32 });
-for (let z = 4; z > -438; z -= 8) {
-  const slab = new THREE.Mesh(slabGeo, floorMaterial);
-  slab.position.set(0, -0.2, z);
-  scene.add(slab); structural.push(slab);
-  const edge = new THREE.LineSegments(slabEdgeGeo, slabEdgeMat);
-  edge.position.copy(slab.position); scene.add(edge); structural.push(edge);
-}
+// Level 3's old prototype (the "Inverted Core": slabs, gravity rings, panes
+// and crystals along z = 0..-438, and the Level 2 -> 3 lift at z = -282)
+// was removed when the real Level 3 - The Meltdown - was integrated. It
+// lives in src/levels/meltdown/ with its own scene; see the MELTDOWN
+// INTEGRATION block below.
 
 const railMat = new THREE.MeshStandardMaterial({ color: 0x35241c, metalness: 0.75, roughness: 0.26 });
-for (const side of [-5.2, 5.2]) {
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 442), railMat);
-  rail.position.set(side, 1.1, -216); scene.add(rail);
-}
-
-const archGeo = new THREE.BoxGeometry(0.24, 6, 0.24);
-const archTopGeo = new THREE.BoxGeometry(10.4, .24, .24);
-for (let z = 0; z > -438; z -= 12) {
-  for (const x of [-5.1, 5.1]) { const p = new THREE.Mesh(archGeo, railMat); p.position.set(x, 2.8, z); scene.add(p); structural.push(p); }
-  const top = new THREE.Mesh(archTopGeo, railMat); top.position.set(0, 5.7, z); scene.add(top); structural.push(top);
-}
-
-const starGeo = new THREE.BufferGeometry();
-const starData = new Float32Array(900);
-for (let i = 0; i < starData.length; i += 3) { starData[i] = (Math.random() - .5) * 90; starData[i+1] = Math.random() * 40; starData[i+2] = -Math.random() * 210; }
-starGeo.setAttribute("position", new THREE.BufferAttribute(starData, 3));
-scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffcf9a, size: .08, transparent: true, opacity: .5 })));
-
-const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffb26b, transparent: true, opacity: .58, roughness: .06, metalness: .05, emissive: 0x4a1d0a, emissiveIntensity: .55 });
-const crystalMat = new THREE.MeshPhysicalMaterial({ color: 0xffb04a, roughness: .15, metalness: .1, emissive: 0xb35a10, emissiveIntensity: 1.2 });
-const hazardMat = new THREE.MeshStandardMaterial({ color: 0x8a2f2f, roughness: .28, metalness: .68, emissive: 0x4a0f0f, emissiveIntensity: .6 });
-
-const paneGeo = new THREE.BoxGeometry(2.25, 3.8, .18);
-const paneWideGeo = new THREE.BoxGeometry(2.8, 3.8, .18);
-const crystalGeo = new THREE.OctahedronGeometry(.65, 0);
-const hazardGeo = new THREE.BoxGeometry(2.4, 2.7, 1);
-let buildLevel = 3;
-
-function addPane(x, z, wide = false) {
-  const mesh = new THREE.Mesh(wide ? paneWideGeo : paneGeo, glassMat.clone());
-  mesh.position.set(x, 1.9, z); mesh.userData = { kind: "pane", alive: true, points: 150, level: buildLevel };
-  scene.add(mesh); breakables.push(mesh); obstacles.push(mesh); return mesh;
-}
-
-function addCrystal(x, y, z) {
-  const mesh = new THREE.Mesh(crystalGeo, crystalMat.clone());
-  mesh.position.set(x, y, z); mesh.rotation.z = Math.PI / 4; mesh.userData = { kind: "crystal", alive: true, points: 250, level: buildLevel };
-  scene.add(mesh); breakables.push(mesh); return mesh;
-}
-
-function addHazard(x, z) {
-  const mesh = new THREE.Mesh(hazardGeo, hazardMat);
-  mesh.position.set(x, 1.35, z); mesh.userData = { kind: "hazard", hit: false, level: buildLevel };
-  scene.add(mesh); obstacles.push(mesh);
-  return mesh;
-}
-
-function addLift(z) {
-  const group = new THREE.Group(); group.position.z = z;
-  const liftFloor = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, .4, 8), railMat); liftFloor.position.y = .05; group.add(liftFloor);
-  for (const x of [-4.3, 4.3]) { const wall = new THREE.Mesh(new THREE.BoxGeometry(.22, 6.8, 8.4), glassMat); wall.position.set(x, 3.4, 0); group.add(wall); }
-  const gate = new THREE.Mesh(new THREE.BoxGeometry(6.5, 5.5, .24), glassMat); gate.position.set(0, 2.75, -3.8); group.add(gate);
-  scene.add(group); structural.push(group); return group;
-}
-// The Level 2 -> 3 lift. The Level 1 -> 2 lift is part of the Causeway.
-addLift(-282);
-
-const energyUniforms = { uTime: { value: 0 }, uLift: { value: 0 } };
-const energyMat = new THREE.ShaderMaterial({
-  uniforms: energyUniforms, transparent: true, blending: THREE.AdditiveBlending,
-  vertexShader: `varying vec2 vUv; varying float vWave; uniform float uTime; void main(){vUv=uv; vec3 p=position; vWave=sin(p.y*3.0+uTime*4.0)*0.06; p.x+=vWave; gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
-  fragmentShader: `varying vec2 vUv; varying float vWave; uniform float uTime; uniform float uLift; void main(){float band=0.45+0.45*sin(vUv.y*28.0-uTime*5.0); float edge=pow(abs(vUv.x-.5)*2.0,3.0); vec3 col=mix(vec3(.45,.12,.04),vec3(1.0,.62,.25),band+uLift*.25); gl_FragColor=vec4(col,(.18+band*.42+edge*.25));}`
-});
-for (const z of [-282, -430]) { const core = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 7, 20, 1, true), energyMat); core.position.set(0, 3.5, z); scene.add(core); structural.push(core); }
-
-// Level 3: fractured rings, vertical lanes, and a reactor suspended in an open storm sky.
-const ringMat = new THREE.MeshStandardMaterial({ color: 0x1c1512, metalness: .92, roughness: .18, emissive: 0x5c2410, emissiveIntensity: .75 });
-const gravityRings = [];
-for (let z = -302; z > -426; z -= 18) {
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(6.2, .22, 10, 42), ringMat); ring.position.set(0, 3, z); ring.userData.spin = (z % 36 ? 1 : -1) * (.22 + Math.random() * .22); scene.add(ring); gravityRings.push(ring);
-}
-addCrystal(0, 1.2, -310); addPane(-3.2, -323); addHazard(3.2, -336);
-addCrystal(3.2, 3.4, -349); addPane(0, -362, true); addHazard(-3.2, -375);
-addCrystal(-3.2, 5.1, -388); addPane(3.2, -401); addPane(0, -414, true);
 
 function makeSmokeTexture() {
   const size = 128;
@@ -290,7 +203,7 @@ avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 function updateUI() {
   ui.level.textContent = `0${currentLevel} / 03`;
   ui.ammo.textContent = ammo; ui.health.textContent = Math.max(0, Math.round(health)); ui.score.textContent = String(Math.floor(score)).padStart(6, "0");
-  ui.camera.textContent = currentLevel === 3 ? "CORE ORBIT" : cameraThird ? "CHASE VIEW" : "FIRST PERSON";
+  ui.camera.textContent = currentLevel === 3 && meltdown ? meltdown.cameraModeName : cameraThird ? "CHASE VIEW" : "FIRST PERSON";
 }
 
 function showMessage(text) { ui.message.textContent = text; ui.message.classList.add("show"); messageTimer = 1.2; }
@@ -381,6 +294,7 @@ function setFoundryActive(active) {
   if (!foundry) return;
   foundry.root.visible = active;
   if (active) {
+    preloadMeltdown();
     foundryHud.show();
     foundryHud.setIntegrity(health);
     // The global sun and hemisphere are tuned for the causeway and wash the
@@ -528,12 +442,17 @@ function resolvedQuality() {
 
 function applyQuality() {
   const q = resolvedQuality();
-  const cap = q === "high" ? 1.5 : q === "medium" ? 1.25 : 1;
+  // Level 3 is fill-rate bound (measured): it always renders at ratio 1.
+  const cap = currentLevel === 3 ? 1 : q === "high" ? 1.5 : q === "medium" ? 1.25 : 1;
   renderer.setPixelRatio(Math.min(devicePixelRatio, cap));
   renderer.setSize(innerWidth, innerHeight);
   postfx.setQuality(q);
   postfx.setScale(q === "medium" ? 0.85 : 1);
   minimap.measure();
+  if (meltdown) {
+    meltdown.setBloom(q !== "low");
+    if (meltdown.visible) meltdown.syncRenderer();
+  }
 }
 
 function causewayDistance() {
@@ -824,7 +743,7 @@ function updateCausewayLift(dt) {
 function finishCausewayLift() {
   currentLevel = 2;
   state = "playing";
-  liftTimer = 0; playerY = 0; heightLane = 0; snapCamera = true;
+  liftTimer = 0; playerY = 0; snapCamera = true;
   health = 100; ammo += 4;
   lane = 1; playerX = 0;
   camera.fov = 68; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
@@ -1024,6 +943,130 @@ function refreshMenuProgress() {
   bits.push(`Missions ${p.completed.length}/13`);
   ui.progressLine.textContent = bits.join("   ");
   if (ui.briefing) ui.briefing.innerHTML = missions.active.map((m) => `<li class="${p.completed.includes(m.def.id) ? "done" : ""}">${m.def.text}</li>`).join("");
+}
+
+/* ==================================================================== */
+/* MELTDOWN INTEGRATION - Level 3                                        */
+/* ==================================================================== */
+
+/**
+ * Level 3 is a self-contained module with its own scene, camera,
+ * post-processing, HUD and input rules - src/levels/meltdown/game.js, the
+ * same module preview/meltdown.html runs on its own. This block builds it
+ * on the way into Level 3, forwards input to it, renders it instead of the
+ * main scene while it is up, and turns its result into this game's score
+ * and end screen. Level 3 opens and closes in lifts (placeholders a teammate
+ * is replacing - see src/levels/meltdown/elevator.js).
+ *
+ * Level 3 synthesises its own sound. The team removed sound from Levels 1
+ * and 2 (audio is its own workstream); set MELTDOWN_AUDIO to false to
+ * silence Level 3 as well.
+ */
+const MELTDOWN_AUDIO = true;
+const MELTDOWN_ASSET_BASE = new URL("./assets/meltdown/", import.meta.url).href;
+let meltdownEntering = false;
+
+function getMeltdown() {
+  if (meltdown) return meltdown;
+  meltdown = new MeltdownGame({
+    renderer,
+    assetBase: MELTDOWN_ASSET_BASE,
+    character: savedCharacter(),
+    audio: MELTDOWN_AUDIO,
+    reducedMotion: settings.reducedMotion,
+  });
+  meltdown.setBloom(resolvedQuality() !== "low");
+  meltdown.events.on("complete", (result) => finishMeltdown(true, result));
+  meltdown.events.on("failed", (result) => finishMeltdown(false, result));
+  return meltdown;
+}
+
+/** Start streaming Level 3's models early - called when Level 2 starts. */
+function preloadMeltdown() {
+  getMeltdown().preload();
+}
+
+/**
+ * Into Level 3: black, build it (models are usually in already - they load
+ * during Level 2 - and its shaders compile while the screen is black), then
+ * fade up inside the arrival lift and open the doors.
+ */
+async function enterMeltdown() {
+  if (meltdownEntering) return;
+  meltdownEntering = true;
+  const game = getMeltdown();
+  ui.fade.style.opacity = "1";
+  run.fadeOut = 0;
+  setFoundryActive(false);
+  // Free Level 2's GPU resources, as Level 1's are freed on the way into
+  // Level 2 (a demo jump back rebuilds it).
+  if (foundry) { foundryHud.unbind(); foundry.dispose(); foundry = null; }
+  currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
+  health = 100; shake = 0;
+  // Spheres left over from the foundry become a few extra balls.
+  const balls = MELTDOWN_START_BALLS + Math.min(8, Math.floor(ammo / 4));
+  applyQuality();
+  game.show();
+  updateUI();
+  try {
+    await game.load({ balls });
+  } finally {
+    meltdownEntering = false;
+  }
+  if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return; // quit while loading
+  state = "playing";
+  run.fadeOut = 1;
+  game.begin();
+}
+
+/** Out of Level 3 (restart, quit, demo jump): free it and give the renderer back. */
+function leaveMeltdown(nextLevel) {
+  meltdown?.unload();
+  meltdownEntering = false;
+  currentLevel = nextLevel;
+  applyQuality();
+}
+
+function updateMeltdownFrame(dt, time) {
+  if (!meltdown) return;
+  meltdown.update(dt, time);
+  // Mirror Level 3's numbers into the game's own (pause screen, end screen).
+  if (meltdown.level && state === "playing") {
+    health = meltdown.runner.vitality;
+    ammo = meltdown.runner.balls;
+  }
+  document.body.classList.toggle("aiming", state === "playing" && !photoActive && !document.querySelector(".screen.active"));
+}
+
+function meltdownScore(s, escaped) {
+  let points = s.breaks * 100 + s.downs * 150 + s.falls * 250;
+  if (escaped) points += 5000 + Math.round(s.vitality) * 20 + s.balls * 25 + (s.ending === "victory" ? 2500 : 0);
+  return points;
+}
+
+const MELTDOWN_ENDINGS = {
+  EXTRACTED: "You cleared the roof and climbed out on the rescue ladder. Ascension Tower burns behind you.",
+  "BARELY OUT": "You jumped for the ladder with them still on the roof, and it held. Ascension Tower burns behind you.",
+  "CAUGHT BY THE FIRE": "The fire caught up. Shoot what blocks you, grab ball sacks and power-up vials, and do not stop.",
+  "THE BUILDING WENT UP": "The building went up before you reached the lift. The evac signs count down - keep moving.",
+  "THEY GOT YOU": "The roof was too much. Keep moving, dodge (SPACE) through their charges, and lure them off the open ledges.",
+  "LEFT BEHIND": "The helicopter could not wait. When it hangs off the east ledge, get to the edge and jump (SPACE) for the ladder.",
+};
+
+/** Level 3 finished: its numbers into the game's score, and the end screen. */
+function finishMeltdown(escaped, result) {
+  if (currentLevel !== 3 || state !== "playing") return;
+  const s = result.stats;
+  score += meltdownScore(s, escaped);
+  health = s.vitality;
+  ammo = s.balls;
+  updateUI();
+  endRun(escaped, null, {
+    eyebrow: escaped ? "RUN COMPLETE // ALL THREE SECTORS" : "RUN TERMINATED // SECTOR 03",
+    title: result.title,
+    text: MELTDOWN_ENDINGS[result.title],
+    stats: `${Math.round(s.time)} s in the Meltdown   ${s.breaks} broken   ${s.downs} downed   ${s.falls} over the edge   ${s.hits} hits taken`,
+  });
 }
 
 /* ==================================================================== */
@@ -1270,7 +1313,8 @@ function updateProjectiles(dt) {
 /* ==================================================================== */
 
 function resetStats(mode = causewayMode) {
-  ammo = START_SPHERES; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0; heightLane = 0;
+  if (currentLevel === 3 || meltdown?.visible) leaveMeltdown(1);
+  ammo = START_SPHERES; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0;
   cameraThird = false; liftTimer = 0; currentLevel = 1; transitionTarget = 0; shake = 0;
   jumpHeight = 0; jumpVelocity = 0; sliding = 0; combo = 1; comboTimer = 0; snapCamera = true;
   simTime = 0;
@@ -1366,11 +1410,11 @@ function shatter(target, hit = {}) {
   return result;
 }
 
-const sectorNames = { 1: "GLASS CAUSEWAY", 2: "SHIFTING FOUNDRY", 3: "INVERTED CORE" };
+const sectorNames = { 1: "GLASS CAUSEWAY", 2: "SHIFTING FOUNDRY", 3: "MELTDOWN" };
 const sectorBriefings = {
   1: "Sector one. The Glass Causeway. Break the glass before it breaks you.",
   2: "Sector two. The Shifting Foundry. The machinery will not stop for you.",
-  3: "Sector three. The Inverted Core. Gravity is only a suggestion here.",
+  3: "Sector three. The Meltdown. They are burning the evidence. Get to the roof.",
 };
 const failReasons = {
   fell: "The skybridge gave way beneath you. Sprint with W when the collapse closes in.",
@@ -1379,7 +1423,12 @@ const failReasons = {
   smoke: "The smoke was too thick. Break vent covers to clear the air.",
 };
 
-function endRun(won, reason = null) {
+/**
+ * @param {boolean} won
+ * @param {string} [reason]  key into failReasons
+ * @param {object} [detail]  overrides from the level: { eyebrow, title, text, stats }
+ */
+function endRun(won, reason = null, detail = null) {
   if (state === "ended") return;
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
   causewayHud.warning(null);
@@ -1389,6 +1438,12 @@ function endRun(won, reason = null) {
     ? "The Causeway, Foundry, and Inverted Core are stable. The tower holds."
     : failReasons[reason] ?? `Integrity failed in the ${sectorNames[currentLevel].toLowerCase()}. Shift lanes earlier and preserve your spheres.`;
   ui.endStats.textContent = "";
+  if (detail) {
+    if (detail.eyebrow) ui.endEyebrow.textContent = detail.eyebrow;
+    if (detail.title) ui.endTitle.textContent = detail.title;
+    if (detail.text) ui.endText.textContent = detail.text;
+    if (detail.stats) ui.endStats.textContent = detail.stats;
+  }
   if (currentLevel === 1 && causeway) {
     const distance = Math.max(0, Math.floor(causewayDistance()));
     const s = missionStats();
@@ -1408,11 +1463,20 @@ function demoJump(level) {
   if (state !== "playing") return;
   if (level === 1 || level === 4) { resetGame(level === 4 ? "endless" : "story"); return; }
   if (currentLevel === 1 && causeway) setCausewayActive(false);
-  currentLevel = level; playerY = 0; heightLane = 0; health = 100;
+  if (currentLevel === 3) leaveMeltdown(level);
+  if (level === 3) {
+    setFoundryActive(false);
+    showMessage("DEMO JUMP // LEVEL 3");
+    enterMeltdown();
+    return;
+  }
+  currentLevel = level; playerY = 0; health = 100;
   jumpHeight = 0; jumpVelocity = 0; sliding = 0; snapCamera = true;
   camera.fov = 68; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
-  if (level === 2) { runZ = FOUNDRY_ORIGIN_Z; cameraThird = true; setFoundryActive(true); }
-  if (level === 3) { runZ = -296; cameraThird = true; setFoundryActive(false); }
+  if (level === 2) {
+    if (!foundry) buildFoundry(); // freed on the way into Level 3
+    runZ = FOUNDRY_ORIGIN_Z; cameraThird = true; setFoundryActive(true);
+  }
   showMessage(`DEMO JUMP // LEVEL ${level}`); updateUI();
 }
 
@@ -1432,19 +1496,6 @@ function updateLaunch(dt, time) {
   }
 }
 
-function isLevelVisible(level) {
-  if (level === undefined) return true;
-  if (state === "lift") return level === currentLevel || level === transitionTarget;
-  return level === currentLevel;
-}
-
-function updateCulling() {
-  for (const mesh of structural) mesh.visible = isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
-  for (const ring of gravityRings) ring.visible = isLevelVisible(3) && ring.position.z <= runZ + RENDER_BEHIND && ring.position.z >= runZ - RENDER_AHEAD;
-  for (const mesh of breakables) mesh.visible = mesh.userData.alive && isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
-  for (const mesh of obstacles) if (mesh.userData.kind === "hazard") mesh.visible = isLevelVisible(mesh.userData.level) && mesh.position.z <= runZ + RENDER_BEHIND && mesh.position.z >= runZ - RENDER_AHEAD;
-}
-
 function clearPostLooks() {
   const u = postfx.uniforms;
   for (const key of ["uSmoke", "uDamage", "uHeat", "uThermal", "uOverdrive", "uPrism", "uFocus", "uSpeed", "uFlash", "uLens", "uPulse", "uSedation"]) u[key].value = 0;
@@ -1452,7 +1503,6 @@ function clearPostLooks() {
 }
 
 function updateGame(dt, time) {
-  energyUniforms.uTime.value = time;
   const inCauseway = currentLevel === 1 && causeway && causeway.root.visible;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch" || state === "preview");
   document.body.classList.toggle("paused", paused);
@@ -1469,13 +1519,12 @@ function updateGame(dt, time) {
   causewayHud.update(dt);
 
   avatar.position.set(playerX, playerY + jumpHeight, runZ + .5);
-  avatar.visible = cameraThird || currentLevel === 3 || state === "lift" || state === "launch" || photoActive;
+  avatar.visible = cameraThird || state === "lift" || state === "launch" || photoActive;
   // Blink through the mercy window after an impact.
   if ((foundryInvulnerable > 0 || run.invulnerable > 0) && Math.floor(time * 14) % 2 === 0 && !photoActive) avatar.visible = false;
   body.scale.y = sliding > 0 ? 0.55 : 1;
   body.rotation.z = Math.sin(time * 9) * .035;
   for (const crystal of breakables) if (crystal.userData.kind === "crystal" && crystal.userData.alive) crystal.rotation.y += dt * 1.8;
-  for (const ring of gravityRings) { ring.rotation.z += dt * ring.userData.spin; ring.rotation.x = Math.sin(time * .4 + ring.position.z) * .18; }
   if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
   if (run.fadeOut > 0) { run.fadeOut = Math.max(0, run.fadeOut - dt * 1.4); ui.fade.style.opacity = run.fadeOut.toFixed(3); }
   if (!inCauseway) clearPostLooks();
@@ -1495,6 +1544,8 @@ function updateGame(dt, time) {
   if (state === "preview") { updatePreview(dt, time); return; }
   if (state === "launch") { updateLaunch(dt, time); return; }
   if (paused) return;
+  // Level 3 runs its own world, camera and HUD (src/levels/meltdown/game.js).
+  if (currentLevel === 3) { updateMeltdownFrame(dt, time); return; }
 
   // Time dilation for Level 1: focus (bullet time) and hit-stop on big breaks.
   let simDt = dt;
@@ -1508,7 +1559,6 @@ function updateGame(dt, time) {
   } else run.timeScale = 1;
   simTime += simDt;
 
-  updateCulling();
   updateSmoke(dt, time);
 
   if (state === "playing") {
@@ -1527,50 +1577,29 @@ function updateGame(dt, time) {
 
     if (currentLevel === 1 && causeway) {
       updateCauseway(simDt, simTime);
-    } else {
-      const baseSpeed = currentLevel === 2 ? foundrySpeed() : 8.7;
-      runZ -= dt * baseSpeed * (currentLevel === 2 && foundrySlow > 0 ? 0.45 : 1);
-
-      // playerY is the lane height; the jump arc is added on top where it is
-      // used, so Level 3's gravity lanes and the jump do not fight each other.
-      const targetY = currentLevel === 3 ? [0, 2.1, 4.1][heightLane] : 0;
-      playerY += (targetY - playerY) * Math.min(1, dt * 6);
-      for (const item of obstacles) if (item.userData.mover) {
-        const m = item.userData.mover; item.position.x = m.base + Math.sin(time * m.speed + m.phase) * m.range;
-      }
-      // Level 3 uses the simple distance check below. Level 2 runs its own
-      // collision - the foundry's hazards are nested inside groups.
-      for (const item of currentLevel === 3 ? obstacles : []) {
-        const playerCentreY = playerY + 1.35;
-        if (!item.userData.hit && Math.abs(item.position.z - runZ) < .65 && Math.abs(item.position.x - playerX) < 1.3 && Math.abs(item.position.y - playerCentreY) < 2.1) {
-          item.userData.hit = true;
-          if (item.userData.kind === "pane" && item.userData.alive) { health -= 18; shatter(item); triggerShake(.22); }
-          if (item.userData.kind === "hazard") { health -= 30; showMessage("INTEGRITY DAMAGED"); triggerShake(.42); }
-          updateUI(); if (health <= 0) endRun(false);
-        }
-      }
-      if (currentLevel === 2) updateFoundry(dt, time);
+    } else if (currentLevel === 2) {
+      runZ -= dt * foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1);
+      // Level 2 runs its own collision - the foundry's hazards are nested
+      // inside groups.
+      updateFoundry(dt, time);
 
       // Level 2 exits on the foundry's own `complete` event - breaking the
       // extraction valve - rather than on a hard-coded z. If the player somehow
       // runs past the end, fall through to the lift anyway.
-      if (currentLevel === 2 && foundry && foundryDistance() > foundry.route.totalLength - 4) {
-        state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("GRAVITY LIFT // CORE");
+      if (foundry && foundryDistance() > foundry.route.totalLength - 4) {
+        state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("SERVICE LIFT // SECTOR 03");
       }
-      if (currentLevel === 3 && runZ < -422) { score += Math.max(0, ammo * 50 + health * 10); updateUI(); endRun(true); }
     }
   } else if (state === "lift" && transitionTarget === 2 && causeway) {
     causeway.update({ dt, time: simTime, distance: causewayDistance(), player: playerWorld(_playerPos), playing: false });
     updateCausewayLift(dt);
-  } else if (state === "lift") {
-    liftTimer += dt; energyUniforms.uLift.value = Math.min(1, liftTimer / 2);
-    avatar.position.y = Math.min(6, liftTimer * 1.3);
-    if (liftTimer > 3.6) {
-      currentLevel = transitionTarget; state = "playing"; liftTimer = 0; playerY = 0; heightLane = 0; snapCamera = true;
-      health = 100; ammo += 4;
-      if (currentLevel === 3) { runZ = -296; cameraThird = true; setFoundryActive(false); showMessage("LEVEL 3 // INVERTED CORE"); }
-      updateUI();
-    }
+  } else if (state === "lift" && transitionTarget === 3) {
+    // Level 2 -> 3: fade to black; Level 3 opens with the player stepping
+    // out of its own lift (see enterMeltdown). A teammate's elevator
+    // cutscene can replace this fade.
+    liftTimer += dt;
+    ui.fade.style.opacity = Math.min(1, liftTimer / 1.1).toFixed(3);
+    if (liftTimer > 1.2) enterMeltdown();
   } else if (state === "ended" && inCauseway) {
     // Keep the world alive behind the end screen.
     causeway.update({ dt, time: simTime, distance: causewayDistance(), player: playerWorld(_playerPos), playing: false });
@@ -1585,15 +1614,7 @@ function updateGame(dt, time) {
   } else if (!(state === "lift" && transitionTarget === 2 && causewayLive)) {
     const forward = new THREE.Vector3(0, 1.25, runZ - 12);
     const desired = cameraThird ? new THREE.Vector3(playerX, 4.2, runZ + 8.5) : new THREE.Vector3(playerX, 1.8, runZ + .7);
-    if (currentLevel === 3 && state === "playing") {
-      desired.set(playerX + Math.sin(time * .55) * 6.5, playerY + 4.6 + Math.cos(time * .45), runZ + 7.2);
-      forward.set(playerX, playerY + 1.5, runZ - 11);
-      camera.up.lerp(new THREE.Vector3(Math.sin(runZ * .045) * .55, 1, 0).normalize(), Math.min(1, dt * 2));
-    } else camera.up.lerp(new THREE.Vector3(0, 1, 0), Math.min(1, dt * 4));
-    if (state === "lift") {
-      const liftZ = -282;
-      desired.set(Math.sin(liftTimer * .9) * 8, 4 + liftTimer * .5, liftZ + 8 + Math.cos(liftTimer * .9) * 4); forward.set(0, 3.5 + liftTimer, liftZ);
-    }
+    camera.up.lerp(new THREE.Vector3(0, 1, 0), Math.min(1, dt * 4));
     if (snapCamera) { camera.position.copy(desired); snapCamera = false; }
     else camera.position.lerp(desired, 1 - Math.exp(-dt * 7));
     camera.lookAt(forward);
@@ -1631,7 +1652,7 @@ function updatePerformance(rawDt) {
   if (perf.acc >= 0.5) { perf.fps = Math.round(perf.frames / perf.acc); perf.frames = 0; perf.acc = 0; }
 
   // Dynamic resolution, then an automatic drop to low quality if needed.
-  if (settings.quality === "auto" && state === "playing" && !paused && document.visibilityState === "visible") {
+  if (settings.quality === "auto" && state === "playing" && currentLevel !== 3 && !paused && document.visibilityState === "visible") {
     perf.slowFor = perf.ema > 21 ? perf.slowFor + rawDt : 0;
     perf.fastFor = perf.ema < 14 ? perf.fastFor + rawDt : 0;
     // Degrade in order of how little it shows: first work nobody sees (the
@@ -1665,6 +1686,7 @@ function updatePerformance(rawDt) {
 }
 
 function renderFrame() {
+  if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
   postfx.render(scene, camera, glass);
   if (glass && settings.hud.minimap && causewayHud.visible && !photoActive && state === "playing") {
@@ -1704,6 +1726,7 @@ function closeSettings() {
 function openPause() {
   if (state !== "playing" && state !== "lift") return;
   paused = true;  run.focusing = false;
+  if (currentLevel === 3) meltdown?.setPaused(true);
   ui.pauseLevel.textContent = `0${currentLevel} / 03`;
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
   ui.pauseAmmo.textContent = ammo;
@@ -1717,6 +1740,7 @@ function openPause() {
 function closePause() {
   ui.pause.classList.remove("active");
   paused = false;
+  if (currentLevel === 3) meltdown?.setPaused(false);
 }
 
 function togglePhoto() {
@@ -1727,7 +1751,7 @@ function togglePhoto() {
     return;
   }
   if (state !== "playing" && state !== "lift") return;
-  if (paused) return;
+  if (paused || currentLevel === 3) return;
   photoActive = true;
   run.focusing = false;
   photo.enter(camera, avatar.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
@@ -1799,6 +1823,26 @@ $("#storyBeginButton").addEventListener("click", startStory);
 $("#storySkipToMenuButton").addEventListener("click", finishStory);
 $("#replayStoryButton").addEventListener("click", startStory);
 
+// Character choice: who you play as (Level 3 shows them; saved for next time).
+const characterButtons = [...document.querySelectorAll("[data-character]")];
+function showCharacterChoice() {
+  const chosen = savedCharacter();
+  for (const button of characterButtons) {
+    const on = button.dataset.character === chosen;
+    button.classList.toggle("picked", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+}
+for (const button of characterButtons) {
+  button.addEventListener("click", () => {
+    if (!CHARACTERS[button.dataset.character]) return;
+    saveCharacter(button.dataset.character);
+    meltdown?.setCharacter(button.dataset.character);
+    showCharacterChoice();
+  });
+}
+showCharacterChoice();
+
 $("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
 ui.endlessButton.addEventListener("click", () => { if (!ui.endlessButton.disabled) startEndless(); });
 $("#previewButton").addEventListener("click", startPreview);
@@ -1823,7 +1867,7 @@ addEventListener("click", (event) => {
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
 ui.aimAssistToggle.addEventListener("change", (event) => { settings.aimAssist = event.target.checked; saveSettings(); });
-ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); });
+ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); meltdown?.setReducedMotion(settings.reducedMotion); });
 ui.qualitySelect.addEventListener("change", (event) => {
   settings.quality = event.target.value;
   autoLow = false;
@@ -1864,6 +1908,7 @@ addEventListener("pointermove", (event) => {
   pointer.x = THREE.MathUtils.clamp(((event.clientX / innerWidth) * 2 - 1) * factor, -1, 1);
   pointer.y = THREE.MathUtils.clamp((-(event.clientY / innerHeight) * 2 + 1) * factor, -1, 1);
   placeReticle();
+  meltdown?.onPointerMove(event.clientX, event.clientY);
 });
 
 /**
@@ -1877,11 +1922,18 @@ function placeReticle() {
 }
 addEventListener("pointerdown", (event) => {
   if (state === "launch" && causeway) { causeway.skipIntro(); return; }
-  if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu")) return;
+  if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
+  if (currentLevel === 3) {
+    if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
+    return;
+  }
   if (event.button === 0) fire();
   if (event.button === 2 && state === "playing" && currentLevel === 1) run.focusing = true;
 });
-addEventListener("pointerup", (event) => { if (event.button === 2) run.focusing = false; });
+addEventListener("pointerup", (event) => {
+  if (event.button === 2) run.focusing = false;
+  meltdown?.onPointerUp(event);
+});
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 addEventListener("wheel", (event) => {
   if (photoActive || state !== "playing" || currentLevel !== 1 || paused) return;
@@ -1901,6 +1953,9 @@ addEventListener("keydown", (event) => {
     return;
   }
   if (state === "launch" && causeway) { causeway.skipIntro(); return; }
+  // Level 3 has its own controls; the keys it uses are not also acted on
+  // here (Esc, the demo jumps, H and V still are).
+  if (currentLevel === 3 && meltdown && state === "playing" && !paused && meltdown.onKeyDown(event)) return;
   if (event.code === "KeyP") { togglePhoto(); return; }
   if (photoActive) return;
   if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
@@ -1921,11 +1976,9 @@ addEventListener("keydown", (event) => {
   if (event.code === "KeyA" || event.code === "ArrowLeft") lane = Math.max(0, lane - 1);
   if (event.code === "KeyD" || event.code === "ArrowRight") lane = Math.min(2, lane + 1);
   if (event.code === "KeyW" || event.code === "ArrowUp") {
-    if (currentLevel === 3) heightLane = Math.min(2, heightLane + 1);
     if (currentLevel === 1) { keysDown.add("up"); event.preventDefault(); }
   }
   if (event.code === "KeyS" || event.code === "ArrowDown") {
-    if (currentLevel === 3) heightLane = Math.max(0, heightLane - 1);
     if (currentLevel === 1) { keysDown.add("down"); event.preventDefault(); }
   }
   if ((event.code === "KeyQ" || event.code === "KeyE") && state === "playing" && currentLevel === 1 && !event.repeat) {
@@ -1935,16 +1988,18 @@ addEventListener("keydown", (event) => {
   if (event.code === "KeyC" && (state === "playing" || state === "lift")) { cameraThird = !cameraThird; updateUI(); showMessage(cameraThird ? "CHASE CAMERA" : "FIRST-PERSON CAMERA"); }
 });
 addEventListener("keyup", (event) => {
+  meltdown?.onKeyUp(event);
   if (event.code === "KeyW" || event.code === "ArrowUp") keysDown.delete("up");
   if (event.code === "KeyS" || event.code === "ArrowDown") keysDown.delete("down");
 });
-addEventListener("blur", () => { keysDown.clear(); run.focusing = false; });
+addEventListener("blur", () => { keysDown.clear(); run.focusing = false; meltdown?.onBlur(); });
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   postfx.resize();
   minimap.measure();
   placeReticle();
+  meltdown?.resize(innerWidth, innerHeight);
 });
 
 applyQuality();
@@ -1970,6 +2025,8 @@ globalThis.__dbg = {
   get combo() { return combo; },
   get foundry() { return foundry; },
   get causeway() { return causeway; },
+  get meltdown() { return meltdown; },
+  enterMeltdown,
   get run() { return run; },
   causewayPace,
   resolveAim: () => resolveAim(aliveTargets(), currentLevel === 1 && causeway ? causeway.solids : []),

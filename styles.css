@@ -249,3 +249,13 @@ body.aiming button, body.aiming .view-menu, body.aiming .view-menu * { cursor: p
 /* Aim assist lock: a ring around the crosshair. */
 .reticle.assist::after { box-shadow: none; }
 .reticle.assist { outline: 1.5px solid var(--accent-hot); outline-offset: 4px; border-radius: 50%; }
+
+/* ---- Character choice on the start screen (used by Level 3) ----------- */
+.subject-pick { display: flex; align-items: center; gap: 10px; margin: 18px 0 0; flex-wrap: wrap; }
+.subject-pick span { color: var(--text-dimmer); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.subject-button {
+  min-width: 96px; padding: 8px 14px; border: 1px solid var(--accent-border); border-radius: 4px;
+  background: rgba(18, 10, 8, .6); color: var(--text-dim); font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .08em; cursor: pointer;
+}
+.subject-button:hover { color: var(--text); }
+.subject-button.picked { border-color: #6fe0d4; color: #ffffff; box-shadow: 0 0 16px rgba(63, 200, 186, .35); }

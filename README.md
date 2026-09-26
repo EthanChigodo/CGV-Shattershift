@@ -11,7 +11,7 @@ The player automatically travels through a failing glass tower, throws limited e
 
 1. **The Glass Causeway** - first-person aiming and resource management in a burning lab. *Playable.*
 2. **The Shifting Foundry** - third-person chase camera and moving machinery. *Playable.*
-3. **The Inverted Core** - orbit camera, vertical gravity lanes, rotating rings, and the reactor finale. *Prototype.*
+3. **The Meltdown** - out of a lift into a burning lab being torched to destroy the evidence, a failed ball launcher as your only tool, a stretch where the power dies, then a lift to the roof, a fight, and a rescue helicopter. *Playable.*
 
 ## Story
 
@@ -25,7 +25,7 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | Left mouse | Throw a sphere |
 | Right mouse (hold) | Focus - slow time to aim (Level 1) |
 | `A` / `D` or left / right | Change lane |
-| `W` / `S` or up / down | Sprint / brake (Level 1), gravity height (Level 3) |
+| `W` / `S` or up / down | Sprint / brake (Level 1); jump / slide (Level 3) |
 | `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock (Level 1) |
 | `Space` / `Shift` | Jump / slide |
 | `C` | First-person / chase camera |
@@ -37,6 +37,7 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | `Esc` | Pause and settings |
 | `R` | Run again from the end screen |
 | `1` `2` `3` `4` | Demo: restart Level 1, jump to Level 2, jump to Level 3, start Endless lab |
+| Level 3 | Hold left mouse to fire (it overheats); mash `Space` at a fallen duct; on the roof `WASD` moves and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available in Level 3 |
 
 ## Level 1 - The Glass Causeway
 
@@ -57,7 +58,7 @@ See [`docs/level-1-causeway.md`](./docs/level-1-causeway.md) and [`docs/shaders-
 
 The title screen idles on a slow drift through the ward. From it you can start a run, start Endless lab, preview the level, read the field manual, open settings, or replay the briefing. **Start Run** plays a 2.5-second wake-up (the pod shatters, the camera drops into first person); any key or click skips it.
 
-The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play.
+The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play, and **Play as** chooses your character (female or male patient; Level 3 shows them, and the choice is remembered).
 
 **Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. There is no sound in this build; audio is a separate task.
 
@@ -134,7 +135,7 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-Levels 1 and 2 are playable and connected by the Calibration Lift. Level 3 is still the concept prototype. Sound, music and voice are not part of this build (another team member owns audio; the levels emit events for it to hook into). Frame rates still need to be measured on lab hardware with the `F` overlay.
+Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 to 2, and a fade from the end of Level 2 into Level 3, which opens with the player stepping out of a lift (Level 3's lifts and their cutscenes are placeholders a teammate is replacing - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Sound, music and voice are not part of this build (another team member owns audio; the levels emit events for it to hook into). Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 
