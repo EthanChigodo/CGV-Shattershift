@@ -37,6 +37,7 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | `Esc` | Pause and settings |
 | `R` | Run again from the end screen |
 | `1` `2` `3` `4` | Demo: restart Level 1, jump to Level 2, jump to Level 3, start Endless lab |
+| `5` | Demo: ride the Gravity Fault lift (Level 2 to 3) |
 | Level 3 | Hold left mouse to fire (it overheats); mash `Space` at a fallen duct; on the roof `WASD` moves and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available in Level 3 |
 
 ## Level 1 - The Glass Causeway
@@ -86,7 +87,7 @@ Stop the server with `Ctrl+C`.
 
 ## Demo shortcuts
 
-During a run, press `1`, `2`, `3` or `4` (see Controls). These shortcuts are included for project demonstrations and development testing.
+During a run, press `1`, `2`, `3`, `4` or `5` (see Controls). These shortcuts are included for project demonstrations and development testing.
 
 ## Project documents
 
@@ -97,6 +98,7 @@ During a run, press `1`, `2`, `3` or `4` (see Controls). These shortcuts are inc
 - [`docs/level-transition.md`](./docs/level-transition.md) - how the Calibration Lift hands over to Level 2 and what changed in `main.js`.
 - [`docs/test-plan-level-1.md`](./docs/test-plan-level-1.md) - automated checks, bug log, manual test checklist.
 - [`docs/level-2-foundry.md`](./docs/level-2-foundry.md) and [`docs/test-plan-level-2.md`](./docs/test-plan-level-2.md) - Level 2.
+- [`docs/elevators.md`](./docs/elevators.md) - the elevators: the Gravity Fault lift (Level 2 to 3), how it plugs into `main.js`, and the plan for Level 3's lifts.
 - [`docs/credits.md`](./docs/credits.md) - credits and asset register.
 - [`docs/pull-request-level-1.md`](./docs/pull-request-level-1.md) - pull request description and push steps for Level 1.
 
@@ -107,6 +109,7 @@ npm install --no-save playwright
 npx playwright install chromium
 node tests/causeway/run.js
 node tests/foundry/run.js
+node tests/elevators/run.js
 ```
 
 ## Team workflow
@@ -131,11 +134,11 @@ Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before making changes. In short: cre
 
 ### Department LAMP server
 
-Upload the contents of the demo archive so that `index.html` is at the top level. The project uses relative local paths. It currently loads Three.js from an HTTPS CDN, so the marking browser must have Internet access. Before the final submission, the group should place a local copy of `three.module.js` in the project and update the import in `main.js` if fully offline operation is required.
+Upload the contents of the demo archive so that `index.html` is at the top level. The project uses relative local paths, and Three.js r160 is kept in the repository (`lib/three/`) rather than loaded from a CDN, so the game runs offline and on networks that block jsDelivr (the lab machines do).
 
 ## Current status
 
-Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 to 2, and a fade from the end of Level 2 into Level 3, which opens with the player stepping out of a lift (Level 3's lifts and their cutscenes are placeholders a teammate is replacing - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Sound, music and voice are not part of this build (another team member owns audio; the levels emit events for it to hook into). Frame rates still need to be measured on lab hardware with the `F` overlay.
+Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 to 2, and the Gravity Fault lift from Level 2 to 3, which rides up the outside of the tower and hands over to Level 3 opening with the lift arriving (see [`docs/elevators.md`](./docs/elevators.md)). The Gravity Fault's gameplay (weak gravity, the three stabilisers, the diagnostic camera) and Level 3's own lifts are in progress. Sound, music and voice are not part of this build (another team member owns audio; the levels emit events for it to hook into). Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 
