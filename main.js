@@ -10,6 +10,7 @@ import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
 import { MusicManager } from "./src/audio/music-manager.js";
+import { Level1Audio } from "./src/audio/level1-audio.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -98,8 +99,13 @@ function saveSettings() {
 // by Play Again while its soundtrack and playback position remain untouched.
 // Level 3's existing synthesized effects remain independent.
 const music = new MusicManager();
+const level1Audio = new Level1Audio(() => music.context);
 music.showMenu();
-const unlockMusic = () => { music.unlock(); };
+const unlockMusic = async () => {
+  const ready = music.unlock(); // Creates the shared context synchronously.
+  level1Audio.unlock();
+  if (await ready) level1Audio.unlock();
+};
 addEventListener("pointerdown", unlockMusic, { passive: true });
 addEventListener("keydown", unlockMusic);
 
@@ -489,7 +495,9 @@ function wireCausewayEvents(level) {
   on("vent", () => causewayHud.hint("Vent clear: the smoke is thinning"));
   on("extinguish", (p) => { if (p.by === "cryo") showMessage(`CRYO // ${p.count} FIRE${p.count > 1 ? "S" : ""} OUT`); });
   on("collapse-warning", () => causewayHud.hint("Ceiling giving way: watch the red ring"));
-  on("collapse-landed", () => triggerShake(0.25));
+  on("collapse-start", (p) => level1Audio.startFalling(p.id));
+  on("collapse-landed", (p) => { level1Audio.stopFalling(p.id); level1Audio.impact(0.9); triggerShake(0.25); });
+  on("glass-break", (p) => { level1Audio.glassBreak(); level1Audio.addGlassDebris(p.position, p.radius); });
   on("explosion", (p) => {
     triggerShake(0.55 * p.strength);
     run.flash = Math.max(run.flash, 0.35 * p.strength);
@@ -618,8 +626,10 @@ function updateCauseway(dt, time) {
   }
   if (hits.length && run.invulnerable <= 0) {
     run.invulnerable = 1.1;
-    if (!absorbWithShield(_forward)) damage(22, "INTEGRITY DAMAGED");
+    const shielded = absorbWithShield(_forward);
+    if (!shielded) damage(22, "INTEGRITY DAMAGED");
     else run.slow = 0.3;
+    level1Audio.impact(shielded ? 0.65 : 1);
     if (state !== "playing") return;
   }
   for (const [mesh, left] of run.grazed) {
@@ -647,6 +657,8 @@ function updateCauseway(dt, time) {
   const smoke = causeway.state.smoke;
   if (smoke > 0.55) health -= (smoke - 0.55) * 10 * dt;
   if (health <= 0) { updateUI(); endRun(false, exposure > 0 ? "fire" : "smoke"); return; }
+  level1Audio.updateEnvironment(causeway.audioEnvironment(_playerPos));
+  level1Audio.updateBrokenGlass(_playerPos, run.speed > 1 && jumpHeight < 0.12);
 
   // ---- Bridge collapse chase -------------------------------------------
   const chase = causeway.state.chase;
@@ -738,6 +750,7 @@ function startCausewayLift() {
 
 function updateCausewayLift(dt) {
   const result = causeway.updateLift(dt, camera, run.liftFrom, settings.reducedMotion);
+  level1Audio.updateElevator(causeway.state.lift.velocity, !result.done);
   avatar.visible = true;
   avatar.position.set(0, result.cabinY, causeway.worldZ(CAUSEWAY_ROUTE.lift));
   const end = settings.reducedMotion ? 6.2 : 7.4;
@@ -747,6 +760,7 @@ function updateCausewayLift(dt) {
 
 /** Hand-off to Level 2. Mirrors the old prototype's lift exit exactly. */
 function finishCausewayLift() {
+  level1Audio.cleanupLevel();
   music.fadeOut();
   currentLevel = 2;
   state = "playing";
@@ -1226,6 +1240,7 @@ function fire() {
     projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0 });
   }
   run.shots += count;
+  if (inCauseway) level1Audio.throwBall();
   updateUI();
 }
 
@@ -1349,6 +1364,7 @@ function resetStats(mode = causewayMode) {
 
 function resetGame(mode = causewayMode) {
   resetStats(mode); state = "playing";
+  level1Audio.startLevel();
   music.playRound1();
   causewayHud.show();
   if (mode === "endless") causewayHud.title("Endless lab", "Randomised. Faster every 250 m.", 2.2);
@@ -1361,6 +1377,7 @@ function resetGame(mode = causewayMode) {
  */
 function beginLaunch() {
   resetStats("story"); state = "launch"; launchTimer = 0;
+  level1Audio.startLevel();
   music.playRound1();
 }
 
@@ -1440,7 +1457,7 @@ const failReasons = {
 function endRun(won, reason = null, detail = null) {
   if (state === "ended") return;
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
-  if (currentLevel === 1) music.gameOverDuck();
+  if (currentLevel === 1) { music.gameOverDuck(); level1Audio.gameOver(); }
   causewayHud.warning(null);
   ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${currentLevel}`;
   ui.endTitle.textContent = won ? "CONTROL CORE STABILISED" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
@@ -1738,6 +1755,7 @@ function openPause() {
   if (state !== "playing" && state !== "lift") return;
   paused = true;  run.focusing = false;
   music.pauseDuck();
+  if (currentLevel === 1) level1Audio.setPaused(true);
   if (currentLevel === 3) meltdown?.setPaused(true);
   ui.pauseLevel.textContent = `0${currentLevel} / 03`;
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
@@ -1754,6 +1772,7 @@ function closePause() {
   ui.pause.classList.remove("active");
   paused = false;
   if (wasPaused) music.restore();
+  if (wasPaused && currentLevel === 1) level1Audio.setPaused(false);
   if (currentLevel === 3) meltdown?.setPaused(false);
 }
 
@@ -1774,6 +1793,7 @@ function togglePhoto() {
 
 function quitToMenu() {
   closePause(); cancelStory();
+  level1Audio.cleanupLevel();
   if (photoActive) togglePhoto();
   ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
   ui.settings.classList.remove("active"); ui.end.classList.remove("active"); ui.manual.classList.remove("active");
@@ -1873,6 +1893,10 @@ $("#restartRunButton").addEventListener("click", () => { closePause(); resetGame
 $("#quitButton").addEventListener("click", quitToMenu);
 $("#restartButton").addEventListener("click", () => { resetGame(); });
 $("#endMenuButton").addEventListener("click", quitToMenu);
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (button && !button.disabled) level1Audio.uiClick();
+});
 ui.viewButton.addEventListener("click", (event) => {
   event.stopPropagation();
   ui.viewMenu.hidden = !ui.viewMenu.hidden;
@@ -1958,6 +1982,8 @@ addEventListener("wheel", (event) => {
 
 addEventListener("keydown", (event) => {
   if (event.code === "Escape") {
+    if (event.repeat) return;
+    level1Audio.uiClick();
     if (photoActive) togglePhoto();
     else if (state === "preview") endPreview();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
@@ -1974,7 +2000,7 @@ addEventListener("keydown", (event) => {
   if (event.code === "KeyP") { togglePhoto(); return; }
   if (photoActive) return;
   if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
-  if (event.code === "KeyR" && state === "ended") { resetGame(); return; }
+  if (event.code === "KeyR" && state === "ended") { level1Audio.uiClick(); resetGame(); return; }
   if (event.code === "KeyF" && !event.repeat) { settings.hud.fps = !settings.hud.fps; saveSettings(); applySettingsToControls(); }
   if (event.code === "KeyM" && !event.repeat) { settings.hud.minimap = !settings.hud.minimap; saveSettings(); applySettingsToControls(); }
   if (event.code === "KeyH" && !event.repeat) document.body.classList.toggle("hud-hidden");
@@ -2051,6 +2077,7 @@ globalThis.__dbg = {
   get missions() { return missions; },
   get postfx() { return postfx; },
   get music() { return music.snapshot(); },
+  get level1Audio() { return level1Audio.snapshot(); },
   foundryDistance,
   causewayDistance,
   demoJump,

@@ -710,6 +710,9 @@ export class CausewayLevel {
       });
       this._addDebris(geometry, kind === "door" ? 0xd4fff4 : 0xcff8ff);
       this.stats.panes += 1;
+      this.events.emit("glass-break", {
+        kind, body, position: hitPoint.clone(), radius: Math.max(data.size?.x ?? 1.8, 1.8) * 0.55,
+      });
       if (kind === "falling") {
         this.stats.midair += rec.state === "falling" ? 1 : 0;
         result.points = rec.state === "falling" ? 400 : 150;
@@ -1051,7 +1054,10 @@ export class CausewayLevel {
       rec.warnT += dt;
       parts.body.rotation.z += Math.sin(rec.warnT * 30) * dt * 0.4;
       parts.warning.material.opacity = 0.5 + 0.5 * Math.sin(rec.warnT * 12);
-      if (gap < 21) { rec.state = "falling"; rec.vy = 0; }
+      if (gap < 21) {
+        rec.state = "falling"; rec.vy = 0;
+        this.events.emit("collapse-start", { id: rec.entry, x: rec.entry.x, beam: rec.beam });
+      }
     }
     if (rec.state === "falling") {
       if (rec.frozen > 0) { rec.frozen -= dt; return; }
@@ -1068,7 +1074,7 @@ export class CausewayLevel {
         this._v.y = 0.3;
         this._burst("dust", this._v, { count: 90, scale: 800 });
         this._burst("sparks", this._v);
-        this.events.emit("collapse-landed", { x: rec.entry.x, beam: rec.beam });
+        this.events.emit("collapse-landed", { id: rec.entry, x: rec.entry.x, beam: rec.beam });
         if (!rec.beam && rec.targets[0]?.userData.alive) {
           // Glass shatters on the floor on its own - no score for this.
           const target = rec.targets[0];
@@ -1340,6 +1346,23 @@ export class CausewayLevel {
       wet = Math.max(wet, h.flow * THREE.MathUtils.clamp(1 - Math.hypot(dx, dz) / 4.5, 0, 1));
     }
     return wet;
+  }
+
+  /** Nearest live Level 1 fire and sprinkler for the shared audio mixer. */
+  audioEnvironment(player) {
+    let fire = null;
+    for (const rec of this.live) {
+      if (rec.kind !== "fire" || rec.decor || rec.intensity <= 0.02) continue;
+      const distance = Math.hypot(rec.world.x - player.x, rec.world.z - player.z);
+      if (!fire || distance < fire.distance) fire = { distance, offsetX: rec.world.x - player.x, intensity: rec.intensity };
+    }
+    let water = null;
+    for (const head of this._heads ?? []) {
+      if (head.flow <= 0.01) continue;
+      const distance = Math.hypot(head.world.x - player.x, head.world.z - player.z);
+      if (!water || distance < water.distance) water = { distance, offsetX: head.world.x - player.x, flow: head.flow };
+    }
+    return { fire, water };
   }
 
   /** Jump the wake-up cinematic to its last moment. */
