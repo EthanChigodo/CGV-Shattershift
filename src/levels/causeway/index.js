@@ -587,6 +587,45 @@ export class CausewayLevel {
     return { hits, panes, grazes, pickups };
   }
 
+  /**
+   * Swept-sphere contact with the streamed corridor's side walls.
+   *
+   * The walls are InstancedMeshes rather than gameplay colliders, so their
+   * current analytic inner planes are cheaper and more exact than raycasting
+   * every streamed instance. The bridge is deliberately open-sided.
+   */
+  sideWallHit(start, end, radius = 0) {
+    const dx = end.x - start.x;
+    if (Math.abs(dx) < 1e-7) return null;
+    const distance = this.origin.z - (start.z + end.z) * 0.5;
+    const theme = themeAt(distance, this.mode);
+    const innerWall = theme === "ward" ? 5.8 : theme === "atrium" ? 5.95 : null;
+    if (innerWall === null) return null;
+
+    const right = innerWall - radius;
+    const left = -innerWall + radius;
+    let limit;
+    let normal;
+    let side;
+    if (dx > 0 && end.x > right) {
+      limit = right;
+      normal = new THREE.Vector3(-1, 0, 0);
+      side = "right";
+    } else if (dx < 0 && end.x < left) {
+      limit = left;
+      normal = new THREE.Vector3(1, 0, 0);
+      side = "left";
+    } else return null;
+
+    const t = THREE.MathUtils.clamp((limit - start.x) / dx, 0, 1);
+    const centre = start.clone().lerp(end, t);
+    centre.x = limit;
+    const point = centre.clone();
+    point.x = side === "right" ? innerWall : -innerWall;
+    const position = centre.clone().addScaledVector(normal, 0.01);
+    return { normal, point, position, distance: start.distanceTo(centre), side };
+  }
+
   /** Targets within `radius` of a world point (for the shock sphere). */
   targetsNear(point, radius) {
     const out = [];
@@ -728,6 +767,7 @@ export class CausewayLevel {
       this._burst("score", position);
       rec.hidden = true;
       rec.root.visible = false;
+      this.events.emit("sphere-cache", { count: result.spheres, position: position.clone() });
     } else if (kind === "tank") {
       rec.parts.glass.visible = false;
       rec.parts.liquid.visible = false;

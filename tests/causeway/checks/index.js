@@ -151,6 +151,45 @@ export const mechanics = {
       d.shatter(serum.targets[0], {});
       if (!d.arsenal.isActive("prism")) failures.push("prism serum did not activate");
 
+      // Side-wall contacts reflect the real projectile without losing speed
+      // or leaving its centre embedded in the wall. A second contact confirms
+      // that the same ball can legitimately ricochet more than once.
+      d.setCausewayDistance(116); d.step(3);
+      const ball = new T.Mesh(new T.SphereGeometry(1, 8, 6), new T.MeshBasicMaterial());
+      ball.scale.setScalar(0.18);
+      ball.position.set(5.4, 1.5, L().worldZ(116));
+      d.scene.add(ball);
+      const projectile = {
+        mesh: ball,
+        velocity: new T.Vector3(20, 0, -10),
+        life: 3,
+        gravity: 0,
+        ball: "glass",
+        scored: false,
+        bounces: 0,
+        wallBounces: 0,
+      };
+      d.projectiles.push(projectile);
+      const speed = projectile.velocity.length();
+      d.step(1, 0.03);
+      if (projectile.velocity.x >= 0 || Math.abs(projectile.velocity.length() - speed) > 1e-6) {
+        failures.push("right-wall ricochet did not reflect the angle while preserving speed");
+      }
+      if (ball.position.x > 5.62 || projectile.wallBounces !== 1) failures.push("right-wall ricochet did not resolve penetration exactly once");
+
+      ball.position.x = -5.4;
+      projectile.velocity.set(-20, 0, -10);
+      d.step(1, 0.03);
+      if (projectile.velocity.x <= 0 || Math.abs(projectile.velocity.length() - speed) > 1e-6) {
+        failures.push("left-wall ricochet did not reflect the angle while preserving speed");
+      }
+      if (ball.position.x < -5.62 || projectile.wallBounces !== 2) failures.push("the projectile could not make a second clean wall ricochet");
+      const projectileIndex = d.projectiles.indexOf(projectile);
+      if (projectileIndex >= 0) d.projectiles.splice(projectileIndex, 1);
+      d.scene.remove(ball);
+      ball.geometry.dispose();
+      ball.material.dispose();
+
       // Cryo splash puts out a fire.
       d.setCausewayDistance(125); d.step(3);
       const fire2 = rec("fire", 140);
