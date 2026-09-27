@@ -151,9 +151,9 @@ export const mechanics = {
       d.shatter(serum.targets[0], {});
       if (!d.arsenal.isActive("prism")) failures.push("prism serum did not activate");
 
-      // Side-wall contacts reflect the real projectile without losing speed
-      // or leaving its centre embedded in the wall. A second contact confirms
-      // that the same ball can legitimately ricochet more than once.
+      // Corridor contacts reflect the real projectile without losing speed or
+      // leaving its centre embedded. Repeated wall contacts and a ceiling hit
+      // exercise the same calculated-normal path.
       d.setCausewayDistance(116); d.step(3);
       const ball = new T.Mesh(new T.SphereGeometry(1, 8, 6), new T.MeshBasicMaterial());
       ball.scale.setScalar(0.18);
@@ -168,6 +168,7 @@ export const mechanics = {
         scored: false,
         bounces: 0,
         wallBounces: 0,
+        ceilingBounces: 0,
       };
       d.projectiles.push(projectile);
       const speed = projectile.velocity.length();
@@ -184,6 +185,34 @@ export const mechanics = {
         failures.push("left-wall ricochet did not reflect the angle while preserving speed");
       }
       if (ball.position.x < -5.62 || projectile.wallBounces !== 2) failures.push("the projectile could not make a second clean wall ricochet");
+
+      ball.position.set(0, 4.7, L().worldZ(116));
+      projectile.velocity.set(4, 20, -10);
+      const ceilingSpeed = projectile.velocity.length();
+      d.step(1, 0.03);
+      if (projectile.velocity.y >= 0
+        || Math.abs(projectile.velocity.x - 4) > 1e-6
+        || Math.abs(projectile.velocity.z + 10) > 1e-6
+        || Math.abs(projectile.velocity.length() - ceilingSpeed) > 1e-6) {
+        failures.push("ceiling ricochet did not reflect the angle while preserving speed");
+      }
+      if (ball.position.y > 5.02 || projectile.ceilingBounces !== 1) failures.push("ceiling ricochet did not resolve penetration exactly once");
+      d.step(1, 0.03);
+      if (projectile.ceilingBounces !== 1) failures.push("one ceiling contact produced repeated ricochets");
+
+      const bridgeCeiling = L().corridorSurfaceHit(
+        new T.Vector3(0, 4.8, L().worldZ(300)),
+        new T.Vector3(0, 6.2, L().worldZ(300.5)),
+        0.18,
+      );
+      if (bridgeCeiling) failures.push("the open skybridge has an invisible corridor collision surface");
+
+      const atriumCeiling = L().corridorSurfaceHit(
+        new T.Vector3(0, 10.1, L().worldZ(600)),
+        new T.Vector3(0, 10.8, L().worldZ(600.5)),
+        0.18,
+      );
+      if (atriumCeiling?.surface !== "ceiling" || atriumCeiling.normal.y !== -1) failures.push("the atrium ceiling has no downward collision normal");
       const projectileIndex = d.projectiles.indexOf(projectile);
       if (projectileIndex >= 0) d.projectiles.splice(projectileIndex, 1);
       d.scene.remove(ball);

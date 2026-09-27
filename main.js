@@ -1110,7 +1110,7 @@ const _aim = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _segment = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
-const BALL_WALL_RESTITUTION = 1.0;
+const BALL_CORRIDOR_RESTITUTION = 1.0;
 
 function aliveTargets() {
   if (currentLevel === 1 && causeway) return causeway.breakables;
@@ -1247,7 +1247,7 @@ function fire() {
     mesh.position.copy(_origin);
     mesh.layers.set(LAYERS.FX);
     scene.add(mesh);
-    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0 });
+    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
   }
   run.shots += count;
   if (inCauseway) level1Audio.throwBall();
@@ -1305,24 +1305,25 @@ function updateProjectiles(dt) {
       raycaster.far = length + p.mesh.scale.x;
       let hit = raycaster.intersectObjects(targets, false)[0];
       const solid = solids.length ? raycaster.intersectObjects(solids, false)[0] : null;
-      const wall = currentLevel === 1 && causeway ? causeway.sideWallHit(old, p.mesh.position, p.mesh.scale.x) : null;
+      const surface = currentLevel === 1 && causeway ? causeway.corridorSurfaceHit(old, p.mesh.position, p.mesh.scale.x) : null;
       raycaster.far = Infinity;
       // Near miss on a small target counts: a sphere passing within its own
       // radius plus 0.25 m of a small target's bounding sphere hits it.
       if (!hit && currentLevel === 1) hit = grazeTarget(targets, old, p.mesh.position, p.mesh.scale.x + 0.25);
-      if (hit && (!solid || hit.distance <= solid.distance) && (!wall || hit.distance <= wall.distance)) {
+      if (hit && (!solid || hit.distance <= solid.distance) && (!surface || hit.distance <= surface.distance)) {
         const result = shatter(hit.object, { point: hit.point, direction: p.velocity, ball: p.ball });
         if (result && !result.rejected) { p.scored = true; run.hits += 1; }
         if (p.ball !== "glass") { detonate(p, hit.point); p.life = 0; }
         else if (!result || result.cracked || result.rejected || !["pane", "blade", "falling", "tank", "door"].includes(result.kind) || currentLevel !== 1) p.life = 0;
         else p.velocity.multiplyScalar(0.82); // glass spheres punch through and keep going
-      } else if (wall && (!solid || wall.distance <= solid.distance)) {
+      } else if (surface && (!solid || surface.distance <= solid.distance)) {
         const speed = p.velocity.length();
-        p.velocity.reflect(wall.normal).normalize().multiplyScalar(speed * BALL_WALL_RESTITUTION);
-        p.mesh.position.copy(wall.position);
-        p.wallBounces += 1;
-        level1Audio.wallRicochet();
-        causeway.ricochet(wall.point);
+        p.velocity.reflect(surface.normal).normalize().multiplyScalar(speed * BALL_CORRIDOR_RESTITUTION);
+        p.mesh.position.copy(surface.position);
+        if (surface.surface === "ceiling") p.ceilingBounces += 1;
+        else p.wallBounces += 1;
+        level1Audio.surfaceRicochet();
+        causeway.ricochet(surface.point);
       } else if (solid) {
         if (p.ball !== "glass") { detonate(p, solid.point); p.life = 0; }
         else {

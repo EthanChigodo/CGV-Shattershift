@@ -145,3 +145,9 @@ Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 
 - Custom GLSL vertex and fragment shaders: ray-traced glass, ray-marched fire, clouds and SDF serums, GPU shard physics and particles, and a custom post-processing pipeline
 
 No Unity or other game engine is used.
+
+## Soundtracks and sound effects references
+
+- [Pixabay game-over sound effects](https://pixabay.com/sound-effects/search/game%20over%20sound/)
+- [Freesound glass-shatter search](https://freesound.org/search/?q=glass+shatters&page=3#sound)
+- [OpenGameArt flame audio search](https://opengameart.org/art-search-advanced?keys=flame&title=&field_art_tags_tid_op=or&field_art_tags_tid=&name=&field_art_type_tid%5B%5D=13&sort_by=count&sort_order=DESC&items_per_page=24&Collection=)

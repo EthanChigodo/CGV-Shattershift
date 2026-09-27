@@ -112,7 +112,7 @@ Level 1 sound effects supplied to the project:
 - Elevator: `wind1.wav` — source and licence details pending.
 - Sphere throw: `floraphonic-swing-whoosh-9-198502.mp3` — Floraphonic.
 - Sphere cache / serum collected: `floraphonic-arcade-ui-6-229503.mp3` — Floraphonic.
-- Side-wall ricochet: `freesound_community-wall-hit-1-100717.mp3` — Freesound Community.
+- Side-wall / ceiling ricochet: `freesound_community-wall-hit-1-100717.mp3` — Freesound Community.
 - UI click: `justsomesounds-click-sound-432501.mp3` — JustSomeSounds.
 
 Exact source URLs and licence terms for the supplied SFX must be recorded before release.
