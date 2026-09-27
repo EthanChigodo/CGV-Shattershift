@@ -35,7 +35,9 @@
  *   |-- GravityLiftCabin moves up the shaft
  *   |   |-- frame, glass, doors, floor display, energy conduits
  *   |   |-- cabin light
- *   |   `-- Subject07    the figure (hidden in first-person shots)
+ *   |   `-- PlayerRoot   the character picked on the start screen (Level 3's
+ *   |                    PlayerAvatar), or a simple figure until it loads;
+ *   |                    hidden in first-person shots
  *   `-- lights           moon, fire uplight from below, hemisphere
  */
 
@@ -43,6 +45,7 @@ import * as THREE from "../three.js";
 import { createRideUniforms } from "./shaders.js";
 import { buildWorld, buildShaft, buildCabin, buildFigure, Owned, STOREY } from "./kit.js";
 import { ElevatorHud } from "../ui/elevator-hud.js";
+import { PlayerAvatar } from "../levels/meltdown/player.js";
 
 /** Level 2 is floor 140 of Ascension Tower; Level 3 is further up. */
 export const START_FLOOR = 141;
@@ -88,10 +91,13 @@ export class GravityFaultRide {
    * @param {THREE.WebGLRenderer} o.renderer  the game's renderer
    * @param {number} [o.spheres]  spheres carried in from Level 2
    * @param {boolean} [o.reducedMotion]  less shake, gentler camera moves
+   * @param {THREE.Object3D} [o.character]  the chosen character's model
+   *   template (loadMeltdownAssets), so the ride shows the same person as
+   *   Levels 1 and 2. Without it, a simple stand-in figure.
    * @param {boolean} [o.boarded]  the player boarded in Level 2 already (the
    *   Calibration Lift): start with the doors shut, as the lift launches
    */
-  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false }) {
+  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null }) {
     this.renderer = renderer;
     this.reducedMotion = reducedMotion;
     this.boarded = boarded;
@@ -111,7 +117,7 @@ export class GravityFaultRide {
     this.world = buildWorld(this.uniforms, this.owned);
     this.shaft = buildShaft(this.owned);
     this.cabin = buildCabin(this.uniforms, this.owned);
-    this.figure = buildFigure(this.owned);
+    this.figure = character ? this._characterFigure(character) : buildFigure(this.owned);
     this.figure.root.position.set(-0.35, 0, 0.35);
     this.cabin.root.add(this.figure.root);
     scene.add(this.world.root, this.shaft.root, this.cabin.root);
@@ -178,7 +184,7 @@ export class GravityFaultRide {
     else if (t < LAUNCH_AT + 2.5) this.hud.alert("ASCENDING // SECTOR 03", "info");
     else this.hud.alert(null);
 
-    this.figure.pose(0, time);
+    this.figure.pose(0, time, dt);
 
     // Fades are the host's overlay; the ride only says how dark.
     this.fade = Math.max(1 - s.age / FADE_IN, THREE.MathUtils.clamp((t - (END_AT - FADE_OUT)) / FADE_OUT, 0, 1));
@@ -188,6 +194,22 @@ export class GravityFaultRide {
     }
 
     this._updateCamera(dt, time);
+  }
+
+  /**
+   * The player's own body: Level 3's PlayerAvatar with the chosen model,
+   * arms free (Subject 07 throws by hand), standing. Exposes the same
+   * `root` / `pose()` as the stand-in figure.
+   */
+  _characterFigure(template) {
+    const avatar = new PlayerAvatar();
+    avatar.hold = 0;
+    avatar.setModel(template);
+    this._avatar = avatar;
+    return {
+      root: avatar.root,
+      pose: (float, time, dt = 0) => avatar.update(dt, { speed: 0 }),
+    };
   }
 
   _place(y) {
@@ -264,8 +286,31 @@ export class GravityFaultRide {
     renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * Free what the avatar owns: its stand-in, contact shadow and the rig's
+   * cloned material. The model's geometry and textures are shared with the
+   * game's own player body, so they are left alone.
+   */
+  _disposeAvatar() {
+    const avatar = this._avatar;
+    if (!avatar) return;
+    avatar.standIn.traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry.dispose();
+      o.material.dispose();
+    });
+    avatar.shadow.geometry.dispose();
+    avatar.shadowMaterial.map?.dispose();
+    avatar.shadowMaterial.dispose();
+    avatar.model?.traverse((o) => {
+      if (o.isMesh) for (const m of [].concat(o.material)) m.dispose();
+    });
+    this._avatar = null;
+  }
+
   dispose() {
     this.visible = false;
+    this._disposeAvatar();
     this.events.clear();
     this.hud.dispose();
     this.owned.dispose();
