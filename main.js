@@ -232,6 +232,8 @@ avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 const playerBody = new PlayerAvatar();
 playerBody.hold = 0;
 let playerBodyReady = false;
+/** The chosen character's model template, for the lift ride to show the same person. */
+let playerBodyTemplate = null;
 let playerBodyX = 0;
 const playerBodyMaterials = [];
 async function loadPlayerBody(name = savedCharacter()) {
@@ -239,6 +241,7 @@ async function loadPlayerBody(name = savedCharacter()) {
   const asset = assets.get(name);
   if (!asset || name !== savedCharacter()) return;
   playerBody.setModel(asset.template);
+  playerBodyTemplate = asset.template;
   playerBodyMaterials.length = 0;
   // A touch of self-light, so the body reads in Level 1's dark, fire-lit
   // halls (Level 1 turns the global lights off). Set once; the per-level
@@ -1464,7 +1467,11 @@ function startGravityLift({ boarded = false } = {}) {
   foundryLift?.dispose();
   foundryLift = null;
   preloadMeltdown();
-  gravityLift = new GravityFaultRide({ renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded });
+  gravityLift = new GravityFaultRide({
+    renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
+    // The same character as in Levels 1 and 2 (null while it is still loading).
+    character: playerBodyTemplate,
+  });
   gravityLift.onPointerMove(pointer.x, pointer.y);
   // The ride has its own alerts; clear the game's message line for them.
   ui.message.classList.remove("show"); messageTimer = 0;
@@ -2276,6 +2283,7 @@ globalThis.__dbg = {
   get meltdown() { return meltdown; },
   enterMeltdown,
   get gravityLift() { return gravityLift; },
+  get playerBodyTemplate() { return playerBodyTemplate; },
   demoGravityLift,
   get run() { return run; },
   causewayPace,

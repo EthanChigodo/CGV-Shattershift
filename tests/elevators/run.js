@@ -103,8 +103,10 @@ async function main() {
     await mkdir(dir, { recursive: true });
     for (const [name, at, pointer] of SHOTS) {
       await open();
-      await page.evaluate(([seconds, p]) => {
+      await page.evaluate(async ([seconds, p]) => {
         const d = globalThis.__dbg;
+        const w0 = performance.now();
+        while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
         d.resetGame("story");
         d.demoGravityLift();
         d.setPointer(...p);

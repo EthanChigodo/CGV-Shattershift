@@ -62,9 +62,13 @@ export const ride = {
   async run(page) {
     const r = await page.evaluate(async () => {
       const d = globalThis.__dbg;
+      // The chosen character loads in the background; the ride should show it.
+      const w0 = performance.now();
+      while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
       d.resetGame("story");
       d.demoGravityLift();
       const ride = d.gravityLift;
+      const character = !!ride._avatar?.model;
       const shots = [];
       ride.events.on("shot", ({ shot }) => shots.push(shot));
       let departed = false;
@@ -84,6 +88,7 @@ export const ride = {
       }
       return {
         shots,
+        character,
         departed,
         arrived,
         maxY,
@@ -97,6 +102,7 @@ export const ride = {
     });
     const failures = [];
     for (const shot of ["doors", "exterior", "interior"]) if (!r.shots.includes(shot)) failures.push(`shot "${shot}" never played`);
+    if (!r.character) failures.push("the ride does not show the character picked on the start screen");
     if (!r.departed) failures.push("the lift never departed");
     if (r.maxY < 40) failures.push(`the cabin only climbed ${r.maxY.toFixed(1)} m`);
     if (!r.arrived) failures.push("the ride never finished");
