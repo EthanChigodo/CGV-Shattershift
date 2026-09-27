@@ -98,6 +98,21 @@ Background music supplied to the project:
 - Menu / briefing: `852268__holizna__trap-melody-loop-5-ebmin-165-bpm.wav` — Holizna.
 - Level 1: `GalacticTemple.ogg` — source and licence details must be added by the asset supplier before release.
 
+Level 1 sound effects supplied to the project:
+
+- Fire: `vanzetpictures-fire-457848.mp3` — VanzetPictures.
+- Solid impact: `sumaga123-wood-hit-432148.mp3` — Sumaga123.
+- Sprinkler water: `fire_sprinkler_water_flow_splash.wav` — source and licence details pending.
+- Glass shatter: `eaglaxle-glass-shattering-461637.mp3` — Eaglaxle.
+- Falling object: `dragon-studio-falling-tree-356127.mp3` — Dragon Studio.
+- Game over: `universfield-marimba-game-over-250960.mp3` — Universfield.
+- Broken-glass footstep: `368343__johandeecke__glass-hit-32.wav` — JohanDeecke.
+- Elevator: `wind1.wav` — source and licence details pending.
+- Sphere throw: `floraphonic-swing-whoosh-9-198502.mp3` — Floraphonic.
+- UI click: `justsomesounds-click-sound-432501.mp3` — JustSomeSounds.
+
+Exact source URLs and licence terms for the supplied SFX must be recorded before release.
+
 ## 4. Published techniques
 
 These are well-known graphics techniques, implemented in our own code. They are credited because the maths or the approach comes from published work.
