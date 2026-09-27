@@ -2,12 +2,13 @@
  * Persistent background music for the application shell.
  *
  * Music lives above individual level objects so rebuilding a level does not
- * rebuild or seek its soundtrack. Tracks are decoded into AudioBuffers: a
- * looping AudioBufferSourceNode wraps directly at the PCM boundary instead of
- * asking the browser to reopen a media container at every loop.
+ * rebuild or seek its soundtrack. Tracks are decoded into AudioBuffers: most
+ * wrap directly at the PCM boundary, while tracks configured for overlap have
+ * their tail and opening blended once before the looping source starts.
  */
 
 export const MUSIC_VOLUME = Object.freeze({
+  story: 0.38,
   menu: 0.46,
   gameplay: 0.62,
   paused: 0.31,
@@ -16,11 +17,13 @@ export const MUSIC_VOLUME = Object.freeze({
 
 export const MUSIC_TIMING = Object.freeze({
   crossfade: 1.0,
+  storyLoopOverlap: 1.5,
   duck: 0.35,
   restore: 0.6,
 });
 
 const TRACKS = Object.freeze({
+  story: new URL("../../assets/audio/soundtracks/leberch-piano-story-601906.mp3", import.meta.url).href,
   menu: new URL("../../assets/audio/soundtracks/852268__holizna__trap-melody-loop-5-ebmin-165-bpm.wav", import.meta.url).href,
   round1: new URL("../../assets/audio/soundtracks/GalacticTemple.ogg", import.meta.url).href,
 });
@@ -31,6 +34,7 @@ export class MusicManager {
     this.context = null;
     this.buffers = new Map();
     this.bufferPromises = new Map();
+    this.loopStarts = new Map();
     this.channels = new Set();
     this.active = null;
     this.wantedTrack = null;
@@ -54,6 +58,10 @@ export class MusicManager {
 
   showMenu() {
     this._setIntent("menu", MUSIC_VOLUME.menu, null, MUSIC_TIMING.crossfade);
+  }
+
+  showStory() {
+    this._setIntent("story", MUSIC_VOLUME.story, null, MUSIC_TIMING.crossfade);
   }
 
   playRound1() {
@@ -102,7 +110,11 @@ export class MusicManager {
           return response.arrayBuffer();
         })
         .then((data) => this.context.decodeAudioData(data))
-        .then((buffer) => { this.buffers.set(track, buffer); return buffer; })
+        .then((buffer) => {
+          this._prepareLoop(track, buffer);
+          this.buffers.set(track, buffer);
+          return buffer;
+        })
         .catch((error) => {
           this.bufferPromises.delete(track);
           console.warn("Background music could not be loaded.", error);
@@ -111,6 +123,29 @@ export class MusicManager {
       this.bufferPromises.set(track, request);
     }
     return this.bufferPromises.get(track);
+  }
+
+  /**
+   * Blend a track's tail into its opening, then loop back after that opening.
+   * This keeps the first play intact and produces a real overlap on every
+   * later wrap without timers or additional AudioBufferSourceNodes.
+   */
+  _prepareLoop(track, buffer) {
+    const requested = track === "story" ? MUSIC_TIMING.storyLoopOverlap : 0;
+    const frames = Math.min(Math.floor(requested * buffer.sampleRate), Math.floor(buffer.length / 4));
+    if (frames < 2) { this.loopStarts.set(track, 0); return; }
+
+    const tailStart = buffer.length - frames;
+    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+      const samples = buffer.getChannelData(channel);
+      for (let i = 0; i < frames; i += 1) {
+        const mix = i / (frames - 1);
+        const tailGain = Math.cos(mix * Math.PI * 0.5);
+        const headGain = Math.sin(mix * Math.PI * 0.5);
+        samples[tailStart + i] = samples[tailStart + i] * tailGain + samples[i] * headGain;
+      }
+    }
+    this.loopStarts.set(track, frames / buffer.sampleRate);
   }
 
   async _applyIntent(token, seconds = MUSIC_TIMING.crossfade) {
@@ -137,6 +172,8 @@ export class MusicManager {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
+    source.loopStart = this.loopStarts.get(track) ?? 0;
+    source.loopEnd = buffer.duration;
     source.connect(gain);
     const channel = { track, source, gain, startedAt: now, buffer };
     this.channels.add(channel);
@@ -176,9 +213,13 @@ export class MusicManager {
 
   /** Read-only diagnostics used by local checks and the browser console. */
   snapshot() {
-    const elapsed = this.active && this.context
-      ? (this.context.currentTime - this.active.startedAt) % this.active.buffer.duration
-      : null;
+    let elapsed = null;
+    if (this.active && this.context) {
+      const raw = this.context.currentTime - this.active.startedAt;
+      const duration = this.active.buffer.duration;
+      const loopStart = this.loopStarts.get(this.active.track) ?? 0;
+      elapsed = raw < duration ? raw : loopStart + ((raw - duration) % (duration - loopStart));
+    }
     return {
       contextState: this.context?.state ?? "locked",
       wantedTrack: this.wantedTrack,
@@ -186,6 +227,7 @@ export class MusicManager {
       playbackSeconds: elapsed,
       volume: this.active?.gain.gain.value ?? 0,
       duck: this.duck,
+      loopStartSeconds: this.active ? (this.loopStarts.get(this.active.track) ?? 0) : 0,
       sourceCount: this.channels.size,
     };
   }

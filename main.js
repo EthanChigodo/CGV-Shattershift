@@ -101,7 +101,10 @@ function saveSettings() {
 const music = new MusicManager();
 const level1Audio = new Level1Audio(() => music.context);
 music.showMenu();
-const unlockMusic = async () => {
+const unlockMusic = async (event) => {
+  // Set the briefing intent before unlocking on the same pointer/key gesture,
+  // so the menu track cannot briefly start while the piano is loading.
+  if (event.target?.closest?.("#storyBeginButton, #replayStoryButton")) music.showStory();
   const ready = music.unlock(); // Creates the shared context synchronously.
   level1Audio.unlock();
   if (await ready) level1Audio.unlock();
@@ -492,12 +495,15 @@ function wireCausewayEvents(level) {
   on("hint", (p) => causewayHud.hint(p.text));
   on("file", (p) => causewayHud.caseFile(p.lines, p.found, p.total));
   on("sprinkler", () => causewayHud.hint("Sprinkler open: fires below are going out"));
+  on("serum", () => level1Audio.serumCollected());
+  on("sphere-cache", () => level1Audio.sphereCollected());
   on("vent", () => causewayHud.hint("Vent clear: the smoke is thinning"));
   on("extinguish", (p) => { if (p.by === "cryo") showMessage(`CRYO // ${p.count} FIRE${p.count > 1 ? "S" : ""} OUT`); });
   on("collapse-warning", () => causewayHud.hint("Ceiling giving way: watch the red ring"));
   on("collapse-start", (p) => level1Audio.startFalling(p.id));
   on("collapse-landed", (p) => { level1Audio.stopFalling(p.id); level1Audio.impact(0.9); triggerShake(0.25); });
   on("glass-break", (p) => { level1Audio.glassBreak(); level1Audio.addGlassDebris(p.position, p.radius); });
+  on("pod-break", () => level1Audio.podBreak());
   on("explosion", (p) => {
     triggerShake(0.55 * p.strength);
     run.flash = Math.max(run.flash, 0.35 * p.strength);
@@ -710,7 +716,10 @@ function shatterCauseway(target, hit) {
     if (!result.cracked) { combo = Math.min(9, combo + 1); comboTimer = 2.6; }
     run.focus = Math.min(1, run.focus + 0.08);
   }
-  if (result.spheres) { ammo += result.spheres; causewayHud.bump(".cw-spheres"); }
+  if (result.spheres) {
+    ammo += result.spheres;
+    causewayHud.bump(".cw-spheres");
+  }
   if (result.serum) activateSerum(result.serum);
   if (result.label) showMessage(result.label);
   if (!settings.reducedMotion && ["door", "lock", "falling", "file"].includes(result.kind) && !bodyHit) run.hitStop = 0.09;
@@ -1101,6 +1110,7 @@ const _aim = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _segment = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const BALL_WALL_RESTITUTION = 1.0;
 
 function aliveTargets() {
   if (currentLevel === 1 && causeway) return causeway.breakables;
@@ -1237,7 +1247,7 @@ function fire() {
     mesh.position.copy(_origin);
     mesh.layers.set(LAYERS.FX);
     scene.add(mesh);
-    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0 });
+    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0 });
   }
   run.shots += count;
   if (inCauseway) level1Audio.throwBall();
@@ -1295,16 +1305,24 @@ function updateProjectiles(dt) {
       raycaster.far = length + p.mesh.scale.x;
       let hit = raycaster.intersectObjects(targets, false)[0];
       const solid = solids.length ? raycaster.intersectObjects(solids, false)[0] : null;
+      const wall = currentLevel === 1 && causeway ? causeway.sideWallHit(old, p.mesh.position, p.mesh.scale.x) : null;
       raycaster.far = Infinity;
       // Near miss on a small target counts: a sphere passing within its own
       // radius plus 0.25 m of a small target's bounding sphere hits it.
       if (!hit && currentLevel === 1) hit = grazeTarget(targets, old, p.mesh.position, p.mesh.scale.x + 0.25);
-      if (hit && (!solid || hit.distance <= solid.distance)) {
+      if (hit && (!solid || hit.distance <= solid.distance) && (!wall || hit.distance <= wall.distance)) {
         const result = shatter(hit.object, { point: hit.point, direction: p.velocity, ball: p.ball });
         if (result && !result.rejected) { p.scored = true; run.hits += 1; }
         if (p.ball !== "glass") { detonate(p, hit.point); p.life = 0; }
         else if (!result || result.cracked || result.rejected || !["pane", "blade", "falling", "tank", "door"].includes(result.kind) || currentLevel !== 1) p.life = 0;
         else p.velocity.multiplyScalar(0.82); // glass spheres punch through and keep going
+      } else if (wall && (!solid || wall.distance <= solid.distance)) {
+        const speed = p.velocity.length();
+        p.velocity.reflect(wall.normal).normalize().multiplyScalar(speed * BALL_WALL_RESTITUTION);
+        p.mesh.position.copy(wall.position);
+        p.wallBounces += 1;
+        level1Audio.wallRicochet();
+        causeway.ricochet(wall.point);
       } else if (solid) {
         if (p.ball !== "glass") { detonate(p, solid.point); p.life = 0; }
         else {
@@ -1836,6 +1854,7 @@ function cancelStory() {
 
 function startStory() {
   cancelStory();
+  music.showStory();
   storyPlaying = true;
   ui.story.classList.add("active");
   ui.start.classList.remove("active");
@@ -1851,6 +1870,7 @@ function finishStory() {
   cancelStory();
   ui.story.classList.remove("active");
   ui.start.classList.add("active");
+  music.showMenu();
 }
 
 ui.storySkipButton.addEventListener("click", finishStory);

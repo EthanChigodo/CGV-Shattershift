@@ -5,11 +5,14 @@ export const LEVEL1_SFX_VOLUME = Object.freeze({
   impact: 0.34,
   water: 0.22,
   glass: 0.42,
+  podBreak: 0.46,
   falling: 0.28,
   gameOver: 0.44,
   glassStep: 0.12,
-  elevator: 0.24,
+  elevator: 0.36,
   throw: 0.26,
+  pickup: 0.28,
+  wall: 0.32,
   ui: 0.22,
 });
 
@@ -25,11 +28,14 @@ const ASSETS = Object.freeze({
   impact: new URL("../../assets/audio/sound-effects/sumaga123-wood-hit-432148.mp3", import.meta.url).href,
   water: new URL("../../assets/audio/sound-effects/fire_sprinkler_water_flow_splash.wav", import.meta.url).href,
   glass: new URL("../../assets/audio/sound-effects/eaglaxle-glass-shattering-461637.mp3", import.meta.url).href,
+  podBreak: new URL("../../assets/audio/sound-effects/universfield-glass-bottle-breaking-351297.mp3", import.meta.url).href,
   falling: new URL("../../assets/audio/sound-effects/dragon-studio-falling-tree-356127.mp3", import.meta.url).href,
   gameOver: new URL("../../assets/audio/sound-effects/universfield-marimba-game-over-250960.mp3", import.meta.url).href,
   glassStep: new URL("../../assets/audio/sound-effects/368343__johandeecke__glass-hit-32.wav", import.meta.url).href,
   elevator: new URL("../../assets/audio/sound-effects/wind1.wav", import.meta.url).href,
   throw: new URL("../../assets/audio/sound-effects/floraphonic-swing-whoosh-9-198502.mp3", import.meta.url).href,
+  pickup: new URL("../../assets/audio/sound-effects/floraphonic-arcade-ui-6-229503.mp3", import.meta.url).href,
+  wall: new URL("../../assets/audio/sound-effects/freesound_community-wall-hit-1-100717.mp3", import.meta.url).href,
   ui: new URL("../../assets/audio/sound-effects/justsomesounds-click-sound-432501.mp3", import.meta.url).href,
 });
 
@@ -129,6 +135,10 @@ export class Level1Audio {
 
   uiClick() { this._play("ui", { bus: "ui", cooldown: 0.035, gameplay: false }); }
   throwBall() { this._play("throw", { cooldown: 0.08 }); }
+  serumCollected() { this._play("pickup"); }
+  sphereCollected() { this._play("pickup"); }
+  podBreak() { this._play("podBreak"); }
+  wallRicochet() { this._play("wall"); }
   glassBreak() { this._play("glass", { cooldown: 0.045 }); }
   impact(strength = 1) {
     this._play("impact", { volume: LEVEL1_SFX_VOLUME.impact * clamp(strength, 0.55, 1.15), cooldown: 0.18 });

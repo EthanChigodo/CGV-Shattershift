@@ -60,7 +60,7 @@ The title screen idles on a slow drift through the ward. From it you can start a
 
 The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play, and **Play as** chooses your character (female or male patient; Level 3 shows them, and the choice is remembered).
 
-**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. The briefing/menu and Level 1 have looping background music; Level 3 retains its generated Web Audio effects.
+**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. The story briefing, menu and Level 1 have looping background music; Level 3 retains its generated Web Audio effects.
 
 ## Play locally
 
