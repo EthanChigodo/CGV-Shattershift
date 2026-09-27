@@ -8,6 +8,9 @@ import { Minimap } from "./src/fx/minimap.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
+import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
+import { PlayerAvatar } from "./src/levels/meltdown/player.js";
+import { loadMeltdownAssets } from "./src/levels/meltdown/assets.js";
 import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
 import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
@@ -215,6 +218,60 @@ const pack = new THREE.Mesh(new THREE.BoxGeometry(.65, .8, .3), railMat); pack.p
 // The figure is unchanged; it only casts a shadow now that Level 1 has sun shadows.
 avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 
+/**
+ * The player's body in Levels 1 and 2 is the same character as in Level 3:
+ * the patient picked on the start screen ("Play as"), animated by Level 3's
+ * body rig (src/levels/meltdown/player.js) from the run's real speed, lane
+ * changes, jumps and slides. Subject 07 throws spheres by hand, so there is
+ * no launcher to hold here. The capsule above stays as a stand-in until the
+ * model has loaded (or if it cannot load).
+ */
+const playerBody = new PlayerAvatar();
+playerBody.hold = 0;
+let playerBodyReady = false;
+let playerBodyX = 0;
+const playerBodyMaterials = [];
+async function loadPlayerBody(name = savedCharacter()) {
+  const assets = await loadMeltdownAssets(MELTDOWN_ASSET_BASE, { names: [name] });
+  const asset = assets.get(name);
+  if (!asset || name !== savedCharacter()) return;
+  playerBody.setModel(asset.template);
+  playerBodyMaterials.length = 0;
+  // A touch of self-light, so the body reads in Level 1's dark, fire-lit
+  // halls (Level 1 turns the global lights off). Set once; the per-level
+  // strength is a uniform, so changing it costs nothing.
+  playerBody.model?.traverse((o) => {
+    if (!o.isMesh || !o.material?.map) return;
+    o.material.emissiveMap = o.material.map;
+    o.material.emissive.setRGB(1, 1, 1);
+    o.material.needsUpdate = true;
+    playerBodyMaterials.push(o.material);
+  });
+  if (!playerBodyReady) {
+    avatar.add(playerBody.root);
+    body.visible = false;
+    pack.visible = false;
+    playerBodyReady = true;
+  }
+}
+
+function updatePlayerBody(dt) {
+  if (!playerBodyReady) return;
+  const moving = state === "playing" && !paused;
+  const speed = !moving ? 0 : currentLevel === 1 ? run.speed : currentLevel === 2 ? foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1) : 0;
+  const lateralVel = dt > 0 ? (playerX - playerBodyX) / dt : 0;
+  playerBodyX = playerX;
+  const glow = currentLevel === 1 ? 0.32 : 0.06;
+  for (const m of playerBodyMaterials) m.emissiveIntensity = glow;
+  playerBody.update(dt, {
+    speed,
+    lateralVel,
+    height: jumpHeight,
+    sliding: sliding > 0,
+    stumble: run.damage > 0.5 || foundrySlow > 0.3 ? 1 : 0,
+  });
+}
+
 function updateUI() {
   ui.level.textContent = `0${currentLevel} / 03`;
   ui.ammo.textContent = ammo; ui.health.textContent = Math.max(0, Math.round(health)); ui.score.textContent = String(Math.floor(score)).padStart(6, "0");
@@ -244,6 +301,14 @@ const FOUNDRY_SPEED_ZONES = [
 ];
 
 let foundry = null;
+/**
+ * Level 2 ends the way Level 1 does: past the extraction valve the corridor
+ * opens onto a landing and the Calibration Lift (Level 1's glass elevator,
+ * src/levels/common/calibration-lift.js) takes the player up to Level 3.
+ */
+let foundryLift = null;
+let foundryExit = false;
+const FOUNDRY_LANDING = 12;
 const foundryHud = new FoundryHud({ dev: false, reducedMotion: settings.reducedMotion });
 // Sits alongside the game's own HUD rather than owning the screen.
 foundryHud.root.classList.add("embedded");
@@ -272,6 +337,7 @@ function buildFoundry() {
     foundryHud.unbind();
     foundry.dispose();
   }
+  foundryLift?.dispose();
 
   foundry = new FoundryLevel({
     origin: new THREE.Vector3(0, 0, FOUNDRY_ORIGIN_Z),
@@ -285,13 +351,19 @@ function buildFoundry() {
   });
   foundry.addTo(scene);
   foundry.root.visible = false;
+  foundryExit = false;
+  foundryLift = new CalibrationLift({ landing: FOUNDRY_LANDING, landingWidth: 11.2 });
+  foundryLift.root.position.set(0, 0, FOUNDRY_ORIGIN_Z - foundry.route.totalLength - FOUNDRY_LANDING - LIFT_RADIUS);
+  foundryLift.root.visible = false;
+  scene.add(foundryLift.root);
 
   foundryHud.bind(foundry);
   foundry.events.on("complete", () => {
     if (currentLevel !== 2 || state !== "playing") return;
     score += Math.max(0, foundry.state.systemsOnline * 500 + health * 10);
-    state = "lift"; liftTimer = 0; transitionTarget = 3;
-    showMessage("GRAVITY LIFT // CORE");
+    // Keep running: out of the furnace, across the landing, into the lift.
+    foundryExit = true;
+    showMessage("EXTRACTION VALVE // TO THE LIFT");
     updateUI();
   });
   foundry.events.on("escape-end", ({ survived }) => {
@@ -308,6 +380,7 @@ function buildFoundry() {
 function setFoundryActive(active) {
   if (!foundry) return;
   foundry.root.visible = active;
+  if (foundryLift) foundryLift.root.visible = active;
   if (active) {
     preloadMeltdown();
     foundryHud.show();
@@ -1011,6 +1084,16 @@ function getMeltdown() {
   return meltdown;
 }
 
+/** Level 2's end: the player is in the Calibration Lift; the doors close and it rides up. */
+function startFoundryLift() {
+  if (state !== "playing" || currentLevel !== 2) return;
+  state = "lift"; liftTimer = 0; transitionTarget = 3;
+  run.liftFrom.copy(camera.position);
+  foundryLift.start();
+  showMessage("CALIBRATION LIFT // SECTOR 03");
+  updateUI();
+}
+
 /** Start streaming Level 3's models early - called when Level 2 starts. */
 function preloadMeltdown() {
   getMeltdown().preload();
@@ -1031,6 +1114,8 @@ async function enterMeltdown() {
   // Free Level 2's GPU resources, as Level 1's are freed on the way into
   // Level 2 (a demo jump back rebuilds it).
   if (foundry) { foundryHud.unbind(); foundry.dispose(); foundry = null; }
+  foundryLift?.dispose();
+  foundryLift = null;
   currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
   health = 100; shake = 0;
   // Spheres left over from the foundry become a few extra balls.
@@ -1571,6 +1656,7 @@ function updateGame(dt, time) {
   if ((foundryInvulnerable > 0 || run.invulnerable > 0) && Math.floor(time * 14) % 2 === 0 && !photoActive) avatar.visible = false;
   body.scale.y = sliding > 0 ? 0.55 : 1;
   body.rotation.z = Math.sin(time * 9) * .035;
+  updatePlayerBody(paused ? 0 : dt);
   for (const crystal of breakables) if (crystal.userData.kind === "crystal" && crystal.userData.alive) crystal.rotation.y += dt * 1.8;
   if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
   if (run.fadeOut > 0) { run.fadeOut = Math.max(0, run.fadeOut - dt * 1.4); ui.fade.style.opacity = run.fadeOut.toFixed(3); }
@@ -1632,18 +1718,36 @@ function updateGame(dt, time) {
 
       // Level 2 exits on the foundry's own `complete` event - breaking the
       // extraction valve - rather than on a hard-coded z. If the player somehow
-      // runs past the end, fall through to the lift anyway.
-      if (foundry && foundryDistance() > foundry.route.totalLength - 4) {
-        state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("SERVICE LIFT // SECTOR 03");
+      // runs past the end, fall through to the lift anyway. Either way they
+      // run on, centre lane, into the Calibration Lift.
+      if (foundry && (foundryExit || foundryDistance() > foundry.route.totalLength - 4)) {
+        foundryExit = true;
+        lane = 1;
+        if (foundryLift && runZ <= foundryLift.root.position.z) {
+          runZ = foundryLift.root.position.z;
+          startFoundryLift();
+        } else if (!foundryLift) {
+          state = "lift"; liftTimer = 0; transitionTarget = 3;
+        }
       }
     }
   } else if (state === "lift" && transitionTarget === 2 && causeway) {
     causeway.update({ dt, time: simTime, distance: causewayDistance(), player: playerWorld(_playerPos), playing: false });
     updateCausewayLift(dt);
+  } else if (state === "lift" && transitionTarget === 3 && foundryLift?.state.riding) {
+    // Level 2 -> 3: Level 1's lift ride, then Level 3 opens with the player
+    // stepping out of its own lift (see enterMeltdown).
+    const ride = foundryLift.update(dt, time, settings.reducedMotion);
+    foundryLift.cameraPose(ride.t, run.liftFrom, camera.position, _look, settings.reducedMotion);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(_look);
+    foundryLift.floorPoint(avatar.position);
+    avatar.visible = true;
+    if (currentLevel === 2 && foundry) updateFoundry(dt, time);
+    ui.fade.style.opacity = ride.fade.toFixed(3);
+    if (ride.done) enterMeltdown();
   } else if (state === "lift" && transitionTarget === 3) {
-    // Level 2 -> 3: fade to black; Level 3 opens with the player stepping
-    // out of its own lift (see enterMeltdown). A teammate's elevator
-    // cutscene can replace this fade.
+    // No lift to ride (e.g. it failed to build): just fade across.
     liftTimer += dt;
     ui.fade.style.opacity = Math.min(1, liftTimer / 1.1).toFixed(3);
     if (liftTimer > 1.2) enterMeltdown();
@@ -1658,7 +1762,7 @@ function updateGame(dt, time) {
   // ---- Cameras ---------------------------------------------------------
   if (causewayLive && state !== "lift") {
     causewayCamera(dt, time);
-  } else if (!(state === "lift" && transitionTarget === 2 && causewayLive)) {
+  } else if (!(state === "lift" && transitionTarget === 2 && causewayLive) && !(state === "lift" && transitionTarget === 3 && foundryLift?.state.riding)) {
     const forward = new THREE.Vector3(0, 1.25, runZ - 12);
     const desired = cameraThird ? new THREE.Vector3(playerX, 4.2, runZ + 8.5) : new THREE.Vector3(playerX, 1.8, runZ + .7);
     camera.up.lerp(new THREE.Vector3(0, 1, 0), Math.min(1, dt * 4));
@@ -1893,11 +1997,13 @@ for (const button of characterButtons) {
   button.addEventListener("click", () => {
     if (!CHARACTERS[button.dataset.character]) return;
     saveCharacter(button.dataset.character);
+    loadPlayerBody(button.dataset.character);
     meltdown?.setCharacter(button.dataset.character);
     showCharacterChoice();
   });
 }
 showCharacterChoice();
+loadPlayerBody();
 
 $("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
 ui.endlessButton.addEventListener("click", () => { if (!ui.endlessButton.disabled) startEndless(); });

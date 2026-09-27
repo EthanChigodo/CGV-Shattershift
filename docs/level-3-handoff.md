@@ -93,8 +93,13 @@ src/levels/meltdown/
                  post, HUD, audio, runner rules, camera rigs, roof input,
                  lift cutscenes, hand-over to the roof. main.js and the
                  preview both drive it.
-  elevator.js    PLACEHOLDER lifts (createLift) - the seam for the real
-                 elevator; cutscene timelines live in index.js / roof.js.
+  elevator.js    PLACEHOLDER lifts (createLift) for the start of Phase A
+                 and the roof - the seam for the real elevator; cutscene
+                 timelines live in index.js / roof.js.
+src/levels/common/calibration-lift.js
+                 Level 1's glass Calibration Lift as a shared prop + ride
+                 (doors, rise, orbiting camera): the end of Level 2 and of
+                 Level 3's Phase A.
   index.js       MeltdownLevel - Phase A. Data-driven beats (BEAT_SPECS) and
                  halls (HALLS) -> route with 3 turns; shell, openings, set
                  pieces, obstacle patterns, dressing, signs, fire front;
@@ -212,7 +217,13 @@ it the same way - give it the renderer, forward input, call `update` and
     renderer its pixel ratio back - Level 3 renders at ratio 1).
   - `MELTDOWN_AUDIO` switches its sound off (see §8).
 - `index.html` has the import map, and **Play as** (female/male) on the start
-  screen; the choice is shared with the preview (`localStorage`).
+  screen; the choice is shared with the preview (`localStorage`). The chosen
+  character is the player's body in **every** level: in Levels 1 and 2
+  `main.js` puts Level 3's `PlayerAvatar` (arms free - no launcher) in place
+  of the old capsule, with a little self-light in Level 1's dark halls.
+- **Level 2 ends like Level 1:** after the extraction valve you keep running
+  (centre lane) off the end of the foundry, across a landing and into the
+  Calibration Lift; its ride is the hand-over into Level 3.
 - The old "Inverted Core" prototype (gravity lanes, rings, the old lift at
   z = -282) was removed from `main.js`.
 

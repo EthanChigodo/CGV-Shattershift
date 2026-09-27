@@ -16,10 +16,11 @@ import { serve, launch, openPage } from "./lib.js";
 import * as route from "./checks/route.js";
 import * as fairness from "./checks/fairness.js";
 import * as roof from "./checks/roof.js";
+import * as playthrough from "./checks/playthrough.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
-const CHECKS = [route, fairness, roof];
+const CHECKS = [route, fairness, roof, playthrough];
 
 /** Documentation shots: [name, route distance, camera mode]. */
 const SHOTS = [
