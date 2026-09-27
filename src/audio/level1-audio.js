@@ -138,7 +138,7 @@ export class Level1Audio {
   serumCollected() { this._play("pickup"); }
   sphereCollected() { this._play("pickup"); }
   podBreak() { this._play("podBreak"); }
-  wallRicochet() { this._play("wall"); }
+  surfaceRicochet() { this._play("wall"); }
   glassBreak() { this._play("glass", { cooldown: 0.045 }); }
   impact(strength = 1) {
     this._play("impact", { volume: LEVEL1_SFX_VOLUME.impact * clamp(strength, 0.55, 1.15), cooldown: 0.18 });

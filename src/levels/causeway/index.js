@@ -588,42 +588,55 @@ export class CausewayLevel {
   }
 
   /**
-   * Swept-sphere contact with the streamed corridor's side walls.
+   * Swept-sphere contact with the streamed corridor shell.
    *
-   * The walls are InstancedMeshes rather than gameplay colliders, so their
-   * current analytic inner planes are cheaper and more exact than raycasting
-   * every streamed instance. The bridge is deliberately open-sided.
+   * Its walls and ceilings are InstancedMeshes rather than gameplay
+   * colliders, so their analytic inner planes are cheaper and more exact than
+   * raycasting every streamed instance. The bridge is deliberately open.
    */
-  sideWallHit(start, end, radius = 0) {
-    const dx = end.x - start.x;
-    if (Math.abs(dx) < 1e-7) return null;
+  corridorSurfaceHit(start, end, radius = 0) {
     const distance = this.origin.z - (start.z + end.z) * 0.5;
     const theme = themeAt(distance, this.mode);
-    const innerWall = theme === "ward" ? 5.8 : theme === "atrium" ? 5.95 : null;
-    if (innerWall === null) return null;
+    if (theme === "bridge") return null;
 
+    let best = null;
+    const consider = (centre, point, normal, surface, side = null) => {
+      const hitDistance = start.distanceTo(centre);
+      if (best && best.distance <= hitDistance) return;
+      const position = centre.clone().addScaledVector(normal, 0.01);
+      best = { normal, point, position, distance: hitDistance, surface, side };
+    };
+
+    const dx = end.x - start.x;
+    const innerWall = theme === "ward" ? 5.8 : 5.95;
     const right = innerWall - radius;
     const left = -innerWall + radius;
-    let limit;
-    let normal;
-    let side;
-    if (dx > 0 && end.x > right) {
-      limit = right;
-      normal = new THREE.Vector3(-1, 0, 0);
-      side = "right";
-    } else if (dx < 0 && end.x < left) {
-      limit = left;
-      normal = new THREE.Vector3(1, 0, 0);
-      side = "left";
-    } else return null;
+    if (dx > 1e-7 && end.x > right) {
+      const t = THREE.MathUtils.clamp((right - start.x) / dx, 0, 1);
+      const centre = start.clone().lerp(end, t);
+      centre.x = right;
+      const point = centre.clone(); point.x = innerWall;
+      consider(centre, point, new THREE.Vector3(-1, 0, 0), "wall", "right");
+    } else if (dx < -1e-7 && end.x < left) {
+      const t = THREE.MathUtils.clamp((left - start.x) / dx, 0, 1);
+      const centre = start.clone().lerp(end, t);
+      centre.x = left;
+      const point = centre.clone(); point.x = -innerWall;
+      consider(centre, point, new THREE.Vector3(1, 0, 0), "wall", "left");
+    }
 
-    const t = THREE.MathUtils.clamp((limit - start.x) / dx, 0, 1);
-    const centre = start.clone().lerp(end, t);
-    centre.x = limit;
-    const point = centre.clone();
-    point.x = side === "right" ? innerWall : -innerWall;
-    const position = centre.clone().addScaledVector(normal, 0.01);
-    return { normal, point, position, distance: start.distanceTo(centre), side };
+    const dy = end.y - start.y;
+    const ceiling = ceilingAt(distance, this.mode);
+    const ceilingLimit = ceiling - radius;
+    if (dy > 1e-7 && end.y > ceilingLimit) {
+      const t = THREE.MathUtils.clamp((ceilingLimit - start.y) / dy, 0, 1);
+      const centre = start.clone().lerp(end, t);
+      centre.y = ceilingLimit;
+      const point = centre.clone(); point.y = ceiling;
+      consider(centre, point, new THREE.Vector3(0, -1, 0), "ceiling");
+    }
+
+    return best;
   }
 
   /** Targets within `radius` of a world point (for the shock sphere). */
