@@ -88,10 +88,13 @@ export class GravityFaultRide {
    * @param {THREE.WebGLRenderer} o.renderer  the game's renderer
    * @param {number} [o.spheres]  spheres carried in from Level 2
    * @param {boolean} [o.reducedMotion]  less shake, gentler camera moves
+   * @param {boolean} [o.boarded]  the player boarded in Level 2 already (the
+   *   Calibration Lift): start with the doors shut, as the lift launches
    */
-  constructor({ renderer, spheres = 0, reducedMotion = false }) {
+  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false }) {
     this.renderer = renderer;
     this.reducedMotion = reducedMotion;
+    this.boarded = boarded;
     this.events = createEmitter();
     this.owned = new Owned();
     this.uniforms = createRideUniforms();
@@ -124,7 +127,9 @@ export class GravityFaultRide {
     this.hud.show();
 
     this.state = {
-      t: 0,
+      t: boarded ? LAUNCH_AT - 0.1 : 0,
+      /** Seconds since the ride appeared (the fade-in). */
+      age: 0,
       cabinY: 0,
       velocity: 0,
       shot: null,
@@ -136,7 +141,7 @@ export class GravityFaultRide {
     this.fade = 1;
     this.result = { done: false, stabilised: 0, bonus: 0, spheres };
 
-    this.cabin.setDoors(1);
+    this.cabin.setDoors(boarded ? 0 : 1);
     this.cabin.display.userData.draw(String(START_FLOOR));
     this._place(0);
   }
@@ -150,6 +155,7 @@ export class GravityFaultRide {
     if (this.result.done) return;
     const s = this.state;
     s.t += dt;
+    s.age += dt;
     const t = s.t;
     this.uniforms.uTime.value = time;
 
@@ -168,14 +174,14 @@ export class GravityFaultRide {
     const floor = START_FLOOR + s.cabinY / STOREY;
     this.hud.setFloor(floor, s.velocity);
     this.cabin.display.userData.draw(String(Math.floor(floor)));
-    if (t < LAUNCH_AT) this.hud.alert("DOORS CLOSING", "info");
+    if (t < LAUNCH_AT && !this.boarded) this.hud.alert("DOORS CLOSING", "info");
     else if (t < LAUNCH_AT + 2.5) this.hud.alert("ASCENDING // SECTOR 03", "info");
     else this.hud.alert(null);
 
     this.figure.pose(0, time);
 
     // Fades are the host's overlay; the ride only says how dark.
-    this.fade = Math.max(1 - t / FADE_IN, THREE.MathUtils.clamp((t - (END_AT - FADE_OUT)) / FADE_OUT, 0, 1));
+    this.fade = Math.max(1 - s.age / FADE_IN, THREE.MathUtils.clamp((t - (END_AT - FADE_OUT)) / FADE_OUT, 0, 1));
     if (t >= END_AT) {
       this.result.done = true;
       this.events.emit("arrive", { ...this.result });
@@ -191,6 +197,8 @@ export class GravityFaultRide {
   _shotAt(t) {
     let name = SHOTS[0][1];
     for (const [start, shot] of SHOTS) if (t >= start) name = shot;
+    // Boarded in Level 2: the doors shot has already happened there.
+    if (name === "doors" && this.boarded) name = "exterior";
     return name;
   }
 

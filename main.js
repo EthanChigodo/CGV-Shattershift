@@ -8,7 +8,12 @@ import { Minimap } from "./src/fx/minimap.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
+import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
+import { PlayerAvatar } from "./src/levels/meltdown/player.js";
+import { loadMeltdownAssets } from "./src/levels/meltdown/assets.js";
 import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
+import { MusicManager } from "./src/audio/music-manager.js";
+import { Level1Audio } from "./src/audio/level1-audio.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 
 const canvas = document.querySelector("#game");
@@ -96,9 +101,22 @@ function saveSettings() {
   try { localStorage.setItem("fractureRunSettings", JSON.stringify(settings)); } catch (error) {}
 }
 
-// Sound and voice are out of scope for this build (another team member owns
-// audio). Levels emit events - "explosion", "lock", "lift-enter", ... - for the
-// audio workstream to hook into.
+// Music belongs to the application shell, not a level: Level 1 can be rebuilt
+// by Play Again while its soundtrack and playback position remain untouched.
+// Level 3's existing synthesized effects remain independent.
+const music = new MusicManager();
+const level1Audio = new Level1Audio(() => music.context);
+music.showMenu();
+const unlockMusic = async (event) => {
+  // Set the briefing intent before unlocking on the same pointer/key gesture,
+  // so the menu track cannot briefly start while the piano is loading.
+  if (event.target?.closest?.("#storyBeginButton, #replayStoryButton")) music.showStory();
+  const ready = music.unlock(); // Creates the shared context synchronously.
+  level1Audio.unlock();
+  if (await ready) level1Audio.unlock();
+};
+addEventListener("pointerdown", unlockMusic, { passive: true });
+addEventListener("keydown", unlockMusic);
 
 const $ = (selector) => document.querySelector(selector);
 const ui = {
@@ -203,6 +221,60 @@ const pack = new THREE.Mesh(new THREE.BoxGeometry(.65, .8, .3), railMat); pack.p
 // The figure is unchanged; it only casts a shadow now that Level 1 has sun shadows.
 avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 
+/**
+ * The player's body in Levels 1 and 2 is the same character as in Level 3:
+ * the patient picked on the start screen ("Play as"), animated by Level 3's
+ * body rig (src/levels/meltdown/player.js) from the run's real speed, lane
+ * changes, jumps and slides. Subject 07 throws spheres by hand, so there is
+ * no launcher to hold here. The capsule above stays as a stand-in until the
+ * model has loaded (or if it cannot load).
+ */
+const playerBody = new PlayerAvatar();
+playerBody.hold = 0;
+let playerBodyReady = false;
+let playerBodyX = 0;
+const playerBodyMaterials = [];
+async function loadPlayerBody(name = savedCharacter()) {
+  const assets = await loadMeltdownAssets(MELTDOWN_ASSET_BASE, { names: [name] });
+  const asset = assets.get(name);
+  if (!asset || name !== savedCharacter()) return;
+  playerBody.setModel(asset.template);
+  playerBodyMaterials.length = 0;
+  // A touch of self-light, so the body reads in Level 1's dark, fire-lit
+  // halls (Level 1 turns the global lights off). Set once; the per-level
+  // strength is a uniform, so changing it costs nothing.
+  playerBody.model?.traverse((o) => {
+    if (!o.isMesh || !o.material?.map) return;
+    o.material.emissiveMap = o.material.map;
+    o.material.emissive.setRGB(1, 1, 1);
+    o.material.needsUpdate = true;
+    playerBodyMaterials.push(o.material);
+  });
+  if (!playerBodyReady) {
+    avatar.add(playerBody.root);
+    body.visible = false;
+    pack.visible = false;
+    playerBodyReady = true;
+  }
+}
+
+function updatePlayerBody(dt) {
+  if (!playerBodyReady) return;
+  const moving = state === "playing" && !paused;
+  const speed = !moving ? 0 : currentLevel === 1 ? run.speed : currentLevel === 2 ? foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1) : 0;
+  const lateralVel = dt > 0 ? (playerX - playerBodyX) / dt : 0;
+  playerBodyX = playerX;
+  const glow = currentLevel === 1 ? 0.32 : 0.06;
+  for (const m of playerBodyMaterials) m.emissiveIntensity = glow;
+  playerBody.update(dt, {
+    speed,
+    lateralVel,
+    height: jumpHeight,
+    sliding: sliding > 0,
+    stumble: run.damage > 0.5 || foundrySlow > 0.3 ? 1 : 0,
+  });
+}
+
 function updateUI() {
   ui.level.textContent = `0${currentLevel} / 03`;
   ui.ammo.textContent = ammo; ui.health.textContent = Math.max(0, Math.round(health)); ui.score.textContent = String(Math.floor(score)).padStart(6, "0");
@@ -232,6 +304,14 @@ const FOUNDRY_SPEED_ZONES = [
 ];
 
 let foundry = null;
+/**
+ * Level 2 ends the way Level 1 does: past the extraction valve the corridor
+ * opens onto a landing and the Calibration Lift (Level 1's glass elevator,
+ * src/levels/common/calibration-lift.js) takes the player up to Level 3.
+ */
+let foundryLift = null;
+let foundryExit = false;
+const FOUNDRY_LANDING = 12;
 const foundryHud = new FoundryHud({ dev: false, reducedMotion: settings.reducedMotion });
 // Sits alongside the game's own HUD rather than owning the screen.
 foundryHud.root.classList.add("embedded");
@@ -260,6 +340,7 @@ function buildFoundry() {
     foundryHud.unbind();
     foundry.dispose();
   }
+  foundryLift?.dispose();
 
   foundry = new FoundryLevel({
     origin: new THREE.Vector3(0, 0, FOUNDRY_ORIGIN_Z),
@@ -273,13 +354,19 @@ function buildFoundry() {
   });
   foundry.addTo(scene);
   foundry.root.visible = false;
+  foundryExit = false;
+  foundryLift = new CalibrationLift({ landing: FOUNDRY_LANDING, landingWidth: 11.2 });
+  foundryLift.root.position.set(0, 0, FOUNDRY_ORIGIN_Z - foundry.route.totalLength - FOUNDRY_LANDING - LIFT_RADIUS);
+  foundryLift.root.visible = false;
+  scene.add(foundryLift.root);
 
   foundryHud.bind(foundry);
   foundry.events.on("complete", () => {
     if (currentLevel !== 2 || state !== "playing") return;
     score += Math.max(0, foundry.state.systemsOnline * 500 + health * 10);
-    state = "lift"; liftTimer = 0; transitionTarget = 3;
-    showMessage("GRAVITY LIFT // SECTOR 03");
+    // Keep running: out of the furnace, across the landing, into the lift.
+    foundryExit = true;
+    showMessage("EXTRACTION VALVE // TO THE LIFT");
     updateUI();
   });
   foundry.events.on("escape-end", ({ survived }) => {
@@ -296,6 +383,7 @@ function buildFoundry() {
 function setFoundryActive(active) {
   if (!foundry) return;
   foundry.root.visible = active;
+  if (foundryLift) foundryLift.root.visible = active;
   if (active) {
     preloadMeltdown();
     foundryHud.show();
@@ -483,10 +571,15 @@ function wireCausewayEvents(level) {
   on("hint", (p) => causewayHud.hint(p.text));
   on("file", (p) => causewayHud.caseFile(p.lines, p.found, p.total));
   on("sprinkler", () => causewayHud.hint("Sprinkler open: fires below are going out"));
+  on("serum", () => level1Audio.serumCollected());
+  on("sphere-cache", () => level1Audio.sphereCollected());
   on("vent", () => causewayHud.hint("Vent clear: the smoke is thinning"));
   on("extinguish", (p) => { if (p.by === "cryo") showMessage(`CRYO // ${p.count} FIRE${p.count > 1 ? "S" : ""} OUT`); });
   on("collapse-warning", () => causewayHud.hint("Ceiling giving way: watch the red ring"));
-  on("collapse-landed", () => triggerShake(0.25));
+  on("collapse-start", (p) => level1Audio.startFalling(p.id));
+  on("collapse-landed", (p) => { level1Audio.stopFalling(p.id); level1Audio.impact(0.9); triggerShake(0.25); });
+  on("glass-break", (p) => { level1Audio.glassBreak(); level1Audio.addGlassDebris(p.position, p.radius); });
+  on("pod-break", () => level1Audio.podBreak());
   on("explosion", (p) => {
     triggerShake(0.55 * p.strength);
     run.flash = Math.max(run.flash, 0.35 * p.strength);
@@ -615,8 +708,10 @@ function updateCauseway(dt, time) {
   }
   if (hits.length && run.invulnerable <= 0) {
     run.invulnerable = 1.1;
-    if (!absorbWithShield(_forward)) damage(22, "INTEGRITY DAMAGED");
+    const shielded = absorbWithShield(_forward);
+    if (!shielded) damage(22, "INTEGRITY DAMAGED");
     else run.slow = 0.3;
+    level1Audio.impact(shielded ? 0.65 : 1);
     if (state !== "playing") return;
   }
   for (const [mesh, left] of run.grazed) {
@@ -644,6 +739,8 @@ function updateCauseway(dt, time) {
   const smoke = causeway.state.smoke;
   if (smoke > 0.55) health -= (smoke - 0.55) * 10 * dt;
   if (health <= 0) { updateUI(); endRun(false, exposure > 0 ? "fire" : "smoke"); return; }
+  level1Audio.updateEnvironment(causeway.audioEnvironment(_playerPos));
+  level1Audio.updateBrokenGlass(_playerPos, run.speed > 1 && jumpHeight < 0.12);
 
   // ---- Bridge collapse chase -------------------------------------------
   const chase = causeway.state.chase;
@@ -695,7 +792,10 @@ function shatterCauseway(target, hit) {
     if (!result.cracked) { combo = Math.min(9, combo + 1); comboTimer = 2.6; }
     run.focus = Math.min(1, run.focus + 0.08);
   }
-  if (result.spheres) { ammo += result.spheres; causewayHud.bump(".cw-spheres"); }
+  if (result.spheres) {
+    ammo += result.spheres;
+    causewayHud.bump(".cw-spheres");
+  }
   if (result.serum) activateSerum(result.serum);
   if (result.label) showMessage(result.label);
   if (!settings.reducedMotion && ["door", "lock", "falling", "file"].includes(result.kind) && !bodyHit) run.hitStop = 0.09;
@@ -735,6 +835,7 @@ function startCausewayLift() {
 
 function updateCausewayLift(dt) {
   const result = causeway.updateLift(dt, camera, run.liftFrom, settings.reducedMotion);
+  level1Audio.updateElevator(causeway.state.lift.velocity, !result.done);
   avatar.visible = true;
   avatar.position.set(0, result.cabinY, causeway.worldZ(CAUSEWAY_ROUTE.lift));
   const end = settings.reducedMotion ? 6.2 : 7.4;
@@ -744,6 +845,8 @@ function updateCausewayLift(dt) {
 
 /** Hand-off to Level 2. Mirrors the old prototype's lift exit exactly. */
 function finishCausewayLift() {
+  level1Audio.cleanupLevel();
+  music.fadeOut();
   currentLevel = 2;
   state = "playing";
   liftTimer = 0; playerY = 0; snapCamera = true;
@@ -984,6 +1087,16 @@ function getMeltdown() {
   return meltdown;
 }
 
+/** Level 2's end: the player is in the Calibration Lift; the doors close and it rides up. */
+function startFoundryLift() {
+  if (state !== "playing" || currentLevel !== 2) return;
+  state = "lift"; liftTimer = 0; transitionTarget = 3;
+  run.liftFrom.copy(camera.position);
+  foundryLift.start();
+  showMessage("CALIBRATION LIFT // SECTOR 03");
+  updateUI();
+}
+
 /** Start streaming Level 3's models early - called when Level 2 starts. */
 function preloadMeltdown() {
   getMeltdown().preload();
@@ -1004,6 +1117,8 @@ async function enterMeltdown() {
   // Free Level 2's GPU resources, as Level 1's are freed on the way into
   // Level 2 (a demo jump back rebuilds it).
   if (foundry) { foundryHud.unbind(); foundry.dispose(); foundry = null; }
+  foundryLift?.dispose();
+  foundryLift = null;
   currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
   health = 100; shake = 0;
   // Spheres left over from the foundry become a few extra balls.
@@ -1083,6 +1198,7 @@ const _aim = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _segment = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const BALL_CORRIDOR_RESTITUTION = 1.0;
 
 function aliveTargets() {
   if (currentLevel === 1 && causeway) return causeway.breakables;
@@ -1219,9 +1335,10 @@ function fire() {
     mesh.position.copy(_origin);
     mesh.layers.set(LAYERS.FX);
     scene.add(mesh);
-    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0 });
+    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
   }
   run.shots += count;
+  if (inCauseway) level1Audio.throwBall();
   updateUI();
 }
 
@@ -1276,16 +1393,25 @@ function updateProjectiles(dt) {
       raycaster.far = length + p.mesh.scale.x;
       let hit = raycaster.intersectObjects(targets, false)[0];
       const solid = solids.length ? raycaster.intersectObjects(solids, false)[0] : null;
+      const surface = currentLevel === 1 && causeway ? causeway.corridorSurfaceHit(old, p.mesh.position, p.mesh.scale.x) : null;
       raycaster.far = Infinity;
       // Near miss on a small target counts: a sphere passing within its own
       // radius plus 0.25 m of a small target's bounding sphere hits it.
       if (!hit && currentLevel === 1) hit = grazeTarget(targets, old, p.mesh.position, p.mesh.scale.x + 0.25);
-      if (hit && (!solid || hit.distance <= solid.distance)) {
+      if (hit && (!solid || hit.distance <= solid.distance) && (!surface || hit.distance <= surface.distance)) {
         const result = shatter(hit.object, { point: hit.point, direction: p.velocity, ball: p.ball });
         if (result && !result.rejected) { p.scored = true; run.hits += 1; }
         if (p.ball !== "glass") { detonate(p, hit.point); p.life = 0; }
         else if (!result || result.cracked || result.rejected || !["pane", "blade", "falling", "tank", "door"].includes(result.kind) || currentLevel !== 1) p.life = 0;
         else p.velocity.multiplyScalar(0.82); // glass spheres punch through and keep going
+      } else if (surface && (!solid || surface.distance <= solid.distance)) {
+        const speed = p.velocity.length();
+        p.velocity.reflect(surface.normal).normalize().multiplyScalar(speed * BALL_CORRIDOR_RESTITUTION);
+        p.mesh.position.copy(surface.position);
+        if (surface.surface === "ceiling") p.ceilingBounces += 1;
+        else p.wallBounces += 1;
+        level1Audio.surfaceRicochet();
+        causeway.ricochet(surface.point);
       } else if (solid) {
         if (p.ball !== "glass") { detonate(p, solid.point); p.life = 0; }
         else {
@@ -1315,20 +1441,30 @@ function updateProjectiles(dt) {
 /* GRAVITY LIFT - the Level 2 -> 3 elevator ride                         */
 /* ==================================================================== */
 
+/** Seconds into Level 2's Calibration Lift ride (doors shut, climbing) to fade into the Gravity Fault. */
+const FOUNDRY_LIFT_HANDOFF = 2.2;
+
 /**
  * The Gravity Fault lift (src/elevators/gravity-fault.js) is its own scene,
  * like Level 3: this block builds it once the Foundry has faded out, renders
  * it instead of the main scene while it runs, and hands over to Level 3 when
  * it is done. Level 3's models keep streaming in while it runs.
  */
-function startGravityLift() {
+/**
+ * @param {object} [o]
+ * @param {boolean} [o.boarded]  the player already boarded (Level 2's Calibration
+ *   Lift): skip the doors-closing shot and start as the lift launches
+ */
+function startGravityLift({ boarded = false } = {}) {
   if (gravityLift) return;
   currentLevel = 2; state = "lift"; transitionTarget = 3; liftTimer = 0;
-  // Free Level 2 now rather than on the way into Level 3.
+  // Free Level 2 (and its lift) now rather than on the way into Level 3.
   setFoundryActive(false);
   if (foundry) { foundryHud.unbind(); foundry.dispose(); foundry = null; }
+  foundryLift?.dispose();
+  foundryLift = null;
   preloadMeltdown();
-  gravityLift = new GravityFaultRide({ renderer, spheres: ammo, reducedMotion: settings.reducedMotion });
+  gravityLift = new GravityFaultRide({ renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded });
   gravityLift.onPointerMove(pointer.x, pointer.y);
   // The ride has its own alerts; clear the game's message line for them.
   ui.message.classList.remove("show"); messageTimer = 0;
@@ -1403,6 +1539,8 @@ function resetStats(mode = causewayMode) {
 
 function resetGame(mode = causewayMode) {
   resetStats(mode); state = "playing";
+  level1Audio.startLevel();
+  music.playRound1();
   causewayHud.show();
   if (mode === "endless") causewayHud.title("Endless lab", "Randomised. Faster every 250 m.", 2.2);
 }
@@ -1414,6 +1552,8 @@ function resetGame(mode = causewayMode) {
  */
 function beginLaunch() {
   resetStats("story"); state = "launch"; launchTimer = 0;
+  level1Audio.startLevel();
+  music.playRound1();
 }
 
 function startEndless() {
@@ -1492,6 +1632,7 @@ const failReasons = {
 function endRun(won, reason = null, detail = null) {
   if (state === "ended") return;
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
+  if (currentLevel === 1) { music.gameOverDuck(); level1Audio.gameOver(); }
   causewayHud.warning(null);
   ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${currentLevel}`;
   ui.endTitle.textContent = won ? "CONTROL CORE STABILISED" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
@@ -1523,6 +1664,7 @@ function endRun(won, reason = null, detail = null) {
 function demoJump(level) {
   if (state !== "playing") return;
   if (level === 1 || level === 4) { resetGame(level === 4 ? "endless" : "story"); return; }
+  music.fadeOut();
   leaveGravityLift();
   if (currentLevel === 1 && causeway) setCausewayActive(false);
   if (currentLevel === 3) leaveMeltdown(level);
@@ -1586,6 +1728,7 @@ function updateGame(dt, time) {
   if ((foundryInvulnerable > 0 || run.invulnerable > 0) && Math.floor(time * 14) % 2 === 0 && !photoActive) avatar.visible = false;
   body.scale.y = sliding > 0 ? 0.55 : 1;
   body.rotation.z = Math.sin(time * 9) * .035;
+  updatePlayerBody(paused ? 0 : dt);
   for (const crystal of breakables) if (crystal.userData.kind === "crystal" && crystal.userData.alive) crystal.rotation.y += dt * 1.8;
   if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
   if (run.fadeOut > 0) { run.fadeOut = Math.max(0, run.fadeOut - dt * 1.4); ui.fade.style.opacity = run.fadeOut.toFixed(3); }
@@ -1649,17 +1792,39 @@ function updateGame(dt, time) {
 
       // Level 2 exits on the foundry's own `complete` event - breaking the
       // extraction valve - rather than on a hard-coded z. If the player somehow
-      // runs past the end, fall through to the lift anyway.
-      if (foundry && foundryDistance() > foundry.route.totalLength - 4) {
-        state = "lift"; liftTimer = 0; transitionTarget = 3; showMessage("SERVICE LIFT // SECTOR 03");
+      // runs past the end, fall through to the lift anyway. Either way they
+      // run on, centre lane, into the Calibration Lift.
+      if (foundry && (foundryExit || foundryDistance() > foundry.route.totalLength - 4)) {
+        foundryExit = true;
+        lane = 1;
+        if (foundryLift && runZ <= foundryLift.root.position.z) {
+          runZ = foundryLift.root.position.z;
+          startFoundryLift();
+        } else if (!foundryLift) {
+          state = "lift"; liftTimer = 0; transitionTarget = 3;
+        }
       }
     }
   } else if (state === "lift" && transitionTarget === 2 && causeway) {
     causeway.update({ dt, time: simTime, distance: causewayDistance(), player: playerWorld(_playerPos), playing: false });
     updateCausewayLift(dt);
+  } else if (state === "lift" && transitionTarget === 3 && foundryLift?.state.riding) {
+    // Level 2 -> 3: board the Calibration Lift in the Foundry; once it is
+    // climbing, fade into the Gravity Fault ride (GRAVITY LIFT below), which
+    // carries on up the tower and hands over to Level 3.
+    const ride = foundryLift.update(dt, time, settings.reducedMotion);
+    foundryLift.cameraPose(ride.t, run.liftFrom, camera.position, _look, settings.reducedMotion);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(_look);
+    foundryLift.floorPoint(avatar.position);
+    avatar.visible = true;
+    if (currentLevel === 2 && foundry) updateFoundry(dt, time);
+    const handoff = THREE.MathUtils.clamp((ride.t - FOUNDRY_LIFT_HANDOFF) / 0.5, 0, 1);
+    ui.fade.style.opacity = Math.max(ride.fade, handoff).toFixed(3);
+    if (handoff >= 1 || ride.done) startGravityLift({ boarded: true });
   } else if (state === "lift" && transitionTarget === 3) {
-    // Level 2 -> 3: fade to black, then the Gravity Fault lift ride (see
-    // GRAVITY LIFT below), then Level 3 opens with the lift arriving.
+    // No Calibration Lift to board (e.g. it failed to build): fade straight
+    // into the Gravity Fault ride.
     liftTimer += dt;
     ui.fade.style.opacity = Math.min(1, liftTimer / 0.6).toFixed(3);
     if (liftTimer > 0.7) startGravityLift();
@@ -1674,7 +1839,7 @@ function updateGame(dt, time) {
   // ---- Cameras ---------------------------------------------------------
   if (causewayLive && state !== "lift") {
     causewayCamera(dt, time);
-  } else if (!(state === "lift" && transitionTarget === 2 && causewayLive)) {
+  } else if (!(state === "lift" && transitionTarget === 2 && causewayLive) && !(state === "lift" && transitionTarget === 3 && foundryLift?.state.riding)) {
     const forward = new THREE.Vector3(0, 1.25, runZ - 12);
     const desired = cameraThird ? new THREE.Vector3(playerX, 4.2, runZ + 8.5) : new THREE.Vector3(playerX, 1.8, runZ + .7);
     camera.up.lerp(new THREE.Vector3(0, 1, 0), Math.min(1, dt * 4));
@@ -1790,6 +1955,8 @@ function closeSettings() {
 function openPause() {
   if (state !== "playing" && state !== "lift") return;
   paused = true;  run.focusing = false;
+  music.pauseDuck();
+  if (currentLevel === 1) level1Audio.setPaused(true);
   if (currentLevel === 3) meltdown?.setPaused(true);
   ui.pauseLevel.textContent = `0${currentLevel} / 03`;
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
@@ -1802,8 +1969,11 @@ function openPause() {
 }
 
 function closePause() {
+  const wasPaused = paused;
   ui.pause.classList.remove("active");
   paused = false;
+  if (wasPaused) music.restore();
+  if (wasPaused && currentLevel === 1) level1Audio.setPaused(false);
   if (currentLevel === 3) meltdown?.setPaused(false);
 }
 
@@ -1824,6 +1994,7 @@ function togglePhoto() {
 
 function quitToMenu() {
   closePause(); cancelStory();
+  level1Audio.cleanupLevel();
   if (photoActive) togglePhoto();
   ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
   ui.settings.classList.remove("active"); ui.end.classList.remove("active"); ui.manual.classList.remove("active");
@@ -1831,6 +2002,7 @@ function quitToMenu() {
   refreshMenuProgress();
   ui.story.classList.remove("active");
   ui.start.classList.add("active");
+  music.showMenu();
 }
 
 const storyBeats = [
@@ -1865,6 +2037,7 @@ function cancelStory() {
 
 function startStory() {
   cancelStory();
+  music.showStory();
   storyPlaying = true;
   ui.story.classList.add("active");
   ui.start.classList.remove("active");
@@ -1880,6 +2053,7 @@ function finishStory() {
   cancelStory();
   ui.story.classList.remove("active");
   ui.start.classList.add("active");
+  music.showMenu();
 }
 
 ui.storySkipButton.addEventListener("click", finishStory);
@@ -1901,11 +2075,13 @@ for (const button of characterButtons) {
   button.addEventListener("click", () => {
     if (!CHARACTERS[button.dataset.character]) return;
     saveCharacter(button.dataset.character);
+    loadPlayerBody(button.dataset.character);
     meltdown?.setCharacter(button.dataset.character);
     showCharacterChoice();
   });
 }
 showCharacterChoice();
+loadPlayerBody();
 
 $("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
 ui.endlessButton.addEventListener("click", () => { if (!ui.endlessButton.disabled) startEndless(); });
@@ -1922,6 +2098,10 @@ $("#restartRunButton").addEventListener("click", () => { closePause(); resetGame
 $("#quitButton").addEventListener("click", quitToMenu);
 $("#restartButton").addEventListener("click", () => { resetGame(); });
 $("#endMenuButton").addEventListener("click", quitToMenu);
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (button && !button.disabled) level1Audio.uiClick();
+});
 ui.viewButton.addEventListener("click", (event) => {
   event.stopPropagation();
   ui.viewMenu.hidden = !ui.viewMenu.hidden;
@@ -2008,6 +2188,8 @@ addEventListener("wheel", (event) => {
 
 addEventListener("keydown", (event) => {
   if (event.code === "Escape") {
+    if (event.repeat) return;
+    level1Audio.uiClick();
     if (photoActive) togglePhoto();
     else if (state === "preview") endPreview();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
@@ -2024,7 +2206,7 @@ addEventListener("keydown", (event) => {
   if (event.code === "KeyP") { togglePhoto(); return; }
   if (photoActive) return;
   if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
-  if (event.code === "KeyR" && state === "ended") { resetGame(); return; }
+  if (event.code === "KeyR" && state === "ended") { level1Audio.uiClick(); resetGame(); return; }
   if (event.code === "KeyF" && !event.repeat) { settings.hud.fps = !settings.hud.fps; saveSettings(); applySettingsToControls(); }
   if (event.code === "KeyM" && !event.repeat) { settings.hud.minimap = !settings.hud.minimap; saveSettings(); applySettingsToControls(); }
   if (event.code === "KeyH" && !event.repeat) document.body.classList.toggle("hud-hidden");
@@ -2103,6 +2285,8 @@ globalThis.__dbg = {
   get arsenal() { return arsenal; },
   get missions() { return missions; },
   get postfx() { return postfx; },
+  get music() { return music.snapshot(); },
+  get level1Audio() { return level1Audio.snapshot(); },
   foundryDistance,
   causewayDistance,
   demoJump,

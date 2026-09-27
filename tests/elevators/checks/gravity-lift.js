@@ -5,7 +5,11 @@
  * and returns { failures: string[], notes: object }.
  */
 
-/** Level 2's real exit: the Foundry's `complete` event starts the lift. */
+/**
+ * Level 2's real exit: the Foundry's `complete` event sends the player across
+ * the landing into the Calibration Lift, which fades into the Gravity Fault
+ * ride once it is climbing.
+ */
 export const handover = {
   name: "handover from Level 2",
   async run(page) {
@@ -15,27 +19,40 @@ export const handover = {
       d.demoJump(2);
       d.step(10);
       const before = { level: d.currentLevel, state: d.state, foundry: !!d.foundry };
+      // Stand just short of the end of the Foundry, where the extraction valve is.
+      d.setRunZ(-1200 - d.foundry.route.totalLength + 6); // FOUNDRY_ORIGIN_Z in main.js
+      d.step(2);
       d.foundry.events.emit("complete", { systemsOnline: d.foundry.state.systemsOnline });
-      const afterComplete = d.state;
-      // The Foundry fades out, then the ride is built.
-      d.step(40, 1 / 30);
+      const states = new Set();
+      let steps = 0;
+      // Run to the lift, board it, ride until the hand-off (at most 30 s).
+      while (!d.gravityLift && steps < 30 * 30) {
+        d.step(1, 1 / 30);
+        states.add(d.state);
+        steps += 1;
+      }
       const ride = d.gravityLift;
+      const firstShot = ride ? ride._shotAt(ride.state.t) : null;
       return {
         before,
-        afterComplete,
+        states: [...states],
+        seconds: steps / 30,
         rideBuilt: !!ride,
+        boarded: !!ride?.boarded,
+        firstShot,
         foundryFreed: d.foundry === null,
-        state: d.state,
         hudShown: !!document.querySelector(".elevator-ui:not([hidden])"),
       };
     });
     const failures = [];
     if (r.before.level !== 2 || !r.before.foundry) failures.push(`not in Level 2 before the exit: ${JSON.stringify(r.before)}`);
-    if (r.afterComplete !== "lift") failures.push(`complete did not start the lift (state ${r.afterComplete})`);
-    if (!r.rideBuilt) failures.push("the ride was not built after the fade");
+    if (!r.states.includes("lift")) failures.push(`the player never boarded the Calibration Lift (states ${r.states})`);
+    if (!r.rideBuilt) failures.push(`the Gravity Fault ride did not start within ${r.seconds.toFixed(0)} s`);
+    if (!r.boarded) failures.push("the ride replayed its own boarding after the Calibration Lift");
+    if (r.firstShot !== "exterior") failures.push(`the ride opened on "${r.firstShot}", not the exterior shot`);
     if (!r.foundryFreed) failures.push("Level 2 was not disposed when the ride started");
     if (!r.hudShown) failures.push("the lift HUD is not showing");
-    return { failures, notes: { state: r.state } };
+    return { failures, notes: { toRide: `${r.seconds.toFixed(1)} s`, states: r.states } };
   },
 };
 

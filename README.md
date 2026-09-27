@@ -61,7 +61,7 @@ The title screen idles on a slow drift through the ward. From it you can start a
 
 The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play, and **Play as** chooses your character (female or male patient; Level 3 shows them, and the choice is remembered).
 
-**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. There is no sound in this build; audio is a separate task.
+**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. The story briefing, menu and Level 1 have looping background music; Level 3 retains its generated Web Audio effects.
 
 ## Play locally
 
@@ -138,7 +138,7 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 to 2, and the Gravity Fault lift from Level 2 to 3, which rides up the outside of the tower and hands over to Level 3 opening with the lift arriving (see [`docs/elevators.md`](./docs/elevators.md)). The Gravity Fault's gameplay (weak gravity, the three stabilisers, the diagnostic camera) and Level 3's own lifts are in progress. Sound, music and voice are not part of this build (another team member owns audio; the levels emit events for it to hook into). Frame rates still need to be measured on lab hardware with the `F` overlay.
+Levels 1, 2 and 3 are playable and connected: the Calibration Lift (Level 1's glass elevator) ends Level 1, Level 2 and Level 3's corridor phase, and the character picked on the start screen is the player in every level. From Level 2, the Calibration Lift hands over to the Gravity Fault ride up the outside of the tower into Level 3 (see [`docs/elevators.md`](./docs/elevators.md)); its gameplay - weak gravity, three stabilisers, the diagnostic camera - is in progress. Level 3 opens with the player stepping out of a lift (that lift and the roof's are placeholders - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Menu and Level 1 music is managed by `src/audio/music-manager.js`; gameplay effects remain event hooks for the audio workstream, except for Level 3's generated Web Audio effects. Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 
@@ -148,3 +148,9 @@ Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 
 - Custom GLSL vertex and fragment shaders: ray-traced glass, ray-marched fire, clouds and SDF serums, GPU shard physics and particles, and a custom post-processing pipeline
 
 No Unity or other game engine is used.
+
+## Soundtracks and sound effects references
+
+- [Pixabay game-over sound effects](https://pixabay.com/sound-effects/search/game%20over%20sound/)
+- [Freesound glass-shatter search](https://freesound.org/search/?q=glass+shatters&page=3#sound)
+- [OpenGameArt flame audio search](https://opengameart.org/art-search-advanced?keys=flame&title=&field_art_tags_tid_op=or&field_art_tags_tid=&name=&field_art_type_tid%5B%5D=13&sort_by=count&sort_order=DESC&items_per_page=24&Collection=)

@@ -37,9 +37,9 @@ You regain consciousness mid-collapse: sirens, smoke alarms, the building coming
 
 ### The lifts (placeholders)
 
-Level 3 opens with the player **stepping out of a freight lift** - it jolts to a stop, the cabin light stutters, the doors open on the burning ward and you run out - and Phase A ends with the player **running into another lift**: it is waiting with its doors open, you run in and turn round, the doors close with the fire right behind you, it goes up, black. Phase B opens on the **roof's lift housing**: the doors open and you walk out onto the roof.
+Level 3 opens with the player **stepping out of a freight lift** - it jolts to a stop, the cabin light stutters, the doors open on the burning ward and you run out. Phase A ends **the way Level 1 ends**: the corridor opens onto a landing and **Level 1's Calibration Lift** is waiting - you run in and turn round, the glass doors close as the fire bursts out of the corridor behind you, and the cabin rides up its shaft with the camera circling it (`src/levels/common/calibration-lift.js`, shared with the end of Level 2). Phase B opens on the **roof's lift housing**: the doors open and you walk out onto the roof.
 
-These are **placeholders**: a teammate is building the real elevator and its cutscenes. Everything to replace is in one place:
+The freight lift and the roof housing are **placeholders**: a teammate is building the real elevator and its cutscenes. Everything to replace is in one place:
 
 - `src/levels/meltdown/elevator.js` - `createLift()` builds the lift (door surround, sliding leaves, cabin, floor indicator) and returns `setDoors` / `setLight` / `setIndicator` / `dispose`. Swap the model and keep that API.
 - The cutscenes are data, like the roof endings: `MeltdownLevel.beginArrival()` / `updateArrival()` and `beginDeparture()` / `updateDeparture()`, and `RoofLevel.beginArrival()` / `_updateArrival()`, return where the camera is and looks, where the player is and what they are doing, a fade and a shake; `game.js` applies them. Restage by rewriting those timelines.
@@ -254,6 +254,7 @@ The full game's Level 1 harness (`tests/causeway/run.js`) drives `index.html`, s
 
 - **route** - builds the level and steps it along all 952 m: every beat, hall, sign, fall, warp and completion event fires once, every patient lurches, the dark beat is dark (and nothing else is).
 - **fairness** - the sweep described in §3.
+- **playthrough** - a scripted player (`checks/bot.js`) plays Phase A through the real game module: it dodges using the level's own collide(), shoots what is ahead, mashes at ducts. Fails on any hit with nothing actually in the way, on far too many hits, on not reaching the lift, or if the hidden countdown runs before the run starts. (Added after a refactor left the player's hitbox as NaN - every hazard in range then "hit" the player every second, and you died without touching anything.)
 - **roof** - Phase B simulated without the host: both waves spawn; a player sidestepping charges by the east ledge sends patients over it; standing still gets you hit by orbs and charges; clearing the roof ends in victory with the helicopter coming early; the timer running out ends in survive; both cutscenes finish; the timer varies within 25-45 s.
 
 Where jsDelivr is unreachable, point `MELTDOWN_THREE_DIR` at an unpacked `three@0.160.0` npm package (see `tests/meltdown/lib.js`).

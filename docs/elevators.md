@@ -5,8 +5,9 @@ Ascension Tower's lifts connect the three sectors. From the project brief: *"A g
 | Lift | Between | Status |
 | --- | --- | --- |
 | Calibration Lift | Level 1 → Level 2 | Done - part of the Causeway (`src/levels/causeway/`), see [`level-transition.md`](./level-transition.md) |
+| Calibration Lift (shared) | end of Level 2, end of Level 3's corridor | Done - `src/levels/common/calibration-lift.js` (from the Level 3 work). At the end of Level 2 you board it; it hands over to the Gravity Fault |
 | **Gravity Fault** | Level 2 → Level 3 | **The ride is in** (this document). Gameplay - weak gravity, three stabilisers, diagnostic camera - is next |
-| Meltdown lifts | Level 3 start, Level 3 → roof | Placeholders in `src/levels/meltdown/elevator.js`, to be replaced |
+| Level 3 arrival and roof lifts | Level 3 start, roof | Placeholders in `src/levels/meltdown/elevator.js` |
 
 ---
 
@@ -14,7 +15,7 @@ Ascension Tower's lifts connect the three sectors. From the project brief: *"A g
 
 ### What the player sees
 
-The Foundry's extraction valve breaks, the screen fades, and Subject 07 is standing in a glass lift with the Foundry's orange service door behind them.
+The Foundry's extraction valve breaks and Subject 07 runs on across a landing into the Calibration Lift (the shared glass lift). Its doors close and it starts to climb; 2.2 s in, the screen fades and the Gravity Fault ride takes over, already climbing the outside of the tower (it skips its own doors shot - the player has boarded). The timeline below is the full ride, as the demo key `5` plays it.
 
 | Time | What happens | Camera |
 | --- | --- | --- |
@@ -86,11 +87,12 @@ All four apply the same exponential-squared fog as the scene and include Three's
 The `GRAVITY LIFT` block in `main.js`:
 
 ```text
-Foundry "complete" ─► state = "lift", transitionTarget = 3   (existing)
-      │  0.6 s fade to black
+Foundry "complete" ─► the player runs on, into the Calibration Lift   (existing)
+      │  startFoundryLift(): doors close, it climbs
+      │  2.2 s in (FOUNDRY_LIFT_HANDOFF): 0.5 s fade to black
       ▼
-startGravityLift()
-   · Level 2 hidden and disposed (was done on the way into Level 3)
+startGravityLift({ boarded: true })
+   · Level 2 and its Calibration Lift hidden and disposed
    · Level 3's models start streaming (preloadMeltdown)
    · new GravityFaultRide({ renderer, spheres: ammo, reducedMotion })
       │  every frame: updateGravityLiftFrame() → ride.update(), ride.render()
@@ -121,10 +123,10 @@ finishGravityLift()          when ride.result.done
 
 ## 2. Level 3's lifts (next)
 
-Level 3's own lifts are placeholders and are meant to be replaced (see [`level-3-meltdown.md`](./level-3-meltdown.md), "The lifts"). The plan, keeping Level 3's `createLift()` API (`setDoors`, `setLight`, `setIndicator`, `dispose`) so nothing else in Level 3 changes:
+The Level 3 corridor's exit lift is now the shared Calibration Lift (from the Level 3 work). Still placeholders: the arrival lift at the start of Level 3 and the roof's lift housing (`src/levels/meltdown/elevator.js`, API `setDoors`, `setLight`, `setIndicator`, `dispose`). Plan, to be agreed with the Level 3 owner:
 
-- A proper freight lift model for the arrival and departure lifts.
-- **Level 3 → roof:** instead of the doors closing to black, a glass freight lift climbing the outside of the burning building - fire and smoke below, the floor counter racing, the helicopter's searchlight sweeping past - before the doors open on the roof.
+- A proper freight lift model for the arrival lift, matching the Gravity Fault's jolt as it arrives.
+- **Level 3 → roof:** the Calibration Lift ride continuing up the outside of the burning building - fire and smoke below, the floor counter racing, the helicopter's searchlight sweeping past - before the doors open on the roof.
 
 ---
 
@@ -139,7 +141,7 @@ node tests/elevators/run.js --shots    # also regenerate docs/images/elevators/
 
 | Check | What it proves |
 | --- | --- |
-| handover from Level 2 | The Foundry's real `complete` event starts the lift, Level 2 is disposed, the lift HUD shows |
+| handover from Level 2 | From the Foundry's real `complete` event: the player boards the Calibration Lift, it hands over to the Gravity Fault (boarded, opening on the exterior shot), Level 2 is disposed, the lift HUD shows |
 | ride to Level 3 | Every camera shot plays, the cabin climbs, the ride finishes, is disposed, and Level 3 starts and is visible |
 | restart and memory | Restarting mid-ride frees it; three rides in a row leave GPU geometry and texture counts unchanged |
 
