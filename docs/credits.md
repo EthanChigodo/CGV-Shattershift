@@ -23,7 +23,7 @@ steps in `tools/assets/README.md`).
 
 | Asset | Creator | Source | Licence | Modifications | Used in |
 | --- | --- | --- | --- | --- | --- |
-| Three.js r160 | Three.js authors | https://threejs.org (loaded from jsDelivr) | MIT | None | Whole game, imported only through `src/three.js` (core) and `src/three-addons.js` (GLTFLoader, EffectComposer, UnrealBloomPass, OutputPass, ShaderPass, RoomEnvironment, BufferGeometryUtils, SkeletonUtils) |
+| Three.js r160 | Three.js authors | https://threejs.org - r160 copied from the `three@0.160.0` npm package into `lib/three/` (with its LICENSE) | MIT | None | Whole game, imported only through `src/three.js` (core) and `src/three-addons.js` (GLTFLoader, EffectComposer, UnrealBloomPass, OutputPass, ShaderPass, RoomEnvironment, BufferGeometryUtils, SkeletonUtils) |
 | Playwright (dev only, not shipped) | Microsoft | https://playwright.dev | Apache 2.0 | None | `tests/` harnesses |
 
 ## 2. Level 3 models
