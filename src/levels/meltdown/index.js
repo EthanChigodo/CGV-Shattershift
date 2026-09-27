@@ -55,8 +55,15 @@ import { buildHall, bakeStatic, bakeFilled, HALL_THEMES } from "./halls.js";
 import { SmokeBank } from "./smoke.js";
 import { loadMeltdownAssets, fillAssetSlots } from "./assets.js";
 import { createLift } from "./elevator.js";
+import { CalibrationLift, LIFT_RADIUS } from "../common/calibration-lift.js";
 
 const _liftCam = new THREE.Vector3();
+const _liftFwd = new THREE.Vector3();
+/** The landing between the end of the corridor and the Calibration Lift. */
+const END_LANDING = 10;
+/** Seconds of running into the lift before its doors close. */
+const DEPART_RUN = 1.6;
+const DEPART_RIDE = 2.1;
 const _liftLook = new THREE.Vector3();
 
 const TURN_RADIUS = 9;
@@ -733,16 +740,27 @@ export class MeltdownLevel {
   }
 
   /**
-   * The lifts: the one the player arrives in, behind the start of the route,
-   * and the one at the end that takes them to the roof. Placeholders (see
-   * elevator.js) set into walls that close off both ends of the corridor.
+   * The lifts. The one the player arrives in, behind the start of the route,
+   * is a placeholder (see elevator.js) set into a wall that closes off the
+   * corridor. The one at the end is Level 1's Calibration Lift
+   * (../common/calibration-lift.js): the corridor opens onto a landing and
+   * the glass lift takes the player up its shaft to the roof, the way
+   * Level 1 ends.
    */
   _buildLifts() {
     const wall = { wallHalfWidth: CORRIDOR_HALF + 0.4, wallHeight: CORRIDOR_HEIGHT + 0.6 };
     this.startLift = this._add(this.groups.shell, createLift(this.kit, { ...wall, label: "B2" }), 0, 0);
-    this.endLift = this._add(this.groups.shell, createLift(this.kit, { ...wall, cabinAhead: true, label: "R" }), this.route.totalLength, 0);
     this.startLift.userData.lift.setLight(1);
-    this.endLift.userData.lift.setLight(1);
+    const total = this.route.totalLength;
+    const end = this.route.sample(total);
+    this.endLift = new CalibrationLift({ landing: END_LANDING, landingWidth: CORRIDOR_HALF * 2 });
+    const root = this.endLift.root;
+    root.position.copy(end.position).addScaledVector(_liftFwd.set(-Math.sin(end.heading), 0, -Math.cos(end.heading)), END_LANDING + LIFT_RADIUS);
+    root.rotation.y = end.heading;
+    root.userData.lift = true; // animated: keep it out of the corridor bake
+    root.userData.routeDistance = total;
+    this.groups.shell.add(root);
+    this._culled.push({ piece: root, distance: total, slack: 30 });
     // Keep patterns clear of the doors at both ends.
     this._mark(4);
     this._mark(this.route.totalLength - 4);
@@ -806,18 +824,21 @@ export class MeltdownLevel {
   }
 
   /**
-   * The end of Phase A as a cutscene: run into the lift, turn round, the
-   * doors close with the fire right behind you, the lift goes up, fade.
-   * `fire` is where the host should hold the fire front; `fade` is 0..1.
+   * The end of Phase A as a cutscene, the way Level 1 ends: run out onto the
+   * landing and into the Calibration Lift, turn round, the glass doors close
+   * with the fire bursting out of the corridor behind you, and the cabin
+   * rides up its shaft with the camera circling it. `fire` is where the host
+   * should hold the fire front; `fade` is 0..1.
    */
   beginDeparture(fromCamera) {
-    this._departure = { t: 0, events: new Set(), from: fromCamera.clone() };
+    this._departure = { t: 0, ride: null, events: new Set(), from: fromCamera.clone(), rideFrom: new THREE.Vector3() };
+    this.endLift.reset();
     this.cutscene = this._newCutscene("departure");
     this.updateDeparture(0);
     return this.cutscene;
   }
 
-  updateDeparture(dt) {
+  updateDeparture(dt, reduced = false) {
     const a = this._departure;
     const out = this.cutscene;
     if (!a || !out) return null;
@@ -825,37 +846,48 @@ export class MeltdownLevel {
     const t = a.t;
     const smooth = THREE.MathUtils.smoothstep;
     const lift = this.endLift;
-    const api = lift.userData.lift;
+    const root = lift.root;
     const once = (name, at) => {
       if (t >= at && !a.events.has(name)) {
         a.events.add(name);
-        this.events.emit(name, { position: lift.position.clone() });
+        this.events.emit(name, { position: root.position.clone() });
       }
     };
-    // Into the cabin (the cabin is ahead: local -Z), slowing down...
-    const u = THREE.MathUtils.clamp(t / 0.9, 0, 1);
-    const inside = api.cabinCentre.z * 0.85;
-    lift.localToWorld(out.player.set(0, 0, 2 + (inside - 2) * (1 - (1 - u) * (1 - u))));
+    // Along the landing into the cabin (local +Z is the corridor side),
+    // slowing to a stop in the middle of the cabin...
+    const u = THREE.MathUtils.clamp(t / DEPART_RUN, 0, 1);
+    const from = END_LANDING + LIFT_RADIUS + 2;
+    root.updateMatrixWorld();
     // ...and round to face the doors.
-    out.playerYaw = lift.rotation.y + Math.PI * smooth(t, 0.8, 1.4);
+    out.playerYaw = root.rotation.y + Math.PI * smooth(t, DEPART_RUN - 0.4, DEPART_RUN + 0.2);
+    out.speed = (1 - u) * 12;
     out.action = u < 1 ? "run" : "stand";
-    out.speed = (1 - u) * 9;
-    once("lift-close", 1.5);
-    api.setDoors(1 - (t - 1.5) / 1.1);
-    once("lift-depart", 2.8);
-    api.setLight(t > 2.8 && t < 3.1 ? 0.3 : 1);
-    out.shake = t > 2.8 && t < 3.2 ? 0.35 : 0;
+    out.fire = this.route.totalLength - 34 + 26 * smooth(t, 0, DEPART_RUN + 2.5);
 
-    // The camera stops short of the doors and watches them close.
-    const settle = smooth(t, 0, 1.2);
-    lift.localToWorld(_liftCam.set(1.6, 2.1, 8.6));
-    out.camera.copy(a.from).lerp(_liftCam, settle);
-    lift.localToWorld(out.look.set(0, 1.7, -2.5));
-    out.fire = this.route.totalLength - 30 + 17 * smooth(t, 0, 2.6);
-    out.fade = smooth(t, 2.9, 3.5);
-    if (t >= 3.6) {
-      out.done = true;
-      this._departure = null;
+    if (t < DEPART_RIDE) {
+      root.localToWorld(out.player.set(0, 0, from * (1 - u) * (1 - u)));
+      // The camera follows onto the landing, then settles behind the cabin.
+      root.localToWorld(_liftCam.set(2.2, 3.2, LIFT_RADIUS + 3.4));
+      out.camera.lerpVectors(a.from, _liftCam, smooth(t, 0, DEPART_RIDE));
+      out.look.copy(out.player).setY(out.player.y + 1.3);
+      a.rideFrom.copy(out.camera);
+      lift.update(dt, t, reduced);
+    } else {
+      if (!a.ride) {
+        lift.start();
+        a.ride = true;
+      }
+      const ride = lift.update(dt, t, reduced);
+      once("lift-close", DEPART_RIDE);
+      once("lift-depart", DEPART_RIDE + 1);
+      lift.floorPoint(out.player);
+      lift.cameraPose(ride.t, a.rideFrom, out.camera, out.look, reduced);
+      out.shake = ride.t > 1 && ride.t < 1.4 ? 0.3 : 0;
+      out.fade = ride.fade;
+      if (ride.done) {
+        out.done = true;
+        this._departure = null;
+      }
     }
     return out;
   }
@@ -1405,7 +1437,11 @@ export class MeltdownLevel {
     return this.beatAt(distance).drain;
   }
 
-  update({ dt, time, distance, playerPosition }) {
+  /**
+   * @param {boolean} [o.clock]  run the hidden countdown (false while the
+   *   level waits to start and during the lift cutscenes)
+   */
+  update({ dt, time, distance, playerPosition, clock = true }) {
     const player = playerPosition ?? this.route.sample(distance, 0, 1.4, this._playerWorld).position;
     this.fire.setTime(time);
 
@@ -1426,7 +1462,7 @@ export class MeltdownLevel {
     if (this.state.alarm > 0) this.state.alarm = Math.max(0, this.state.alarm - dt * 2.4);
     this.lights.alarm = this.state.alarm;
 
-    if (!this.state.complete && !this.state.timerFailed) {
+    if (clock && !this.state.complete && !this.state.timerFailed) {
       this.state.timeRemaining = Math.max(0, this.state.timeRemaining - dt);
       if (this.state.timeRemaining <= 0) {
         this.state.timerFailed = true;
@@ -1543,7 +1579,7 @@ export class MeltdownLevel {
 
     // The lift at the end is waiting with its doors open; the one you came
     // out of shuts behind you.
-    if (!this._departure) this.endLift.userData.lift.setDoors((distance - (this.route.totalLength - 70)) / 12);
+    if (!this._departure) this.endLift.update(dt, time);
     if (this._startLiftClose !== undefined && this._startLiftClose < 1) {
       this._startLiftClose = Math.min(1, this._startLiftClose + dt / 1.4);
       this.startLift.userData.lift.setDoors(1 - this._startLiftClose);
@@ -1572,7 +1608,7 @@ export class MeltdownLevel {
     });
     for (const hall of this.groups.shell.children) hall.userData.dispose?.();
     this.startLift?.userData.dispose?.();
-    this.endLift?.userData.dispose?.();
+    this.endLift?.dispose();
     this.lights.dispose();
     this.ambience.userData.dispose?.();
     this.kit.dispose();

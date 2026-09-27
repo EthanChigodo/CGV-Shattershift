@@ -790,7 +790,7 @@ export class MeltdownGame {
         this.events.emit("phase", { phase: "run" });
       }
     } else if (this.phase === "depart") {
-      this.cut = level.updateDeparture(dt);
+      this.cut = level.updateDeparture(dt, this.reducedMotion);
       if (this.cut?.fire !== null && this.cut?.fire !== undefined) r.fireDistance = this.cut.fire;
       if (this.cut?.done) this.startRoof({ fromBlack: true });
     }
@@ -832,7 +832,7 @@ export class MeltdownGame {
       avatar.shadow.visible = !firstPerson;
     }
 
-    level.update({ dt, time, distance: r.distance, playerPosition: avatar.root.position });
+    level.update({ dt, time, distance: r.distance, playerPosition: avatar.root.position, clock: this.phase === "run" });
     if (playing) this._checkHazards(dt);
     if (!cutscene) this._updateCamera(dt, time);
     this._placeLauncher(firstPerson);
@@ -1246,7 +1246,9 @@ export class MeltdownGame {
 
     const crouched = r.sliding > 0;
     const height = crouched ? 1.0 : 1.9;
-    const centre = level.route.sample(r.distance, r.lateral, r.height, this._v.boxCentre);
+    // sample() writes the position into the target and returns {position, heading}.
+    const centre = this._v.boxCentre;
+    level.route.sample(r.distance, r.lateral, r.height, centre);
     centre.y += 0.18 + height / 2;
     this.playerBox.setFromCenterAndSize(centre, this._v.boxSize.set(0.9, height, 0.9));
     const hits = level.collide(this.playerBox, r.distance);

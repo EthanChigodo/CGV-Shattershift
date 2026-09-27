@@ -135,7 +135,7 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-Levels 1, 2 and 3 are playable and connected: the Calibration Lift from Level 1 to 2, and a fade from the end of Level 2 into Level 3, which opens with the player stepping out of a lift (Level 3's lifts and their cutscenes are placeholders a teammate is replacing - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Menu and Level 1 music is managed by `src/audio/music-manager.js`; gameplay effects remain event hooks for the audio workstream, except for Level 3's generated Web Audio effects. Frame rates still need to be measured on lab hardware with the `F` overlay.
+Levels 1, 2 and 3 are playable and connected: the Calibration Lift (Level 1's glass elevator) ends Level 1, Level 2 and Level 3's corridor phase, and the character picked on the start screen is the player in every level. Level 3 opens with the player stepping out of a lift (that lift and the roof's are placeholders a teammate is replacing - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Menu and Level 1 music is managed by `src/audio/music-manager.js`; gameplay effects remain event hooks for the audio workstream, except for Level 3's generated Web Audio effects. Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 
