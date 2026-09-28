@@ -284,9 +284,13 @@ async function loadPlayerBody(name = savedCharacter()) {
   }
 }
 
-/** Where the run is in the story, for the figure's wear (src/figure/look.js). */
+/**
+ * Where the run is in the story, for the figure's wear (src/figure/look.js):
+ * 0 waking up (the menus), then the sector - 1 the Foundry, 2 the Labs,
+ * 3 the Skyline and the Roof.
+ */
 function storyPosition() {
-  return state === "intro" || state === "launch" || state === "preview" ? 0 : currentLevel;
+  return state === "intro" || state === "preview" ? 0 : sectorNumber();
 }
 
 function updatePlayerBody(dt) {
@@ -1133,12 +1137,8 @@ function getMeltdown() {
     reducedMotion: settings.reducedMotion,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
-  // Level 3's body: the chosen skin tone, and the figure's state for the
-  // third level played.
+  // Level 3's body: the chosen skin tone (its stage is set per stage, below).
   meltdown.avatar?.setSkinTone(savedSkinTone());
-  const stage = figureStage(3);
-  meltdown.avatar?.setWear(stage.wear);
-  meltdown.avatar?.setGear(stage.gear);
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
   // The story: through the lift at the end of the Labs, up to the Skyline.
@@ -1177,10 +1177,18 @@ function meltdownBalls() {
  * Build Level 3 now, off screen (the lift ride calls this as it starts,
  * while the screen is still black). enterMeltdown() then only has to show it.
  */
+/** Level 3's body as the figure is at a point in the story (storyPosition). */
+function dressMeltdownAvatar(position) {
+  const stage = figureStage(position);
+  meltdown?.avatar?.setWear(stage.wear);
+  meltdown?.avatar?.setGear(stage.gear);
+}
+
 function prepareMeltdown() {
   if (!meltdownPrepared) {
     const game = getMeltdown();
     game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
+    dressMeltdownAvatar(2);
     meltdownPrepared = game.load({ balls: meltdownBalls() });
   }
   return meltdownPrepared;
@@ -1197,6 +1205,7 @@ async function enterMeltdown() {
   const game = getMeltdown();
   game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
   onRoofStage = false;
+  dressMeltdownAvatar(2);
   ui.fade.style.opacity = "1";
   run.fadeOut = 0;
   setFoundryActive(false);
@@ -1572,11 +1581,10 @@ function startGravityLift({ boarded = false } = {}) {
   rideNext = "labs";
   gravityLift = new GravityFaultRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
-    // The same character as in Levels 1 and 2 (null while it is still loading),
-    // already as they will be in the next level - the story puts the
-    // scientist's gear on them on the way up (the L2 -> L3 ride).
+    // The same character as in the Foundry (null while it is still loading),
+    // as they left it: dusty.
     character: playerBodyTemplate,
-    figure: { ...figureStage(currentLevel + 1), skinTone: savedSkinTone() },
+    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone() },
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
   });
@@ -1815,6 +1823,7 @@ async function enterRoof() {
   const game = getMeltdown();
   game.setMode(runKind === "endless" ? "endless-roof" : "full");
   onRoofStage = true;
+  dressMeltdownAvatar(3);
   ui.fade.style.opacity = "1";
   run.fadeOut = 0;
   if (currentLevel === 1 && causeway) setCausewayActive(false);

@@ -269,41 +269,58 @@ export const clamps = {
 };
 
 /**
- * The figure follows the story (src/figure/look.js): dusty in the first
- * level played, bloodied in the second, and geared up with the scientist's
- * vest from the ride after it - in the game's body, the lift ride's and
- * Level 3's.
+ * The figure follows the story (Foundry -> Labs -> Skyline -> Roof): dusty
+ * in the Foundry and on the Gravity Fault ride out of it, bloodied in the
+ * Labs, and in the scientist's vest from the lift where he stays behind (the
+ * quiet ride) - on the Skyline and the Roof. In the game's body, the rides'
+ * and Level 3's.
  */
 export const figure = {
-  name: "figure wear by level",
+  name: "figure wear by stage",
   async run(page) {
     const r = await page.evaluate(async () => {
       const d = globalThis.__dbg;
       const w0 = performance.now();
       while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
       const read = (avatar) => avatar?.look ? { wear: +avatar.look.wear.toFixed(2), gear: avatar.look.gear } : null;
+      const until = async (test) => {
+        const t0 = performance.now();
+        while (performance.now() - t0 < 60000 && !test()) await new Promise((resolve) => setTimeout(resolve, 250));
+      };
       const out = {};
       d.resetGame("story");
+      d.demoJump(1);
       d.step(2);
       d.render();
-      out.level1 = read(d.playerBody);
-      d.demoJump(2);
-      d.step(2);
-      d.render();
-      out.level2 = read(d.playerBody);
+      out.foundry = read(d.playerBody);
       d.demoGravityLift();
       d.step(2);
       d.render();
-      out.ride = read(d.gravityLift?._avatar);
+      out.gravityRide = read(d.gravityLift?._avatar);
+      d.resetGame("story");
+      d.demoJump(2);
+      await until(() => d.currentLevel === 3 && d.state === "playing" && d.meltdown?.avatar?.look);
+      out.labs = read(d.meltdown?.avatar);
+      d.demoQuietRide();
+      d.step(2);
+      d.render();
+      out.quietRide = read(d.gravityLift?._avatar);
       d.resetGame("story");
       d.demoJump(3);
-      const t0 = performance.now();
-      while (performance.now() - t0 < 60000 && !(d.currentLevel === 3 && d.meltdown?.avatar?.look)) await new Promise((resolve) => setTimeout(resolve, 250));
-      out.level3 = read(d.meltdown?.avatar);
+      d.step(2);
+      d.render();
+      out.skyline = read(d.playerBody);
+      d.resetGame("story");
+      d.demoJump(4);
+      await until(() => d.currentLevel === 3 && d.state === "playing" && d.meltdown?.avatar?.look);
+      out.roof = read(d.meltdown?.avatar);
       return out;
     });
     const failures = [];
-    const want = { level1: { wear: 0.33, gear: false }, level2: { wear: 0.66, gear: false }, ride: { wear: 0.66, gear: true }, level3: { wear: 0.66, gear: true } };
+    const dusty = { wear: 0.33, gear: false };
+    const bloodied = { wear: 0.66, gear: false };
+    const geared = { wear: 0.66, gear: true };
+    const want = { foundry: dusty, gravityRide: dusty, labs: bloodied, quietRide: geared, skyline: geared, roof: geared };
     for (const [k, v] of Object.entries(want)) {
       if (JSON.stringify(r[k]) !== JSON.stringify(v)) failures.push(`${k}: ${JSON.stringify(r[k])}, want ${JSON.stringify(v)}`);
     }

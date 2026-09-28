@@ -82,11 +82,10 @@ export function saveSkinTone(name) {
 }
 
 /**
- * The figure at a point in the run, by PLAY POSITION rather than by which
- * level it is (the team is reordering the levels): 0 = before the first
- * level (waking), 1..3 = during the first..third level played. The gear
- * comes with the scientist's sacrifice at the end of the second level, so
- * it is on for the third (and for the ride up to it).
+ * The figure at a point in the story: 0 = waking, 1..3 = the sector (the
+ * Foundry, the Labs, the Skyline; the Roof is 3 as well). The gear comes
+ * with the scientist's sacrifice at the Labs' lift, so it is on from the
+ * ride up from the Labs onwards.
  */
 export function figureStage(position) {
   const p = Math.max(0, Math.min(3, position));

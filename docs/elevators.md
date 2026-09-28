@@ -6,14 +6,14 @@ Ascension Tower's lifts connect the three sectors. From the project brief: *"A g
 | --- | --- | --- |
 | Calibration Lift | Level 1 → Level 2 | Done - part of the Causeway (`src/levels/causeway/`), see [`level-transition.md`](./level-transition.md) |
 | Calibration Lift (shared) | end of Level 2, end of Level 3's corridor | Done - `src/levels/common/calibration-lift.js` (from the Level 3 work). At the end of Level 2 you board it; it hands over to the Gravity Fault |
-| **Gravity Fault** | Level 2 → Level 3 | **Built** (this document): the tower collapsing around the lift, a cable snap and free fall, the launcher, and the three brake clamps to shoot |
+| **Gravity Fault** | Foundry → Labs | **Built** (this document): the tower collapsing around the lift, a cable snap and free fall, the launcher, and the three brake clamps to shoot |
 | **Elevator interior** | every enclosed ride | **Built** (section 4): one reusable cabin - doors, button panel, floor display, ceiling light, speaker, security camera, the subjects' scratched messages |
 | **Quiet ride** (cutscene 7) | Labs → Skyline | **Built** (section 5): alone for the first time after the scientist's sacrifice, the pilot on the radio. Demo key `6` |
 | Level 3 arrival and roof lifts | Level 3 start, roof | Placeholders in `src/levels/meltdown/elevator.js` |
 
 ---
 
-## 1. The Gravity Fault (Level 2 → Level 3)
+## 1. The Gravity Fault (Foundry → Labs)
 
 ### What the player sees
 
