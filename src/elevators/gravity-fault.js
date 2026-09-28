@@ -69,6 +69,7 @@ import { CameraShake } from "./shake.js";
 import { Sparks } from "./sparks.js";
 import { CabinGlass } from "./glass.js";
 import { CabinDebris } from "./debris.js";
+import { Performer } from "./acting.js";
 import { ElevatorHud } from "../ui/elevator-hud.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
 
@@ -93,7 +94,7 @@ const SHOTS = {
   board: [[0, "doors"]],
   climb: [[0, "exterior"]],
   tremor: [[0, "interior"], [1.9, "close"]],
-  freefall: [[0, "interior"], [0.45, "falling"]],
+  freefall: [[0, "interior"], [0.45, "falling"], [1.2, "close"]],
   brake: [[0, "interior"], [0.8, "close"]],
   resume: [[0, "rising"]],
 };
@@ -164,6 +165,8 @@ export class GravityFaultRide {
     this.figure = character ? this._characterFigure(character) : buildFigure(this.owned);
     this.figure.root.position.set(-0.35, 0, 0.35);
     this.cabin.root.add(this.figure.root);
+    // The character acts: reacts, stumbles, braces, floats (acting.js).
+    this.performer = this._avatar ? new Performer(this._avatar, { home: this.figure.root.position, reduced: reducedMotion }) : null;
     this.sparks = new Sparks(700);
     scene.add(this.world.root, this.shaft.root, this.cabin.root, this.sparks.points);
     this.glass = new CabinGlass(this.cabin, scene);
@@ -269,7 +272,8 @@ export class GravityFaultRide {
     s.flash = Math.max(0, s.flash - dt * 3);
     this.uniforms.uFlash.value = s.flash;
 
-    this.figure.pose(0, time, dt);
+    if (this.performer) this.performer.update(dt, s.gEff);
+    else this.figure.pose(s.gEff < 3 ? 1 : 0, time);
     this.glass.update(dt, s.gEff);
     this.debris.update(dt, s.gEff);
     this.sparks.update(dt);
@@ -301,14 +305,24 @@ export class GravityFaultRide {
       // The floor drops away: everything loose lifts off it.
       this.debris.jolt(1);
       this.glass.jolt(1);
+      this._act((p) => {
+        p.setBrace(0);
+        p.jolt(0.9);
+        p.react(0, 0.8);
+      });
       this._crack("front", [0.72, 0.3], 0.9, 0.55);
       this.hud.alert("CABLE FAILURE", "danger");
       this.events.emit("cable-snap", { floor: START_FLOOR + s.cabinY / STOREY });
     } else if (name === "brake") {
+      this._act((p) => p.look(0.3, 1.5));
       this.hud.alert("EMERGENCY BRAKES", "danger");
       this.events.emit("brake", {});
     } else if (name === "resume") {
       s.lights = { main: 0.75, a: 1, b: 0, red: 1 };
+      this._act((p) => {
+        p.setBrace(0.25);
+        p.look(-0.5, 1.6);
+      });
       this.hud.alert("BRAKES RELEASED // ASCENDING", "good");
       this.events.emit("resume", {});
     }
@@ -331,6 +345,10 @@ export class GravityFaultRide {
       this.cabin.setDoors(0);
       once("depart", 0, () => {
         this.shake.add(0.25);
+        this._act((p) => {
+          p.impact = 0.25;
+          p.look(0.4, 1.5);
+        });
         this.hud.alert("ASCENDING // SECTOR 03", "info");
         this.events.emit("depart", {});
       });
@@ -343,6 +361,8 @@ export class GravityFaultRide {
         s.flash = 0.8;
         this.debris.jolt(0.45);
         this._crack("left", [0.32, 0.62], 1.0, 0.45);
+        // Something cracked, to their left: flinch and turn to it.
+        this._act((p) => p.react(1.1, 0.8));
         this.hud.alert("SEISMIC EVENT", "danger");
       });
       once("quake2", 1.5, () => {
@@ -352,17 +372,28 @@ export class GravityFaultRide {
         this.glass.jolt(0.4);
         this._crack("left", [0.32, 0.62], 0.8, 0.85);
         this._crack("right", [0.7, 0.4], 0.8, 0.35);
+        this._act((p) => {
+          p.stumble(0.35, -0.1, 1);
+          p.setBrace(0.6);
+        });
         this.events.emit("flicker", {});
       });
       once("stall", 2.6, () => {
         this.shake.add(0.35);
         this.debris.jolt(0.3);
+        this._act((p) => p.react(0, 0.4));
         this.hud.alert("LIFT STALLED", "danger");
       });
       once("blowout", 3.1, () => {
         this.shake.add(0.4);
         this.shake.kick(0.12, 0, 0);
         this._shatter("left", { outward: 0.8, force: 7 });
+        // Thrown away from the blast, arms up.
+        this._act((p) => {
+          p.react(1.1, 1);
+          p.stumble(0.4, 0.1, 1);
+          p.setBrace(0.85);
+        });
       });
       // Flickering from the second quake; strip B dies for good.
       const flick = pt > 1.5 ? flicker(time, 1.3) : 1;
@@ -399,6 +430,7 @@ export class GravityFaultRide {
           this.events.emit("brake-slam", { dropped: s.fallFrom - s.cabinY });
         });
         this._grind(dt, Math.max(0, 60 * (1 - (pt - SLAM) / 0.8)), 0.3);
+        once("recover", 0.9, () => this._act((p) => p.setBrace(0.5)));
         // The lights stutter back on, dimmer.
         s.lights.main = pt > 0.9 ? 0.4 + 0.35 * flicker(time, 2.2) : 0;
         s.lights.a = pt > 1.1 ? flicker(time, 5.5) : 0;
@@ -409,6 +441,11 @@ export class GravityFaultRide {
       s.fault = Math.max(0.35, s.fault - dt * 0.3);
       this.shake.floor = 0.06;
     }
+  }
+
+  /** Direct the character (no-op for the stand-in figure). */
+  _act(fn) {
+    if (this.performer) fn(this.performer);
   }
 
   _crack(pane, impact, seconds, amount) {
@@ -458,6 +495,8 @@ export class GravityFaultRide {
 
   /** The camera shot for the current phase and time. */
   currentShot() {
+    // For the check harness and screenshots: hold one shot.
+    if (this.forceShot) return this.forceShot;
     const list = SHOTS[this.phase] ?? SHOTS.climb;
     let shot = list[0][1];
     for (const [at, name] of list) if (this.state.pt >= at) shot = name;
@@ -491,8 +530,9 @@ export class GravityFaultRide {
     } else if (shot === "close") {
       // Inside, from the front corner, on Subject 07.
       const u = Math.min(1, s.shotT / 3);
+      const who = this.figure.root.position;
       cam.position.set(1.45 - u * 0.15, y + 1.75, -1.6);
-      _look.set(-0.35, y + 1.15, 0.5);
+      _look.set(who.x, y + who.y + 1.1, who.z + 0.15);
       cam.fov = 60;
     } else if (shot === "exterior" || shot === "rising") {
       // Outside, over the drop: the cabin climbing the tower, the fire below.
