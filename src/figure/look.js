@@ -49,6 +49,39 @@ import * as THREE from "../three.js";
 export const WEAR = { clean: 0, dusty: 0.33, bloodied: 0.66 };
 
 /**
+ * Skin tones the player can choose on the start screen. `light` is the
+ * models' own; the others re-tint the skin in the shader (see uTone), so
+ * every tone gets the same shading, damage and details.
+ */
+export const SKIN_TONES = {
+  light: { label: "Light", color: null, swatch: "#e2b597" },
+  medium: { label: "Medium", color: "#b0826a", swatch: "#b0826a" },
+  brown: { label: "Brown", color: "#80563f", swatch: "#80563f" },
+  dark: { label: "Dark", color: "#4d3427", swatch: "#4d3427" },
+};
+const SKIN_KEY = "fractureRun.skinTone";
+
+/** The saved skin tone (start screen). */
+export function savedSkinTone() {
+  try {
+    const saved = localStorage.getItem(SKIN_KEY);
+    if (saved && SKIN_TONES[saved]) return saved;
+  } catch {
+    /* storage unavailable */
+  }
+  return "light";
+}
+
+export function saveSkinTone(name) {
+  if (!SKIN_TONES[name]) return;
+  try {
+    localStorage.setItem(SKIN_KEY, name);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
  * The figure at a point in the run, by PLAY POSITION rather than by which
  * level it is (the team is reordering the levels): 0 = before the first
  * level (waking), 1..3 = during the first..third level played. The gear
@@ -110,6 +143,8 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   uniform float uWear;
   uniform float uGear;
   uniform vec3 uSkin;
+  uniform vec3 uTone;
+  uniform float uToneOn;
   uniform vec4 uCellTop;
   uniform vec4 uCellBody;
   uniform vec4 uCellBottom;
@@ -163,7 +198,8 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
     vec3 p = vRest;
     float w = uWear;
     vec3 col = diffuseColor.rgb;
-    vec3 skin = uSkin;
+    // The chosen skin tone (or the model's own).
+    vec3 skin = mix(uSkin, uTone, uToneOn);
     vec3 dust = vec3(0.36, 0.33, 0.29);   // concrete dust
     vec3 grime = vec3(0.1, 0.085, 0.07);
     vec3 blood = vec3(0.24, 0.015, 0.01);
@@ -187,6 +223,17 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
     bool legs = inCell(uv, uCellBottom);
     bool feet = inCell(uv, uCellShoes);
     bool bare = body || (top && arm && along > 0.2);
+
+    // Skin tone: re-tint the skin in the body texture. Skin pixels are the
+    // warm ones (red above blue and green); the whites of the eyes and the
+    // teeth are grey, so they stay. Brightness relative to the model's own
+    // average skin keeps every shadow, crease and the lips.
+    if (body && uToneOn > 0.5) {
+      float warm = smoothstep(0.015, 0.07, col.r - col.b) * smoothstep(-0.02, 0.02, col.r - col.g);
+      vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+      vec3 tinted = uTone * (dot(col, luma) / max(0.001, dot(uSkin, luma)));
+      col = mix(col, tinted, warm);
+    }
     // Short-sleeved scrubs: past the sleeve's end the arm is bare skin.
     if (top && arm && along > 0.2) col = skin * (0.92 + 0.08 * grain);
 
@@ -315,6 +362,8 @@ export function applyFigureLook(mesh, body) {
     uWear: { value: 0 },
     uGear: { value: 0 },
     uSkin: { value: skin.clone() },
+    uTone: { value: skin.clone() },
+    uToneOn: { value: 0 },
     uCellTop: { value: cell("material") },
     uCellBody: { value: cell("Body") },
     uCellBottom: { value: cell("Bottom") },
@@ -357,6 +406,12 @@ export function applyFigureLook(mesh, body) {
     },
     setGear(on) {
       uniforms.uGear.value = on ? 1 : 0;
+    },
+    /** A SKIN_TONES key ("light" = the model's own). */
+    setSkinTone(name) {
+      const tone = SKIN_TONES[name]?.color;
+      uniforms.uToneOn.value = tone ? 1 : 0;
+      if (tone) uniforms.uTone.value.set(tone);
     },
   };
 }

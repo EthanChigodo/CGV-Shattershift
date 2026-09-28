@@ -95,6 +95,7 @@ export class PlayerAvatar {
     this.look = applyFigureLook(mesh, body);
     this.look.setWear(this._wear ?? 0);
     this.look.setGear(this._gear ?? false);
+    this.look.setSkinTone(this._skinTone ?? "light");
     // Models face +Z; the runner travels down -Z.
     model.rotation.y = Math.PI;
     this.model = model;
@@ -174,6 +175,12 @@ export class PlayerAvatar {
   setWear(value) {
     this._wear = value;
     this.look?.setWear(value);
+  }
+
+  /** Skin tone, a SKIN_TONES key from src/figure/look.js. */
+  setSkinTone(name) {
+    this._skinTone = name;
+    this.look?.setSkinTone(name);
   }
 
   /** The scientist's vest and radio, after his sacrifice. */

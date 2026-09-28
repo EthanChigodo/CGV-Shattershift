@@ -165,7 +165,7 @@ export class GravityFaultRide {
    * @param {boolean} [o.boarded]  the player boarded in Level 2 already (the
    *   Calibration Lift): skip the board phase and start as the lift climbs
    * @param {string} [o.assetBase]  Level 3's asset folder, for the launcher model
-   * @param {{wear:number, gear:boolean}} [o.figure]  the character's state (src/figure/look.js)
+   * @param {{wear:number, gear:boolean, skinTone?:string}} [o.figure]  the character's state and skin tone (src/figure/look.js)
    */
   constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null, assetBase = null, figure = null }) {
     this.figureState = figure;
@@ -693,6 +693,7 @@ export class GravityFaultRide {
     if (this.figureState) {
       avatar.setWear(this.figureState.wear);
       avatar.setGear(this.figureState.gear);
+      if (this.figureState.skinTone) avatar.setSkinTone(this.figureState.skinTone);
     }
     avatar.setModel(template);
     this._avatar = avatar;

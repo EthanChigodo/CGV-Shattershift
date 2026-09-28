@@ -28,6 +28,18 @@ avatar.setWear(0.66);   // PlayerAvatar
 avatar.setGear(true);
 ```
 
+## Skin tones
+
+The player picks one of four skin tones on the start screen (the round swatches under *Play as*): **light** (the models' own), **medium**, **brown** and **dark** (`SKIN_TONES` in `look.js`). The choice is saved in the browser (`fractureRun.skinTone`) and applies everywhere the figure appears - Levels 1 and 2, the lift rides and Level 3.
+
+![Skin tones: light, medium, brown, dark](images/figure/skin-tones.jpg)
+
+It is the same shader, not new models or textures: on the body's atlas cell, pixels that are **warm** (red above blue and green - skin, not the grey whites of the eyes or the teeth) are replaced by the chosen tone, scaled by the pixel's brightness relative to the model's own average skin. So every shadow, crease and the lips keep their shape, and the painted skin (the short sleeves, the scratches, the dust) uses the same tone (`skin = mix(uSkin, uTone, uToneOn)`).
+
+```js
+avatar.setSkinTone("dark");   // PlayerAvatar; "light" restores the model's own
+```
+
 ## Inputs (uniforms)
 
 | Uniform | What it is |
@@ -35,6 +47,7 @@ avatar.setGear(true);
 | `uWear` | 0..1 - the damage (0 clean, 0.33 dusty, 0.66 bloodied) |
 | `uGear` | 0 or 1 - the scientist's vest and radio |
 | `uSkin` | the model's skin tone, averaged once from its own body texture, so painted skin matches real skin |
+| `uTone`, `uToneOn` | the chosen skin tone, and whether it replaces the model's own (0 for "light") |
 | `uCellTop`, `uCellBody`, `uCellBottom`, `uCellShoes` | each clothing texture's rectangle in the character's texture atlas - how a pixel knows what it is |
 | `uShoulderX`, `uShoulderY`, `uArmLength`, `uHipY` | body measurements from the rig (characters.js `measureBody`) |
 | `uNeckY` | the top of the scrub top (its neckline), measured from the mesh |

@@ -25,7 +25,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readFile, mkdir } from "node:fs/promises";
 import { serve } from "../foundry/lib/server.js";
-import * as checks from "./checks/gravity-lift.js";
+import * as gravityChecks from "./checks/gravity-lift.js";
+import * as figureChecks from "./checks/figure.js";
+
+const checks = { ...gravityChecks, ...figureChecks };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
@@ -205,6 +208,44 @@ async function main() {
       await page.screenshot({ path: path.join(figDir, `wear-stages-${who === "playerFemale" ? "female" : "male"}.jpg`), type: "jpeg", quality: 86, clip: { x: 0, y: 60, width: 960, height: 400 } });
       console.log(`shot docs/images/figure/wear-stages-${who === "playerFemale" ? "female" : "male"}.jpg`);
     }
+    // The four skin tones, both characters (docs/figure-wear-shader.md).
+    await open();
+    await page.evaluate(async () => {
+      const THREE = await import("/src/three.js");
+      const { loadMeltdownAssets } = await import("/src/levels/meltdown/assets.js");
+      const { PlayerAvatar } = await import("/src/levels/meltdown/player.js");
+      document.querySelectorAll("body > *").forEach((e) => { e.style.display = "none"; });
+      const r = new THREE.WebGLRenderer({ antialias: true });
+      r.setSize(960, 480);
+      r.outputColorSpace = THREE.SRGBColorSpace;
+      r.toneMapping = THREE.ACESFilmicToneMapping;
+      r.domElement.style.cssText = "position:fixed;left:0;top:0;z-index:99";
+      document.body.appendChild(r.domElement);
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x3a4048);
+      scene.add(new THREE.HemisphereLight(0xdde6ff, 0x3a3024, 1.6));
+      const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+      sun.position.set(1.5, 3, 4);
+      scene.add(sun);
+      const assets = await loadMeltdownAssets(new URL("./assets/meltdown/", location.href).href, { names: ["playerFemale", "playerMale"] });
+      ["light", "medium", "brown", "dark"].forEach((tone, i) => {
+        ["playerFemale", "playerMale"].forEach((who, j) => {
+          const a = new PlayerAvatar();
+          a.setSkinTone(tone);
+          a.setModel(assets.get(who).template);
+          a.uniforms.uHold.value = 0;
+          a.root.position.set((i * 2 + j) * 0.95 - 3.3, 0, 0);
+          a.root.rotation.y = Math.PI;
+          scene.add(a.root);
+        });
+      });
+      const cam = new THREE.PerspectiveCamera(26, 2, 0.1, 50);
+      cam.position.set(0, 1.0, 9.8);
+      cam.lookAt(0, 0.92, 0);
+      r.render(scene, cam);
+    });
+    await page.screenshot({ path: path.join(figDir, "skin-tones.jpg"), type: "jpeg", quality: 86, clip: { x: 0, y: 60, width: 960, height: 400 } });
+    console.log("shot docs/images/figure/skin-tones.jpg");
     console.log();
   }
 

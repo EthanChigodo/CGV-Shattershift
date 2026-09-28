@@ -194,11 +194,13 @@ node tests/elevators/run.js --shots-only
 | brake clamps | Played: aiming at each clamp on screen and firing locks it, the camera goes first person → outside → diagnostic, all three give a bonus. Left alone: they force-lock, no bonus, the ride still finishes |
 | ride to Level 3 | Every camera shot plays, the chosen character is in the lift, the ride finishes, is disposed, and Level 3 starts and is visible |
 | restart and memory | Restarting mid-ride frees it; three rides in a row leave GPU geometry and texture counts unchanged |
+| skin tone choice | The four swatches are on the start screen; picking one re-tints the figure, is saved, and "light" restores the model's own skin |
 
 Manual checklist before merging:
 
 - [ ] Play from Level 2 (press `2`) to the end of the Foundry: the lift plays and Level 3 starts. No console errors.
 - [ ] Press `5` during a run: the ride plays from the start. Shoot the three clamps; also try one ride without shooting.
+- [ ] On the start screen, pick each skin swatch: the figure changes, and the choice is still there after a reload.
 - [ ] Settings → Reduced motion on: the shake is much gentler.
 - [ ] Press `Esc` during the ride: it pauses and resumes.
 - [ ] Press `R` / *Restart run* during and after the ride: the run restarts in Level 1 with no lift HUD left on screen.

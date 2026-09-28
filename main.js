@@ -16,7 +16,7 @@ import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 import { ShatterFX } from "./src/fx/shatter.js";
-import { figureStage } from "./src/figure/look.js";
+import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone } from "./src/figure/look.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -252,6 +252,7 @@ avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
  */
 const playerBody = new PlayerAvatar();
 playerBody.hold = 0;
+playerBody.setSkinTone(savedSkinTone());
 let playerBodyReady = false;
 /** The chosen character's model template, for the lift ride to show the same person. */
 let playerBodyTemplate = null;
@@ -1131,7 +1132,9 @@ function getMeltdown() {
     reducedMotion: settings.reducedMotion,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
-  // Level 3's body gets the figure's state for the third level played.
+  // Level 3's body: the chosen skin tone, and the figure's state for the
+  // third level played.
+  meltdown.avatar?.setSkinTone(savedSkinTone());
   const stage = figureStage(3);
   meltdown.avatar?.setWear(stage.wear);
   meltdown.avatar?.setGear(stage.gear);
@@ -1570,7 +1573,7 @@ function startGravityLift({ boarded = false } = {}) {
     // already as they will be in the next level - the story puts the
     // scientist's gear on them on the way up (the L2 -> L3 ride).
     character: playerBodyTemplate,
-    figure: figureStage(currentLevel + 1),
+    figure: { ...figureStage(currentLevel + 1), skinTone: savedSkinTone() },
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
   });
@@ -2398,6 +2401,34 @@ for (const button of characterButtons) {
 }
 showCharacterChoice();
 loadPlayerBody();
+
+// Skin tone: one swatch per tone (src/figure/look.js), remembered.
+const skinPick = $("#skinPick");
+function showSkinChoice() {
+  const chosen = savedSkinTone();
+  for (const button of skinPick.querySelectorAll("[data-skin]")) {
+    const on = button.dataset.skin === chosen;
+    button.classList.toggle("picked", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+}
+for (const [key, tone] of Object.entries(SKIN_TONES)) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "skin-button";
+  button.dataset.skin = key;
+  button.title = tone.label;
+  button.setAttribute("aria-label", `${tone.label} skin`);
+  button.style.setProperty("--swatch", tone.swatch);
+  button.addEventListener("click", () => {
+    saveSkinTone(key);
+    playerBody.setSkinTone(key);
+    meltdown?.avatar?.setSkinTone(key);
+    showSkinChoice();
+  });
+  skinPick.appendChild(button);
+}
+showSkinChoice();
 
 $("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); startCampaign(); });
 ui.endlessButton.addEventListener("click", () => { ui.start.classList.remove("active"); refreshEndlessMenu(); ui.endless.classList.add("active"); });
