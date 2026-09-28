@@ -5,7 +5,8 @@
  *   npx playwright install chromium
  *   node tests/elevators/run.js
  *
- * Add --shots to also regenerate the screenshots in docs/images/elevators/.
+ * Add --shots to also regenerate the screenshots in docs/images/elevators/,
+ * or --shots-only to skip the checks and only take them.
  *
  * Serves the repository on a spare port, drives the real game (index.html)
  * in headless Chromium and runs the checks in checks/. Exits non-zero on
@@ -32,12 +33,25 @@ const ROOT = path.resolve(HERE, "../..");
 /** Documentation shots: [file name, seconds into the ride, pointer]. */
 const SHOTS = [
   ["gravity-lift-doors", 1.0, [0, 0]],
-  ["gravity-lift-exterior", 4.2, [0, 0]],
-  ["gravity-lift-interior", 7.2, [-0.35, -0.2]],
+  ["gravity-lift-exterior", 3.8, [0, 0]],
+  ["gravity-lift-tremor", 7.0, [0, 0]],
+  ["gravity-lift-freefall", 9.9, [0, 0]],
+  ["gravity-lift-brakes", 10.35, [0, 0]],
+  ["gravity-lift-slam", 11.0, [0, 0]],
+  ["gravity-lift-launcher", 12.55, [0, 0]],
+  ["gravity-lift-pickup", 14.3, [0, 0]],
+  ["gravity-lift-rising", 28.0, [0, 0]],
+];
+
+/** The clamps: [file name, clamps to lock first] - one shot per camera. */
+const CLAMP_SHOTS = [
+  ["gravity-lift-clamps-aim", 0],
+  ["gravity-lift-clamps-front", 1],
+  ["gravity-lift-clamps-diagnostic", 2],
 ];
 
 async function main() {
-  const wantShots = process.argv.includes("--shots");
+  const wantShots = process.argv.includes("--shots") || process.argv.includes("--shots-only");
   let chromium;
   try {
     ({ chromium } = await import("playwright"));
@@ -79,7 +93,8 @@ async function main() {
   };
 
   let failed = 0;
-  for (const check of Object.values(checks)) {
+  const shotsOnly = process.argv.includes("--shots-only");
+  for (const check of shotsOnly ? [] : Object.values(checks)) {
     process.stdout.write(`${check.name} ... `);
     try {
       await open();
@@ -114,6 +129,33 @@ async function main() {
         d.step(Math.round(seconds * 60), 1 / 60);
         d.render();
       }, [at, pointer]);
+      await page.evaluate(() => globalThis.__dbg.render());
+      await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 84 });
+      console.log(`shot docs/images/elevators/${name}.jpg`);
+    }
+    for (const [name, lockFirst] of CLAMP_SHOTS) {
+      await open();
+      await page.evaluate(async (n) => {
+        const d = globalThis.__dbg;
+        const w0 = performance.now();
+        while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
+        d.resetGame("story");
+        d.demoGravityLift();
+        const ride = d.gravityLift;
+        for (let i = 0; i < 60 * 40 && ride.phase !== "clamps"; i += 1) d.step(1, 1 / 60);
+        for (let k = 0; k < n; k += 1) ride.clamps.lock(ride.clamps.clamps[k]);
+        // Aim at the next clamp, as a player would.
+        const V = new d.THREE.Vector3();
+        const target = ride.clamps.clamps[n];
+        for (let k = 0; k < 4; k += 1) {
+          const cam = ride.currentShot() === "diagnostic" ? ride.diag.camera : ride.camera;
+          ride.clamps.worldPosition(target, V).project(cam);
+          d.setPointer(V.x, V.y);
+          ride.onPointerMove(V.x, V.y);
+          d.step(15, 1 / 60);
+        }
+        d.render();
+      }, lockFirst);
       await page.evaluate(() => globalThis.__dbg.render());
       await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 84 });
       console.log(`shot docs/images/elevators/${name}.jpg`);

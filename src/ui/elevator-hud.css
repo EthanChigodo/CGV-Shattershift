@@ -135,6 +135,61 @@
   }
 }
 
+.elv-clamps {
+  position: absolute;
+  top: 162px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  color: #ffb3b8;
+  background: var(--elv-panel);
+  border: 1px solid rgba(255, 74, 84, 0.45);
+  border-radius: 4px;
+}
+
+.elv-clamps.done {
+  color: var(--elv-green);
+  border-color: rgba(125, 255, 154, 0.45);
+}
+
+.elv-clamps[hidden],
+.elv-monitor[hidden],
+.elv-diag-label[hidden] {
+  display: none;
+}
+
+.elv-monitor {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(126, 244, 241, 0.7);
+  box-shadow: 0 0 0 3px rgba(6, 10, 14, 0.8), 0 0 18px rgba(126, 244, 241, 0.25);
+}
+
+.elv-monitor span {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--elv-cyan);
+}
+
+.elv-diag-label {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  color: var(--elv-cyan);
+  text-shadow: 0 0 10px rgba(126, 244, 241, 0.6);
+}
+
 @media (max-width: 600px) {
   .elv-panel {
     min-width: 0;

@@ -1471,6 +1471,8 @@ function startGravityLift({ boarded = false } = {}) {
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
     // The same character as in Levels 1 and 2 (null while it is still loading).
     character: playerBodyTemplate,
+    // Level 3's launcher crashes into the lift (and stays with the player).
+    assetBase: MELTDOWN_ASSET_BASE,
   });
   gravityLift.onPointerMove(pointer.x, pointer.y);
   // The ride has its own alerts; clear the game's message line for them.
@@ -1481,7 +1483,10 @@ function startGravityLift({ boarded = false } = {}) {
 function updateGravityLiftFrame(dt, time) {
   gravityLift.update(dt, time);
   ui.fade.style.opacity = gravityLift.fade.toFixed(3);
-  document.body.classList.remove("aiming");
+  // The crosshair is up while there are clamps to shoot.
+  document.body.classList.toggle("aiming", gravityLift.wantsAim && !photoActive && !document.querySelector(".screen.active"));
+  ui.reticle.classList.toggle("hot", !!gravityLift.aimTarget);
+  ui.reticle.classList.toggle("assist", !!gravityLift.aimTarget);
   if (gravityLift.result.done) finishGravityLift();
 }
 
@@ -2177,6 +2182,11 @@ addEventListener("pointerdown", (event) => {
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
+    return;
+  }
+  // The lift ride: shoot the brake clamps.
+  if (gravityLift) {
+    if (event.button === 0 && !paused) gravityLift.fire();
     return;
   }
   if (event.button === 0) fire();

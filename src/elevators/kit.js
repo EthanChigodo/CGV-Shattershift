@@ -247,7 +247,9 @@ export function buildCabin(shared, owned) {
   const glass = owned.add(new THREE.MeshStandardMaterial({
     color: 0xa8e4ee, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide,
   }));
-  const lightStrip = owned.add(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.55, 1.4) }));
+  // One material per strip light, so each can flicker and die on its own.
+  const STRIP = new THREE.Color(1.6, 1.55, 1.4);
+  const strips = [0, 1].map(() => owned.add(new THREE.MeshBasicMaterial({ color: STRIP.clone() })));
   const energy = owned.add(createEnergyMaterial(shared));
   const display = displayTexture(owned);
   const displayMat = owned.add(new THREE.MeshBasicMaterial({ map: display }));
@@ -273,7 +275,7 @@ export function buildCabin(shared, owned) {
   for (const x of [-W, W]) for (const z of [-W, W]) add(frame, 0.14, H, 0.14, x, H / 2, z);
   // Cross members on the roof, and the ceiling light strips under them.
   add(frame, 0.1, 0.1, 2 * W, 0, H, 0);
-  for (const s of [-1, 1]) add(lightStrip, 0.08, 0.03, 2 * W - 0.4, s * (W - 0.25), H - 0.09, 0);
+  [-1, 1].forEach((s, i) => add(strips[i], 0.08, 0.03, 2 * W - 0.4, s * (W - 0.25), H - 0.09, 0));
 
   // Glass: front, sides, roof.
   const plane = owned.add(new THREE.PlaneGeometry(1, 1));
@@ -286,10 +288,13 @@ export function buildCabin(shared, owned) {
     root.add(mesh);
     return mesh;
   };
-  pane(2 * W, H, 0, H / 2, -W, 0, 0);
-  pane(2 * W, H, -W, H / 2, 0, 0, Math.PI / 2);
-  pane(2 * W, H, W, H / 2, 0, 0, -Math.PI / 2);
-  pane(2 * W, 2 * W, 0, H, 0, -Math.PI / 2, 0);
+  // Named, so they can crack and blow out one by one (glass.js).
+  const panes = {
+    front: pane(2 * W, H, 0, H / 2, -W, 0, 0),
+    left: pane(2 * W, H, -W, H / 2, 0, 0, Math.PI / 2),
+    right: pane(2 * W, H, W, H / 2, 0, 0, -Math.PI / 2),
+    roof: pane(2 * W, 2 * W, 0, H, 0, -Math.PI / 2, 0),
+  };
 
   // Back wall with the doors (two leaves that slide apart along X).
   const doorW = 1.7;
@@ -314,19 +319,51 @@ export function buildCabin(shared, owned) {
     root.add(conduit);
   }
 
-  // Cabin light: one point light that goes red in the fault.
+  // Cabin light, and the red emergency beacon that takes over in a blackout.
   const light = new THREE.PointLight(0xfff2de, 9, 9, 1.6);
   light.position.set(0, H - 0.4, 0);
   root.add(light);
+  const beaconMat = owned.add(new THREE.MeshBasicMaterial({ color: 0x220000 }));
+  const beacon = add(beaconMat, 0.22, 0.12, 0.22, -(W - 0.3), H - 0.12, W - 0.3);
+  const emergency = new THREE.PointLight(0xff1a0a, 0, 10, 1.4);
+  emergency.position.set(-(W - 0.4), H - 0.35, W - 0.4);
+  root.add(emergency);
+
+  // Brake shoes gripping the rails at the four bottom corners - where the
+  // sparks come from when the emergency brakes bite.
+  const R = W + 0.42;
+  const brakePoints = [];
+  for (const x of [-R, R]) {
+    for (const z of [-R, R]) {
+      add(dark, 0.36, 0.3, 0.36, x, 0.05, z);
+      add(frame, 0.12, 0.3, 0.5, x - Math.sign(x) * 0.24, 0.05, z - Math.sign(z) * 0.1);
+      brakePoints.push(new THREE.Vector3(x, 0.05, z));
+    }
+  }
 
   return {
     root,
     leaves,
     light,
-    lightStrip,
+    strips,
+    panes,
+    beacon,
+    brakePoints,
     energy,
     display,
     doorWidth: doorW,
+    /**
+     * Lights, each 0..1: the main light, the two strip lights, and the red
+     * emergency beacon (which pulses on its own when on).
+     */
+    setLights(main, stripA, stripB, red, time = 0) {
+      light.intensity = 9 * main;
+      strips[0].color.copy(STRIP).multiplyScalar(stripA);
+      strips[1].color.copy(STRIP).multiplyScalar(stripB);
+      const pulse = red * (0.55 + 0.45 * Math.max(0, Math.sin(time * 7)));
+      emergency.intensity = 14 * pulse;
+      beaconMat.color.setRGB(0.15 + 2.2 * pulse, 0.02 + 0.1 * pulse, 0.02);
+    },
     /** 0 = shut, 1 = open. Eased. */
     setDoors(t) {
       const k = THREE.MathUtils.clamp(t, 0, 1);
