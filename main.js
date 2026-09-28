@@ -1471,6 +1471,8 @@ function startGravityLift({ boarded = false } = {}) {
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
     // The same character as in Levels 1 and 2 (null while it is still loading).
     character: playerBodyTemplate,
+    // Level 3's launcher crashes into the lift (and stays with the player).
+    assetBase: MELTDOWN_ASSET_BASE,
   });
   gravityLift.onPointerMove(pointer.x, pointer.y);
   // The ride has its own alerts; clear the game's message line for them.

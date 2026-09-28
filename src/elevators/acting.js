@@ -20,7 +20,9 @@
  *            drifts up off the floor in free fall (knees tucking, arms
  *            reaching and paddling), and slams down into a deep crouch when
  *            the brakes bite, then gets back up
- *   pickUp / hold   step 4: the launcher
+ *   walk     a few steps to a spot (`walkTo`), facing where they go
+ *   look up  at a noise overhead (`lookUp`)
+ *   hold     both hands on the launcher, as in Level 3 (`holding`)
  *
  * Every control eases toward its target at its own rate, so the behaviours
  * blend rather than snap. Local frame: feet at y = 0 in the cabin, yaw 0 =
@@ -61,6 +63,10 @@ export class Performer {
     this.tumbleV = 0;
     this.fear = 0;
     this.breathPhase = 0;
+    this.goal = null;
+    this.lookUpT = 0;
+    /** Both hands on the launcher (Level 3's hold). */
+    this.holding = false;
     /** Extra control targets a scripted moment can set (the pickup). */
     this.override = null;
     this.attention = null;
@@ -91,6 +97,21 @@ export class Performer {
     this.stepping = Math.max(this.stepping, 0.55 * strength);
     this.flinch = Math.min(1, this.flinch + 0.5 * strength);
     this.flinchSide = -Math.sign(dx) || 1;
+  }
+
+  /** Walk to (x, z) in the cabin, facing the way they go. */
+  walkTo(x, z) {
+    this.goal = new THREE.Vector3(x, this.home.y, z);
+  }
+
+  /** Look up at something overhead for a moment. */
+  lookUp(seconds = 0.8) {
+    this.lookUpT = seconds;
+  }
+
+  /** Cabin yaw that faces (x, z) from where they stand. */
+  yawTo(x, z) {
+    return Math.atan2(-(x - this.home.x), -(z - this.home.z));
   }
 
   /** Raise the fear level (0..1). */
@@ -167,6 +188,23 @@ export class Performer {
     this.stepping = Math.max(0, this.stepping - dt);
     if (this.stepping > 0) this.phase += dt * 9;
 
+    // ---- Walking to a spot. ----
+    let walkYaw = null;
+    if (this.goal) {
+      const dx = this.goal.x - this.home.x;
+      const dz = this.goal.z - this.home.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.02) this.goal = null;
+      else {
+        const step = Math.min(dist, 1.1 * dt);
+        this.home.x += (dx / dist) * step;
+        this.home.z += (dz / dist) * step;
+        this.stepping = Math.max(this.stepping, 0.15);
+        walkYaw = Math.atan2(-dx, -dz);
+      }
+    }
+    this.lookUpT = Math.max(0, this.lookUpT - dt);
+
     // ---- Where they look: held glances, else idle looking around. ----
     this.lookHold -= dt;
     let yaw = this.lookYaw;
@@ -177,6 +215,7 @@ export class Performer {
       yaw = [0.05, 0.55, -0.35, 0.2][beat] * (1 + this.fear * 0.4);
     }
     if (this.attention !== null) yaw = this.attention;
+    if (walkYaw !== null) yaw = walkYaw;
 
     // ---- Targets. ----
     this.flinch = Math.max(0, this.flinch - dt * 1.6);
@@ -197,8 +236,14 @@ export class Performer {
       swing: airborne ? 0.55 : this.stepping > 0 ? 0.6 : 0.06 + b * 0.25 + f * 0.3,
       stride: this.stepping > 0 ? 0.45 : 0,
       yaw,
-      pitch: -0.08 * f + this.tumble,
+      pitch: -0.08 * f + this.tumble + (this.lookUpT > 0 ? 0.22 : 0),
     };
+    if (this.lookUpT > 0) target.lean -= 0.25;
+    if (this.holding && !airborne) {
+      target.hold = 1;
+      target.swing = 0.02;
+      target.reach = 0;
+    }
     if (this.override) Object.assign(target, this.override);
 
     c.crouch = ease(c.crouch, target.crouch, this.impact > 0.3 ? 18 : 6, dt);
@@ -239,6 +284,18 @@ export class Performer {
     a.root.rotation.y = c.yaw;
     a.body.rotation.set(c.pitch, 0, c.side);
     a.body.position.y = (0.004 + 0.006 * this.fear) * breath;
+    // The launcher mount follows the torso's lean and drop, so the hands
+    // stay on it (as PlayerAvatar.update does for Level 3).
+    if (u && a.shoulderBase && a.bodyInfo) {
+      const angle = -(u.uLean.value + u.uCrouch.value * 0.25);
+      const hip = a.bodyInfo.hipY;
+      const y = a.shoulderBase.y - hip;
+      const z = a.shoulderBase.z;
+      const cs = Math.cos(angle);
+      const sn = Math.sin(angle);
+      a.shoulder.position.set(a.shoulderBase.x, hip + y * cs - z * sn - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, y * sn + z * cs);
+      a.shoulder.rotation.x = angle;
+    }
     // Contact shadow stays on the floor and fades as they lift off it.
     a.shadow.position.y = 0.025 - this.floatY - lift;
     a.shadowMaterial.opacity = Math.max(0.2, 1 - this.floatY * 1.2);

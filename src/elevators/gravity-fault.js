@@ -37,6 +37,10 @@
  *             things and fallen shards drift up off the floor
  *   brake     the emergency brakes bite - sparks - and slam the lift to a
  *             stop; everything slams down and the right pane blows out
+ *   launcher  something hits the roof. Level 3's launcher - the failed
+ *             experiment, falling from the lab above - crashes through the
+ *             glass ceiling; Subject 07 picks it up and carries it into
+ *             Level 3
  *   resume    the brakes release and the lift climbs on; fade out
  *
  * Everything loose in the cabin (glass.js shards that fell in, debris.js)
@@ -45,7 +49,8 @@
  * zero in free fall, about 7 g as the brakes slam.
  *
  * Events (ride.events.on) for sound: shot, depart, tremor, flicker,
- * glass-crack, glass-break, cable-snap, brake, brake-slam, resume, arrive.
+ * glass-crack, glass-break, cable-snap, brake, brake-slam, launcher-thud,
+ * launcher-land, pickup, resume, arrive.
  *
  * Scene hierarchy:
  *   RideScene
@@ -70,6 +75,7 @@ import { Sparks } from "./sparks.js";
 import { CabinGlass } from "./glass.js";
 import { CabinDebris } from "./debris.js";
 import { Performer } from "./acting.js";
+import { LauncherProp } from "./launcher.js";
 import { ElevatorHud } from "../ui/elevator-hud.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
 
@@ -86,6 +92,7 @@ export const PHASES = [
   ["tremor", 3.6],
   ["freefall", 2.0],
   ["brake", 1.6],
+  ["launcher", 3.9],
   ["resume", 3.2],
 ];
 
@@ -96,6 +103,7 @@ const SHOTS = {
   tremor: [[0, "interior"], [1.9, "close"]],
   freefall: [[0, "interior"], [0.45, "falling"], [1.2, "close"]],
   brake: [[0, "interior"], [0.8, "close"]],
+  launcher: [[0, "close"], [0.55, "roof"], [1.35, "pickup"]],
   resume: [[0, "rising"]],
 };
 
@@ -141,8 +149,9 @@ export class GravityFaultRide {
    *   Levels 1 and 2. Without it, a simple stand-in figure.
    * @param {boolean} [o.boarded]  the player boarded in Level 2 already (the
    *   Calibration Lift): skip the board phase and start as the lift climbs
+   * @param {string} [o.assetBase]  Level 3's asset folder, for the launcher model
    */
-  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null }) {
+  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null, assetBase = null }) {
     this.renderer = renderer;
     this.reducedMotion = reducedMotion;
     this.boarded = boarded;
@@ -171,6 +180,12 @@ export class GravityFaultRide {
     scene.add(this.world.root, this.shaft.root, this.cabin.root, this.sparks.points);
     this.glass = new CabinGlass(this.cabin, scene);
     this.debris = new CabinDebris(this.cabin.root);
+    this.launcher = new LauncherProp(this.cabin.root, assetBase);
+    this.launcher.onLand = (speed) => {
+      this.shake.add(0.25);
+      this.debris.jolt(0.15);
+      this.events.emit("launcher-land", { speed });
+    };
 
     scene.add(new THREE.HemisphereLight(0x39405a, 0x3a1a0c, 0.7));
     const moon = new THREE.DirectionalLight(0x8aa0d0, 0.55);
@@ -276,6 +291,7 @@ export class GravityFaultRide {
     else this.figure.pose(s.gEff < 3 ? 1 : 0, time);
     this.glass.update(dt, s.gEff);
     this.debris.update(dt, s.gEff);
+    this.launcher.update(dt, s.gEff);
     this.sparks.update(dt);
     this.sparkLight.intensity = Math.max(0, this.sparkLight.intensity - dt * 40);
 
@@ -317,6 +333,8 @@ export class GravityFaultRide {
       this._act((p) => p.look(0.3, 1.5));
       this.hud.alert("EMERGENCY BRAKES", "danger");
       this.events.emit("brake", {});
+    } else if (name === "launcher") {
+      this.hud.alert(null);
     } else if (name === "resume") {
       s.lights = { main: 0.75, a: 1, b: 0, red: 1 };
       this._act((p) => {
@@ -435,12 +453,77 @@ export class GravityFaultRide {
         s.lights.main = pt > 0.9 ? 0.4 + 0.35 * flicker(time, 2.2) : 0;
         s.lights.a = pt > 1.1 ? flicker(time, 5.5) : 0;
       }
+    } else if (name === "launcher") {
+      this._launcherBeat(pt, once);
     } else if (name === "resume") {
       s.velocity = Math.min(9, s.velocity + 4 * dt);
       s.lights.main = 0.55 + 0.2 * flicker(time, 3.3);
       s.fault = Math.max(0.35, s.fault - dt * 0.3);
       this.shake.floor = 0.06;
     }
+  }
+
+  /**
+   * Something heavy hits the roof, then comes through it: the launcher. It
+   * lands in front of Subject 07, who looks at it, steps over, crouches,
+   * picks it up and brings it to the shoulder.
+   */
+  _launcherBeat(pt, once) {
+    const s = this.state;
+    s.lights.main = 0.45 + 0.3 * flicker(this.uniforms.uTime.value, 2.2);
+    s.lights.a = 1;
+    once("thud", 0.05, () => {
+      this.shake.add(0.35);
+      this.shake.kick(0, -0.06, 0);
+      this.debris.jolt(0.3);
+      this._act((p) => {
+        p.react(0, 0.6);
+        p.lookUp(0.9);
+      });
+      this.events.emit("launcher-thud", {});
+    });
+    once("crash", 0.7, () => {
+      this.shake.add(0.5);
+      s.flash = 0.4;
+      this._shatter("roof", { outward: 0, force: 2.5, count: 60 });
+      this.launcher.drop(new THREE.Vector3(0.3, 3.6, -0.5), new THREE.Vector3(-0.1, -3.2, 0.15));
+      this._act((p) => {
+        p.react(0, 1);
+        p.setBrace(0.7);
+      });
+    });
+    const lying = this.launcher.root.position;
+    once("notice", 1.5, () => this._act((p) => {
+      p.setBrace(0.15);
+      p.attention = p.yawTo(lying.x, lying.z);
+      // Looking down at it.
+      p.override = { lean: 0.35, pitch: -0.12 };
+    }));
+    once("step", 1.75, () => this._act((p) => {
+      // Stand beside it, to its +Z side.
+      p.attention = null;
+      p.override = null;
+      p.walkTo(lying.x - 0.1, lying.z + 0.5);
+    }));
+    once("reach", 2.25, () => this._act((p) => {
+      p.attention = p.yawTo(lying.x, lying.z);
+      p.override = { crouch: 0.95, lean: 1.0, hold: 0.25, reach: 0, swing: 0.08, stride: 0, pitch: -0.1 };
+    }));
+    once("grab", 2.65, () => {
+      if (!this._avatar) return;
+      // Up in front of the chest on its way to the shoulder.
+      const via = this._avatar.root.localToWorld(new THREE.Vector3(0.1, 1.05, -0.5));
+      this.launcher.attach(this._avatar.shoulder, 0.6, via);
+      this.events.emit("pickup", {});
+    });
+    once("stand", 3.0, () => this._act((p) => {
+      p.override = null;
+      p.holding = true;
+      p.setBrace(0.1);
+      p.attention = null;
+      p.look(0, 1.2);
+      this.hud.alert("LAUNCHER ACQUIRED", "good");
+    }));
   }
 
   /** Direct the character (no-op for the stand-in figure). */
@@ -534,6 +617,17 @@ export class GravityFaultRide {
       cam.position.set(1.45 - u * 0.15, y + 1.75, -1.6);
       _look.set(who.x, y + who.y + 1.1, who.z + 0.15);
       cam.fov = 60;
+    } else if (shot === "roof") {
+      // Low in the corner, looking up: the roof caves in.
+      cam.position.set(1.5, y + 0.85, -1.55);
+      _look.set(0.1, y + 2.6, 0.1);
+      cam.fov = 70;
+    } else if (shot === "pickup") {
+      // Low and close, the launcher on the floor and Subject 07 over it.
+      const who = this.figure.root.position;
+      cam.position.set(1.45, y + 1.15, -1.65);
+      _look.set((who.x + this.launcher.root.position.x) / 2, y + 0.75, (who.z + this.launcher.root.position.z) / 2);
+      cam.fov = 62;
     } else if (shot === "exterior" || shot === "rising") {
       // Outside, over the drop: the cabin climbing the tower, the fire below.
       const u = Math.min(1, s.shotT / 3.6);
@@ -605,6 +699,7 @@ export class GravityFaultRide {
     this.sparks.dispose();
     this.glass.dispose();
     this.debris.dispose();
+    this.launcher.dispose();
     this.events.clear();
     this.hud.dispose();
     this.owned.dispose();
