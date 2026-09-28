@@ -5,7 +5,8 @@
  *   npx playwright install chromium
  *   node tests/elevators/run.js
  *
- * Add --shots to also regenerate the screenshots in docs/images/elevators/.
+ * Add --shots to also regenerate the screenshots in docs/images/elevators/,
+ * or --shots-only to skip the checks and only take them.
  *
  * Serves the repository on a spare port, drives the real game (index.html)
  * in headless Chromium and runs the checks in checks/. Exits non-zero on
@@ -32,12 +33,16 @@ const ROOT = path.resolve(HERE, "../..");
 /** Documentation shots: [file name, seconds into the ride, pointer]. */
 const SHOTS = [
   ["gravity-lift-doors", 1.0, [0, 0]],
-  ["gravity-lift-exterior", 4.2, [0, 0]],
-  ["gravity-lift-interior", 7.2, [-0.35, -0.2]],
+  ["gravity-lift-exterior", 3.8, [0, 0]],
+  ["gravity-lift-tremor", 7.0, [0, 0]],
+  ["gravity-lift-freefall", 9.9, [0, 0]],
+  ["gravity-lift-brakes", 10.35, [0, 0]],
+  ["gravity-lift-interior", 11.0, [-0.2, 0.1]],
+  ["gravity-lift-rising", 13.2, [0, 0]],
 ];
 
 async function main() {
-  const wantShots = process.argv.includes("--shots");
+  const wantShots = process.argv.includes("--shots") || process.argv.includes("--shots-only");
   let chromium;
   try {
     ({ chromium } = await import("playwright"));
@@ -79,7 +84,8 @@ async function main() {
   };
 
   let failed = 0;
-  for (const check of Object.values(checks)) {
+  const shotsOnly = process.argv.includes("--shots-only");
+  for (const check of shotsOnly ? [] : Object.values(checks)) {
     process.stdout.write(`${check.name} ... `);
     try {
       await open();

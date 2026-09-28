@@ -6,14 +6,19 @@
  * spheres, shards, and the avatar float inside the cabin. The player shoots
  * three stabilisers while the camera transitions between an interior
  * first-person view, an exterior tower view, and a top-down orthographic
- * diagnostic view. This previews Level 3's gravity mechanic."
+ * diagnostic view."
+ *
+ * Here the tower is coming down around the lift: tremors, the lights
+ * failing, and then the cable snaps. Two seconds of free fall - inside a
+ * falling cabin everything is weightless, which is the brief's "gravity
+ * weakens" for real - until the emergency brakes bite in a shower of sparks
+ * and slam the lift to a stop. Then it climbs on to Level 3.
  *
  * The ride is a self-contained module like Level 3: its own scene, cameras
- * and HUD, rendered with the game's renderer. The host (main.js) creates it
- * when the Foundry is complete, forwards the pointer and clicks, calls
- * update() and render() every frame, and hands over to Level 3 when
- * `result.done` is set. While it runs, Level 3's models keep streaming in
- * the background - the ride is also the loading screen.
+ * and HUD, rendered with the game's renderer. The host (main.js) creates it,
+ * forwards the pointer, calls update() and render() every frame, and hands
+ * over to Level 3 when `result.done` is set. While it runs, Level 3's models
+ * keep streaming in the background - the ride is also the loading screen.
  *
  *   const ride = new GravityFaultRide({ renderer, spheres: ammo });
  *   ride.update(dt, time);   // every frame
@@ -21,49 +26,68 @@
  *   ride.onPointerMove(x, y); // NDC, -1..1
  *   if (ride.result.done) { ... ride.dispose(); }
  *
- * Timeline (seconds from the doors closing):
- *   0.4  doors close behind Subject 07, the Foundry glowing through them
- *   1.8  the lift launches up the outside of Ascension Tower
- *   2.2  outside shot: the tower, the burning floors below, the city
- *   5.8  back inside: look around while the lift climbs
- *   ~10  fade out; Level 3 opens with this lift arriving
+ * Phases (PHASES below has the lengths):
+ *   board     doors close behind Subject 07, the Foundry glowing through them
+ *             (skipped when the player boarded in Level 2's Calibration Lift)
+ *   climb     launch up the outside of Ascension Tower
+ *   tremor    the building shakes, the lights flicker, the lift stalls
+ *   freefall  the cable snaps: blackout, red emergency light, two seconds
+ *             of free fall, the floor counter running backwards
+ *   brake     the emergency brakes bite - sparks - and slam the lift to a stop
+ *   resume    the brakes release and the lift climbs on; fade out
+ *
+ * Events (ride.events.on) for sound: shot, depart, tremor, flicker,
+ * cable-snap, brake, brake-slam, resume, arrive.
  *
  * Scene hierarchy:
  *   RideScene
  *   |-- RideWorld        sky, city, skyline, Ascension Tower (shaders.js)
  *   |-- LiftShaft        rails, ring beams, marker lamps
- *   |-- GravityLiftCabin moves up the shaft
- *   |   |-- frame, glass, doors, floor display, energy conduits
- *   |   |-- cabin light
+ *   |-- GravityLiftCabin moves up (and down) the shaft
+ *   |   |-- frame, glass, doors, floor display, energy conduits, brake shoes
+ *   |   |-- cabin light, emergency beacon
  *   |   `-- PlayerRoot   the character picked on the start screen (Level 3's
- *   |                    PlayerAvatar), or a simple figure until it loads;
- *   |                    hidden in first-person shots
- *   `-- lights           moon, fire uplight from below, hemisphere
+ *   |                    PlayerAvatar), or a simple figure until it loads
+ *   |-- Sparks           brake sparks (sparks.js)
+ *   `-- lights           moon, fire uplight from below, hemisphere, spark glow
  */
 
 import * as THREE from "../three.js";
 import { createRideUniforms } from "./shaders.js";
 import { buildWorld, buildShaft, buildCabin, buildFigure, Owned, STOREY } from "./kit.js";
+import { CameraShake } from "./shake.js";
+import { Sparks } from "./sparks.js";
 import { ElevatorHud } from "../ui/elevator-hud.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
 
 /** Level 2 is floor 140 of Ascension Tower; Level 3 is further up. */
 export const START_FLOOR = 141;
+const GRAVITY = 9.8;
 const CRUISE = 13;
 const ACCEL = 6;
 
-const DOORS_CLOSE = [0.4, 1.6];
-const LAUNCH_AT = 1.8;
-const END_AT = 9.8;
+/** Phase lengths in seconds, in order. */
+export const PHASES = [
+  ["board", 1.8],
+  ["climb", 2.8],
+  ["tremor", 3.6],
+  ["freefall", 2.0],
+  ["brake", 1.6],
+  ["resume", 3.2],
+];
+
+/** Camera shots within each phase: [seconds into the phase, shot]. */
+const SHOTS = {
+  board: [[0, "doors"]],
+  climb: [[0, "exterior"]],
+  tremor: [[0, "interior"], [1.9, "close"]],
+  freefall: [[0, "interior"], [0.45, "falling"]],
+  brake: [[0, "interior"], [0.8, "close"]],
+  resume: [[0, "rising"]],
+};
+
 const FADE_IN = 0.6;
 const FADE_OUT = 0.8;
-
-/** Camera shots by time: [start, name]. The last one that has started wins. */
-const SHOTS = [
-  [0, "doors"],
-  [2.2, "exterior"],
-  [5.8, "interior"],
-];
 
 function createEmitter() {
   const listeners = new Map();
@@ -82,8 +106,16 @@ function createEmitter() {
   };
 }
 
+/** Deterministic flicker: on/off in irregular bursts, like a failing tube. */
+function flicker(time, seed) {
+  const a = Math.sin(time * 23 + seed) + Math.sin(time * 37 + seed * 1.7) + Math.sin(time * 5.3 + seed * 3.1);
+  return a > 0.4 ? 1 : a > -0.6 ? 0.25 : 0;
+}
+
 const _size = new THREE.Vector2();
 const _look = new THREE.Vector3();
+const _v = new THREE.Vector3();
+const _dir = new THREE.Vector3();
 
 export class GravityFaultRide {
   /**
@@ -95,7 +127,7 @@ export class GravityFaultRide {
    *   template (loadMeltdownAssets), so the ride shows the same person as
    *   Levels 1 and 2. Without it, a simple stand-in figure.
    * @param {boolean} [o.boarded]  the player boarded in Level 2 already (the
-   *   Calibration Lift): start with the doors shut, as the lift launches
+   *   Calibration Lift): skip the board phase and start as the lift climbs
    */
   constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null }) {
     this.renderer = renderer;
@@ -120,27 +152,44 @@ export class GravityFaultRide {
     this.figure = character ? this._characterFigure(character) : buildFigure(this.owned);
     this.figure.root.position.set(-0.35, 0, 0.35);
     this.cabin.root.add(this.figure.root);
-    scene.add(this.world.root, this.shaft.root, this.cabin.root);
+    this.sparks = new Sparks(700);
+    scene.add(this.world.root, this.shaft.root, this.cabin.root, this.sparks.points);
 
     scene.add(new THREE.HemisphereLight(0x39405a, 0x3a1a0c, 0.7));
     const moon = new THREE.DirectionalLight(0x8aa0d0, 0.55);
     moon.position.set(-0.5, 1, -0.8);
     const fireLight = new THREE.DirectionalLight(0xff7a30, 1.0);
     fireLight.position.set(0.2, -1, -0.5);
+    // The sparks light the cabin and the shaft from below.
+    this.sparkLight = new THREE.PointLight(0xff8a30, 0, 14, 1.5);
+    this.cabin.root.add(this.sparkLight);
+    this.sparkLight.position.set(0, -0.4, 0);
     scene.add(moon, fireLight);
 
+    this.shake = new CameraShake({ reduced: reducedMotion });
     this.hud = new ElevatorHud();
     this.hud.show();
 
+    this.phases = boarded ? PHASES.filter(([name]) => name !== "board") : PHASES.slice();
     this.state = {
-      t: boarded ? LAUNCH_AT - 0.1 : 0,
+      phaseIndex: 0,
+      /** Seconds into the current phase. */
+      pt: 0,
       /** Seconds since the ride appeared (the fade-in). */
       age: 0,
       cabinY: 0,
-      velocity: 0,
+      // Boarded: the Calibration Lift was already climbing.
+      velocity: boarded ? 6 : 0,
+      /** Gravity as felt inside the cabin: 9.8 at rest, 0 in free fall. */
+      gEff: GRAVITY,
       shot: null,
-      shake: 0,
-      launched: false,
+      shotT: 0,
+      fired: new Set(),
+      lights: { main: 1, a: 1, b: 1, red: 0 },
+      fault: 0,
+      flash: 0,
+      minVelocity: 0,
+      fallFrom: 0,
     };
     this.pointer = new THREE.Vector2();
     this._view = { yaw: 0, pitch: 0 };
@@ -152,6 +201,11 @@ export class GravityFaultRide {
     this._place(0);
   }
 
+  /** Name of the current phase. */
+  get phase() {
+    return this.phases[this.state.phaseIndex]?.[0] ?? "done";
+  }
+
   /** Pointer in normalised device coordinates (-1..1), from the host. */
   onPointerMove(x, y) {
     this.pointer.set(x, y);
@@ -160,40 +214,182 @@ export class GravityFaultRide {
   update(dt, time) {
     if (this.result.done) return;
     const s = this.state;
-    s.t += dt;
+    s.pt += dt;
     s.age += dt;
-    const t = s.t;
     this.uniforms.uTime.value = time;
 
-    // Doors close, then the lift launches and accelerates to cruise.
-    const [closeFrom, closeTo] = DOORS_CLOSE;
-    this.cabin.setDoors(1 - (t - closeFrom) / (closeTo - closeFrom));
-    if (!s.launched && t >= LAUNCH_AT) {
-      s.launched = true;
-      s.shake = Math.max(s.shake, 0.18);
-      this.events.emit("depart", {});
+    // Advance through the phases.
+    let [name, length] = this.phases[s.phaseIndex];
+    while (s.pt >= length) {
+      s.pt -= length;
+      s.phaseIndex += 1;
+      if (s.phaseIndex >= this.phases.length) {
+        this.result.done = true;
+        this.fade = 1;
+        this.events.emit("arrive", { ...this.result });
+        return;
+      }
+      [name, length] = this.phases[s.phaseIndex];
+      s.fired.clear();
+      this._enter(name);
     }
-    if (s.launched) s.velocity = Math.min(CRUISE, s.velocity + ACCEL * dt);
+
+    const before = s.velocity;
+    this._phaseUpdate(name, s.pt, dt, time);
     s.cabinY += s.velocity * dt;
+    // Felt gravity: the cabin's own acceleration adds to (or cancels) it.
+    s.gEff = GRAVITY + (dt > 0 ? (s.velocity - before) / dt : 0);
+    s.minVelocity = Math.min(s.minVelocity, s.velocity);
     this._place(s.cabinY);
 
+    // Floor counter, and the display over the doors.
     const floor = START_FLOOR + s.cabinY / STOREY;
     this.hud.setFloor(floor, s.velocity);
-    this.cabin.display.userData.draw(String(Math.floor(floor)));
-    if (t < LAUNCH_AT && !this.boarded) this.hud.alert("DOORS CLOSING", "info");
-    else if (t < LAUNCH_AT + 2.5) this.hud.alert("ASCENDING // SECTOR 03", "info");
-    else this.hud.alert(null);
+    this.cabin.display.userData.draw(String(Math.floor(floor)), s.velocity < -1 || name === "brake" ? "#ff4a54" : "#7ef4f1");
+
+    // Lights and the energy conduits.
+    const L = s.lights;
+    this.cabin.setLights(L.main, L.a, L.b, L.red, time);
+    this.cabin.energy.uniforms.uFault.value += (s.fault - this.cabin.energy.uniforms.uFault.value) * Math.min(1, dt * 6);
+    this.cabin.energy.uniforms.uLevel.value = name === "freefall" ? 0.35 : 1;
+    s.flash = Math.max(0, s.flash - dt * 3);
+    this.uniforms.uFlash.value = s.flash;
 
     this.figure.pose(0, time, dt);
+    this.sparks.update(dt);
+    this.sparkLight.intensity = Math.max(0, this.sparkLight.intensity - dt * 40);
 
     // Fades are the host's overlay; the ride only says how dark.
-    this.fade = Math.max(1 - s.age / FADE_IN, THREE.MathUtils.clamp((t - (END_AT - FADE_OUT)) / FADE_OUT, 0, 1));
-    if (t >= END_AT) {
-      this.result.done = true;
-      this.events.emit("arrive", { ...this.result });
-    }
+    const last = this.state.phaseIndex === this.phases.length - 1;
+    const fadeOut = last ? THREE.MathUtils.clamp((s.pt - (length - FADE_OUT)) / FADE_OUT, 0, 1) : 0;
+    this.fade = Math.max(1 - s.age / FADE_IN, fadeOut);
 
+    this.shake.update(dt);
     this._updateCamera(dt, time);
+  }
+
+  /** Once per phase, on the way in. */
+  _enter(name) {
+    const s = this.state;
+    if (name === "tremor") {
+      this.events.emit("tremor", {});
+    } else if (name === "freefall") {
+      // The cable snaps. Blackout; the emergency beacon takes over.
+      s.fallFrom = s.cabinY;
+      s.velocity = Math.min(s.velocity, 0);
+      s.lights = { main: 0, a: 0, b: 0, red: 1 };
+      s.fault = 1;
+      s.flash = 1;
+      this.shake.add(0.85);
+      this.shake.kick(0, 0.22, 0);
+      this.hud.alert("CABLE FAILURE", "danger");
+      this.events.emit("cable-snap", { floor: START_FLOOR + s.cabinY / STOREY });
+    } else if (name === "brake") {
+      this.hud.alert("EMERGENCY BRAKES", "danger");
+      this.events.emit("brake", {});
+    } else if (name === "resume") {
+      s.lights = { main: 0.75, a: 1, b: 0, red: 1 };
+      this.hud.alert("BRAKES RELEASED // ASCENDING", "good");
+      this.events.emit("resume", {});
+    }
+  }
+
+  /** Per-frame work for the current phase: velocity, lights, one-shot beats. */
+  _phaseUpdate(name, pt, dt, time) {
+    const s = this.state;
+    const once = (key, at, fn) => {
+      if (pt >= at && !s.fired.has(key)) {
+        s.fired.add(key);
+        fn();
+      }
+    };
+
+    if (name === "board") {
+      this.cabin.setDoors(1 - (pt - 0.4) / 1.2);
+      if (!this.boarded) this.hud.alert("DOORS CLOSING", "info");
+    } else if (name === "climb") {
+      this.cabin.setDoors(0);
+      once("depart", 0, () => {
+        this.shake.add(0.25);
+        this.hud.alert("ASCENDING // SECTOR 03", "info");
+        this.events.emit("depart", {});
+      });
+      s.velocity = Math.min(CRUISE, s.velocity + ACCEL * dt);
+    } else if (name === "tremor") {
+      // The building groans. The lift judders and stalls; the lights go.
+      this.shake.floor = 0.22;
+      once("quake1", 0.15, () => {
+        this.shake.add(0.5);
+        s.flash = 0.8;
+        this.hud.alert("SEISMIC EVENT", "danger");
+      });
+      once("quake2", 1.5, () => {
+        this.shake.add(0.55);
+        this.shake.kick(0.08, -0.1, 0);
+        this.events.emit("flicker", {});
+      });
+      once("stall", 2.6, () => {
+        this.shake.add(0.35);
+        this.hud.alert("LIFT STALLED", "danger");
+      });
+      // Flickering from the second quake; strip B dies for good.
+      const flick = pt > 1.5 ? flicker(time, 1.3) : 1;
+      s.lights.main = pt > 1.5 ? 0.25 + 0.75 * flick : 1;
+      s.lights.a = pt > 1.5 ? flicker(time, 4.1) : 1;
+      s.lights.b = pt > 2.4 ? 0 : pt > 1.5 ? flicker(time, 7.9) : 1;
+      s.fault = Math.min(1, pt / 3);
+      // Juddering to a stop: slower, with jerks.
+      const target = CRUISE * Math.max(0, 1 - pt / 2.8);
+      s.velocity += (target - s.velocity) * Math.min(1, dt * 3);
+      s.velocity += Math.sin(pt * 31) * 0.8 * (pt < 2.8 ? 1 : 0);
+      if (pt > 2.8) s.velocity *= Math.max(0, 1 - dt * 10);
+    } else if (name === "freefall") {
+      // Nothing holding it: fall. The rails start to scream near the end as
+      // the brakes try to bite.
+      this.shake.floor = 0.3;
+      s.velocity -= GRAVITY * dt;
+      if (pt > 1.2) this._grind(dt, 40, 0.4);
+    } else if (name === "brake") {
+      // Brakes bite: ~0.35 s from full fall to a dead stop, in sparks.
+      this.shake.floor = 0;
+      const SLAM = 0.35;
+      if (pt < SLAM) {
+        s.velocity = Math.min(0, s.velocity + (-s.velocity / Math.max(0.02, SLAM - pt)) * dt);
+        this._grind(dt, 420, 1.4);
+      } else {
+        s.velocity = 0;
+        once("slam", SLAM, () => {
+          this.shake.add(1);
+          this.shake.kick(0, -0.35, 0);
+          s.flash = 0.6;
+          this.events.emit("brake-slam", { dropped: s.fallFrom - s.cabinY });
+        });
+        this._grind(dt, Math.max(0, 60 * (1 - (pt - SLAM) / 0.8)), 0.3);
+        // The lights stutter back on, dimmer.
+        s.lights.main = pt > 0.9 ? 0.4 + 0.35 * flicker(time, 2.2) : 0;
+        s.lights.a = pt > 1.1 ? flicker(time, 5.5) : 0;
+      }
+    } else if (name === "resume") {
+      s.velocity = Math.min(9, s.velocity + 4 * dt);
+      s.lights.main = 0.55 + 0.2 * flicker(time, 3.3);
+      s.fault = Math.max(0.35, s.fault - dt * 0.3);
+      this.shake.floor = 0.06;
+    }
+  }
+
+  /** Brake shoes grinding on the rails: sparks per second, and their glow. */
+  _grind(dt, rate, glow) {
+    const n = rate * dt;
+    for (const local of this.cabin.brakePoints) {
+      const count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
+      if (!count) continue;
+      _v.copy(local);
+      this.cabin.root.localToWorld(_v);
+      // Out from the cabin and down (the cabin is falling onto them).
+      _dir.set(Math.sign(local.x) * 0.6, this.state.velocity < -1 ? 1.2 : -0.6, Math.sign(local.z) * 0.6);
+      this.sparks.emit(_v, count, { direction: _dir, spread: 0.7, speed: 5 + glow * 3 });
+    }
+    this.sparkLight.intensity = Math.max(this.sparkLight.intensity, 25 * glow);
   }
 
   /**
@@ -216,21 +412,22 @@ export class GravityFaultRide {
     this.cabin.root.position.y = y;
   }
 
-  _shotAt(t) {
-    let name = SHOTS[0][1];
-    for (const [start, shot] of SHOTS) if (t >= start) name = shot;
-    // Boarded in Level 2: the doors shot has already happened there.
-    if (name === "doors" && this.boarded) name = "exterior";
-    return name;
+  /** The camera shot for the current phase and time. */
+  currentShot() {
+    const list = SHOTS[this.phase] ?? SHOTS.climb;
+    let shot = list[0][1];
+    for (const [at, name] of list) if (this.state.pt >= at) shot = name;
+    return shot;
   }
 
   _updateCamera(dt, time) {
     const s = this.state;
     const cam = this.camera;
-    const shot = this._shotAt(s.t);
+    const shot = this.currentShot();
     if (shot !== s.shot) {
       s.shot = shot;
       s.shotT = 0;
+      s.shotY = s.cabinY;
       this.events.emit("shot", { shot });
     }
     s.shotT += dt;
@@ -247,16 +444,30 @@ export class GravityFaultRide {
       cam.position.set(1.35 - u * 0.2, y + 1.7, -1.55);
       _look.set(-0.1, y + 1.35, 2.2);
       cam.fov = 62;
-    } else if (shot === "exterior") {
+    } else if (shot === "close") {
+      // Inside, from the front corner, on Subject 07.
+      const u = Math.min(1, s.shotT / 3);
+      cam.position.set(1.45 - u * 0.15, y + 1.75, -1.6);
+      _look.set(-0.35, y + 1.15, 0.5);
+      cam.fov = 60;
+    } else if (shot === "exterior" || shot === "rising") {
       // Outside, over the drop: the cabin climbing the tower, the fire below.
       const u = Math.min(1, s.shotT / 3.6);
-      const angle = THREE.MathUtils.lerp(-0.8, -0.3, u * calm + (1 - calm) * 0.5);
+      const angle = shot === "rising" ? THREE.MathUtils.lerp(0.55, 0.25, u) : THREE.MathUtils.lerp(-0.8, -0.3, u * calm + (1 - calm) * 0.5);
       const radius = 12.5 - u * 1.5;
-      cam.position.set(Math.sin(angle) * radius, y - 2.2 + u * 3.6, -Math.cos(angle) * radius);
-      _look.set(0, y + 1.3 - (1 - u) * 1.2, 0.8);
+      // "rising" holds its height and lets the cabin climb out of frame.
+      const camY = shot === "rising" ? s.shotY + 1.5 + u * 2 : y - 2.2 + u * 3.6;
+      cam.position.set(Math.sin(angle) * radius, camY, -Math.cos(angle) * radius);
+      _look.set(0, (shot === "rising" ? y : y - (1 - u) * 1.2) + 1.3, 0.8);
       cam.fov = 58;
+    } else if (shot === "falling") {
+      // Fixed below and to the side: the cabin drops toward the camera and
+      // past it, throwing sparks.
+      cam.position.set(-6.2, s.shotY - 16, -8.5);
+      _look.set(0, y + 1.2, 0);
+      cam.fov = 64;
     } else {
-      // First person: look around with the mouse while the lift climbs.
+      // First person: look around with the mouse.
       const view = this._view;
       const k = 1 - Math.exp(-dt * 5);
       view.yaw += (-this.pointer.x * 0.55 - view.yaw) * k;
@@ -267,13 +478,8 @@ export class GravityFaultRide {
       cam.fov = 72;
     }
 
-    if (s.shake > 0.001) {
-      const k = s.shake * calm;
-      cam.position.x += (Math.random() - 0.5) * k;
-      cam.position.y += (Math.random() - 0.5) * k;
-      s.shake = Math.max(0, s.shake - dt * 0.8);
-    }
     cam.lookAt(_look);
+    this.shake.apply(cam);
     cam.updateProjectionMatrix();
   }
 
@@ -282,6 +488,7 @@ export class GravityFaultRide {
     const size = renderer.getSize(_size);
     this.camera.aspect = size.x / Math.max(1, size.y);
     this.camera.updateProjectionMatrix();
+    this.sparks.setViewportHeight(size.y * renderer.getPixelRatio());
     renderer.setRenderTarget(null);
     renderer.render(this.scene, this.camera);
   }
@@ -311,6 +518,7 @@ export class GravityFaultRide {
   dispose() {
     this.visible = false;
     this._disposeAvatar();
+    this.sparks.dispose();
     this.events.clear();
     this.hud.dispose();
     this.owned.dispose();

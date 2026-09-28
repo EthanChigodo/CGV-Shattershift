@@ -32,7 +32,7 @@ export const handover = {
         steps += 1;
       }
       const ride = d.gravityLift;
-      const firstShot = ride ? ride._shotAt(ride.state.t) : null;
+      const firstShot = ride ? ride.currentShot() : null;
       return {
         before,
         states: [...states],
@@ -76,7 +76,7 @@ export const ride = {
       let arrived = null;
       ride.events.on("arrive", (result) => { arrived = result; });
       let maxY = 0;
-      for (let i = 0; i < 60 * 12 && d.gravityLift; i += 1) {
+      for (let i = 0; i < 60 * 60 && d.gravityLift; i += 1) {
         maxY = Math.max(maxY, ride.state.cabinY);
         d.step(1, 1 / 60);
       }
@@ -101,7 +101,7 @@ export const ride = {
       };
     });
     const failures = [];
-    for (const shot of ["doors", "exterior", "interior"]) if (!r.shots.includes(shot)) failures.push(`shot "${shot}" never played`);
+    for (const shot of ["doors", "exterior", "interior", "close", "falling", "rising"]) if (!r.shots.includes(shot)) failures.push(`shot "${shot}" never played`);
     if (!r.character) failures.push("the ride does not show the character picked on the start screen");
     if (!r.departed) failures.push("the lift never departed");
     if (r.maxY < 40) failures.push(`the cabin only climbed ${r.maxY.toFixed(1)} m`);
@@ -110,6 +110,57 @@ export const ride = {
     if (!r.hudGone) failures.push("the lift HUD was left in the page");
     if (r.level !== 3 || r.state !== "playing" || !r.meltdownVisible) failures.push(`Level 3 did not start (level ${r.level}, state ${r.state})`);
     return { failures, notes: { shots: r.shots, climbed: `${r.maxY.toFixed(0)} m` } };
+  },
+};
+
+/**
+ * The disaster: tremors stall the lift, the cable snaps into a real free
+ * fall (weightless inside), and the brakes stop it hard before it climbs on.
+ */
+export const cableSnap = {
+  name: "cable snap and brakes",
+  async run(page) {
+    const r = await page.evaluate(() => {
+      const d = globalThis.__dbg;
+      d.resetGame("story");
+      d.demoGravityLift();
+      const ride = d.gravityLift;
+      const events = [];
+      for (const name of ["tremor", "flicker", "cable-snap", "brake", "brake-slam", "resume"]) ride.events.on(name, (p) => events.push([name, p]));
+      const phases = [];
+      let minG = Infinity;
+      let maxG = -Infinity;
+      let blackout = false;
+      let sparks = 0;
+      let snapY = null;
+      let lowest = Infinity;
+      for (let i = 0; i < 60 * 60 && d.gravityLift; i += 1) {
+        d.step(1, 1 / 60);
+        if (!d.gravityLift) break;
+        const phase = ride.phase;
+        if (phases[phases.length - 1] !== phase) phases.push(phase);
+        if (phase === "freefall") {
+          if (snapY === null) snapY = ride.state.cabinY;
+          if (ride.state.pt > 0.1) minG = Math.min(minG, ride.state.gEff);
+          if (ride.state.lights.main === 0 && ride.state.lights.red === 1) blackout = true;
+        }
+        if (phase === "brake") maxG = Math.max(maxG, ride.state.gEff);
+        lowest = Math.min(lowest, ride.state.cabinY);
+        sparks = Math.max(sparks, ride.sparks.heat.filter((h) => h > 0).length);
+      }
+      const slam = events.find(([name]) => name === "brake-slam")?.[1];
+      return { phases, events: events.map(([name]) => name), minG, maxG, blackout, sparks, dropped: slam?.dropped ?? 0, minVelocity: ride.state.minVelocity };
+    });
+    const failures = [];
+    const order = ["board", "climb", "tremor", "freefall", "brake", "resume"];
+    if (r.phases.join() !== order.join()) failures.push(`phases ran ${r.phases.join(" > ")}`);
+    for (const name of ["tremor", "flicker", "cable-snap", "brake", "brake-slam", "resume"]) if (!r.events.includes(name)) failures.push(`no "${name}" event`);
+    if (Math.abs(r.minG) > 0.5) failures.push(`not weightless in free fall (felt gravity ${r.minG.toFixed(2)})`);
+    if (r.maxG < 30) failures.push(`the brakes did not slam (peak ${r.maxG.toFixed(1)} m/s²)`);
+    if (r.dropped < 15 || r.dropped > 30) failures.push(`fell ${r.dropped.toFixed(1)} m (want about 20)`);
+    if (!r.blackout) failures.push("the lights did not black out with the emergency light on");
+    if (r.sparks < 50) failures.push(`only ${r.sparks} sparks at once`);
+    return { failures, notes: { dropped: `${r.dropped.toFixed(1)} m`, fastest: `${(-r.minVelocity).toFixed(1)} m/s`, brakeG: `${(r.maxG / 9.8).toFixed(1)} g`, sparks: r.sparks } };
   },
 };
 
