@@ -15,6 +15,7 @@ import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCha
 import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
+import { QuietRide } from "./src/elevators/quiet-ride.js";
 import { ShatterFX } from "./src/fx/shatter.js";
 import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone } from "./src/figure/look.js";
 
@@ -1241,7 +1242,8 @@ function updateMeltdownFrame(dt, time) {
   meltdown.update(dt, time);
   if (pendingSkyline) {
     pendingSkyline = false;
-    enterSkyline();
+    // The scientist's sacrifice at the lift, then the quiet ride up.
+    startQuietRide();
     return;
   }
   // Mirror Level 3's numbers into the game's own (pause screen, end screen).
@@ -1567,6 +1569,7 @@ function startGravityLift({ boarded = false } = {}) {
   preloadMeltdown();
   // Build Level 3 now, behind the black, so it is ready when the ride ends.
   prepareMeltdown();
+  rideNext = "labs";
   gravityLift = new GravityFaultRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
     // The same character as in Levels 1 and 2 (null while it is still loading),
@@ -1586,6 +1589,8 @@ function startGravityLift({ boarded = false } = {}) {
 function updateGravityLiftFrame(dt, time) {
   gravityLift.update(dt, time);
   ui.fade.style.opacity = gravityLift.fade.toFixed(3);
+  // A cutscene ride hides the game's HUD while it plays.
+  document.body.classList.toggle("cutscene", !!gravityLift.cutscene);
   // The crosshair is up while there are clamps to shoot.
   document.body.classList.toggle("aiming", gravityLift.wantsAim && !photoActive && !document.querySelector(".screen.active"));
   ui.reticle.classList.toggle("hot", !!gravityLift.aimTarget);
@@ -1593,14 +1598,46 @@ function updateGravityLiftFrame(dt, time) {
   if (gravityLift.result.done) finishGravityLift();
 }
 
-/** The ride is over: its bonus into the score, then into Level 3. */
+/**
+ * The quiet ride (src/elevators/quiet-ride.js) - cutscene 7 of the story: the
+ * Labs' corridor is done and the scientist has given their life at the lift;
+ * alone for the first time, the player rides up to the Skyline. It uses the
+ * same slot as the Gravity Fault (`gravityLift`), and hands over to the
+ * Skyline's lift arrival.
+ */
+function startQuietRide() {
+  if (gravityLift) return;
+  if (currentLevel === 3) leaveMeltdown(1);
+  setFoundryActive(false);
+  state = "lift"; transitionTarget = 0; liftTimer = 0;
+  // Build the Skyline now, behind the fade-in, so it is ready when the ride ends.
+  if (!causeway) buildCauseway("story");
+  if (causeway) setCausewayActive(false);
+  rideNext = "skyline";
+  gravityLift = new QuietRide({
+    renderer, spheres: ammo, reducedMotion: settings.reducedMotion,
+    character: playerBodyTemplate,
+    // Bloodied from the Labs, in the scientist's vest with his radio.
+    figure: { ...figureStage(3), skinTone: savedSkinTone() },
+    // The launcher leans on the lift wall until they pick it up.
+    assetBase: MELTDOWN_ASSET_BASE,
+  });
+  ui.message.classList.remove("show"); messageTimer = 0;
+  updateUI();
+}
+
+/** Where the ride in `gravityLift` goes when it is done: "labs" or "skyline". */
+let rideNext = "labs";
+
+/** The ride is over: its bonus into the score, then into the next stage. */
 function finishGravityLift() {
   const { bonus, spheres } = gravityLift.result;
   score += bonus;
   ammo = spheres;
   leaveGravityLift();
   updateUI();
-  enterMeltdown();
+  if (rideNext === "skyline") enterSkyline();
+  else enterMeltdown();
 }
 
 /** Free the ride (finished, restart, quit or a demo jump). */
@@ -1608,6 +1645,7 @@ function leaveGravityLift() {
   if (!gravityLift) return;
   gravityLift.dispose();
   gravityLift = null;
+  document.body.classList.remove("cutscene");
 }
 
 /** Demo key 5: straight into the lift ride from anywhere in a run. */
@@ -1617,6 +1655,16 @@ function demoGravityLift() {
   if (currentLevel === 1 && causeway) setCausewayActive(false);
   ammo = Math.max(ammo, 8);
   startGravityLift();
+}
+
+/** Demo key 6: straight into the quiet ride (cutscene 7), then the Skyline. */
+function demoQuietRide() {
+  if (state !== "playing") return;
+  music.fadeOut();
+  leaveGravityLift();
+  runKind = "story"; endlessEnv = null;
+  if (currentLevel === 1 && causeway) { setCausewayActive(false); level1Audio.cleanupLevel(); }
+  startQuietRide();
 }
 
 /* ==================================================================== */
@@ -2578,6 +2626,7 @@ addEventListener("keydown", (event) => {
   if (event.code === "Digit3") demoJump(3);
   if (event.code === "Digit4") demoJump(4);
   if (event.code === "Digit5") demoGravityLift();
+  if (event.code === "Digit6") demoQuietRide();
   if (event.code === "KeyA" || event.code === "ArrowLeft") lane = Math.max(0, lane - 1);
   if (event.code === "KeyD" || event.code === "ArrowRight") lane = Math.min(2, lane + 1);
   if (event.code === "KeyW" || event.code === "ArrowUp") {
@@ -2636,6 +2685,7 @@ globalThis.__dbg = {
   get playerBodyTemplate() { return playerBodyTemplate; },
   get playerBody() { return playerBody; },
   demoGravityLift,
+  demoQuietRide,
   get run() { return run; },
   causewayPace,
   resolveAim: () => resolveAim(aliveTargets(), currentLevel === 1 && causeway ? causeway.solids : []),

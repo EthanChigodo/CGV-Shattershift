@@ -27,8 +27,9 @@ import { readFile, mkdir } from "node:fs/promises";
 import { serve } from "../foundry/lib/server.js";
 import * as gravityChecks from "./checks/gravity-lift.js";
 import * as figureChecks from "./checks/figure.js";
+import * as quietChecks from "./checks/quiet-ride.js";
 
-const checks = { ...gravityChecks, ...figureChecks };
+const checks = { ...gravityChecks, ...figureChecks, ...quietChecks };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
@@ -44,6 +45,16 @@ const SHOTS = [
   ["gravity-lift-launcher", 12.55, [0, 0]],
   ["gravity-lift-pickup", 14.3, [0, 0]],
   ["gravity-lift-rising", 28.0, [0, 0]],
+];
+
+/** The quiet ride (cutscene 7): [file name, seconds into it]. */
+const QUIET_SHOTS = [
+  ["quiet-ride-corner", 3.6],
+  ["quiet-ride-low", 5.2],
+  ["quiet-ride-radio", 7.0],
+  ["quiet-ride-sitting", 12.0],
+  ["quiet-ride-standing", 15.0],
+  ["quiet-ride-doors", 19.2],
 ];
 
 /** The clamps: [file name, clamps to lock first] - one shot per camera. */
@@ -132,6 +143,21 @@ async function main() {
         d.step(Math.round(seconds * 60), 1 / 60);
         d.render();
       }, [at, pointer]);
+      await page.evaluate(() => globalThis.__dbg.render());
+      await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 84 });
+      console.log(`shot docs/images/elevators/${name}.jpg`);
+    }
+    for (const [name, at] of QUIET_SHOTS) {
+      await open();
+      await page.evaluate(async (seconds) => {
+        const d = globalThis.__dbg;
+        const w0 = performance.now();
+        while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
+        d.resetGame("story");
+        d.demoQuietRide();
+        d.step(Math.round(seconds * 60), 1 / 60);
+        d.render();
+      }, at);
       await page.evaluate(() => globalThis.__dbg.render());
       await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 84 });
       console.log(`shot docs/images/elevators/${name}.jpg`);

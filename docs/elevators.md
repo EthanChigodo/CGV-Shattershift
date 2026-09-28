@@ -7,6 +7,8 @@ Ascension Tower's lifts connect the three sectors. From the project brief: *"A g
 | Calibration Lift | Level 1 → Level 2 | Done - part of the Causeway (`src/levels/causeway/`), see [`level-transition.md`](./level-transition.md) |
 | Calibration Lift (shared) | end of Level 2, end of Level 3's corridor | Done - `src/levels/common/calibration-lift.js` (from the Level 3 work). At the end of Level 2 you board it; it hands over to the Gravity Fault |
 | **Gravity Fault** | Level 2 → Level 3 | **Built** (this document): the tower collapsing around the lift, a cable snap and free fall, the launcher, and the three brake clamps to shoot |
+| **Elevator interior** | every enclosed ride | **Built** (section 4): one reusable cabin - doors, button panel, floor display, ceiling light, speaker, security camera, the subjects' scratched messages |
+| **Quiet ride** (cutscene 7) | Labs → Skyline | **Built** (section 5): alone for the first time after the scientist's sacrifice, the pilot on the radio. Demo key `6` |
 | Level 3 arrival and roof lifts | Level 3 start, roof | Placeholders in `src/levels/meltdown/elevator.js` |
 
 ---
@@ -177,7 +179,60 @@ The Level 3 corridor's exit lift is now the shared Calibration Lift (from the Le
 
 ---
 
-## 3. Testing
+## 4. The elevator interior (reusable)
+
+[`src/elevators/interior.js`](../src/elevators/interior.js) - `buildInterior(owned)` returns one enclosed freight lift, 2.4 × 2.2 × 2.6 m, for any ride that stays inside the cabin (the task sheet's "one reusable scene for every transition and for the unlimited mode"). Every surface is a canvas texture drawn in code, so nothing has to load.
+
+| Part | What it is |
+| --- | --- |
+| Walls | Brushed steel: fine streaks, panel seams, rivets, grime at the bottom; handrails on three sides |
+| Doors | Two sliding leaves (`setDoors(0..1)`, eased). Light from the floors passing leaks through the seam while it moves; daylight behind them when they open |
+| Floor display | Over the doors: orange LED floor number and an arrow (`setFloor("12", "up")`) |
+| Button panel | Right of the doors: R, SB (skybridge), 40 … 10, L, B1; `press("SB")` lights one |
+| Ceiling light | A panel and a point light; `setLight(0..1)` dims or flickers it |
+| Speaker grille | Top left of the front wall - where the pilot's voice would come from |
+| Security camera | Dome in the back corner of the ceiling, its red recording light blinking - the lab is still watching |
+| **Environmental storytelling** | The left wall: tally marks in fives, and messages scratched by earlier subjects - *S-04 WAS HERE*, *THEY LIE ABOUT THE ROOF*, *DONT LET THEM PUT YOU UNDER*, *S-09*. On the floor: a torn Halcyon Labs badge, *ACCESS: B2* |
+
+Local frame: floor at y = 0, doors on the -Z wall (the Performer's yaw 0 faces them), `backWall` is where someone stands with their back to the back wall. `update(dt, time, speed)` runs the seam light and the camera's LED.
+
+## 5. The quiet ride - cutscene 7
+
+[`src/elevators/quiet-ride.js`](../src/elevators/quiet-ride.js). From the task sheet: *"The player alone for the first time, holding his equipment, catching their breath. A quiet, powerful beat after cutscene 6."* It is a ride object with the same interface as the Gravity Fault (`update`, `render`, `fade`, `result`, `dispose`, `events`), so `main.js` runs it through the same slot.
+
+| | |
+| --- | --- |
+| ![Against the back wall, the launcher beside them](images/elevators/quiet-ride-corner.jpg) | ![Low and close: catching their breath](images/elevators/quiet-ride-low.jpg) |
+| ![The radio: the pilot calling for the doctor](images/elevators/quiet-ride-radio.jpg) | ![Sitting, listening; the subjects' messages on the wall](images/elevators/quiet-ride-sitting.jpg) |
+| ![Up, launcher in hand](images/elevators/quiet-ride-standing.jpg) | ![SB: the doors open on the skybridge](images/elevators/quiet-ride-doors.jpg) |
+
+| Time | Beat | Shot |
+| --- | --- | --- |
+| 0.0 | Fade in. The doors have just closed on the scientist. Subject 07 stands against the back wall in his vest, the launcher leaning on the wall beside them, breathing hard | **corner** - from beside the doors |
+| 0.3 | The lift lurches and starts to climb; floor light slides past the door seam | |
+| 1.2 | They slide down the wall and sit on the floor, knees up | |
+| 4.0 | | **low** - close on the face, breathing |
+| 5.6 | The radio crackles: *"...Doctor? Doctor, this is Kestrel One. We're on approach. Do you copy?"* They look down at it | **radio** (6.0) - in on the vest and the radio's green light |
+| 9.6 | *"...Whoever has this radio - the helipad is on the roof, across the skybridge. We can't hold long."* | |
+| 11.2 | | **side** - from the side wall |
+| 13.4 | They get up, pick up the launcher and face the doors; the breathing slows | |
+| 15.2 | A tremor: the cabin shakes, the light stutters - the building is still coming apart | |
+| 16.4 | | **shoulder** - over the shoulder at the doors |
+| 17.2 | The lift stops; chime; the display reads **SB** | |
+| 17.7 | The doors open on daylight | |
+| 20.4 | Fade out, into the Skyline's lift arrival - its doors open on the skybridges | |
+
+The figure is the story's gear stage (`figureStage(3)`: bloodied, the scientist's vest and radio) in the chosen skin tone. Letterbox bars and subtitles come from the lift HUD (`hud.cinema(on)`, `hud.caption(who, text)`), with the floor panel hidden. The pilot's lines are exported as `LINES` for the audio workstream to voice.
+
+**In the game.** The story's order is Foundry → Labs → Skyline → Roof, and the scientist stays behind at the Labs' lift - so this is the ride from the Labs to the Skyline. When the Labs' corridor is complete (`corridor-complete`), `startQuietRide()` in `main.js` unloads the Labs, builds the Skyline behind the fade-in, and plays the ride in the same slot as the Gravity Fault (`gravityLift`, with `rideNext = "skyline"`); when it is done, `enterSkyline()` takes over with its lift arrival. While it plays, `body.cutscene` hides the game's HUD and crosshair. **Demo key `6`** (`__dbg.demoQuietRide()`) plays it from anywhere in a run.
+
+`waitFor` (a constructor option): if the next stage is being built while the ride plays, the last shot holds - doors open, breathing - until it returns true (up to 20 s), instead of cutting to black. The Skyline builds before the ride starts, so `main.js` does not need it today.
+
+**Events** for sound: `shot`, `depart`, `radio` (`{ line }`), `tremor`, `chime`, `doors`, `arrive`.
+
+---
+
+## 6. Testing
 
 ```text
 npm install --no-save playwright
@@ -194,12 +249,15 @@ node tests/elevators/run.js --shots-only
 | brake clamps | Played: aiming at each clamp on screen and firing locks it, the camera goes first person → outside → diagnostic, all three give a bonus. Left alone: they force-lock, no bonus, the ride still finishes |
 | ride to Level 3 | Every camera shot plays, the chosen character is in the lift, the ride finishes, is disposed, and Level 3 starts and is visible |
 | restart and memory | Restarting mid-ride frees it; three rides in a row leave GPU geometry and texture counts unchanged |
+| handover from the Labs | Completing the Labs' corridor starts the quiet ride, unloads the Labs and hides the game's HUD |
+| quiet ride (cutscene 7) to the Skyline | Every shot and beat plays, both radio lines are captioned, the character wears the gear, slides down the wall to sit and picks the launcher up, the doors open, and the Skyline starts with under 1.5 s of black |
 | skin tone choice | The four swatches are on the start screen; picking one re-tints the figure, is saved, and "light" restores the model's own skin |
 
 Manual checklist before merging:
 
 - [ ] Play from Level 2 (press `2`) to the end of the Foundry: the lift plays and Level 3 starts. No console errors.
 - [ ] Press `5` during a run: the ride plays from the start. Shoot the three clamps; also try one ride without shooting.
+- [ ] Press `6` during a run: the quiet ride plays (about 20 s) and the Skyline starts in its lift.
 - [ ] On the start screen, pick each skin swatch: the figure changes, and the choice is still there after a reload.
 - [ ] Settings → Reduced motion on: the shake is much gentler.
 - [ ] Press `Esc` during the ride: it pauses and resumes.

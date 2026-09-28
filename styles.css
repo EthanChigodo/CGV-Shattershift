@@ -278,3 +278,12 @@ body.aiming button, body.aiming .view-menu, body.aiming .view-menu * { cursor: p
 }
 .skin-button:hover { border-color: rgba(255, 255, 255, .6); }
 .skin-button.picked { border-color: #6fe0d4; box-shadow: 0 0 0 2px rgba(6, 10, 14, .9), 0 0 14px rgba(63, 200, 186, .5); }
+
+/* A cutscene ride (the quiet ride): the game's own HUD and crosshair step aside. */
+body.cutscene #hud,
+body.cutscene #reticle,
+body.cutscene #launchControls,
+body.cutscene .cw-ui,
+body.cutscene .reticle-hint {
+  display: none !important;
+}

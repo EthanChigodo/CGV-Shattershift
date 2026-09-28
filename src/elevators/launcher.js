@@ -83,6 +83,25 @@ export class LauncherProp {
     this.model = model;
   }
 
+  /** Already in the hands (a cutscene that starts with it held). */
+  holdIn(shoulder) {
+    this.state = "held";
+    this.recoil = 0;
+    this.root.visible = true;
+    shoulder.add(this.root);
+    this.root.position.copy(HELD);
+    this.root.quaternion.identity();
+  }
+
+  /** Set down somewhere in the cabin (cabin frame), e.g. leaning on a wall. */
+  restAt(position, rotation) {
+    this.state = "resting";
+    this.root.visible = true;
+    this.parent.add(this.root);
+    this.root.position.copy(position);
+    this.root.rotation.copy(rotation);
+  }
+
   /** It falls into the cabin from `from` (cabin frame). */
   drop(from, velocity) {
     this.state = "falling";

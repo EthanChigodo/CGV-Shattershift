@@ -190,6 +190,62 @@
   text-shadow: 0 0 10px rgba(126, 244, 241, 0.6);
 }
 
+.elv-panel[hidden] {
+  display: none;
+}
+
+/* Cutscenes: letterbox bars that slide in, and subtitles. */
+.elv-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 11vh;
+  background: #000;
+  transition: transform 0.6s ease;
+}
+
+.elv-bar.top {
+  top: 0;
+  transform: translateY(-100%);
+}
+
+.elv-bar.bottom {
+  bottom: 0;
+  transform: translateY(100%);
+}
+
+.elv-bar.on {
+  transform: none;
+}
+
+.elv-caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(11vh + 18px);
+  transform: translateX(-50%);
+  max-width: min(760px, calc(100% - 32px));
+  padding: 8px 16px;
+  text-align: center;
+  text-transform: none;
+  font-size: 17px;
+  line-height: 1.4;
+  color: #f4fbff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.elv-caption.show {
+  opacity: 1;
+}
+
+.elv-caption-who {
+  color: var(--elv-cyan);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
 @media (max-width: 600px) {
   .elv-panel {
     min-width: 0;

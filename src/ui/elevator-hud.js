@@ -30,7 +30,12 @@ function element(tag, className, text) {
 }
 
 export class ElevatorHud {
-  constructor({ container = document.body, eyebrow = "GRAVITY LIFT", title = "SECTOR 02 → 03" } = {}) {
+  /**
+   * @param {object} [o]
+   * @param {boolean} [o.panel]  the floor counter panel (off for cutscenes,
+   *   whose floor display is in the cabin itself)
+   */
+  constructor({ container = document.body, eyebrow = "GRAVITY LIFT", title = "SECTOR 02 → 03", panel: showPanel = true } = {}) {
     ensureStylesheet();
     this.root = element("section", "elevator-ui");
     this.root.setAttribute("aria-label", "Lift status");
@@ -54,7 +59,14 @@ export class ElevatorHud {
     this.monitorEl.hidden = true;
     this.fullLabel = element("div", "elv-diag-label", "DIAGNOSTIC VIEW // ORTHOGRAPHIC // TOP");
     this.fullLabel.hidden = true;
-    this.root.append(panel, this.alertEl, this.clampsEl, this.monitorEl, this.fullLabel);
+    panel.hidden = !showPanel;
+    // Cutscenes: letterbox bars and subtitles.
+    this.bars = [element("div", "elv-bar top"), element("div", "elv-bar bottom")];
+    this.captionEl = element("div", "elv-caption");
+    this.captionWho = element("span", "elv-caption-who");
+    this.captionText = element("span", "elv-caption-text");
+    this.captionEl.append(this.captionWho, this.captionText);
+    this.root.append(...this.bars, panel, this.alertEl, this.clampsEl, this.monitorEl, this.fullLabel, this.captionEl);
     container.appendChild(this.root);
     this._floor = null;
   }
@@ -82,6 +94,19 @@ export class ElevatorHud {
   alert(text, tone = "info") {
     this.alertEl.textContent = text ?? "";
     this.alertEl.className = `elv-alert ${text ? `show ${tone}` : ""}`;
+  }
+
+  /** Letterbox bars in (true) or out (false). */
+  cinema(on) {
+    for (const bar of this.bars) bar.classList.toggle("on", on);
+  }
+
+  /** A subtitle: who is speaking (or null) and what; pass null text to clear. */
+  caption(who, text) {
+    this.captionEl.classList.toggle("show", !!text);
+    if (!text) return;
+    this.captionWho.textContent = who ? `${who}: ` : "";
+    this.captionText.textContent = text;
   }
 
   /** Clamps locked out of total, and seconds left (null: done). Pass null to hide. */
