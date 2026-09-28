@@ -58,6 +58,9 @@ export class CalibrationLift {
     const box = own(new THREE.BoxGeometry(1, 1, 1));
     const octagon = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 8));
     const tube = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 32, 1, true));
+    // The cabin's glass wall leaves a doorway at the front (+Z, theta 0).
+    const DOORWAY = 1.25;
+    const wall = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 32, 1, true, DOORWAY / 2, Math.PI * 2 - DOORWAY));
     const rod = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 8));
     const mesh = (geometry, material, sx, sy, sz, x, y, z, parent = this.cabin) => {
       const m = new THREE.Mesh(geometry, material);
@@ -71,7 +74,7 @@ export class CalibrationLift {
     const R = LIFT_RADIUS;
     mesh(octagon, steel, 9, 0.4, 9, 0, -0.15, 0).rotation.y = Math.PI / 8;
     mesh(octagon, steel, 9, 0.4, 9, 0, 5.6, 0).rotation.y = Math.PI / 8;
-    mesh(tube, glass, 8.6, 5.4, 8.6, 0, 2.75, 0);
+    mesh(wall, glass, 8.6, 5.4, 8.6, 0, 2.75, 0);
     for (let i = 0; i < 8; i += 1) {
       const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
       // No post across the doorway (the +Z face).
@@ -114,6 +117,12 @@ export class CalibrationLift {
     Object.assign(this.state, { t: 0, cabinY: 0, velocity: 0, riding: false });
     this.cabin.position.y = 0;
     for (const leaf of this.doors) leaf.position.x = leaf.userData.openX;
+  }
+
+  /** 0 = shut, 1 = open (eased) - for an arrival, where the doors open to let the player out. */
+  setDoorsOpen(k) {
+    const e = THREE.MathUtils.smoothstep(k, 0, 1);
+    for (const leaf of this.doors) leaf.position.x = THREE.MathUtils.lerp(leaf.userData.closedX, leaf.userData.openX, e);
   }
 
   /** The player is in: close the doors and go up. */

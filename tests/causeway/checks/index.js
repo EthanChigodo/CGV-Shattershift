@@ -56,7 +56,7 @@ export const layout = {
   },
 };
 
-/** The bot plays the whole level, rides the lift, and arrives in Level 2. */
+/** The bot plays the whole level, rides the lift, and hands over to the Roof (the story's finale). */
 export const playthrough = {
   name: "playthrough",
   async run(page) {
@@ -64,11 +64,10 @@ export const playthrough = {
     const failures = [];
     if (!r.lift) failures.push(`never reached the lift (state ${r.state}, ${Math.round(r.dist ?? 0)} m, hp ${Math.round(r.hp)})`);
     else {
-      if (r.lift.level !== 2) failures.push(`lift ended in level ${r.lift.level}, expected 2`);
-      if (!r.lift.causewayDisposed) failures.push("Level 1 was not disposed after the hand-off");
-      if (!r.lift.foundryVisible) failures.push("Foundry not visible after the hand-off");
-      if (r.lift.after3s.state !== "playing") failures.push(`Level 2 not playing 3 s after arrival (${r.lift.after3s.state})`);
-      if (Number(r.lift.after3s.fd) <= 5) failures.push("player is not moving through the Foundry");
+      if (r.lift.level !== 3) failures.push(`lift ended in level ${r.lift.level}, expected 3 (the Roof)`);
+      if (!r.lift.causewayDisposed) failures.push("the Causeway was not disposed after the hand-off");
+      if (!r.lift.roofStarting) failures.push("the Roof did not start after the lift");
+      if (r.lift.after3s.level !== 3) failures.push(`not on the Roof 3 s after the lift (level ${r.lift.after3s.level})`);
     }
     return {
       failures,

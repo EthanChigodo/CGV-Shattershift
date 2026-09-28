@@ -106,6 +106,9 @@ export class FoundryLevel {
    *                                           controller that only moves along -Z
    * @param {number} [options.halfWidth]       corridor half width
    * @param {number[]} [options.lanes]         lane offsets, matching the prototype
+   * @param {number} [options.variant]         0 = the authored layout; any other
+   *                                           value reshuffles hazards and cells
+   *                                           (endless mode's laps)
    */
   constructor({
     origin = new THREE.Vector3(0, 0, -146),
@@ -117,11 +120,12 @@ export class FoundryLevel {
     runSpeed = 9.2,
     escapeSeconds = null,
     brightness = 1.6,
+    variant = 0,
   } = {}) {
     // The escape timer is derived from how far the player actually has to run,
     // not hard-coded. At 194m the old fixed 26s could never expire, which made
     // the countdown decoration rather than a loss condition.
-    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness };
+    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness, variant };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -399,9 +403,15 @@ export class FoundryLevel {
   /* Layout helpers                                                     */
   /* ---------------------------------------------------------------- */
 
+  /** Variant 0 keeps every authored seed; others shift them (a Lehmer seed must stay non-zero). */
+  _variantSeed(seed) {
+    const v = this.options.variant;
+    return v ? ((seed + v * 104729) % 2147483646) + 1 : seed;
+  }
+
   /** Deterministic generator, so every teammate and every run see one level. */
   _rng(seed) {
-    let value = seed;
+    let value = this._variantSeed(seed);
     return () => {
       value = (value * 16807) % 2147483647;
       return (value - 1) / 2147483646;
@@ -778,7 +788,7 @@ export class FoundryLevel {
    * deliberate combo opportunity rather than an even sprinkle.
    */
   _buildTargets() {
-    let seed = 20260912;
+    let seed = this._variantSeed(20260912);
     const random = () => {
       seed = (seed * 16807) % 2147483647;
       return (seed - 1) / 2147483646;

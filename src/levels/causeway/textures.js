@@ -506,7 +506,7 @@ export function createCausewayTextures() {
       evac: signTexture("EVACUATE", "FOLLOW THE CYAN LINE", { accent: "#ff5a3c" }),
       bridge: signTexture("SKYBRIDGE B", "OBSERVATION WING  //  NO RUNNING", { accent: "#35c8e0" }),
       atrium: signTexture("RESONANCE ATRIUM", "AUTHORISED STAFF ONLY", { accent: "#f2a11f" }),
-      lift: signTexture("CALIBRATION LIFT", "SECTOR 02  //  FOUNDRY", { accent: "#7ef4f1" }),
+      lift: signTexture("CALIBRATION LIFT", "THE ROOF  //  HELIPAD", { accent: "#7ef4f1" }),
       biohazard: signTexture("BIOHAZARD", "SPECIMEN STORAGE", { accent: "#9dff6a" }),
       detonation: signTexture("DEMOLITION ARMED", "ALL STAFF EVACUATED", { accent: "#ff3b30" }),
       exit: signTexture("EXIT", "", { accent: "#2bff6a", width: 256, height: 96 }),

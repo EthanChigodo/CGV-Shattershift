@@ -9,13 +9,18 @@ This repository contains the working concept and playable Three.js prototype for
 
 The player automatically travels through a failing glass tower, throws limited energy spheres, avoids obstacles, and uses elevator transitions to reach three distinct sectors:
 
-1. **The Glass Causeway** - first-person aiming and resource management in a burning lab. *Playable.*
-2. **The Shifting Foundry** - third-person chase camera and moving machinery. *Playable.*
-3. **The Meltdown** - out of a lift into a burning lab being torched to destroy the evidence, a failed ball launcher as your only tool, a stretch where the power dies, then a lift to the roof, a fight, and a rescue helicopter. *Playable.*
+The story climbs the building, riding a lift up between each stage:
+
+1. **Sector 01 - The Shifting Foundry** (the basement) - third-person chase camera and moving machinery. *Playable.*
+2. **Sector 02 - The Meltdown** (the labs) - out of a lift into labs being torched to destroy the evidence, a failed ball launcher as your only tool, a stretch where the power dies, and a glass lift up. *Playable.*
+3. **Sector 03 - The Glass Causeway** (the skyline) - out of the glass lift, first-person aiming and resource management across the skybridge, and the Calibration Lift to the roof. *Playable.*
+4. **The Roof** - the finale: hold out against the scientists and their test subjects until the rescue helicopter comes. *Playable.*
+
+**Endless** (from the menu, separate from the story) runs any one of the four until you go down: the Foundry and the Labs come back as new, faster layouts every lap, the Skyline is randomised chunks, and the Roof is wave after wave with no helicopter. Best results are kept per environment.
 
 ## Story
 
-Ascension Tower, level 212. A resonance experiment failed at dawn and its subject did not die. You are **Subject 07**: glass shatters at your touch, and you can throw that resonance as spheres of energy. Dr. Vale has armed the tower's demolition charges to bury what she made. Escape the lab across the Causeway, ride the Calibration Lift up through the Foundry, and reach the control core before the tower comes down.
+Ascension Tower, level 212. A resonance experiment failed at dawn and its subject did not die. You are **Subject 07**: glass shatters at your touch, and you can throw that resonance as spheres of energy. Dr. Vale has armed the tower's demolition charges to bury what she made. Climb out: the basement foundry, the burning labs, the glass causeway across the skyline, and the helicopter on the roof, before the tower comes down. (Cutscenes with the scientist who helps you escape are planned.)
 
 ## Controls
 
@@ -36,7 +41,7 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | `F` | Performance overlay |
 | `Esc` | Pause and settings |
 | `R` | Run again from the end screen |
-| `1` `2` `3` `4` | Demo: restart Level 1, jump to Level 2, jump to Level 3, start Endless lab |
+| `1` `2` `3` `4` | Demo: jump to Sector 01 (Foundry), 02 (Labs), 03 (Skyline), the Roof |
 | Level 3 | Hold left mouse to fire (it overheats); mash `Space` at a fallen duct; on the roof `WASD` moves and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available in Level 3 |
 
 ## Level 1 - The Glass Causeway
@@ -49,14 +54,15 @@ A research wing 212 floors up, burning at 03:47 in the morning, in three beats: 
 - **From sedated to running for your life:** the run starts slow and blurred as Subject 07 staggers out of the pod, and builds to full pace as the adrenaline kicks in; explosions scare you into a sprint.
 - **The building coming down:** telegraphed ceiling collapses, a distant tower falling, the skybridge collapsing behind you, the atrium detonating below the lift.
 - **Tools:** three sphere types, four serum power-ups (prism split, thermal sight, kinetic shield, overdrive), sprint/brake, bullet-time focus.
-- **Extras:** orthographic minimap, field manual, level preview flythrough, three missions per run, five collectible case files, photo mode with 360° export, and an **Endless lab** mode of randomised chunks (unlocked by clearing Level 1).
+- **Extras:** orthographic minimap, field manual, level preview flythrough, three missions per run, five collectible case files, photo mode with 360° export, and an endless mode of randomised chunks (Endless -> The Skyline).
+- **In the story** it is Sector 03: you arrive by the glass lift (no pod, no sedated start) and its lift goes up to the Roof.
 - **Graphics pipeline:** custom multi-pass post-processing (screen-space refraction, bloom, FXAA, heat haze, thermal vision, power-up looks), dynamic ray-marched sky, reflection probe, sun shadows, wet reflective floors, and Auto quality with dynamic resolution for lab machines.
 
 See [`docs/level-1-causeway.md`](./docs/level-1-causeway.md) and [`docs/shaders-explained.md`](./docs/shaders-explained.md).
 
 ## Menus and settings
 
-The title screen idles on a slow drift through the ward. From it you can start a run, start Endless lab, preview the level, read the field manual, open settings, or replay the briefing. **Start Run** plays a 2.5-second wake-up (the pod shatters, the camera drops into first person); any key or click skips it.
+The title screen idles on a slow drift through the Skyline's ward. From it you can start the story, pick an Endless environment, preview the Skyline, read its field manual, open settings, or replay the briefing. **Start Story** starts in the Foundry. (Level 1's pod wake-up is no longer used: the wake-up will be the new opening cutscene.)
 
 The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play, and **Play as** chooses your character (female or male patient; Level 3 shows them, and the choice is remembered).
 

@@ -51,7 +51,7 @@
     <div id="reticle" class="reticle" aria-hidden="true"><i></i><b></b></div>
     <div id="fadeOverlay" class="fade-overlay" aria-hidden="true"></div>
     <div id="previewBar" class="preview-bar" hidden>
-      <span>Level preview: the Glass Causeway</span>
+      <span>Level preview: the Glass Causeway (Sector 03)</span>
       <button id="previewExitButton" class="icon-button">EXIT PREVIEW (ESC)</button>
     </div>
     <div id="message" class="message" aria-live="polite"></div>
@@ -87,12 +87,12 @@
     <section id="startScreen" class="screen">
       <div class="screen-copy">
         <p class="eyebrow">ASCENSION TOWER // LEVEL 212 // DEMOLITION ARMED</p>
-        <h1>BREAK THE GLASS.<br />REACH THE LIFT.</h1>
-        <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Shatter your way out before the tower comes down.</p>
+        <h1>WAKE UP.<br />GET TO THE ROOF.</h1>
+        <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Climb out of the basement, through the labs and across the skyline to the helicopter on the roof before the tower comes down.</p>
         <div class="button-row">
-          <button id="startButton" class="primary-button">START RUN</button>
-          <button id="endlessButton" class="text-button">Endless lab</button>
-          <button id="previewButton" class="text-button">Preview level</button>
+          <button id="startButton" class="primary-button">START STORY</button>
+          <button id="endlessButton" class="text-button">Endless</button>
+          <button id="previewButton" class="text-button">Preview the Skyline</button>
           <button id="manualButton" class="text-button">Field manual</button>
           <button id="settingsButton" class="text-button">Settings</button>
           <button id="replayStoryButton" class="text-button">Replay briefing</button>
@@ -104,14 +104,18 @@
         </div>
         <p id="progressLine" class="progress-line"></p>
       </div>
-      <aside class="briefing-card" aria-label="Sector 1 briefing">
-        <p class="eyebrow">SECTOR 01 OF 03 // 03:47</p>
-        <h3>The Glass Causeway</h3>
-        <p>The observation wing is burning and the demolition charges are armed. Cross the ward and the skybridge, break the three gate locks in order, and reach the Calibration Lift.</p>
-        <p class="briefing-label">This run's missions</p>
+      <aside class="briefing-card" aria-label="Story briefing">
+        <p class="eyebrow">THE WAY UP // 03:47</p>
+        <ol class="route-list">
+          <li><b>Sector 01 - The Shifting Foundry.</b> The basement machinery will not stop for you. Break the switches, reach the lift.</li>
+          <li><b>Sector 02 - The Meltdown.</b> The labs are burning and the test subjects are loose. Your launcher is all you have.</li>
+          <li><b>Sector 03 - The Glass Causeway.</b> Across the skyline: break the three gate locks and ride the lift to the roof.</li>
+          <li><b>The Roof.</b> Hold out until the helicopter comes.</li>
+        </ol>
+        <p class="briefing-label">Sector 03 missions</p>
         <ul id="briefingMissions"></ul>
         <p class="briefing-label">Controls</p>
-        <p class="briefing-keys"><kbd>A</kbd><kbd>D</kbd> lanes &nbsp; <kbd>W</kbd><kbd>S</kbd> sprint / brake &nbsp; <kbd>Click</kbd> throw &nbsp; <kbd>RMB</kbd> focus &nbsp; <kbd>Q</kbd><kbd>E</kbd> sphere type &nbsp; <kbd>V</kbd> choose what the HUD shows</p>
+        <p class="briefing-keys"><kbd>A</kbd><kbd>D</kbd> lanes &nbsp; <kbd>Space</kbd><kbd>Shift</kbd> jump / slide &nbsp; <kbd>Click</kbd> throw / fire &nbsp; <kbd>W</kbd><kbd>S</kbd> sprint / brake (Sector 03) &nbsp; <kbd>V</kbd> choose what the HUD shows</p>
       </aside>
     </section>
 
@@ -186,14 +190,15 @@
             <span><kbd>MOUSE</kbd> Aim and throw</span>
             <span><kbd>RMB</kbd> Focus (slow time)</span>
             <span><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
-            <span><kbd>W</kbd><kbd>S</kbd> Sprint / brake (L1)</span>
+            <span><kbd>W</kbd><kbd>S</kbd> Sprint / brake (Sector 03)</span>
             <span><kbd>SPACE</kbd><kbd>SHIFT</kbd> Jump / slide</span>
             <span><kbd>C</kbd> Change camera</span>
-            <span><kbd>HOLD CLICK</kbd> Fire the launcher (L3) - it overheats</span>
-            <span><kbd>SPACE</kbd> Push a fallen duct (mash, L3)</span>
-            <span><kbd>WASD</kbd> Move on the roof, <kbd>SPACE</kbd> dodge / jump for the ladder (L3)</span>
-            <span><kbd>B</kbd> Bloom, <kbd>K</kbd> credits (L3)</span>
-            <span><kbd>P</kbd> Photo mode (L1, L2)</span>
+            <span><kbd>HOLD CLICK</kbd> Fire the launcher (Sector 02, Roof) - it overheats</span>
+            <span><kbd>SPACE</kbd> Push a fallen duct (mash, Sector 02)</span>
+            <span><kbd>WASD</kbd> Move on the roof, <kbd>SPACE</kbd> dodge / jump for the ladder</span>
+            <span><kbd>B</kbd> Bloom, <kbd>K</kbd> credits (Sector 02, Roof)</span>
+            <span><kbd>1</kbd>-<kbd>4</kbd> Demo: jump to Sector 01, 02, 03, the Roof</span>
+            <span><kbd>P</kbd> Photo mode (Sectors 01, 03)</span>
             <span><kbd>M</kbd> Minimap</span>
             <span><kbd>ESC</kbd> Pause</span>
           </div>
@@ -221,9 +226,26 @@
       </div>
     </section>
 
+    <section id="endlessScreen" class="screen" aria-label="Endless">
+      <div class="screen-copy compact">
+        <p class="eyebrow">ENDLESS // SEPARATE FROM THE STORY</p>
+        <h2>PICK A PLACE.<br />SEE HOW FAR YOU GET.</h2>
+        <p class="intro">Each environment on its own, until you go down. The corridors come back as new layouts, a little faster every lap.</p>
+        <div class="endless-grid">
+          <button type="button" class="endless-card" data-endless="foundry"><b>The Foundry</b><span>The basement machinery, lap after lap.</span><small></small></button>
+          <button type="button" class="endless-card" data-endless="labs"><b>The Labs</b><span>The Meltdown's corridors, reshuffled every lap.</span><small></small></button>
+          <button type="button" class="endless-card" data-endless="skyline"><b>The Skyline</b><span>The Glass Causeway, randomised, faster every 250 m.</span><small></small></button>
+          <button type="button" class="endless-card" data-endless="roof"><b>The Roof</b><span>No helicopter. The waves never stop.</span><small></small></button>
+        </div>
+        <div class="button-row">
+          <button id="endlessBackButton" class="primary-button">BACK</button>
+        </div>
+      </div>
+    </section>
+
     <section id="manualScreen" class="screen manual-screen" aria-label="Field manual">
       <div class="screen-copy manual-copy">
-        <p class="eyebrow">FIELD MANUAL // SECTOR 01</p>
+        <p class="eyebrow">FIELD MANUAL // SECTOR 03 - THE SKYLINE</p>
         <h2>Everything in the Causeway, and what it does</h2>
         <div class="manual-grid">
           <article data-tone="glass"><h3>Glass pane</h3><p>Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity.</p></article>

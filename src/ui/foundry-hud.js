@@ -54,7 +54,7 @@ export class FoundryHud {
 
     /* Sector banner */
     this.banner = element("div", "fdy-banner");
-    this.bannerLabel = element("span", null, "SECTOR 02");
+    this.bannerLabel = element("span", null, "SECTOR 01");
     this.bannerName = element("strong", null, "THE SHIFTING FOUNDRY");
     this.banner.append(this.bannerLabel, this.bannerName, element("i"));
 
@@ -97,7 +97,7 @@ export class FoundryHud {
     /* Run summary */
     this.summary = element("div", "fdy-summary");
     this.summaryCard = element("div", "fdy-summary-card");
-    this.summaryEyebrow = element("span", null, "SECTOR 02");
+    this.summaryEyebrow = element("span", null, "SECTOR 01");
     this.summaryTitle = element("h2", null, "FOUNDRY CLEARED");
     this.summaryRows = element("div", "fdy-summary-rows");
     this.summaryCard.append(
@@ -173,7 +173,7 @@ export class FoundryHud {
 
     const on = (name, fn) => this._unsubscribers.push(level.events.on(name, fn));
 
-    on("beat", ({ name }) => this.showBanner("SECTOR 02", name));
+    on("beat", ({ name }) => this.showBanner("SECTOR 01", name));
     on("junction", ({ direction }) => this.showJunction(direction));
 
     on("system-restored", ({ label, online, total }) => {
@@ -189,7 +189,7 @@ export class FoundryHud {
     on("escape-tick", ({ remaining }) => this.updateEscape(remaining));
     on("escape-end", ({ survived }) => this.endEscape(survived));
 
-    on("complete", () => this.showBanner("SECTOR 02 COMPLETE", "EXTRACTION LIFT OPEN"));
+    on("complete", () => this.showBanner("SECTOR 01 COMPLETE", "EXTRACTION LIFT OPEN"));
 
     return this;
   }
@@ -202,7 +202,7 @@ export class FoundryHud {
 
   show() {
     this.root.hidden = false;
-    this.showBanner("SECTOR 02", "THE SHIFTING FOUNDRY");
+    this.showBanner("SECTOR 01", "THE SHIFTING FOUNDRY");
     return this;
   }
 
@@ -280,7 +280,7 @@ export class FoundryHud {
    * End-of-run card. `rows` is an array of [label, value] so the caller decides
    * what a run is worth reporting - the level does not own scoring.
    */
-  showSummary({ title, eyebrow = "SECTOR 02", rows = [], failed = false }) {
+  showSummary({ title, eyebrow = "SECTOR 01", rows = [], failed = false }) {
     this.summaryEyebrow.textContent = eyebrow;
     this.summaryTitle.textContent = title;
     this.summaryCard.classList.toggle("failed", failed);

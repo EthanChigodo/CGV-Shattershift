@@ -259,3 +259,15 @@ body.aiming button, body.aiming .view-menu, body.aiming .view-menu * { cursor: p
 }
 .subject-button:hover { color: var(--text); }
 .subject-button.picked { border-color: #6fe0d4; color: #ffffff; box-shadow: 0 0 16px rgba(63, 200, 186, .35); }
+
+/* ---- Story route on the briefing card, and the Endless picker ---------- */
+.route-list { margin: 8px 0 4px; padding-left: 18px; display: grid; gap: 6px; color: var(--text-dim); font-size: 12.5px; line-height: 1.45; }
+.route-list b { color: var(--text); }
+.endless-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 24px 0 26px; }
+.endless-card {
+  display: grid; gap: 6px; text-align: left; padding: 14px 16px; border: 1px solid var(--accent-border); border-left: 3px solid var(--accent);
+  border-radius: 4px; background: var(--panel-bg); color: var(--text-dim); font: inherit; font-size: 12.5px; line-height: 1.45; cursor: pointer;
+}
+.endless-card b { color: var(--text); font-size: 15px; }
+.endless-card small { color: var(--accent); font-weight: 800; letter-spacing: .06em; }
+.endless-card:hover, .endless-card:focus-visible { border-color: var(--accent); color: var(--text); }

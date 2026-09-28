@@ -81,6 +81,22 @@ let sliding = 0;
 let snapCamera = true;
 /** Level 3 (src/levels/meltdown/game.js), built on the way into it. */
 let meltdown = null;
+/**
+ * The story runs Foundry (sector 1) -> Labs (sector 2) -> Skyline (sector 3)
+ * -> Roof (the finale), riding a lift up between each. `currentLevel` still
+ * names the *environment* - 1 Causeway (the Skyline), 2 Foundry, 3 Meltdown
+ * (the Labs and the Roof) - so each level's own code keeps its id;
+ * `sectorNumber()` is the order the player sees. Endless mode is separate:
+ * pick any one environment and run it until you go down.
+ */
+let runKind = "story"; // "story" | "endless"
+let endlessEnv = null; // "foundry" | "labs" | "skyline" | "roof"
+const endlessRun = { laps: 0, distance: 0 };
+let foundrySpeedScale = 1;
+/** Launcher balls carried from the Labs up to the Roof. */
+let storyBalls = null;
+/** Level 3's module is running the Roof (not the Labs). */
+let onRoofStage = false;
 
 
 const settingsDefaults = {
@@ -134,7 +150,7 @@ const ui = {
   viewButton: $("#viewButton"), viewMenu: $("#viewMenu"), briefing: $("#briefingMissions"),
   qualitySelect: $("#qualitySelect"),
   manual: $("#manualScreen"), previewBar: $("#previewBar"), fade: $("#fadeOverlay"),
-  endlessButton: $("#endlessButton"), progressLine: $("#progressLine"),
+  endlessButton: $("#endlessButton"), progressLine: $("#progressLine"), endless: $("#endlessScreen"),
 };
 
 function applySettingsToControls() {
@@ -272,8 +288,15 @@ function updatePlayerBody(dt) {
   });
 }
 
+/** The sector the player is in, in story order (1 Foundry, 2 Labs, 3 Skyline and the Roof). */
+function sectorNumber(level = currentLevel) {
+  if (level === 2) return 1;
+  if (level === 3) return onRoofStage ? 3 : 2;
+  return 3;
+}
+
 function updateUI() {
-  ui.level.textContent = `0${currentLevel} / 03`;
+  ui.level.textContent = `0${sectorNumber()} / 03`;
   ui.ammo.textContent = ammo; ui.health.textContent = Math.max(0, Math.round(health)); ui.score.textContent = String(Math.floor(score)).padStart(6, "0");
   ui.camera.textContent = currentLevel === 3 && meltdown ? meltdown.cameraModeName : cameraThird ? "CHASE VIEW" : "FIRST PERSON";
 }
@@ -329,10 +352,11 @@ function foundryDistance() {
 function foundrySpeed() {
   if (!foundry) return 9.2;
   const progress = foundryDistance() / foundry.route.totalLength;
-  return (FOUNDRY_SPEED_ZONES.find((zone) => progress < zone.until) ?? FOUNDRY_SPEED_ZONES[2]).speed;
+  return (FOUNDRY_SPEED_ZONES.find((zone) => progress < zone.until) ?? FOUNDRY_SPEED_ZONES[2]).speed * foundrySpeedScale;
 }
 
-function buildFoundry() {
+/** @param {number} [variant]  0 = the authored layout; endless laps reshuffle it */
+function buildFoundry(variant = 0) {
   if (foundry) {
     foundryHud.unbind();
     foundry.dispose();
@@ -348,6 +372,7 @@ function buildFoundry() {
     shadows: false,
     brightness: 1.6,
     runSpeed: FOUNDRY_SPEED_ZONES[2].speed,
+    variant,
   });
   foundry.addTo(scene);
   foundry.root.visible = false;
@@ -482,12 +507,13 @@ const CAUSEWAY_SPEED = { base: 10.2, sprint: 14.6, brake: 5.2 };
  *             reach full speed, but the eyes clear quickly so the player gets
  *             sharp, realistic vision for the rest of the run.
  */
-function causewayPace(distance) {
+function causewayPace(distance, awake = false) {
   const smooth = THREE.MathUtils.smoothstep;
-  const wake = smooth(distance, 20, 230);
+  // Arriving by lift (the story's Skyline), you are awake from the first step.
+  const wake = awake ? 1 : smooth(distance, 20, 230);
   let pace = THREE.MathUtils.lerp(6.0, CAUSEWAY_SPEED.base, wake);
   pace += 0.8 * smooth(distance, 240, 300) * (1 - smooth(distance, 520, 560));
-  return { pace, sedation: 1 - wake, drowsy: 1 - smooth(distance, 4, 40) };
+  return { pace, sedation: 1 - wake, drowsy: awake ? 0 : 1 - smooth(distance, 4, 40) };
 }
 const START_SPHERES = 20;
 
@@ -518,7 +544,7 @@ function resetRun() {
     missionTimer: 0, ripple: 0, chaseWarned: false,
     rumble: null, heartPhase: 0, lens: 0,
     surge: 0, sedation: 1, drowsy: 1, awakeHinted: false, clearHinted: false,
-    lookX: 0, lookY: 0,
+    lookX: 0, lookY: 0, skipWake: false,
   });
 }
 resetRun();
@@ -549,6 +575,7 @@ function causewayDistance() {
 
 function buildCauseway(mode = "story") {
   if (causeway) causeway.dispose();
+  buildSkylineLift();
   causewayMode = mode;
   causeway = new CausewayLevel({
     origin: new THREE.Vector3(0, 0, CAUSEWAY_ORIGIN_Z),
@@ -556,6 +583,9 @@ function buildCauseway(mode = "story") {
     quality: resolvedQuality(),
   });
   causeway.addTo(scene);
+  // The Skyline is reached by lift now, not woken into: no containment pod.
+  // (Level 1 streams its props and resets their roots' visibility, so hide the parts.)
+  causeway.pod?.root?.traverse((o) => { if (o !== causeway.pod.root) o.visible = false; });
   if (perf.level >= 1) causeway.probe.interval = Math.max(causeway.probe.interval, 2);
   wireCausewayEvents(causeway);
   return causeway;
@@ -564,7 +594,7 @@ function buildCauseway(mode = "story") {
 function wireCausewayEvents(level) {
   const on = (name, fn) => level.events.on(name, (payload) => { if (level === causeway) fn(payload); });
   on("radio", (p) => { causewayHud.radio(p); });
-  on("title", (p) => causewayHud.title(`Sector 01 // Beat ${p.index + 1} of 3`, p.name));
+  on("title", (p) => causewayHud.title(`Sector 03 // Beat ${p.index + 1} of 3`, p.name));
   on("hint", (p) => causewayHud.hint(p.text));
   on("file", (p) => causewayHud.caseFile(p.lines, p.found, p.total));
   on("sprinkler", () => causewayHud.hint("Sprinkler open: fires below are going out"));
@@ -600,6 +630,7 @@ function wireCausewayEvents(level) {
 function setCausewayActive(active) {
   if (!causeway) return;
   causeway.root.visible = active;
+  if (skylineLift) skylineLift.root.visible = active;
   if (active) {
     sun.intensity = 0;
     hemi.intensity = 0;
@@ -665,7 +696,7 @@ function updateCauseway(dt, time) {
     run.sedation = 0;
     run.drowsy = 0;
   } else {
-    const { pace, sedation, drowsy } = causewayPace(distance);
+    const { pace, sedation, drowsy } = causewayPace(distance, run.skipWake);
     target = pace;
     run.sedation = sedation;
     run.drowsy = drowsy;
@@ -840,26 +871,16 @@ function updateCausewayLift(dt) {
   if (result.done) finishCausewayLift();
 }
 
-/** Hand-off to Level 2. Mirrors the old prototype's lift exit exactly. */
+/** The Skyline's lift reaches the top: on to the Roof, the finale. */
 function finishCausewayLift() {
   level1Audio.cleanupLevel();
   music.fadeOut();
-  currentLevel = 2;
-  state = "playing";
-  liftTimer = 0; playerY = 0; snapCamera = true;
-  health = 100; ammo += 4;
-  lane = 1; playerX = 0;
-  camera.fov = 68; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
-  runZ = FOUNDRY_ORIGIN_Z; cameraThird = true;
   causewayHud.hideReport();
   setCausewayActive(false);
-  // Free Level 1's GPU resources - the guide's "level changes leak memory" risk.
+  // Free the Causeway's GPU resources - the guide's "level changes leak memory" risk.
   causeway.dispose();
   causeway = null;
-  setFoundryActive(true);
-  run.fadeOut = 1;
-  showMessage("LEVEL 2 // SHIFTING FOUNDRY");
-  updateUI();
+  enterRoof();
 }
 
 /* ---- Level 1 camera --------------------------------------------------- */
@@ -1036,12 +1057,15 @@ function updatePreview(dt, time) {
 
 function refreshMenuProgress() {
   const p = missions.progress;
-  ui.endlessButton.disabled = !p.cleared;
-  ui.endlessButton.title = p.cleared ? "Randomised, endless, faster every 250 m" : "Clear Sector 1 once to unlock";
-  ui.endlessButton.textContent = p.cleared ? "Endless lab" : "Endless lab (locked)";
+  ui.endlessButton.disabled = false;
+  ui.endlessButton.title = "Pick any environment and run it until you go down";
+  ui.endlessButton.textContent = "Endless";
   const bits = [];
   if (p.best.story) bits.push(`Best run ${String(p.best.story).padStart(6, "0")}`);
-  if (p.bestDistance) bits.push(`Endless ${p.bestDistance} m`);
+  for (const env of ["foundry", "labs", "skyline", "roof"]) {
+    const best = env === "skyline" ? Math.max(endlessBest.skyline ?? 0, p.bestDistance ?? 0) : endlessBest[env];
+    if (best) bits.push(`${ENDLESS_NAMES[env]} ${best} ${endlessUnit(env)}`);
+  }
   bits.push(`Case files ${p.files.length}/5`);
   bits.push(`Missions ${p.completed.length}/13`);
   ui.progressLine.textContent = bits.join("   ");
@@ -1081,6 +1105,15 @@ function getMeltdown() {
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
+  // The story: through the lift at the end of the Labs, up to the Skyline.
+  meltdown.events.on("corridor-complete", ({ stats }) => {
+    if (currentLevel !== 3 || state !== "playing") return;
+    score += meltdownScore(stats, false) + 2000 + Math.round(stats.vitality) * 10;
+    storyBalls = stats.balls;
+    // Not from inside Level 3's own update: hand over once it has returned.
+    pendingSkyline = true;
+  });
+  meltdown.events.on("lap", ({ laps }) => showMessage(`LAP ${laps + 1} // NEW LAYOUT`));
   return meltdown;
 }
 
@@ -1090,7 +1123,7 @@ function startFoundryLift() {
   state = "lift"; liftTimer = 0; transitionTarget = 3;
   run.liftFrom.copy(camera.position);
   foundryLift.start();
-  showMessage("CALIBRATION LIFT // SECTOR 03");
+  showMessage("CALIBRATION LIFT // SECTOR 02");
   updateUI();
 }
 
@@ -1108,6 +1141,8 @@ async function enterMeltdown() {
   if (meltdownEntering) return;
   meltdownEntering = true;
   const game = getMeltdown();
+  game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
+  onRoofStage = false;
   ui.fade.style.opacity = "1";
   run.fadeOut = 0;
   setFoundryActive(false);
@@ -1136,15 +1171,22 @@ async function enterMeltdown() {
 
 /** Out of Level 3 (restart, quit, demo jump): free it and give the renderer back. */
 function leaveMeltdown(nextLevel) {
+  pendingSkyline = false;
   meltdown?.unload();
   meltdownEntering = false;
   currentLevel = nextLevel;
   applyQuality();
 }
 
+let pendingSkyline = false;
 function updateMeltdownFrame(dt, time) {
   if (!meltdown) return;
   meltdown.update(dt, time);
+  if (pendingSkyline) {
+    pendingSkyline = false;
+    enterSkyline();
+    return;
+  }
   // Mirror Level 3's numbers into the game's own (pause screen, end screen).
   if (meltdown.level && state === "playing") {
     health = meltdown.runner.vitality;
@@ -1176,11 +1218,12 @@ function finishMeltdown(escaped, result) {
   health = s.vitality;
   ammo = s.balls;
   updateUI();
+  if (runKind === "endless") { endRun(false, null, endlessResult()); return; }
   endRun(escaped, null, {
     eyebrow: escaped ? "RUN COMPLETE // ALL THREE SECTORS" : "RUN TERMINATED // SECTOR 03",
     title: result.title,
     text: MELTDOWN_ENDINGS[result.title],
-    stats: `${Math.round(s.time)} s in the Meltdown   ${s.breaks} broken   ${s.downs} downed   ${s.falls} over the edge   ${s.hits} hits taken`,
+    stats: `${Math.round(s.time)} s on the roof   ${s.breaks} broken   ${s.downs} downed   ${s.falls} over the edge   ${s.hits} hits taken`,
   });
 }
 
@@ -1440,6 +1483,7 @@ function updateProjectiles(dt) {
 
 function resetStats(mode = causewayMode) {
   if (currentLevel === 3 || meltdown?.visible) leaveMeltdown(1);
+  foundrySpeedScale = 1; endlessRun.laps = 0; endlessRun.distance = 0;
   ammo = START_SPHERES; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0;
   cameraThird = false; liftTimer = 0; currentLevel = 1; transitionTarget = 0; shake = 0;
   jumpHeight = 0; jumpVelocity = 0; sliding = 0; combo = 1; comboTimer = 0; snapCamera = true;
@@ -1466,7 +1510,14 @@ function resetStats(mode = causewayMode) {
   ui.end.classList.remove("active"); updateUI();
 }
 
+/**
+ * Play the Causeway (the Skyline) straight away, in its own "story" or
+ * "endless" mode - the test harness and dev tools use this; the menus go
+ * through startCampaign() / startEndless().
+ */
 function resetGame(mode = causewayMode) {
+  runKind = mode === "endless" ? "endless" : "story";
+  endlessEnv = mode === "endless" ? "skyline" : null;
   resetStats(mode); state = "playing";
   level1Audio.startLevel();
   music.playRound1();
@@ -1474,20 +1525,191 @@ function resetGame(mode = causewayMode) {
   if (mode === "endless") causewayHud.title("Endless lab", "Randomised. Faster every 250 m.", 2.2);
 }
 
-/**
- * Start pressed: a 2.5 s wake-up (pod shatters, camera drops into the eyes),
- * skippable with any key or click. The briefing and missions were on the
- * start screen, so nothing blocks the view once the run begins.
- */
-function beginLaunch() {
-  resetStats("story"); state = "launch"; launchTimer = 0;
-  level1Audio.startLevel();
-  music.playRound1();
+/* ---- The story and endless runs ----------------------------------------- */
+
+/** The Calibration Lift the player arrives in at the start of the Skyline. */
+let skylineLift = null;
+function buildSkylineLift() {
+  skylineLift?.dispose();
+  skylineLift = new CalibrationLift();
+  // Behind the start line, doors facing down the ward (local +Z -> world -Z).
+  skylineLift.root.position.set(0, 0, CAUSEWAY_ORIGIN_Z + LIFT_RADIUS + 0.9);
+  skylineLift.root.rotation.y = Math.PI;
+  skylineLift.setDoorsOpen(0);
+  skylineLift.root.visible = false;
+  scene.add(skylineLift.root);
 }
 
-function startEndless() {
+/** Common reset for arriving in a runner level. */
+function resetRunner() {
+  lane = 1; playerX = 0; playerY = 0; jumpHeight = 0; jumpVelocity = 0; sliding = 0;
+  shake = 0; snapCamera = true; liftTimer = 0;
+  camera.fov = 68; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
+}
+
+/** Start pressed: the story, from the basement up. */
+function startCampaign() {
+  resetStats("story");
+  runKind = "story"; endlessEnv = null; storyBalls = null;
+  music.playRound1();
+  enterFoundry();
+}
+
+/** Sector 1 - the Shifting Foundry, in the basement. */
+function enterFoundry() {
+  if (currentLevel === 1 && causeway) setCausewayActive(false);
+  currentLevel = 2; state = "playing"; health = 100;
+  resetRunner();
+  runZ = FOUNDRY_ORIGIN_Z; cameraThird = true;
+  if (!foundry) buildFoundry();
+  foundryExit = false;
+  setFoundryActive(true);
+  ui.fade.style.opacity = "1";
+  run.fadeOut = 1;
+  showMessage(runKind === "endless" ? "ENDLESS // THE FOUNDRY" : "SECTOR 01 // THE SHIFTING FOUNDRY");
+  updateUI();
+}
+
+/** Endless Foundry: past the end, a new layout, a little faster each lap. */
+function foundryLap() {
+  endlessRun.laps += 1;
+  endlessRun.distance += foundry.route.totalLength;
+  foundrySpeedScale = 1 + 0.07 * endlessRun.laps;
+  ui.fade.style.opacity = "1";
+  run.fadeOut = 1;
+  buildFoundry(endlessRun.laps);
+  setFoundryActive(true);
+  runZ = FOUNDRY_ORIGIN_Z; lane = 1; snapCamera = true;
+  health = Math.min(100, health + 15);
+  showMessage(`LAP ${endlessRun.laps + 1} // FASTER`);
+  updateUI();
+}
+
+/**
+ * Sector 3 - the Skyline (the Glass Causeway). The Labs' lift has carried
+ * you up; you step out of the Calibration Lift at the start of the ward.
+ */
+function enterSkyline() {
+  if (currentLevel === 3) leaveMeltdown(1);
+  if (!causeway) buildCauseway("story");
+  currentLevel = 1; causewayMode = "story";
+  resetRun();
+  // Awake and running from the first step: no sedation (that was the pod's).
+  run.skipWake = true;
+  run.sedation = 0; run.drowsy = 0; run.clearHinted = true; run.awakeHinted = true;
+  health = 100; ammo = START_SPHERES;
+  resetRunner();
+  cameraThird = false;
+  runZ = CAUSEWAY_ORIGIN_Z;
+  setFoundryActive(false);
+  setCausewayActive(true);
+  causewayHud.reset();
+  causewayHud.setMissions(missions.active);
+  applyQuality();
+  skylineLift?.setDoorsOpen(0);
+  state = "launch"; launchTimer = 0;
+  level1Audio.startLevel();
+  ui.fade.style.opacity = "1";
+  run.fadeOut = 1;
+  updateUI();
+}
+
+/** The Roof - the finale (and endless Roof). */
+async function enterRoof() {
+  if (meltdownEntering) return;
+  meltdownEntering = true;
+  const game = getMeltdown();
+  game.setMode(runKind === "endless" ? "endless-roof" : "full");
+  onRoofStage = true;
+  ui.fade.style.opacity = "1";
+  run.fadeOut = 0;
+  if (currentLevel === 1 && causeway) setCausewayActive(false);
+  setFoundryActive(false);
+  currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
+  health = 100; shake = 0;
+  applyQuality();
+  game.show();
+  updateUI();
+  try {
+    await game.enterRoof({ balls: storyBalls ?? MELTDOWN_START_BALLS, vitality: 100 });
+  } finally {
+    meltdownEntering = false;
+  }
+  if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return; // quit while loading
+  state = "playing";
+  run.fadeOut = 1;
+  updateUI();
+}
+
+/** Endless: one environment, until you go down. */
+function startEndless(env) {
+  resetStats(env === "skyline" ? "endless" : "story");
+  missions.active = [];
+  runKind = "endless"; endlessEnv = env; storyBalls = null;
+  endlessRun.laps = 0; endlessRun.distance = 0; foundrySpeedScale = 1;
   ui.start.classList.remove("active");
-  resetGame("endless");
+  ui.endless.classList.remove("active");
+  music.playRound1();
+  if (env === "skyline") {
+    state = "playing";
+    level1Audio.startLevel();
+    causewayHud.show();
+    causewayHud.title("Endless // The Skyline", "Randomised. Faster every 250 m.", 2.2);
+    return;
+  }
+  setCausewayActive(false);
+  if (env === "foundry") enterFoundry();
+  else if (env === "labs") enterMeltdown();
+  else if (env === "roof") enterRoof();
+}
+
+/** "Run again" / "Restart run" / R: the same kind of run, from the top. */
+function restartRun() {
+  if (runKind === "endless" && endlessEnv) startEndless(endlessEnv);
+  else startCampaign();
+}
+
+/* ---- Endless records ------------------------------------------------------ */
+
+const ENDLESS_NAMES = { foundry: "The Foundry", labs: "The Labs", skyline: "The Skyline", roof: "The Roof" };
+function loadEndlessBest() {
+  try {
+    return JSON.parse(localStorage.getItem("fractureRunEndlessBest")) ?? {};
+  } catch (error) {
+    return {};
+  }
+}
+const endlessBest = loadEndlessBest();
+function recordEndless(env, value) {
+  endlessBest[env] = Math.max(endlessBest[env] ?? 0, value);
+  try { localStorage.setItem("fractureRunEndlessBest", JSON.stringify(endlessBest)); } catch (error) {}
+  return endlessBest[env];
+}
+function endlessUnit(env) { return env === "roof" ? "s" : "m"; }
+
+/** How far this endless run got, for the end screen and the records. */
+function endlessResult() {
+  const env = endlessEnv;
+  let value = 0;
+  if (env === "foundry") value = Math.floor(endlessRun.distance + (foundry ? foundryDistance() : 0));
+  else if (env === "labs") value = Math.floor(meltdown?.stats.endlessDistance ?? 0);
+  else if (env === "roof") value = Math.floor(meltdown?.stats.roofTime ?? 0);
+  else if (env === "skyline") value = Math.floor(causeway ? causewayDistance() : 0);
+  const best = recordEndless(env, value);
+  const unit = endlessUnit(env);
+  return {
+    eyebrow: `ENDLESS // ${ENDLESS_NAMES[env].toUpperCase()}`,
+    title: env === "roof" ? `SURVIVED ${value} S` : `${value} M`,
+    text: `Best in ${ENDLESS_NAMES[env]}: ${best} ${unit}.${env === "foundry" || env === "labs" ? " Every lap is a new layout, and faster." : env === "roof" ? " The waves never stop coming." : ""}`,
+  };
+}
+
+function refreshEndlessMenu() {
+  for (const button of document.querySelectorAll("[data-endless]")) {
+    const env = button.dataset.endless;
+    const best = endlessBest[env];
+    button.querySelector("small").textContent = best ? `Best ${best} ${endlessUnit(env)}` : "No record yet";
+  }
 }
 
 
@@ -1563,7 +1785,8 @@ function endRun(won, reason = null, detail = null) {
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
   if (currentLevel === 1) { music.gameOverDuck(); level1Audio.gameOver(); }
   causewayHud.warning(null);
-  ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${currentLevel}`;
+  if (runKind === "endless" && endlessEnv && !detail && endlessEnv !== "skyline") detail = endlessResult();
+  ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${sectorNumber()}`;
   ui.endTitle.textContent = won ? "CONTROL CORE STABILISED" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
   ui.endText.textContent = won
     ? "The Causeway, Foundry, and Inverted Core are stable. The tower holds."
@@ -1580,6 +1803,7 @@ function endRun(won, reason = null, detail = null) {
     const s = missionStats();
     const accuracy = run.shots ? Math.round((run.hits / run.shots) * 100) : 0;
     if (causewayMode === "endless") {
+      if (runKind === "endless") recordEndless("skyline", distance);
       ui.endTitle.textContent = `SIGNAL LOST AT ${distance} M`;
       ui.endText.textContent = `Best endless distance: ${Math.max(distance, missions.progress.bestDistance ?? 0)} m. The lab rebuilds itself differently every run.`;
     }
@@ -1590,42 +1814,55 @@ function endRun(won, reason = null, detail = null) {
   ui.end.classList.add("active");
 }
 
-function demoJump(level) {
+/**
+ * Demo keys 1-4 jump to a stage of the story: 1 Foundry, 2 Labs, 3 Skyline,
+ * 4 Roof. (Endless is on the menu.)
+ */
+function demoJump(stage) {
   if (state !== "playing") return;
-  if (level === 1 || level === 4) { resetGame(level === 4 ? "endless" : "story"); return; }
   music.fadeOut();
-  if (currentLevel === 1 && causeway) setCausewayActive(false);
-  if (currentLevel === 3) leaveMeltdown(level);
-  if (level === 3) {
-    setFoundryActive(false);
-    showMessage("DEMO JUMP // LEVEL 3");
-    enterMeltdown();
-    return;
-  }
-  currentLevel = level; playerY = 0; health = 100;
-  jumpHeight = 0; jumpVelocity = 0; sliding = 0; snapCamera = true;
-  camera.fov = 68; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
-  if (level === 2) {
-    if (!foundry) buildFoundry(); // freed on the way into Level 3
-    runZ = FOUNDRY_ORIGIN_Z; cameraThird = true; setFoundryActive(true);
-  }
-  showMessage(`DEMO JUMP // LEVEL ${level}`); updateUI();
+  runKind = "story"; endlessEnv = null;
+  if (currentLevel === 1 && causeway) { setCausewayActive(false); level1Audio.cleanupLevel(); }
+  if (currentLevel === 3) leaveMeltdown(stage === 2 ? 3 : 2);
+  showMessage(`DEMO JUMP // ${["", "SECTOR 01", "SECTOR 02", "SECTOR 03", "THE ROOF"][stage]}`);
+  if (stage === 1) { setFoundryActive(false); if (foundry) buildFoundry(); enterFoundry(); }
+  else if (stage === 2) { setFoundryActive(false); enterMeltdown(); }
+  else if (stage === 3) { setFoundryActive(false); if (!causeway) buildCauseway("story"); enterSkyline(); }
+  else if (stage === 4) { setFoundryActive(false); enterRoof(); }
 }
 
-const _fp = new THREE.Vector3();
-function firstPersonPoint() { return _fp.set(0, 1.72, CAUSEWAY_ORIGIN_Z + 0.15); }
 
+/**
+ * The Skyline begins in the Calibration Lift the Labs' lift carried you up
+ * in: the doors open onto the ward and you step out (first person), then the
+ * run begins. Any key or click skips to the end.
+ */
 function updateLaunch(dt, time) {
   launchTimer += dt;
   causeway.update({ dt, time, distance: 0, player: playerWorld(_playerPos), playing: false });
   scene.fog.color.copy(causeway.fogColor);
   scene.fog.density = causeway.fogDensity;
-  const done = causeway.updateIntro(dt, camera, firstPersonPoint(), settings.reducedMotion);
-  if (done) {
+  const t = launchTimer;
+  skylineLift?.update(dt, time);
+  skylineLift?.setDoorsOpen((t - 0.5) / 0.8);
+  // From the middle of the cabin to the start line, speeding up.
+  const u = THREE.MathUtils.clamp((t - 1.3) / 0.9, 0, 1);
+  const cabinZ = skylineLift ? skylineLift.root.position.z : CAUSEWAY_ORIGIN_Z + 6;
+  const z = THREE.MathUtils.lerp(cabinZ, CAUSEWAY_ORIGIN_Z + 0.15, u * u);
+  camera.position.set(0, 1.72 + Math.sin(t * 9) * 0.015 * u, z);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(0, 1.6, z - 12);
+  avatar.visible = false;
+  if (t >= 2.2) {
     state = "playing"; snapCamera = true;
+    skylineLift?.setDoorsOpen(1);
     causewayHud.show();
-    causewayHud.hint("Still sedated: your legs are waking up", 3);
+    causewayHud.title("Sector 03 of 03", "The Glass Causeway", 2.4);
   }
+}
+
+function skipLaunch() {
+  launchTimer = Math.max(launchTimer, 2.15);
 }
 
 function clearPostLooks() {
@@ -1720,7 +1957,10 @@ function updateGame(dt, time) {
       // extraction valve - rather than on a hard-coded z. If the player somehow
       // runs past the end, fall through to the lift anyway. Either way they
       // run on, centre lane, into the Calibration Lift.
-      if (foundry && (foundryExit || foundryDistance() > foundry.route.totalLength - 4)) {
+      if (runKind === "endless") {
+        // Endless: no lift - at the end of the foundry, a new layout, faster.
+        if (foundry && foundryDistance() > foundry.route.totalLength - 4) foundryLap();
+      } else if (foundry && (foundryExit || foundryDistance() > foundry.route.totalLength - 4)) {
         foundryExit = true;
         lane = 1;
         if (foundryLift && runZ <= foundryLift.root.position.z) {
@@ -1880,7 +2120,7 @@ function openPause() {
   music.pauseDuck();
   if (currentLevel === 1) level1Audio.setPaused(true);
   if (currentLevel === 3) meltdown?.setPaused(true);
-  ui.pauseLevel.textContent = `0${currentLevel} / 03`;
+  ui.pauseLevel.textContent = `0${sectorNumber()} / 03`;
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
   ui.pauseAmmo.textContent = ammo;
   ui.pauseHealth.textContent = Math.max(0, Math.round(health));
@@ -1931,8 +2171,8 @@ const storyBeats = [
   "Ascension Tower. Level 212. The Meridian resonance laboratory. 03:47.",
   "Trial seven ran through the night. It failed. The subject did not die.",
   "Doctor Vale armed the demolition charges to bury what she made.",
-  "You are Subject Seven. Glass shatters at your touch.",
-  "Three sectors stand between you and the control core. Get out.",
+  "You are Subject Seven. You wake in the basement, and someone is on your side.",
+  "The foundry, the labs, the skyline. A helicopter waits on the roof. Get out.",
 ];
 let storyTimeouts = [];
 let storyPlaying = false;
@@ -2005,8 +2245,12 @@ for (const button of characterButtons) {
 showCharacterChoice();
 loadPlayerBody();
 
-$("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); beginLaunch(); });
-ui.endlessButton.addEventListener("click", () => { if (!ui.endlessButton.disabled) startEndless(); });
+$("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); startCampaign(); });
+ui.endlessButton.addEventListener("click", () => { ui.start.classList.remove("active"); refreshEndlessMenu(); ui.endless.classList.add("active"); });
+for (const button of document.querySelectorAll("[data-endless]")) {
+  button.addEventListener("click", () => startEndless(button.dataset.endless));
+}
+$("#endlessBackButton").addEventListener("click", () => { ui.endless.classList.remove("active"); ui.start.classList.add("active"); });
 $("#previewButton").addEventListener("click", startPreview);
 $("#manualButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.manual.classList.add("active"); });
 $("#manualBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
@@ -2016,9 +2260,9 @@ $("#settingsBackButton").addEventListener("click", closeSettings);
 $("#pauseButton").addEventListener("click", () => { paused ? closePause() : openPause(); });
 $("#resumeButton").addEventListener("click", closePause);
 $("#pauseSettingsButton").addEventListener("click", () => openSettings("pause"));
-$("#restartRunButton").addEventListener("click", () => { closePause(); resetGame(); });
+$("#restartRunButton").addEventListener("click", () => { closePause(); restartRun(); });
 $("#quitButton").addEventListener("click", quitToMenu);
-$("#restartButton").addEventListener("click", () => { resetGame(); });
+$("#restartButton").addEventListener("click", () => { restartRun(); });
 $("#endMenuButton").addEventListener("click", quitToMenu);
 document.addEventListener("click", (event) => {
   const button = event.target.closest("button");
@@ -2087,7 +2331,7 @@ function placeReticle() {
   ui.reticle.style.top = `${((1 - pointer.y) / 2) * innerHeight}px`;
 }
 addEventListener("pointerdown", (event) => {
-  if (state === "launch" && causeway) { causeway.skipIntro(); return; }
+  if (state === "launch" && causeway) { skipLaunch(); return; }
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
@@ -2114,20 +2358,21 @@ addEventListener("keydown", (event) => {
     if (photoActive) togglePhoto();
     else if (state === "preview") endPreview();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
+    else if (ui.endless.classList.contains("active")) { ui.endless.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.settings.classList.contains("active")) closeSettings();
     else if (storyPlaying) finishStory();
     else if (paused) closePause();
     else openPause();
     return;
   }
-  if (state === "launch" && causeway) { causeway.skipIntro(); return; }
+  if (state === "launch" && causeway) { skipLaunch(); return; }
   // Level 3 has its own controls; the keys it uses are not also acted on
   // here (Esc, the demo jumps, H and V still are).
   if (currentLevel === 3 && meltdown && state === "playing" && !paused && meltdown.onKeyDown(event)) return;
   if (event.code === "KeyP") { togglePhoto(); return; }
   if (photoActive) return;
   if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
-  if (event.code === "KeyR" && state === "ended") { level1Audio.uiClick(); resetGame(); return; }
+  if (event.code === "KeyR" && state === "ended") { level1Audio.uiClick(); restartRun(); return; }
   if (event.code === "KeyF" && !event.repeat) { settings.hud.fps = !settings.hud.fps; saveSettings(); applySettingsToControls(); }
   if (event.code === "KeyM" && !event.repeat) { settings.hud.minimap = !settings.hud.minimap; saveSettings(); applySettingsToControls(); }
   if (event.code === "KeyH" && !event.repeat) document.body.classList.toggle("hud-hidden");

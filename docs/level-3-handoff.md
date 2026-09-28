@@ -195,6 +195,20 @@ patients can be lured off the ledge; draw-call counts before/after.
 
 ## 7. How it is wired into `main.js` (done)
 
+**Story order (changed):** Sector 01 the Foundry (basement) -> Sector 02 the
+Meltdown's corridors (the labs) -> Sector 03 the Glass Causeway (the
+skyline) -> the Roof (this module's Phase B) as the finale. `MeltdownGame`
+runs twice: mode `"corridor"` for the Labs (it stops after the glass lift,
+emitting `corridor-complete`) and `enterRoof()` for the Roof. `main.js`
+keeps `currentLevel` as the *environment* id (1 Causeway, 2 Foundry, 3
+Meltdown) and shows the story order via `sectorNumber()`. **Endless** is
+separate: `startEndless("foundry" | "labs" | "skyline" | "roof")` - the
+Labs as mode `"endless-labs"` (reshuffled laps via `MeltdownLevel`'s
+`seed`, 7 % faster each), the Roof as `"endless-roof"` (`RoofLevel`'s
+`endless`: no helicopter, waves forever). Demo keys 1-4 jump to the four
+story stages.
+
+
 Level 3 is one module, `src/levels/meltdown/game.js` (`MeltdownGame`): its own
 scene, camera, composer, HUD, audio, runner rules, camera rigs and roof input
 (everything that used to be in the preview's host script). Both hosts drive

@@ -100,7 +100,7 @@ export class CausewayHud {
     this.mapFrame = this.mapEl.querySelector(".cw-map-frame");
 
     this.introEl = el("div", "cw-intro", `
-      <span>Sector 01 of 03</span>
+      <span>Sector 03 of 03</span>
       <h2>The Glass Causeway</h2>
       <p>Observation wing, level 212. The demolition charges are armed. Reach the Calibration Lift.</p>
       <ul></ul>`);
