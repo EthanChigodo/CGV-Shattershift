@@ -105,6 +105,7 @@ During a run, press `1`, `2`, `3`, `4` or `5` (see Controls). These shortcuts ar
 - [`docs/test-plan-level-1.md`](./docs/test-plan-level-1.md) - automated checks, bug log, manual test checklist.
 - [`docs/level-2-foundry.md`](./docs/level-2-foundry.md) and [`docs/test-plan-level-2.md`](./docs/test-plan-level-2.md) - Level 2.
 - [`docs/elevators.md`](./docs/elevators.md) - the elevators: the Gravity Fault lift (Level 2 to 3), how it plugs into `main.js`, and the plan for Level 3's lifts.
+- [`docs/figure-wear-shader.md`](./docs/figure-wear-shader.md) - the player figure (lab subject: scrubs, wristband, IV port) and its wear shader - clean, dusty, bloodied, geared up - block by block.
 - [`docs/credits.md`](./docs/credits.md) - credits and asset register.
 - [`docs/pull-request-level-1.md`](./docs/pull-request-level-1.md) - pull request description and push steps for Level 1.
 
