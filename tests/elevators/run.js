@@ -25,7 +25,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readFile, mkdir } from "node:fs/promises";
 import { serve } from "../foundry/lib/server.js";
-import * as checks from "./checks/gravity-lift.js";
+import * as gravityChecks from "./checks/gravity-lift.js";
+import * as figureChecks from "./checks/figure.js";
+import * as quietChecks from "./checks/quiet-ride.js";
+
+const checks = { ...gravityChecks, ...figureChecks, ...quietChecks };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
@@ -41,6 +45,16 @@ const SHOTS = [
   ["gravity-lift-launcher", 12.55, [0, 0]],
   ["gravity-lift-pickup", 14.3, [0, 0]],
   ["gravity-lift-rising", 28.0, [0, 0]],
+];
+
+/** The quiet ride (cutscene 7): [file name, seconds into it]. */
+const QUIET_SHOTS = [
+  ["quiet-ride-corner", 3.6],
+  ["quiet-ride-low", 5.2],
+  ["quiet-ride-radio", 7.0],
+  ["quiet-ride-sitting", 12.0],
+  ["quiet-ride-standing", 15.0],
+  ["quiet-ride-doors", 19.2],
 ];
 
 /** The clamps: [file name, clamps to lock first] - one shot per camera. */
@@ -133,6 +147,21 @@ async function main() {
       await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 84 });
       console.log(`shot docs/images/elevators/${name}.jpg`);
     }
+    for (const [name, at] of QUIET_SHOTS) {
+      await open();
+      await page.evaluate(async (seconds) => {
+        const d = globalThis.__dbg;
+        const w0 = performance.now();
+        while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
+        d.resetGame("story");
+        d.demoQuietRide();
+        d.step(Math.round(seconds * 60), 1 / 60);
+        d.render();
+      }, at);
+      await page.evaluate(() => globalThis.__dbg.render());
+      await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 84 });
+      console.log(`shot docs/images/elevators/${name}.jpg`);
+    }
     for (const [name, lockFirst] of CLAMP_SHOTS) {
       await open();
       await page.evaluate(async (n) => {
@@ -160,6 +189,89 @@ async function main() {
       await page.screenshot({ path: path.join(dir, `${name}.jpg`), type: "jpeg", quality: 84 });
       console.log(`shot docs/images/elevators/${name}.jpg`);
     }
+    // The figure's four wear stages, back and front (docs/figure-wear-shader.md).
+    const figDir = path.join(ROOT, "docs/images/figure");
+    await mkdir(figDir, { recursive: true });
+    for (const who of ["playerFemale", "playerMale"]) {
+      await open();
+      await page.evaluate(async (name) => {
+        const THREE = await import("/src/three.js");
+        const { loadMeltdownAssets } = await import("/src/levels/meltdown/assets.js");
+        const { PlayerAvatar } = await import("/src/levels/meltdown/player.js");
+        const { figureStage } = await import("/src/figure/look.js");
+        document.querySelectorAll("body > *").forEach((e) => { e.style.display = "none"; });
+        const r = new THREE.WebGLRenderer({ antialias: true });
+        r.setSize(960, 480);
+        r.outputColorSpace = THREE.SRGBColorSpace;
+        r.toneMapping = THREE.ACESFilmicToneMapping;
+        r.domElement.style.cssText = "position:fixed;left:0;top:0;z-index:99";
+        document.body.appendChild(r.domElement);
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x3a4048);
+        scene.add(new THREE.HemisphereLight(0xdde6ff, 0x3a3024, 1.6));
+        const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+        sun.position.set(1.5, 3, 4);
+        scene.add(sun);
+        const assets = await loadMeltdownAssets(new URL("./assets/meltdown/", location.href).href, { names: [name] });
+        [0, 1, 2, 3].forEach((position, i) => {
+          const { wear, gear } = figureStage(position);
+          for (const back of [1, 0]) {
+            const a = new PlayerAvatar();
+            a.setWear(wear);
+            a.setGear(gear);
+            a.setModel(assets.get(name).template);
+            a.uniforms.uHold.value = 0;
+            a.root.position.set((i * 2 + (1 - back)) * 0.95 - 3.3, 0, 0);
+            a.root.rotation.y = back ? 0 : Math.PI;
+            scene.add(a.root);
+          }
+        });
+        const cam = new THREE.PerspectiveCamera(26, 2, 0.1, 50);
+        cam.position.set(0, 1.0, 9.8);
+        cam.lookAt(0, 0.92, 0);
+        r.render(scene, cam);
+      }, who);
+      await page.screenshot({ path: path.join(figDir, `wear-stages-${who === "playerFemale" ? "female" : "male"}.jpg`), type: "jpeg", quality: 86, clip: { x: 0, y: 60, width: 960, height: 400 } });
+      console.log(`shot docs/images/figure/wear-stages-${who === "playerFemale" ? "female" : "male"}.jpg`);
+    }
+    // The four skin tones, both characters (docs/figure-wear-shader.md).
+    await open();
+    await page.evaluate(async () => {
+      const THREE = await import("/src/three.js");
+      const { loadMeltdownAssets } = await import("/src/levels/meltdown/assets.js");
+      const { PlayerAvatar } = await import("/src/levels/meltdown/player.js");
+      document.querySelectorAll("body > *").forEach((e) => { e.style.display = "none"; });
+      const r = new THREE.WebGLRenderer({ antialias: true });
+      r.setSize(960, 480);
+      r.outputColorSpace = THREE.SRGBColorSpace;
+      r.toneMapping = THREE.ACESFilmicToneMapping;
+      r.domElement.style.cssText = "position:fixed;left:0;top:0;z-index:99";
+      document.body.appendChild(r.domElement);
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x3a4048);
+      scene.add(new THREE.HemisphereLight(0xdde6ff, 0x3a3024, 1.6));
+      const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+      sun.position.set(1.5, 3, 4);
+      scene.add(sun);
+      const assets = await loadMeltdownAssets(new URL("./assets/meltdown/", location.href).href, { names: ["playerFemale", "playerMale"] });
+      ["light", "medium", "brown", "dark"].forEach((tone, i) => {
+        ["playerFemale", "playerMale"].forEach((who, j) => {
+          const a = new PlayerAvatar();
+          a.setSkinTone(tone);
+          a.setModel(assets.get(who).template);
+          a.uniforms.uHold.value = 0;
+          a.root.position.set((i * 2 + j) * 0.95 - 3.3, 0, 0);
+          a.root.rotation.y = Math.PI;
+          scene.add(a.root);
+        });
+      });
+      const cam = new THREE.PerspectiveCamera(26, 2, 0.1, 50);
+      cam.position.set(0, 1.0, 9.8);
+      cam.lookAt(0, 0.92, 0);
+      r.render(scene, cam);
+    });
+    await page.screenshot({ path: path.join(figDir, "skin-tones.jpg"), type: "jpeg", quality: 86, clip: { x: 0, y: 60, width: 960, height: 400 } });
+    console.log("shot docs/images/figure/skin-tones.jpg");
     console.log();
   }
 

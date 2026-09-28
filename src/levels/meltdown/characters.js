@@ -41,6 +41,9 @@ export const CHARACTER_PROFILES = {
   patient: { rotateX: Math.PI / 2, height: 1.74, repairBones: true },
   scientistRadioman: { rotateX: Math.PI / 2, height: 1.82 },
   scientistRust: { rotateX: 0, height: 1.84 },
+  // The player: a lab subject in patient scrubs. The wristband, the IV
+  // port and all the damage are drawn by the figure's wear shader
+  // (src/figure/look.js).
   playerFemale: {
     rotateX: 0,
     height: 1.68,
@@ -209,10 +212,14 @@ export function atlasMerge(root, { recolor = {}, roughness = 0.78 } = {}) {
   let hasAlpha = false;
 
   const cellOf = new Map();
+  // Each material's rectangle in atlas UV (u0, v0, u1, v1), by material
+  // name - the figure's wear shader tells shirt from skin from shoes by it.
+  const cells = {};
   materials.forEach((material, index) => {
     const cx = (index % cols) * cell;
     const cy = Math.floor(index / cols) * cell;
     cellOf.set(material, { cx, cy });
+    cells[material.name] = [cx / canvas.width, cy / canvas.height, (cx + cell) / canvas.width, (cy + cell) / canvas.height];
     ctx.globalCompositeOperation = "source-over";
     const image = material.map?.image;
     if (image && (image.width || image.videoWidth)) {
@@ -361,6 +368,7 @@ export function atlasMerge(root, { recolor = {}, roughness = 0.78 } = {}) {
   for (const m of meshes) m.parent?.remove(m);
   for (const m of materials) m.dispose?.();
   merged.userData.atlas = texture;
+  merged.userData.cells = cells;
   return merged;
 }
 
@@ -384,6 +392,7 @@ export function buildCharacterTemplate(scene, profileName) {
     const mesh = new THREE.Mesh(merged.geometry, merged.material);
     mesh.name = "CharacterMerged";
     mesh.userData.atlas = merged.userData.atlas;
+    mesh.userData.cells = merged.userData.cells;
     clean.add(mesh);
     clean.userData.character = { profile: profileName, skinned: false, height: profile.height };
     return clean;
