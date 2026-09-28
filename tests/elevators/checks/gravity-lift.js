@@ -126,7 +126,10 @@ export const cableSnap = {
       d.demoGravityLift();
       const ride = d.gravityLift;
       const events = [];
-      for (const name of ["tremor", "flicker", "cable-snap", "brake", "brake-slam", "resume"]) ride.events.on(name, (p) => events.push([name, p]));
+      for (const name of ["tremor", "flicker", "glass-crack", "glass-break", "cable-snap", "brake", "brake-slam", "resume"]) ride.events.on(name, (p) => events.push([name, p]));
+      let floating = 0;
+      let restingAfter = null;
+      let panesGone = [];
       const phases = [];
       let minG = Infinity;
       let maxG = -Infinity;
@@ -143,24 +146,33 @@ export const cableSnap = {
           if (snapY === null) snapY = ride.state.cabinY;
           if (ride.state.pt > 0.1) minG = Math.min(minG, ride.state.gEff);
           if (ride.state.lights.main === 0 && ride.state.lights.red === 1) blackout = true;
+          // Loose things off the floor (rest heights are all under 0.25 m).
+          floating = Math.max(floating, ride.debris.items.filter((it) => it.object.position.y > it.rest + 0.3).length);
+        }
+        if (phase === "resume" && restingAfter === null) {
+          restingAfter = ride.debris.items.filter((it) => it.object.position.y < it.rest + 0.05).length;
+          panesGone = Object.entries(ride.glass.panes).filter(([, p]) => p.state === "gone").map(([n]) => n);
         }
         if (phase === "brake") maxG = Math.max(maxG, ride.state.gEff);
         lowest = Math.min(lowest, ride.state.cabinY);
         sparks = Math.max(sparks, ride.sparks.heat.filter((h) => h > 0).length);
       }
       const slam = events.find(([name]) => name === "brake-slam")?.[1];
-      return { phases, events: events.map(([name]) => name), minG, maxG, blackout, sparks, dropped: slam?.dropped ?? 0, minVelocity: ride.state.minVelocity };
+      return { phases, events: events.map(([name]) => name), minG, maxG, blackout, sparks, dropped: slam?.dropped ?? 0, minVelocity: ride.state.minVelocity, floating, restingAfter, items: ride.debris.items.length, panesGone };
     });
     const failures = [];
     const order = ["board", "climb", "tremor", "freefall", "brake", "resume"];
     if (r.phases.join() !== order.join()) failures.push(`phases ran ${r.phases.join(" > ")}`);
-    for (const name of ["tremor", "flicker", "cable-snap", "brake", "brake-slam", "resume"]) if (!r.events.includes(name)) failures.push(`no "${name}" event`);
+    for (const name of ["tremor", "flicker", "glass-crack", "glass-break", "cable-snap", "brake", "brake-slam", "resume"]) if (!r.events.includes(name)) failures.push(`no "${name}" event`);
+    if (r.floating < 3) failures.push(`only ${r.floating} loose objects floated in free fall`);
+    if (r.restingAfter !== r.items) failures.push(`${r.items - r.restingAfter} loose objects still in the air after the brakes`);
+    if (r.panesGone.join() !== "left,right") failures.push(`panes blown out: ${r.panesGone.join(", ") || "none"} (want left, right)`);
     if (Math.abs(r.minG) > 0.5) failures.push(`not weightless in free fall (felt gravity ${r.minG.toFixed(2)})`);
     if (r.maxG < 30) failures.push(`the brakes did not slam (peak ${r.maxG.toFixed(1)} m/s²)`);
     if (r.dropped < 15 || r.dropped > 30) failures.push(`fell ${r.dropped.toFixed(1)} m (want about 20)`);
     if (!r.blackout) failures.push("the lights did not black out with the emergency light on");
     if (r.sparks < 50) failures.push(`only ${r.sparks} sparks at once`);
-    return { failures, notes: { dropped: `${r.dropped.toFixed(1)} m`, fastest: `${(-r.minVelocity).toFixed(1)} m/s`, brakeG: `${(r.maxG / 9.8).toFixed(1)} g`, sparks: r.sparks } };
+    return { failures, notes: { dropped: `${r.dropped.toFixed(1)} m`, fastest: `${(-r.minVelocity).toFixed(1)} m/s`, brakeG: `${(r.maxG / 9.8).toFixed(1)} g`, sparks: r.sparks, floated: r.floating } };
   },
 };
 

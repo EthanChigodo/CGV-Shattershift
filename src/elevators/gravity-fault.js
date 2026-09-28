@@ -30,14 +30,22 @@
  *   board     doors close behind Subject 07, the Foundry glowing through them
  *             (skipped when the player boarded in Level 2's Calibration Lift)
  *   climb     launch up the outside of Ascension Tower
- *   tremor    the building shakes, the lights flicker, the lift stalls
+ *   tremor    the building shakes, the lights flicker, the lift stalls; the
+ *             left pane cracks, the cracks spread, and it blows out
  *   freefall  the cable snaps: blackout, red emergency light, two seconds
- *             of free fall, the floor counter running backwards
- *   brake     the emergency brakes bite - sparks - and slam the lift to a stop
+ *             of free fall, the floor counter running backwards; loose
+ *             things and fallen shards drift up off the floor
+ *   brake     the emergency brakes bite - sparks - and slam the lift to a
+ *             stop; everything slams down and the right pane blows out
  *   resume    the brakes release and the lift climbs on; fade out
  *
+ * Everything loose in the cabin (glass.js shards that fell in, debris.js)
+ * is simulated in the cabin's own frame under the gravity felt there,
+ * `state.gEff` = 9.8 + the cabin's acceleration: normal while it climbs,
+ * zero in free fall, about 7 g as the brakes slam.
+ *
  * Events (ride.events.on) for sound: shot, depart, tremor, flicker,
- * cable-snap, brake, brake-slam, resume, arrive.
+ * glass-crack, glass-break, cable-snap, brake, brake-slam, resume, arrive.
  *
  * Scene hierarchy:
  *   RideScene
@@ -48,7 +56,9 @@
  *   |   |-- cabin light, emergency beacon
  *   |   `-- PlayerRoot   the character picked on the start screen (Level 3's
  *   |                    PlayerAvatar), or a simple figure until it loads
+ *   |   |-- shards that fell in, loose debris (glass.js, debris.js)
  *   |-- Sparks           brake sparks (sparks.js)
+ *   |-- shards           blown out, falling down the shaft (glass.js)
  *   `-- lights           moon, fire uplight from below, hemisphere, spark glow
  */
 
@@ -57,6 +67,8 @@ import { createRideUniforms } from "./shaders.js";
 import { buildWorld, buildShaft, buildCabin, buildFigure, Owned, STOREY } from "./kit.js";
 import { CameraShake } from "./shake.js";
 import { Sparks } from "./sparks.js";
+import { CabinGlass } from "./glass.js";
+import { CabinDebris } from "./debris.js";
 import { ElevatorHud } from "../ui/elevator-hud.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
 
@@ -154,6 +166,8 @@ export class GravityFaultRide {
     this.cabin.root.add(this.figure.root);
     this.sparks = new Sparks(700);
     scene.add(this.world.root, this.shaft.root, this.cabin.root, this.sparks.points);
+    this.glass = new CabinGlass(this.cabin, scene);
+    this.debris = new CabinDebris(this.cabin.root);
 
     scene.add(new THREE.HemisphereLight(0x39405a, 0x3a1a0c, 0.7));
     const moon = new THREE.DirectionalLight(0x8aa0d0, 0.55);
@@ -256,6 +270,8 @@ export class GravityFaultRide {
     this.uniforms.uFlash.value = s.flash;
 
     this.figure.pose(0, time, dt);
+    this.glass.update(dt, s.gEff);
+    this.debris.update(dt, s.gEff);
     this.sparks.update(dt);
     this.sparkLight.intensity = Math.max(0, this.sparkLight.intensity - dt * 40);
 
@@ -282,6 +298,10 @@ export class GravityFaultRide {
       s.flash = 1;
       this.shake.add(0.85);
       this.shake.kick(0, 0.22, 0);
+      // The floor drops away: everything loose lifts off it.
+      this.debris.jolt(1);
+      this.glass.jolt(1);
+      this._crack("front", [0.72, 0.3], 0.9, 0.55);
       this.hud.alert("CABLE FAILURE", "danger");
       this.events.emit("cable-snap", { floor: START_FLOOR + s.cabinY / STOREY });
     } else if (name === "brake") {
@@ -321,16 +341,28 @@ export class GravityFaultRide {
       once("quake1", 0.15, () => {
         this.shake.add(0.5);
         s.flash = 0.8;
+        this.debris.jolt(0.45);
+        this._crack("left", [0.32, 0.62], 1.0, 0.45);
         this.hud.alert("SEISMIC EVENT", "danger");
       });
       once("quake2", 1.5, () => {
         this.shake.add(0.55);
         this.shake.kick(0.08, -0.1, 0);
+        this.debris.jolt(0.55);
+        this.glass.jolt(0.4);
+        this._crack("left", [0.32, 0.62], 0.8, 0.85);
+        this._crack("right", [0.7, 0.4], 0.8, 0.35);
         this.events.emit("flicker", {});
       });
       once("stall", 2.6, () => {
         this.shake.add(0.35);
+        this.debris.jolt(0.3);
         this.hud.alert("LIFT STALLED", "danger");
+      });
+      once("blowout", 3.1, () => {
+        this.shake.add(0.4);
+        this.shake.kick(0.12, 0, 0);
+        this._shatter("left", { outward: 0.8, force: 7 });
       });
       // Flickering from the second quake; strip B dies for good.
       const flick = pt > 1.5 ? flicker(time, 1.3) : 1;
@@ -362,6 +394,8 @@ export class GravityFaultRide {
           this.shake.add(1);
           this.shake.kick(0, -0.35, 0);
           s.flash = 0.6;
+          this._shatter("right", { outward: 0.7, force: 8 });
+          this._crack("front", [0.72, 0.3], 0.5, 0.85);
           this.events.emit("brake-slam", { dropped: s.fallFrom - s.cabinY });
         });
         this._grind(dt, Math.max(0, 60 * (1 - (pt - SLAM) / 0.8)), 0.3);
@@ -375,6 +409,16 @@ export class GravityFaultRide {
       s.fault = Math.max(0.35, s.fault - dt * 0.3);
       this.shake.floor = 0.06;
     }
+  }
+
+  _crack(pane, impact, seconds, amount) {
+    this.glass.crack(pane, impact, seconds, amount);
+    this.events.emit("glass-crack", { pane, amount });
+  }
+
+  _shatter(pane, options) {
+    this.glass.shatter(pane, { ...options, cabinVelocity: this.state.velocity });
+    this.events.emit("glass-break", { pane });
   }
 
   /** Brake shoes grinding on the rails: sparks per second, and their glow. */
@@ -519,6 +563,8 @@ export class GravityFaultRide {
     this.visible = false;
     this._disposeAvatar();
     this.sparks.dispose();
+    this.glass.dispose();
+    this.debris.dispose();
     this.events.clear();
     this.hud.dispose();
     this.owned.dispose();
