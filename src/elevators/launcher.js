@@ -75,6 +75,10 @@ export class LauncherProp {
     const box = new THREE.Box3().setFromObject(model);
     model.position.sub(box.getCenter(new THREE.Vector3()));
     this.root.add(model);
+    // Same camera layers as the prop (the diagnostic view marks it).
+    model.traverse((o) => {
+      o.layers.mask = this.root.layers.mask;
+    });
     this.standIn.visible = false;
     this.model = model;
   }
@@ -105,7 +109,12 @@ export class LauncherProp {
   }
 
   update(dt, gEff) {
-    if (this.state === "falling") {
+    if (this.state === "held") {
+      // Kicks back into the shoulder on a shot, then settles.
+      this.recoil = Math.max(0, (this.recoil ?? 0) - dt * 7);
+      this.root.position.set(HELD.x, HELD.y, HELD.z + this.recoil * 0.1);
+      this.root.rotation.x = this.recoil * 0.15;
+    } else if (this.state === "falling") {
       const p = this.root.position;
       this.v.y -= gEff * dt;
       p.addScaledVector(this.v, dt);
@@ -159,6 +168,7 @@ export class LauncherProp {
       _m.decompose(this.root.position, this.root.quaternion, _a);
       if (k >= 1) {
         this.state = "held";
+        this.recoil = 0;
         this.target.add(this.root);
         this.root.position.copy(HELD);
         this.root.quaternion.identity();

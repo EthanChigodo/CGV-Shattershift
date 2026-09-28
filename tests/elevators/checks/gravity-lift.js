@@ -169,7 +169,7 @@ export const cableSnap = {
       return { phases, events: events.map(([name]) => name), minG, maxG, blackout, sparks, dropped: slam?.dropped ?? 0, minVelocity: ride.state.minVelocity, floating, restingAfter, items: ride.debris.items.length, panesGone, launcherLanded, launcherState: held?.state, launcherOn: held?.on, holding: held?.holding };
     });
     const failures = [];
-    const order = ["board", "climb", "tremor", "freefall", "brake", "launcher", "resume"];
+    const order = ["board", "climb", "tremor", "freefall", "brake", "launcher", "clamps", "resume"];
     if (r.phases.join() !== order.join()) failures.push(`phases ran ${r.phases.join(" > ")}`);
     for (const name of ["tremor", "flicker", "glass-crack", "glass-break", "cable-snap", "brake", "brake-slam", "launcher-thud", "launcher-land", "pickup", "resume"]) if (!r.events.includes(name)) failures.push(`no "${name}" event`);
     if (!r.launcherLanded) failures.push("the launcher never landed on the cabin floor");
@@ -184,6 +184,80 @@ export const cableSnap = {
     if (!r.blackout) failures.push("the lights did not black out with the emergency light on");
     if (r.sparks < 50) failures.push(`only ${r.sparks} sparks at once`);
     return { failures, notes: { dropped: `${r.dropped.toFixed(1)} m`, fastest: `${(-r.minVelocity).toFixed(1)} m/s`, brakeG: `${(r.maxG / 9.8).toFixed(1)} g`, sparks: r.sparks, floated: r.floating } };
+  },
+};
+
+/**
+ * The clamps, played: aim at each one on screen and fire. Each lock changes
+ * the camera (first person, outside, top-down diagnostic); all three earns
+ * the bonus. Left alone, they force-lock with no bonus and the ride still
+ * finishes - it can never trap the player.
+ */
+export const clamps = {
+  name: "brake clamps",
+  async run(page) {
+    const r = await page.evaluate(async () => {
+      const d = globalThis.__dbg;
+      const w0 = performance.now();
+      while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
+      const toClamps = () => {
+        d.resetGame("story");
+        d.demoGravityLift();
+        const ride = d.gravityLift;
+        for (let i = 0; i < 60 * 40 && ride.phase !== "clamps"; i += 1) d.step(1, 1 / 60);
+        return ride;
+      };
+
+      // Played: aim at each clamp and fire.
+      let ride = toClamps();
+      const shots = [];
+      const events = [];
+      for (const name of ["clamp-shot", "clamp-lock", "clamps-locked", "clamps-forced"]) ride.events.on(name, (p) => events.push(name));
+      const V = new d.THREE.Vector3();
+      for (let n = 0; n < 3; n += 1) {
+        const target = ride.clamps.clamps.find((c) => !c.locked);
+        shots.push(ride.currentShot());
+        for (let k = 0; k < 4; k += 1) {
+          const cam = ride.currentShot() === "diagnostic" ? ride.diag.camera : ride.camera;
+          ride.clamps.worldPosition(target, V).project(cam);
+          const x = Math.max(-1, Math.min(1, V.x));
+          const y = Math.max(-1, Math.min(1, V.y));
+          d.setPointer(x, y);
+          ride.onPointerMove(x, y);
+          d.step(20, 1 / 60);
+        }
+        const fired = ride.fire();
+        d.step(30, 1 / 60);
+        if (!fired || !target.locked) return { error: `clamp ${n} (${ride.currentShot()}) did not lock: fired ${fired}` };
+      }
+      const played = { shots, events, stabilised: ride.result.stabilised, bonus: ride.result.bonus };
+      for (let i = 0; i < 60 * 20 && d.gravityLift; i += 1) d.step(1, 1 / 60);
+      played.finished = !d.gravityLift;
+
+      // Left alone.
+      ride = toClamps();
+      const idleEvents = [];
+      ride.events.on("clamps-forced", () => idleEvents.push("clamps-forced"));
+      let secs = 0;
+      while (d.gravityLift === ride && ride.phase === "clamps" && secs < 20) {
+        d.step(6, 1 / 60);
+        secs += 0.1;
+      }
+      const idle = { events: idleEvents, stabilised: ride.result.stabilised, bonus: ride.result.bonus, seconds: secs };
+      for (let i = 0; i < 60 * 20 && d.gravityLift; i += 1) d.step(1, 1 / 60);
+      idle.finished = !d.gravityLift;
+      return { played, idle };
+    });
+    const failures = [];
+    if (r.error) return { failures: [r.error], notes: {} };
+    const { played, idle } = r;
+    if (played.shots.join() !== "interior,front,diagnostic") failures.push(`cameras per clamp: ${played.shots.join(", ")} (want interior, front, diagnostic)`);
+    if (played.stabilised !== 3 || !played.events.includes("clamps-locked")) failures.push(`played: ${played.stabilised}/3 locked`);
+    if (!(played.bonus > 0)) failures.push("no bonus for locking all three");
+    if (!played.finished) failures.push("the ride did not finish after the clamps");
+    if (!idle.events.includes("clamps-forced") || idle.stabilised !== 0 || idle.bonus !== 0) failures.push(`left alone: ${JSON.stringify(idle)}`);
+    if (!idle.finished) failures.push("left alone, the ride did not finish");
+    return { failures, notes: { bonus: played.bonus, forcedAfter: `${idle.seconds.toFixed(1)} s` } };
   },
 };
 

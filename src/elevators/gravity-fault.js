@@ -41,6 +41,12 @@
  *             experiment, falling from the lab above - crashes through the
  *             glass ceiling; Subject 07 picks it up and carries it into
  *             Level 3
+ *   clamps    the brakes are slipping. Shoot the three brake clamps with
+ *             the launcher (the brief's stabilisers); each hit changes the
+ *             camera - first person, outside, then the top-down orthographic
+ *             diagnostic view - and a diagnostic monitor shows that view
+ *             until then. Out of time, the clamps force-lock with a jolt
+ *             and no bonus: the ride never fails
  *   resume    the brakes release and the lift climbs on; fade out
  *
  * Everything loose in the cabin (glass.js shards that fell in, debris.js)
@@ -50,7 +56,8 @@
  *
  * Events (ride.events.on) for sound: shot, depart, tremor, flicker,
  * glass-crack, glass-break, cable-snap, brake, brake-slam, launcher-thud,
- * launcher-land, pickup, resume, arrive.
+ * launcher-land, pickup, clamps, clamp-shot, clamp-lock, clamps-locked,
+ * clamps-forced, resume, arrive.
  *
  * Scene hierarchy:
  *   RideScene
@@ -76,6 +83,8 @@ import { CabinGlass } from "./glass.js";
 import { CabinDebris } from "./debris.js";
 import { Performer } from "./acting.js";
 import { LauncherProp } from "./launcher.js";
+import { BrakeClamps } from "./clamps.js";
+import { DiagnosticView } from "./diagnostic.js";
 import { ElevatorHud } from "../ui/elevator-hud.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
 
@@ -85,6 +94,11 @@ const GRAVITY = 9.8;
 const CRUISE = 13;
 const ACCEL = 6;
 
+/** Seconds to shoot the three clamps before they force-lock. */
+export const CLAMP_TIME = 10;
+/** Camera for the clamps, by how many are locked: 0, 1, 2, then all three. */
+const CLAMP_SHOTS = ["interior", "front", "diagnostic", "front"];
+
 /** Phase lengths in seconds, in order. */
 export const PHASES = [
   ["board", 1.8],
@@ -93,6 +107,7 @@ export const PHASES = [
   ["freefall", 2.0],
   ["brake", 1.6],
   ["launcher", 3.9],
+  ["clamps", CLAMP_TIME + 1],
   ["resume", 3.2],
 ];
 
@@ -181,6 +196,21 @@ export class GravityFaultRide {
     this.glass = new CabinGlass(this.cabin, scene);
     this.debris = new CabinDebris(this.cabin.root);
     this.launcher = new LauncherProp(this.cabin.root, assetBase);
+    this.clamps = new BrakeClamps(this.cabin.root, scene);
+    // The diagnostic view: the structure as a hologram, the clamps and the
+    // character in their own colours on top.
+    this.diag = new DiagnosticView();
+    for (const child of this.cabin.root.children) {
+      if (child !== this.figure.root && child !== this.launcher.root && !child.name.startsWith("BrakeClamp")) this.diag.scan(child);
+    }
+    this.diag.scan(this.shaft.root);
+    this.diag.scan(this.world.tower);
+    this.diag.scan(this.glass.out.mesh);
+    for (const c of this.clamps.clamps) this.diag.mark(c.root);
+    this.diag.mark(this.figure.root);
+    this.diag.mark(this.launcher.root);
+    this.fireCooldown = 0;
+    this.aimTarget = null;
     this.launcher.onLand = (speed) => {
       this.shake.add(0.25);
       this.debris.jolt(0.15);
@@ -292,6 +322,9 @@ export class GravityFaultRide {
     this.glass.update(dt, s.gEff);
     this.debris.update(dt, s.gEff);
     this.launcher.update(dt, s.gEff);
+    this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    const locked = this.clamps.update(dt, time);
+    if (locked >= 0) this._clampLocked(locked);
     this.sparks.update(dt);
     this.sparkLight.intensity = Math.max(0, this.sparkLight.intensity - dt * 40);
 
@@ -335,7 +368,12 @@ export class GravityFaultRide {
       this.events.emit("brake", {});
     } else if (name === "launcher") {
       this.hud.alert(null);
+    } else if (name === "clamps") {
+      this.clamps.show();
+      this.hud.alert("BRAKES SLIPPING // SHOOT THE 3 CLAMPS", "danger");
+      this.events.emit("clamps", {});
     } else if (name === "resume") {
+      this.hud.setClamps(null);
       s.lights = { main: 0.75, a: 1, b: 0, red: 1 };
       this._act((p) => {
         p.setBrace(0.25);
@@ -455,6 +493,8 @@ export class GravityFaultRide {
       }
     } else if (name === "launcher") {
       this._launcherBeat(pt, once);
+    } else if (name === "clamps") {
+      this._clampsBeat(pt, dt, time);
     } else if (name === "resume") {
       s.velocity = Math.min(9, s.velocity + 4 * dt);
       s.lights.main = 0.55 + 0.2 * flicker(time, 3.3);
@@ -526,6 +566,90 @@ export class GravityFaultRide {
     }));
   }
 
+  /**
+   * The brakes slip - the cabin sinks in jerks, the loose clamps grind -
+   * until all three are locked (or time runs out and they force-lock).
+   */
+  _clampsBeat(pt, dt, time) {
+    const s = this.state;
+    const left = Math.max(0, CLAMP_TIME - pt);
+    const done = this.clamps.locked === 3;
+    this.hud.setClamps(this.clamps.locked, 3, done ? null : left);
+    s.lights.main = 0.4 + 0.3 * flicker(time, 2.2);
+    if (!done) {
+      // Slipping: sinking in jerks, the unlocked clamps grinding.
+      const slip = (3 - this.clamps.locked) / 3;
+      s.velocity = -0.7 * slip * (0.6 + 0.4 * Math.abs(Math.sin(pt * 7)));
+      this.shake.floor = 0.1 * slip;
+      for (const c of this.clamps.clamps) {
+        if (c.locked || Math.random() > dt * 30) continue;
+        this.sparks.emit(this.clamps.worldPosition(c, _v), 3, { direction: _dir.set(0, -1, 0), spread: 0.8, speed: 4 });
+      }
+      // The character turns to aim at whatever the crosshair is nearest.
+      this._act((p) => {
+        const c = this.aimTarget ?? this.clamps.clamps.find((k) => !k.locked);
+        if (c) p.attention = p.yawTo(c.root.position.x, c.root.position.z);
+      });
+      if (left <= 0) this._forceClamps();
+    } else {
+      s.velocity *= Math.max(0, 1 - dt * 6);
+      this.shake.floor = 0;
+    }
+  }
+
+  /** Called by the host on a click: fire the launcher at the crosshair. */
+  fire() {
+    if (this.phase !== "clamps" || this.clamps.locked === 3 || this.fireCooldown > 0) return false;
+    this.fireCooldown = 0.2;
+    const from = new THREE.Vector3();
+    if (this.launcher.state === "held") this.launcher.root.localToWorld(from.set(0, 0, -0.7));
+    else this.cabin.root.localToWorld(from.set(0, 1.4, 0));
+    const camera = this.currentShot() === "diagnostic" ? this.diag.camera : this.camera;
+    const target = this.clamps.fire(from, camera, this.pointer);
+    this.launcher.recoil = 1;
+    this.shake.add(0.08);
+    this.events.emit("clamp-shot", { assisted: !!target });
+    return true;
+  }
+
+  /** Is the player aiming right now (for the host's crosshair)? */
+  get wantsAim() {
+    return this.phase === "clamps" && this.clamps.locked < 3;
+  }
+
+  _clampLocked(index) {
+    const s = this.state;
+    const n = this.clamps.locked;
+    this.shake.add(0.3);
+    this.shake.kick(0, 0.05, 0);
+    this.sparks.emit(this.clamps.worldPosition(this.clamps.clamps[index], _v), 60, { direction: _dir.set(0, 1, 0), spread: 1, speed: 5 });
+    if (!s.forced) this.result.stabilised += 1;
+    this.events.emit("clamp-lock", { index, locked: n });
+    if (n === 3 && !s.forced) {
+      const left = Math.max(0, CLAMP_TIME - s.pt);
+      this.result.bonus = this.result.stabilised * 400 + 800 + Math.round(left) * 50;
+      this.hud.alert(`BRAKES LOCKED // +${this.result.bonus}`, "good");
+      this.events.emit("clamps-locked", { bonus: this.result.bonus });
+      // A beat to see it, then on.
+      s.pt = Math.max(s.pt, CLAMP_TIME);
+    }
+  }
+
+  /** Out of time: the remaining clamps slam shut on their own. */
+  _forceClamps() {
+    const s = this.state;
+    if (s.forced) return;
+    s.forced = true;
+    for (const c of this.clamps.clamps) if (!c.locked) this.clamps.lock(c);
+    this.result.bonus = this.result.stabilised * 400;
+    this.shake.add(0.8);
+    this.shake.kick(0, -0.25, 0);
+    this.debris.jolt(0.4);
+    this._act((p) => p.react(0, 0.8));
+    this.hud.alert("CLAMPS FORCED", "danger");
+    this.events.emit("clamps-forced", { stabilised: this.result.stabilised });
+  }
+
   /** Direct the character (no-op for the stand-in figure). */
   _act(fn) {
     if (this.performer) fn(this.performer);
@@ -580,6 +704,7 @@ export class GravityFaultRide {
   currentShot() {
     // For the check harness and screenshots: hold one shot.
     if (this.forceShot) return this.forceShot;
+    if (this.phase === "clamps") return CLAMP_SHOTS[this.clamps.locked];
     const list = SHOTS[this.phase] ?? SHOTS.climb;
     let shot = list[0][1];
     for (const [at, name] of list) if (this.state.pt >= at) shot = name;
@@ -617,6 +742,17 @@ export class GravityFaultRide {
       cam.position.set(1.45 - u * 0.15, y + 1.75, -1.6);
       _look.set(who.x, y + who.y + 1.1, who.z + 0.15);
       cam.fov = 60;
+    } else if (shot === "front") {
+      // Outside, in front of the cabin: all three clamps in view.
+      const u = Math.min(1, s.shotT / 4);
+      cam.position.set(2.8 - u * 1.2, y + 2.3, -9.5 + u * 0.8);
+      _look.set(0, y + 1.7, -1);
+      cam.fov = 58;
+    } else if (shot === "diagnostic") {
+      // Rendered through the orthographic camera (render()); keep this one
+      // sensible for anything that asks.
+      cam.position.set(0, y + 12, 0.01);
+      _look.set(0, y, 0);
     } else if (shot === "roof") {
       // Low in the corner, looking up: the roof caves in.
       cam.position.set(1.5, y + 0.85, -1.55);
@@ -648,8 +784,11 @@ export class GravityFaultRide {
       // First person: look around with the mouse.
       const view = this._view;
       const k = 1 - Math.exp(-dt * 5);
-      view.yaw += (-this.pointer.x * 0.55 - view.yaw) * k;
-      view.pitch += (this.pointer.y * 0.3 - 0.08 - view.pitch) * k;
+      // Wider while aiming at the clamps (they are off to the sides and up).
+      const aiming = this.phase === "clamps";
+      // Pointer right looks right (+X).
+      view.yaw += (this.pointer.x * (aiming ? 0.85 : 0.55) - view.yaw) * k;
+      view.pitch += (this.pointer.y * (aiming ? 0.6 : 0.3) - 0.08 - view.pitch) * k;
       const bob = Math.sin(time * 1.6) * 0.012 * calm;
       cam.position.set(0, y + 1.62 + bob, 0.55);
       _look.set(Math.sin(view.yaw) * 8, y + 1.62 + Math.sin(view.pitch) * 8, 0.55 - Math.cos(view.yaw) * 8);
@@ -659,6 +798,13 @@ export class GravityFaultRide {
     cam.lookAt(_look);
     this.shake.apply(cam);
     cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+
+    // Keep the diagnostic camera over the cabin, and see what is under the crosshair.
+    // Centred a little forward, so the clamps (at the front) sit mid-screen,
+    // clear of the alerts at the top.
+    this.diag.follow(0, y, -1.5, time);
+    this.aimTarget = this.wantsAim ? this.clamps.aim(shot === "diagnostic" ? this.diag.camera : cam, this.pointer) : null;
   }
 
   render() {
@@ -668,7 +814,19 @@ export class GravityFaultRide {
     this.camera.updateProjectionMatrix();
     this.sparks.setViewportHeight(size.y * renderer.getPixelRatio());
     renderer.setRenderTarget(null);
+    if (this.currentShot() === "diagnostic") {
+      this.diag.render(renderer, this.scene);
+      this.hud.monitor(null, true);
+      return;
+    }
     renderer.render(this.scene, this.camera);
+    // The diagnostic monitor, bottom right, while the brakes slip.
+    if (this.wantsAim) {
+      const w = Math.round(Math.min(240, size.x * 0.26));
+      const rect = { x: size.x - w - 18, y: 118, w, h: w };
+      this.diag.render(renderer, this.scene, rect);
+      this.hud.monitor(rect, false);
+    } else this.hud.monitor(null, false);
   }
 
   /**
@@ -700,6 +858,8 @@ export class GravityFaultRide {
     this.glass.dispose();
     this.debris.dispose();
     this.launcher.dispose();
+    this.clamps.dispose();
+    this.diag.dispose();
     this.events.clear();
     this.hud.dispose();
     this.owned.dispose();

@@ -2,8 +2,9 @@
  * HUD for the elevator rides.
  *
  * Built like the other level HUDs - its own DOM and stylesheet - and kept
- * small: a floor counter with speed, and an alert line for what is
- * happening to the lift.
+ * small: a floor counter with speed, an alert line for what is happening
+ * to the lift, the brake clamps still to lock (with the seconds left), and
+ * the frame and label of the diagnostic monitor.
  *
  *   const hud = new ElevatorHud({ title: "SECTOR 02 -> 03" });
  *   hud.show();
@@ -46,7 +47,14 @@ export class ElevatorHud {
     panel.append(head, readout);
 
     this.alertEl = element("div", "elv-alert");
-    this.root.append(panel, this.alertEl);
+    this.clampsEl = element("div", "elv-clamps");
+    this.clampsEl.hidden = true;
+    this.monitorEl = element("div", "elv-monitor");
+    this.monitorEl.append(element("span", null, "DIAGNOSTIC // ORTHO"));
+    this.monitorEl.hidden = true;
+    this.fullLabel = element("div", "elv-diag-label", "DIAGNOSTIC VIEW // ORTHOGRAPHIC // TOP");
+    this.fullLabel.hidden = true;
+    this.root.append(panel, this.alertEl, this.clampsEl, this.monitorEl, this.fullLabel);
     container.appendChild(this.root);
     this._floor = null;
   }
@@ -74,6 +82,37 @@ export class ElevatorHud {
   alert(text, tone = "info") {
     this.alertEl.textContent = text ?? "";
     this.alertEl.className = `elv-alert ${text ? `show ${tone}` : ""}`;
+  }
+
+  /** Clamps locked out of total, and seconds left (null: done). Pass null to hide. */
+  setClamps(locked, total = 3, seconds = null) {
+    if (locked === null) {
+      this.clampsEl.hidden = true;
+      return;
+    }
+    this.clampsEl.hidden = false;
+    const pips = "\u25C6".repeat(locked) + "\u25C7".repeat(total - locked);
+    this.clampsEl.textContent = `BRAKE CLAMPS ${pips}${seconds === null ? "" : `  ${Math.ceil(seconds)}s`}`;
+    this.clampsEl.classList.toggle("done", locked === total);
+  }
+
+  /**
+   * The picture-in-picture monitor's frame, over the rect the ride renders
+   * into ({x, y, w, h}, CSS px from the bottom left), or null to hide it.
+   * `full`: the diagnostic view is the whole screen (label only).
+   */
+  monitor(rect, full = false) {
+    this.fullLabel.hidden = !full;
+    if (!rect) {
+      this.monitorEl.hidden = true;
+      return;
+    }
+    const m = this.monitorEl;
+    m.hidden = false;
+    m.style.right = `${innerWidth - rect.x - rect.w}px`;
+    m.style.bottom = `${rect.y}px`;
+    m.style.width = `${rect.w}px`;
+    m.style.height = `${rect.h}px`;
   }
 
   dispose() {

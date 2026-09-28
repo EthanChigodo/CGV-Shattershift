@@ -37,7 +37,7 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | `Esc` | Pause and settings |
 | `R` | Run again from the end screen |
 | `1` `2` `3` `4` | Demo: restart Level 1, jump to Level 2, jump to Level 3, start Endless lab |
-| `5` | Demo: ride the Gravity Fault lift (Level 2 to 3) |
+| `5` | Demo: ride the Gravity Fault lift (Level 2 to 3); left mouse fires at the brake clamps |
 | Level 3 | Hold left mouse to fire (it overheats); mash `Space` at a fallen duct; on the roof `WASD` moves and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available in Level 3 |
 
 ## Level 1 - The Glass Causeway
@@ -138,7 +138,7 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-Levels 1, 2 and 3 are playable and connected: the Calibration Lift (Level 1's glass elevator) ends Level 1, Level 2 and Level 3's corridor phase, and the character picked on the start screen is the player in every level. From Level 2, the Calibration Lift hands over to the Gravity Fault ride up the outside of the tower into Level 3 (see [`docs/elevators.md`](./docs/elevators.md)); its gameplay - weak gravity, three stabilisers, the diagnostic camera - is in progress. Level 3 opens with the player stepping out of a lift (that lift and the roof's are placeholders - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Menu and Level 1 music is managed by `src/audio/music-manager.js`; gameplay effects remain event hooks for the audio workstream, except for Level 3's generated Web Audio effects. Frame rates still need to be measured on lab hardware with the `F` overlay.
+Levels 1, 2 and 3 are playable and connected: the Calibration Lift (Level 1's glass elevator) ends Level 1, Level 2 and Level 3's corridor phase, and the character picked on the start screen is the player in every level. From Level 2, the Calibration Lift hands over to the Gravity Fault: the tower collapsing around the lift, a snapped cable and free fall, Level 3's launcher crashing in through the roof, and three brake clamps to shoot, with a top-down diagnostic camera (see [`docs/elevators.md`](./docs/elevators.md)). Level 3 opens with the player stepping out of a lift (that lift and the roof's are placeholders - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Menu and Level 1 music is managed by `src/audio/music-manager.js`; gameplay effects remain event hooks for the audio workstream, except for Level 3's generated Web Audio effects. Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 
