@@ -3,15 +3,20 @@
  * alongside src/three.js for the core.
  *
  * The add-on files import the bare specifier "three", so any page that loads
- * this module needs an import map resolving "three" to the same URL
+ * this module needs an import map resolving "three" to the same file
  * src/three.js uses - otherwise the browser would load two copies of Three.
+ * Paths are relative to the page (this is index.html's):
  *
  *   <script type="importmap">
  *     { "imports": {
- *         "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
- *         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+ *         "three": "./lib/three/build/three.module.js",
+ *         "three/addons/": "./lib/three/examples/jsm/"
  *     } }
  *   </script>
+ *
+ * Only the add-ons used here (and the files they import) are in lib/three/.
+ * To use another one, copy it from the three@0.160.0 npm package into
+ * lib/three/examples/jsm/ at the same path.
  */
 export { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 export { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
