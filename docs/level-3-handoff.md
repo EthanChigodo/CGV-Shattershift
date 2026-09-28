@@ -54,6 +54,23 @@ You ride a lift up between each stage.
   roof ... a separate setting from the storyline"): menu -> Endless -> pick
   the Foundry, the Labs, the Skyline or the Roof. Best result kept per
   environment.
+- **Level 1's physics and sound everywhere** (the user's request: "add the
+  cool physics and sound from the previous level 1 to all the levels"):
+  - Glass shards: `src/fx/shatter.js` (`ShatterFX`) wraps Level 1's GPU
+    shard shaders (`causeway/shaders/particles.js`) with its own small
+    reflection cube map. Panes in the Labs fracture radially around the hit
+    point; everything else (Foundry cells and switches, sacks, power-ups,
+    roof sacks) bursts into tumbling chunks that bounce once on the floor.
+  - Throws in the Foundry: the Glass sphere's gravity arc (aim-compensated),
+    floor bounce, ricochet off hazards, grazes on small targets, and glass
+    spheres punching through cells, as in Level 1. The Labs and Roof keep
+    the launcher (it already had ball gravity, ricochets and bounces).
+  - Sound: `Level1Audio` (the sampled Level 1 effects) plays in every level
+    - throw, glass break, broken glass underfoot, ricochet, impact, pickups,
+    game over, the lift hum; fire ambience in the Labs. `MeltdownGame` takes
+    the host's instance (`sfx` option); standalone (the preview) it makes
+    its own on its audio context. It layers on top of the Labs' synthesised
+    `MeltdownAudio`, which is unchanged.
 
 ### 0.3 The story the team wants (planned - cutscenes "will be done later")
 
@@ -226,6 +243,7 @@ src/levels/common/calibration-lift.js
                  of the Skyline.
 src/elevators/   (teammate) The Gravity Fault ride, Foundry -> Labs.
 src/audio/meltdown-audio.js   Level 3's synthesised sound.
+src/fx/shatter.js            Level 1's GPU glass shards for the Foundry, Labs, Roof.
 src/ui/meltdown-hud.js/.css   Level 3's HUD.
 
 preview/meltdown.html/.js    Thin host around MeltdownGame.

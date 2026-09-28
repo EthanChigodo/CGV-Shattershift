@@ -15,6 +15,7 @@ import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCha
 import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
+import { ShatterFX } from "./src/fx/shatter.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -48,7 +49,6 @@ const lanes = [-3.2, 0, 3.2];
 const breakables = [];
 const RENDER_AHEAD = 95;
 const projectiles = [];
-const shards = [];
 const obstacles = [];
 let state = "intro";
 let lane = 1;
@@ -122,6 +122,10 @@ function saveSettings() {
 // Level 3's existing synthesized effects remain independent.
 const music = new MusicManager();
 const level1Audio = new Level1Audio(() => music.context);
+// Level 1's GPU glass shards, for the Foundry (the Causeway has its own; the
+// Labs and the Roof make theirs in their own scene). The Foundry runs down
+// -Z at x = 0 with a floor at y = 0, 5.6 m either side.
+const shatterFX = new ShatterFX(scene, { floorHalfWidth: 5.6, env: [0x9fb4ba, 0x14110e, 0x4c5a5e] });
 music.showMenu();
 const unlockMusic = async (event) => {
   // Set the briefing intent before unlocking on the same pointer/key gesture,
@@ -472,6 +476,7 @@ function updateFoundry(dt, time) {
     foundrySlow = 0.55;
     combo = 1; comboTimer = 0;
     foundry.impact(1);
+    level1Audio.impact(1);
     foundryHud.setIntegrity(Math.max(0, health));
     triggerShake(0.45);
     showMessage(hazard.userData.barrier === "high" ? "LOW CLEARANCE" : "INTEGRITY DAMAGED");
@@ -479,6 +484,7 @@ function updateFoundry(dt, time) {
     if (health <= 0) endRun(false);
   }
 
+  level1Audio.updateBrokenGlass(foundryCentre, jumpHeight < 0.12);
   foundryHud.update({ distance, level: foundry });
   foundryHud.setRun({ score, combo, spheres: ammo, comboRatio: comboTimer / 2.6 });
 }
@@ -1106,6 +1112,7 @@ function getMeltdown() {
     assetBase: MELTDOWN_ASSET_BASE,
     character: savedCharacter(),
     audio: MELTDOWN_AUDIO,
+    sfx: level1Audio,
     reducedMotion: settings.reducedMotion,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
@@ -1344,7 +1351,9 @@ function leadTarget(target, point, origin, speed, out) {
 function fire() {
   if (state !== "playing" || paused || photoActive) return;
   const inCauseway = currentLevel === 1 && causeway;
-  const ball = inCauseway ? arsenal.current : null;
+  // Level 1's throw physics (a glass sphere on a gravity arc) in the Foundry too.
+  const physical = inCauseway || (currentLevel === 2 && !!foundry);
+  const ball = inCauseway ? arsenal.current : physical ? BALLS.glass : null;
   const cost = inCauseway ? arsenal.cost() : 1;
   if (ammo < cost || ammo <= 0 && cost > 0) {
     showMessage(ammo <= 0 ? "NO SPHERES" : `${ball.name.toUpperCase()} NEEDS ${cost}`);
@@ -1353,7 +1362,7 @@ function fire() {
   ammo -= cost;
 
   const speed = ball?.speed ?? 34;
-  const gravity = inCauseway ? ball.gravity : 0;
+  const gravity = physical ? ball.gravity : 0;
   _origin.copy(camera.position);
   if (inCauseway && !cameraThird) {
     // Throw from the right hand rather than the eye.
@@ -1384,7 +1393,7 @@ function fire() {
     projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
   }
   run.shots += count;
-  if (inCauseway) level1Audio.throwBall();
+  if (physical) level1Audio.throwBall();
   updateUI();
 }
 
@@ -1425,7 +1434,8 @@ function grazeTarget(targets, a, b, tolerance) {
 
 function updateProjectiles(dt) {
   const targets = aliveTargets();
-  const solids = currentLevel === 1 && causeway ? causeway.solids : [];
+  const solids = currentLevel === 1 && causeway ? causeway.solids : currentLevel === 2 && foundry ? foundry.obstacles : [];
+  const physical = currentLevel === 1 || currentLevel === 2;
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
     const old = p.mesh.position.clone();
@@ -1443,12 +1453,12 @@ function updateProjectiles(dt) {
       raycaster.far = Infinity;
       // Near miss on a small target counts: a sphere passing within its own
       // radius plus 0.25 m of a small target's bounding sphere hits it.
-      if (!hit && currentLevel === 1) hit = grazeTarget(targets, old, p.mesh.position, p.mesh.scale.x + 0.25);
+      if (!hit && physical) hit = grazeTarget(targets, old, p.mesh.position, p.mesh.scale.x + 0.25);
       if (hit && (!solid || hit.distance <= solid.distance) && (!surface || hit.distance <= surface.distance)) {
         const result = shatter(hit.object, { point: hit.point, direction: p.velocity, ball: p.ball });
         if (result && !result.rejected) { p.scored = true; run.hits += 1; }
         if (p.ball !== "glass") { detonate(p, hit.point); p.life = 0; }
-        else if (!result || result.cracked || result.rejected || !["pane", "blade", "falling", "tank", "door"].includes(result.kind) || currentLevel !== 1) p.life = 0;
+        else if (!result || result.cracked || result.rejected || !(currentLevel === 1 ? ["pane", "blade", "falling", "tank", "door"] : currentLevel === 2 ? ["cell"] : []).includes(result.kind)) p.life = 0;
         else p.velocity.multiplyScalar(0.82); // glass spheres punch through and keep going
       } else if (surface && (!solid || surface.distance <= solid.distance)) {
         const speed = p.velocity.length();
@@ -1465,13 +1475,14 @@ function updateProjectiles(dt) {
           const n = solid.face ? solid.face.normal.clone().transformDirection(solid.object.matrixWorld) : _forward.clone().negate();
           p.velocity.reflect(n).multiplyScalar(0.45);
           p.mesh.position.copy(solid.point).addScaledVector(n, 0.2);
-          causeway.ricochet(solid.point);
+          if (causeway && currentLevel === 1) causeway.ricochet(solid.point);
+          else { shatterFX.chunks(solid.point, 5, { tint: 0xffd9a0, speed: 2.5, radius: 0.05, size: 0.04, life: 0.9 }); level1Audio.surfaceRicochet(); }
           if (++p.bounces > 2) p.life = 0;
         }
       }
     }
-    // Floor bounce in Level 1.
-    if (currentLevel === 1 && p.life > 0 && p.mesh.position.y < p.mesh.scale.x && p.velocity.y < 0) {
+    // Floor bounce in Level 1 and the Foundry.
+    if (physical && p.life > 0 && p.mesh.position.y < p.mesh.scale.x && p.velocity.y < 0) {
       if (p.ball !== "glass") { detonate(p, p.mesh.position); p.life = 0; }
       else { p.velocity.y *= -0.42; p.velocity.x *= 0.75; p.velocity.z *= 0.75; p.mesh.position.y = p.mesh.scale.x; }
     }
@@ -1589,7 +1600,7 @@ function resetStats(mode = causewayMode) {
   for (const mesh of breakables) { mesh.visible = true; mesh.userData.alive = true; mesh.scale.setScalar(1); }
   for (const mesh of obstacles) mesh.userData.hit = false;
   for (const p of projectiles) scene.remove(p.mesh); projectiles.length = 0;
-  for (const s of shards) { scene.remove(s.mesh); s.mesh.material.dispose(); } shards.length = 0;
+  shatterFX.clear();
   ui.end.classList.remove("active"); updateUI();
 }
 
@@ -1647,6 +1658,8 @@ function enterFoundry() {
   if (!foundry) buildFoundry();
   foundryExit = false;
   setFoundryActive(true);
+  shatterFX.clear();
+  level1Audio.startLevel();
   ui.fade.style.opacity = "1";
   run.fadeOut = 1;
   showMessage(runKind === "endless" ? "ENDLESS // THE FOUNDRY" : "SECTOR 01 // THE SHIFTING FOUNDRY");
@@ -1799,7 +1812,6 @@ function refreshEndlessMenu() {
 function triggerShake(amount) { shake = Math.max(shake, amount * (settings.reducedMotion ? 0.25 : 1)); }
 
 const shatterAt = new THREE.Vector3();
-const legacyShardGeometry = new THREE.TetrahedronGeometry(1);
 
 function shatter(target, hit = {}) {
   if (!target.userData.alive) return null;
@@ -1832,15 +1844,18 @@ function shatter(target, hit = {}) {
 
   if (gainedSpheres) ammo += gainedSpheres;
 
+  // Level 1's glass: GPU shards that tumble, bounce once on the floor and
+  // settle, with its break and pickup sounds.
   const crystal = target.userData.kind === "crystal";
-  const count = crystal || target.userData.kind === "cell" ? 8 : 14;
-  for (let i = 0; i < count; i++) {
-    const material = new THREE.MeshBasicMaterial({ color: isFoundry ? 0x9ff4f0 : crystal ? 0xffb04a : 0xffb26b, transparent: true, opacity: .78 });
-    const mesh = new THREE.Mesh(legacyShardGeometry, material);
-    mesh.scale.setScalar(.08 + Math.random() * .14);
-    mesh.position.copy(shatterAt); scene.add(mesh);
-    shards.push({ mesh, velocity: new THREE.Vector3((Math.random()-.5)*6, Math.random()*5, (Math.random()-.5)*5), life: 1.4 });
-  }
+  const cell = target.userData.kind === "cell";
+  const push = hit.direction ? hit.direction.clone().normalize().multiplyScalar(cell ? 3 : 2) : null;
+  shatterFX.chunks(shatterAt, cell ? 34 : 22, {
+    tint: isFoundry ? 0x9ff4f0 : crystal ? 0xffb04a : 0xffb26b,
+    speed: cell ? 4.6 : 3.6, radius: cell ? 0.7 : 0.4, size: cell ? 0.14 : 0.1, push,
+  });
+  level1Audio.glassBreak();
+  level1Audio.addGlassDebris(shatterAt, cell ? 2.2 : 1.6);
+  if (gainedSpheres) level1Audio.sphereCollected();
   updateUI();
   return result;
 }
@@ -1866,7 +1881,9 @@ const failReasons = {
 function endRun(won, reason = null, detail = null) {
   if (state === "ended") return;
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
-  if (currentLevel === 1) { music.gameOverDuck(); level1Audio.gameOver(); }
+  if (currentLevel === 1) music.gameOverDuck();
+  // Level 3 plays it itself (the MeltdownGame shares level1Audio).
+  if (!won && currentLevel !== 3) level1Audio.gameOver();
   causewayHud.warning(null);
   if (runKind === "endless" && endlessEnv && !detail && endlessEnv !== "skyline") detail = endlessResult();
   ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${sectorNumber()}`;
@@ -2065,6 +2082,7 @@ function updateGame(dt, time) {
     // climbing, fade into the Gravity Fault ride (GRAVITY LIFT below), which
     // carries on up the tower and hands over to Level 3.
     const ride = foundryLift.update(dt, time, settings.reducedMotion);
+    level1Audio.updateElevator(ride.velocity, !ride.done);
     foundryLift.cameraPose(ride.t, run.liftFrom, camera.position, _look, settings.reducedMotion);
     camera.up.set(0, 1, 0);
     camera.lookAt(_look);
@@ -2073,7 +2091,7 @@ function updateGame(dt, time) {
     if (currentLevel === 2 && foundry) updateFoundry(dt, time);
     const handoff = THREE.MathUtils.clamp((ride.t - FOUNDRY_LIFT_HANDOFF) / 0.5, 0, 1);
     ui.fade.style.opacity = Math.max(ride.fade, handoff).toFixed(3);
-    if (handoff >= 1 || ride.done) startGravityLift({ boarded: true });
+    if (handoff >= 1 || ride.done) { level1Audio.updateElevator(0, false); startGravityLift({ boarded: true }); }
   } else if (state === "lift" && transitionTarget === 3) {
     // No Calibration Lift to board (e.g. it failed to build): fade straight
     // into the Gravity Fault ride.
@@ -2112,10 +2130,7 @@ function updateGame(dt, time) {
 
   updateProjectiles(simDt);
 
-  for (let i = shards.length - 1; i >= 0; i--) {
-    const s = shards[i]; s.velocity.y -= dt * 5; s.mesh.position.addScaledVector(s.velocity, dt); s.mesh.rotation.x += dt * 4; s.life -= dt; s.mesh.material.opacity = Math.max(0, s.life / 1.4);
-    if (s.life <= 0) { scene.remove(s.mesh); s.mesh.material.dispose(); shards.splice(i, 1); }
-  }
+  shatterFX.update(simDt);
 
   if (causewayLive && (state === "playing" || state === "lift")) updateCausewayPresentation(dt);
 }
@@ -2208,7 +2223,7 @@ function openPause() {
   if (state !== "playing" && state !== "lift") return;
   paused = true;  run.focusing = false;
   music.pauseDuck();
-  if (currentLevel === 1) level1Audio.setPaused(true);
+  level1Audio.setPaused(true);
   if (currentLevel === 3) meltdown?.setPaused(true);
   ui.pauseLevel.textContent = `0${sectorNumber()} / 03`;
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
@@ -2225,7 +2240,7 @@ function closePause() {
   ui.pause.classList.remove("active");
   paused = false;
   if (wasPaused) music.restore();
-  if (wasPaused && currentLevel === 1) level1Audio.setPaused(false);
+  if (wasPaused) level1Audio.setPaused(false);
   if (currentLevel === 3) meltdown?.setPaused(false);
 }
 
@@ -2550,6 +2565,7 @@ globalThis.__dbg = {
   get postfx() { return postfx; },
   get music() { return music.snapshot(); },
   get level1Audio() { return level1Audio.snapshot(); },
+  get shardBursts() { return shatterFX.bursts.length; },
   foundryDistance,
   causewayDistance,
   demoJump,
