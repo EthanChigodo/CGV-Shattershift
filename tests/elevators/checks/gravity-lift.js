@@ -79,13 +79,17 @@ export const ride = {
       for (let i = 0; i < 60 * 60 && d.gravityLift; i += 1) {
         maxY = Math.max(maxY, ride.state.cabinY);
         d.step(1, 1 / 60);
+        // Let the browser breathe, as real frames would: Level 3 is built in
+        // the background while the ride plays.
+        if (i % 20 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       }
       const fadeAtEnd = Number(document.querySelector("#fadeOverlay").style.opacity);
-      // Level 3 loads asynchronously; wait for it to take over.
+      // Level 3 should be ready almost at once - it was built during the ride.
       const t0 = performance.now();
       while (performance.now() - t0 < 60000 && !(d.currentLevel === 3 && d.state === "playing")) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
+      const blackMs = Math.round(performance.now() - t0);
       return {
         shots,
         character,
@@ -98,6 +102,7 @@ export const ride = {
         level: d.currentLevel,
         state: d.state,
         meltdownVisible: !!d.meltdown?.visible,
+        blackMs,
       };
     });
     const failures = [];
@@ -109,7 +114,9 @@ export const ride = {
     if (!r.rideGone) failures.push("the ride was not disposed");
     if (!r.hudGone) failures.push("the lift HUD was left in the page");
     if (r.level !== 3 || r.state !== "playing" || !r.meltdownVisible) failures.push(`Level 3 did not start (level ${r.level}, state ${r.state})`);
-    return { failures, notes: { shots: r.shots, climbed: `${r.maxY.toFixed(0)} m` } };
+    // Even in slow software rendering; on a real GPU it is near instant.
+    if (r.blackMs > 1500) failures.push(`${(r.blackMs / 1000).toFixed(1)} s of black between the ride and Level 3`);
+    return { failures, notes: { shots: r.shots, climbed: `${r.maxY.toFixed(0)} m`, blackAfterRide: `${r.blackMs} ms` } };
   },
 };
 

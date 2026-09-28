@@ -408,8 +408,11 @@ export class MeltdownGame {
     if (level !== this.level) return;
     this.hud.setLoading(null);
     this._mountLauncherModel(loaded);
-    // Compile and upload everything now rather than on first sight mid-run.
-    level.prewarm(this.renderer, this.camera);
+    // Compile and upload everything now rather than on first sight mid-run -
+    // in the background, so this can run while the host shows something
+    // else (the lift ride builds Level 3 on the way up).
+    await level.prewarmAsync(this.renderer, this.camera);
+    if (level !== this.level) return;
     this.environment.refresh();
     this.assetsReady = true;
     this.loadRoofAssets();

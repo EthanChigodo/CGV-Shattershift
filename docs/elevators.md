@@ -133,6 +133,9 @@ Foundry "complete" ─► the player runs on, into the Calibration Lift   (exist
 startGravityLift({ boarded: true })
    · Level 2 and its Calibration Lift hidden and disposed
    · Level 3's models start streaming (preloadMeltdown)
+   · Level 3 is BUILT now, behind the black (prepareMeltdown): its models
+     attach and its shaders compile in the background while the ride plays
+     (MeltdownLevel.prewarmAsync), so it is ready when the ride ends
    · new GravityFaultRide({ renderer, spheres: ammo, reducedMotion, boarded,
                               character: the chosen model, assetBase: Level 3's assets })
       │  every frame: updateGravityLiftFrame() → ride.update(), ride.render()
@@ -141,8 +144,11 @@ startGravityLift({ boarded: true })
 finishGravityLift()          when ride.result.done
    · score += result.bonus, ammo = result.spheres
    · ride disposed
-   · enterMeltdown()          (existing - Level 3 opens in its arrival lift)
+   · enterMeltdown()          (existing - Level 3 opens in its arrival lift;
+                                it only has to show the Level 3 built above)
 ```
+
+Before this, Level 3 was built after the ride, behind a black screen - 15-20 s on the lab machines. Now the build (the one part that has to block, about half of the work) happens while the screen is already black from boarding, and the rest overlaps the ride. The *ride to Level 3* check fails if more than 1.5 s of black follows the ride.
 
 - The pointer is forwarded with `ride.onPointerMove(x, y)` (the game's normalised pointer, so the sensitivity setting applies), and a left click calls `ride.fire()`. While `ride.wantsAim` the game's crosshair shows, and goes "hot" over a clamp (`ride.aimTarget`).
 - Restart, quit and every demo jump call `leaveGravityLift()`, so a ride never outlives the run.

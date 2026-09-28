@@ -1112,6 +1112,11 @@ function refreshMenuProgress() {
  * silence Level 3 as well.
  */
 const MELTDOWN_AUDIO = true;
+/**
+ * Level 3 being built early - during the lift ride up to it - so it is
+ * ready when the ride ends instead of loading behind a black screen.
+ */
+let meltdownPrepared = null;
 const MELTDOWN_ASSET_BASE = new URL("./assets/meltdown/", import.meta.url).href;
 let meltdownEntering = false;
 
@@ -1159,6 +1164,24 @@ function preloadMeltdown() {
   getMeltdown().preload();
 }
 
+/** Balls Level 3 starts with: spheres left over become a few extra. */
+function meltdownBalls() {
+  return MELTDOWN_START_BALLS + Math.min(8, Math.floor(ammo / 4));
+}
+
+/**
+ * Build Level 3 now, off screen (the lift ride calls this as it starts,
+ * while the screen is still black). enterMeltdown() then only has to show it.
+ */
+function prepareMeltdown() {
+  if (!meltdownPrepared) {
+    const game = getMeltdown();
+    game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
+    meltdownPrepared = game.load({ balls: meltdownBalls() });
+  }
+  return meltdownPrepared;
+}
+
 /**
  * Into Level 3: black, build it (models are usually in already - they load
  * during Level 2 - and its shaders compile while the screen is black), then
@@ -1181,12 +1204,15 @@ async function enterMeltdown() {
   currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
   health = 100; shake = 0;
   // Spheres left over from the foundry become a few extra balls.
-  const balls = MELTDOWN_START_BALLS + Math.min(8, Math.floor(ammo / 4));
+  const balls = meltdownBalls();
+  // Built during the lift ride? Then it is ready (or nearly).
+  const prepared = meltdownPrepared;
+  meltdownPrepared = null;
   applyQuality();
   game.show();
   updateUI();
   try {
-    await game.load({ balls });
+    await (prepared ?? game.load({ balls }));
   } finally {
     meltdownEntering = false;
   }
@@ -1199,6 +1225,7 @@ async function enterMeltdown() {
 /** Out of Level 3 (restart, quit, demo jump): free it and give the renderer back. */
 function leaveMeltdown(nextLevel) {
   pendingSkyline = false;
+  meltdownPrepared = null;
   meltdown?.unload();
   meltdownEntering = false;
   currentLevel = nextLevel;
@@ -1535,6 +1562,8 @@ function startGravityLift({ boarded = false } = {}) {
   foundryLift?.dispose();
   foundryLift = null;
   preloadMeltdown();
+  // Build Level 3 now, behind the black, so it is ready when the ride ends.
+  prepareMeltdown();
   gravityLift = new GravityFaultRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
     // The same character as in Levels 1 and 2 (null while it is still loading),
@@ -1593,6 +1622,7 @@ function demoGravityLift() {
 
 function resetStats(mode = causewayMode) {
   leaveGravityLift();
+  meltdownPrepared = null;
   if (currentLevel === 3 || meltdown?.visible) leaveMeltdown(1);
   foundrySpeedScale = 1; endlessRun.laps = 0; endlessRun.distance = 0;
   ammo = START_SPHERES; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0;
@@ -1939,6 +1969,8 @@ function demoJump(stage) {
   if (state !== "playing") return;
   music.fadeOut();
   leaveGravityLift();
+  // Level 3 built ahead for the Labs is only for the Labs.
+  if (stage !== 2) meltdownPrepared = null;
   runKind = "story"; endlessEnv = null;
   if (currentLevel === 1 && causeway) { setCausewayActive(false); level1Audio.cleanupLevel(); }
   if (currentLevel === 3) leaveMeltdown(stage === 2 ? 3 : 2);
