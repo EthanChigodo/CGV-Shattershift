@@ -16,7 +16,7 @@ export const handover = {
     const r = await page.evaluate(async () => {
       const d = globalThis.__dbg;
       d.resetGame("story");
-      d.demoJump(2);
+      d.demoJump(1); // the Foundry: Sector 01 in the story order (demo keys follow it)
       d.step(10);
       const before = { level: d.currentLevel, state: d.state, foundry: !!d.foundry };
       // Stand just short of the end of the Foundry, where the extraction valve is.

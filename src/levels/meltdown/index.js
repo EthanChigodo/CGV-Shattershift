@@ -161,6 +161,8 @@ export class MeltdownLevel {
    * @param {boolean} [options.straightRoute] skip the turns (for a -Z-only controller)
    * @param {number} [options.phaseSeconds]   the hidden countdown for the whole phase
    * @param {number} [options.brightness]
+   * @param {number} [options.seed]  0 = the authored layout; anything else
+   *   reshuffles every pattern (endless laps)
    */
   constructor({
     origin = new THREE.Vector3(0, 0, 0),
@@ -171,8 +173,9 @@ export class MeltdownLevel {
     // clock is a real threat rather than decoration.
     phaseSeconds = 124,
     brightness = 1.5,
+    seed = 0,
   } = {}) {
-    this.options = { halfWidth: CORRIDOR_HALF, lanes: LANES, shadows, brightness, straightRoute };
+    this.options = { halfWidth: CORRIDOR_HALF, lanes: LANES, shadows, brightness, straightRoute, seed };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -411,7 +414,8 @@ export class MeltdownLevel {
   }
 
   _rng(seed) {
-    let value = seed;
+    // A Lehmer generator needs a non-zero start; seed 0 keeps the authored layout.
+    let value = this.options.seed ? ((Math.abs(seed) + this.options.seed * 104729) % 2147483646) + 1 : seed;
     return () => {
       value = (value * 16807) % 2147483647;
       return (value - 1) / 2147483646;

@@ -41,7 +41,7 @@ export class MeltdownHud {
     if (reducedMotion) this.root.classList.add("reduced-motion");
 
     this.banner = element("div", "mlt-banner");
-    this.bannerLabel = element("span", null, "SECTOR 03");
+    this.bannerLabel = element("span", null, "SECTOR 02");
     this.bannerName = element("strong", null, "THE MELTDOWN");
     this.banner.append(this.bannerLabel, this.bannerName);
 
@@ -75,7 +75,7 @@ export class MeltdownHud {
 
     this.summary = element("div", "mlt-summary");
     this.summaryCard = element("div", "mlt-summary-card");
-    this.summaryEyebrow = element("span", null, "SECTOR 03");
+    this.summaryEyebrow = element("span", null, "SECTOR 02");
     this.summaryTitle = element("h2", null, "THE MELTDOWN");
     this.summaryRows = element("div", "mlt-summary-rows");
     this.summaryCard.append(
@@ -100,7 +100,7 @@ export class MeltdownHud {
     this._level = level;
     const on = (name, fn) => this._unsubscribers.push(level.events.on(name, fn));
 
-    on("beat", ({ name }) => this.showBanner("SECTOR 03", name));
+    on("beat", ({ name }) => this.showBanner("SECTOR 02", name));
     on("impact", ({ strength }) => this.flashDamage(strength));
     on("sign", ({ remaining }) => this.toast("EXIT", `${remaining}S`, "sign"));
     on("sack-broken", ({ spheres }) => this.toast("SACK", `+${spheres}`));
@@ -116,7 +116,7 @@ export class MeltdownHud {
     on("patient-down", () => this.toast("DOWN", ""));
     on("warp-start", () => this.showBanner("STRUCTURAL FAILURE", "SOMETHING BROKE LOOSE"));
     on("timer-expired", () => this.toast("STRUCTURE FAILING", "", "warn"));
-    on("complete", () => this.showBanner("SECTOR 03 CLEARED", "ROOF ACCESS"));
+    on("complete", () => this.showBanner("SECTOR 02 CLEARED", "LIFT UP"));
 
     return this;
   }
@@ -129,7 +129,7 @@ export class MeltdownHud {
 
   show() {
     this.root.hidden = false;
-    this.showBanner("SECTOR 03", "THE MELTDOWN");
+    this.showBanner("SECTOR 02", "THE MELTDOWN");
     return this;
   }
 
@@ -203,7 +203,7 @@ export class MeltdownHud {
     node.classList.add("pop");
   }
 
-  showSummary({ title, eyebrow = "SECTOR 03", rows = [], failed = false }) {
+  showSummary({ title, eyebrow = "SECTOR 02", rows = [], failed = false }) {
     this.summaryEyebrow.textContent = eyebrow;
     this.summaryTitle.textContent = title;
     this.summaryCard.classList.toggle("failed", failed);

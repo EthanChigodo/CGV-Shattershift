@@ -3,6 +3,8 @@
 Owner: Level 3 workstream
 Status: **Phase A (the escape) and Phase B (the roof) are both built, and Level 3 is integrated into the game** (`main.js`): finishing Level 2 fades into it, and it ends on the game's own end screen. It also runs on its own in the preview. Supersedes the "Inverted Core" gravity/boss concept in `project-brief.md` §5 (that prototype has been removed from `main.js`); see "Relationship to the project brief".
 
+**In the story (new order):** the corridors (Phase A) are **Sector 02 - the Labs**, between the Foundry (basement) and the Glass Causeway (skyline); the roof (Phase B) is **the finale**, after the Causeway. Both are also **Endless** environments: the Labs lap after lap (a new layout each lap, faster), the Roof as survival (no helicopter, waves forever).
+
 **Run it:** from the repo root, `python -m http.server 4173`, then open `http://localhost:4173/` (the full game - press `3` during a run to jump straight to Level 3) or `http://localhost:4173/preview/meltdown.html` (Level 3 on its own: pick a patient and click to start; `?roof` in the URL or `P` in game skips to Phase B, `R` restarts). Hard-refresh (`Ctrl+Shift+R`) if you have opened it before. The character is chosen on the game's start screen (**Play as**) or the preview's.
 
 **Controls, Phase A:** `A`/`D` lane - hold left mouse to fire (it overheats) - `SPACE`/`W` jump, or mash it at a fallen duct - `SHIFT`/`S` slide (in the air: slam down into it) - `C` camera (chase / first person / cinematic / orbit) - `B` bloom - `F` stats - `K` credits - `R` restart.

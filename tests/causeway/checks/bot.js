@@ -64,10 +64,12 @@ window.__bot = async function (opts = {}) {
   if (opts.throughLift && d.state === "lift") {
     let n = 0;
     while (d.state === "lift" && n < 400) { d.step(1, 1/30); n++; }
+    // The story order is Foundry -> Labs -> Skyline (this level) -> Roof: the
+    // lift at the end of the Causeway hands over to the Roof (Level 3's module).
     lift = { framesInLift: n, stateAfter: d.state, level: d.currentLevel, causewayDisposed: d.causeway === null,
-      foundryVisible: d.foundry.root.visible, runZ: d.runZ, fd: d.foundryDistance(), hp: d.health, ammo: d.ammo, fog: d.scene.fog.density, far: d.camera.far };
+      roofStarting: Boolean(d.meltdown && d.meltdown.visible && d.meltdown.mode === "full"), hp: d.health, ammo: d.ammo, fog: d.scene.fog.density, far: d.camera.far };
     d.step(90, 1/30);
-    lift.after3s = { state: d.state, fd: d.foundryDistance().toFixed(1), hp: d.health, fade: document.querySelector("#fadeOverlay").style.opacity };
+    lift.after3s = { state: d.state, level: d.currentLevel, hp: d.health, fade: document.querySelector("#fadeOverlay").style.opacity };
     lift.geometries = d.renderer.info.memory.geometries; lift.textures = d.renderer.info.memory.textures;
   }
   const L = lv();

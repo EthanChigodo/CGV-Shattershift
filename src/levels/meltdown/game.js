@@ -18,8 +18,16 @@
  *   // input:       game.onKeyDown(e) / onKeyUp(e) / onPointerMove(x, y) /
  *   //              onPointerDown(e) / onPointerUp(e)
  *
- * main.js runs it as Level 3 of the full game; preview/meltdown.html runs it
- * on its own (with the dev keys R and P, and its own end-of-run card).
+ * main.js runs it twice in the story - the Labs (Phase A, sector 2, mode
+ * "corridor": it stops after the lift at the end) and the Roof (the finale,
+ * `enterRoof()`) - and for two endless modes ("endless-labs": lap after lap
+ * of reshuffled corridor, faster each time; "endless-roof": survive the
+ * waves). preview/meltdown.html runs the whole thing on its own (mode
+ * "full", with the dev keys R and P and its own end-of-run card).
+ *
+ * Events: "complete" / "failed" (the run is over), "corridor-complete"
+ * (mode "corridor": through the lift at the end of the Labs), "lap"
+ * (endless Labs), "phase".
  *
  * Phases:
  *   idle        built, waiting for begin()
@@ -46,6 +54,8 @@ import { RoofLevel, ROOF_SPAWN } from "./roof.js";
 import { createCreditsPanel } from "./credits.js";
 import { MeltdownHud } from "../../ui/meltdown-hud.js";
 import { MeltdownAudio } from "../../audio/meltdown-audio.js";
+import { Level1Audio } from "../../audio/level1-audio.js";
+import { ShatterFX } from "../../fx/shatter.js";
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                               */
@@ -173,7 +183,11 @@ export class MeltdownGame {
    * @param {boolean} [o.devKeys]    R restarts, P skips to the roof, F dev stats
    * @param {boolean} [o.summary]    show the level's own end-of-run card
    */
-  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, reducedMotion = false, devKeys = false, summary = false, container = document.body }) {
+  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body }) {
+    /** "full" | "corridor" | "endless-labs" | "endless-roof" - see the header. */
+    this.mode = mode;
+    this.endless = { laps: 0, distance: 0 };
+    this.speedScale = 1;
     this.renderer = renderer;
     this.assetBase = assetBase;
     this.character = CHARACTERS[character] ? character : DEFAULT_CHARACTER;
@@ -218,6 +232,13 @@ export class MeltdownGame {
     this.audio = audio ? new MeltdownAudio({ volume: 0.8 }) : SILENT_AUDIO;
     this.projectiles = new Projectiles(scene);
     this.debris = new Debris(scene);
+    // Level 1's glass physics (GPU shards: radial fracture, spin, one floor
+    // bounce) and its sampled sound effects, on top of this level's own.
+    // The host (main.js) passes its Level1Audio; standalone, the level makes
+    // one on its own audio context.
+    this.shatter = new ShatterFX(scene, { floorHalfWidth: 1e4, env: [0x3a4548, 0x0d0b0a, 0x4a3326] });
+    this._ownSfx = !sfx && !!audio;
+    this.sfx = sfx ?? (audio ? new Level1Audio(() => this.audio.ctx) : null);
     this.beam = new LauncherLight(scene);
     this.environment = createEnvironmentDimmer(scene);
     this.credits = createCreditsPanel(container);
@@ -283,6 +304,7 @@ export class MeltdownGame {
       aim: new THREE.Vector3(), muzzle: new THREE.Vector3(), fireDir: new THREE.Vector3(), forwardVel: new THREE.Vector3(),
       laneRight: new THREE.Vector3(), beamTarget: new THREE.Vector3(),
       boxCentre: new THREE.Vector3(), boxSize: new THREE.Vector3(),
+      floor: new THREE.Vector3(), crash: new THREE.Vector3(), sfxPos: new THREE.Vector3(),
     };
     this.playerBox = new THREE.Box3();
   }
@@ -323,7 +345,16 @@ export class MeltdownGame {
    * and every shader is compiled. The level is usable before that, with
    * stand-ins.
    */
-  async load({ balls = START_BALLS, vitality = START_VITALITY } = {}) {
+  /** Switch between story and endless use (before load / enterRoof). */
+  setMode(mode) {
+    this.mode = mode;
+    this.endless = { laps: 0, distance: 0 };
+    this.speedScale = 1;
+  }
+
+  async load({ balls = START_BALLS, vitality = START_VITALITY, seed = 0, carry = false } = {}) {
+    this.shatter.clear();
+    this.sfx?.startLevel();
     if (this.level) {
       this.hud.unbind();
       this.level.dispose();
@@ -348,17 +379,19 @@ export class MeltdownGame {
     this.projectiles.clear();
     this.debris.clear();
     this.assetsReady = false;
-    this.clock = 0;
+    if (!carry) this.clock = 0;
 
-    const level = new MeltdownLevel({ origin: new THREE.Vector3(0, 0, 0) });
+    const level = new MeltdownLevel({ origin: new THREE.Vector3(0, 0, 0), seed });
     this.level = level;
     level.addTo(this.scene);
     this.hud.bind(level);
     this.hud.hideSummary();
     this._bindLevelEvents(level);
 
+    // An endless lap carries the run's counters on.
+    const kept = carry ? (({ shots, breaks, downs, hits }) => ({ shots, breaks, downs, hits }))(this.runner) : {};
     this._resetRunner();
-    Object.assign(this.runner, { balls, vitality });
+    Object.assign(this.runner, { balls, vitality }, kept);
     this.trauma = 0;
     this.hitFlash = 0;
     this.warp = { active: false, t: 0 };
@@ -385,6 +418,7 @@ export class MeltdownGame {
   /** The lift doors open and the run begins. */
   begin() {
     this.audio.start();
+    if (this._ownSfx) this.sfx.unlock();
     if (this.phase === "idle" && this.level) this.phase = "arrive";
   }
 
@@ -424,6 +458,7 @@ export class MeltdownGame {
       if (paused) ctx.suspend();
       else ctx.resume();
     }
+    if (this._ownSfx) this.sfx.setPaused(paused);
   }
 
   /** Stop everything and free the level (the game object can be reused with load()). */
@@ -438,6 +473,8 @@ export class MeltdownGame {
     this.roof = null;
     this.projectiles.clear();
     this.debris.clear();
+    this.shatter.clear();
+    this.sfx?.cleanupLevel();
     this.audio.stop();
     this.phase = "idle";
   }
@@ -445,6 +482,7 @@ export class MeltdownGame {
   dispose() {
     this.unload();
     this.projectiles.dispose?.();
+    this.shatter.dispose();
     this.beam.dispose?.();
     this.hud.dispose();
     this.credits.panel.remove();
@@ -491,6 +529,7 @@ export class MeltdownGame {
 
   /** Where the player is, for a status line. */
   get locationName() {
+    if (this.roof) return "THE ROOF";
     if (!this.level) return "";
     if (this.phase === "roof" || this.phase === "roofArrive" || this.phase === "ending" || (this.phase === "over" && this.roof)) return "THE ROOF";
     const d = this.runner.distance;
@@ -514,6 +553,8 @@ export class MeltdownGame {
       vitality: r.vitality,
       onRoof: Boolean(this.roof),
       ending: this.roof?.state.ending ?? null,
+      laps: this.endless.laps,
+      endlessDistance: this.endless.distance + r.distance,
     };
   }
 
@@ -556,9 +597,9 @@ export class MeltdownGame {
   _bindLevelEvents(level) {
     const { hud, audio, debris } = this;
     const on = (name, fn) => level.events.on(name, (p) => level === this.level && fn(p));
-    on("complete", () => this._startDeparture());
+    on("complete", () => (this.mode === "endless-labs" ? this._nextLap() : this._startDeparture()));
     on("timer-expired", () => {
-      if (this.phase !== "run") return;
+      if (this.phase !== "run" || this.mode === "endless-labs") return;
       this.runner.vitality = 0;
       this._finishRun(false, "THE BUILDING WENT UP");
     });
@@ -595,7 +636,7 @@ export class MeltdownGame {
       this.trauma = Math.min(1, this.trauma + 0.3);
     });
     on("lift-open", () => audio.whoosh());
-    on("lift-exit", () => hud.showBanner("SECTOR 03", "THE MELTDOWN", 2600));
+    on("lift-exit", () => hud.showBanner(this.mode === "endless-labs" ? "ENDLESS" : "SECTOR 02", this.mode === "endless-labs" ? "THE LABS" : "THE MELTDOWN", 2600));
     on("lift-close", () => audio.clang());
     on("lift-depart", () => audio.powerUp());
   }
@@ -716,7 +757,7 @@ export class MeltdownGame {
 
   update(dt, time) {
     dt = Math.min(dt, 0.05);
-    if (!this.level) return;
+    if (!this.level && !this.roof) return;
     if (this.phase !== "idle" && this.phase !== "over") this.clock += dt;
     for (let i = this._timers.length - 1; i >= 0; i -= 1) {
       if (this.clock >= this._timers[i].at) this._timers.splice(i, 1)[0].fn();
@@ -792,7 +833,10 @@ export class MeltdownGame {
     } else if (this.phase === "depart") {
       this.cut = level.updateDeparture(dt, this.reducedMotion);
       if (this.cut?.fire !== null && this.cut?.fire !== undefined) r.fireDistance = this.cut.fire;
-      if (this.cut?.done) this.startRoof({ fromBlack: true });
+      if (this.cut?.done) {
+        if (this.mode === "corridor") this._corridorDone();
+        else this.startRoof({ fromBlack: true });
+      }
     }
 
     if (!cutscene) this._updateMovement(dt, playing);
@@ -832,12 +876,19 @@ export class MeltdownGame {
       avatar.shadow.visible = !firstPerson;
     }
 
-    level.update({ dt, time, distance: r.distance, playerPosition: avatar.root.position, clock: this.phase === "run" });
+    level.update({ dt, time, distance: r.distance, playerPosition: avatar.root.position, clock: this.phase === "run" && this.mode !== "endless-labs" });
     if (playing) this._checkHazards(dt);
     if (!cutscene) this._updateCamera(dt, time);
     this._placeLauncher(firstPerson);
     this.projectiles.update(dt, { breakables: level.breakables, solids: level.obstacles, onBreakable: (o, p, b) => this._onBallBreakable(o, p, b), onSolid: (o, p) => this._onBallSolid(o, p) });
     this.debris.update(dt);
+    this.shatter.update(dt);
+    if (this.sfx) {
+      level.route.sample(r.distance, r.lateral, 0, V.sfxPos);
+      this.sfx.updateBrokenGlass(V.sfxPos, playing && r.speed > 1 && r.height < 0.12);
+      this.sfx.updateEnvironment({ fire: { distance: Math.max(0, r.distance - r.fireDistance), intensity: 1, offsetX: 0 } });
+      this.sfx.updateElevator(level.endLift?.state.velocity ?? 0, this.phase === "depart");
+    }
 
     // The launcher's light: from the muzzle toward what the reticle is on -
     // held like a weapon light, a little low, so aiming at the corridor
@@ -906,7 +957,7 @@ export class MeltdownGame {
     r.speed = 0;
     r.pushing = false;
     if (playing) {
-      r.speed = r.baseSpeed * (r.slow > 0 ? 0.45 : 1);
+      r.speed = r.baseSpeed * this.speedScale * (r.slow > 0 ? 0.45 : 1);
       let next = Math.min(r.distance + r.speed * dt, level.route.totalLength - 1);
       const duct = level.blockingDuctAhead(r.distance, 4);
       if (duct !== null && next > duct - 1.7) {
@@ -1124,7 +1175,7 @@ export class MeltdownGame {
   _shoot() {
     const { runner: r, level, audio, hud } = this;
     const V = this._v;
-    if (!r.alive || !level) return;
+    if (!r.alive || (!level && !this.roof)) return;
     if (this.phase === "run" && r.finished) return;
     if (r.lockout > 0) return;
     if (r.balls <= 0) {
@@ -1168,6 +1219,7 @@ export class MeltdownGame {
     if (r.overchargeShots > 0) r.overchargeShots -= 1;
     this.launcher.recoil = 1;
     audio.shot(r.weakened > 0);
+    this.sfx?.throwBall();
   }
 
   _applyPowerup(kind) {
@@ -1190,6 +1242,8 @@ export class MeltdownGame {
     if (result.partial) {
       if (result.kind === "glass") {
         debris.burst(point, { kind: "glass", count: 8, speed: 3, size: 0.18 });
+        this._chunks(point, 10, { size: 0.07, speed: 2.5, radius: 0.15 });
+        this.sfx?.impact(0.35);
         audio.glassCrack();
       } else if (result.kind === "patient") {
         debris.burst(point, { kind: "concrete", count: 6, speed: 2.5, size: 0.1 });
@@ -1205,13 +1259,17 @@ export class MeltdownGame {
     if (result.kind === "glass") {
       const sample = level.route.sample(object.userData.routeDistance ?? r.distance);
       this._v.laneRight.set(Math.cos(sample.heading), 0, -Math.sin(sample.heading));
-      debris.burst(result.position, { kind: "glass", count: 70, speed: 5.5, area: [3.0, 3.4], right: this._v.laneRight, push: ball.velocity.clone().multiplyScalar(0.15) });
+      debris.burst(result.position, { kind: "glass", count: 30, speed: 5.5, area: [3.0, 3.4], right: this._v.laneRight, push: ball.velocity.clone().multiplyScalar(0.15) });
+      this._fracture(object, point, ball.velocity);
       audio.glassShatter(true);
       this.trauma = Math.min(1, this.trauma + 0.15);
     } else if (result.kind === "sack") {
       r.balls = Math.min(MAX_BALLS, r.balls + (result.spheres ?? 0));
       debris.burst(result.position, { kind: "sack", count: 26, speed: 4 });
       debris.burst(result.position, { kind: "ball", count: 6, speed: 3, up: 2 });
+      this._chunks(result.position, 14, { tint: 0xd8f6ff, speed: 3.5 });
+      this.sfx?.glassBreak();
+      this.sfx?.sphereCollected();
       hud.toast("BALLS", `+${result.spheres}`);
       audio.glassShatter(false);
       audio.pickup();
@@ -1219,12 +1277,16 @@ export class MeltdownGame {
       r.downs += 1;
       debris.burst(point, { kind: "concrete", count: 10, speed: 3, size: 0.12 });
       debris.dust(point, { size: 2, life: 0.9, color: 0x5a2a22 });
+      this.sfx?.impact(0.6);
       audio.thud();
       audio.bodyFall();
     } else if (result.kind === "powerup") {
       this._applyPowerup(result.powerupKind);
       debris.burst(result.position, { kind: "power", count: 30, speed: 5 });
       debris.sparks(result.position, { count: 30 });
+      this._chunks(result.position, 18, { tint: 0xfff0a8, speed: 4.5 });
+      this.sfx?.glassBreak();
+      this.sfx?.serumCollected();
       hud.toast(POWERUP_LABELS[result.powerupKind] ?? "POWER-UP", "", "power");
       audio.powerup();
     }
@@ -1234,6 +1296,33 @@ export class MeltdownGame {
   _onBallSolid(object, point) {
     this.debris.sparks(point, { count: 14, speed: 5 });
     this.audio.clang();
+    this.sfx?.surfaceRicochet();
+  }
+
+  /** Level 1's radial fracture of a pane, around the point it was hit. */
+  _fracture(object, point, push) {
+    const pane = object.isMesh ? object : null;
+    if (pane?.geometry) {
+      this.shatter.floor = this._floorBelow(point);
+      this.shatter.fracture(pane, point, push, { power: 1.1 });
+    } else this._chunks(point, 40, { speed: 5, radius: 1.2, size: 0.16, push });
+    this.sfx?.glassBreak();
+    this.sfx?.addGlassDebris(point, 2.2);
+  }
+
+  _chunks(point, count, options = {}) {
+    this.shatter.floor = this._floorBelow(point);
+    this.shatter.chunks(point, count, options);
+  }
+
+  /** Floor height under a point: the route's (or the roof's) surface. */
+  _floorBelow(point) {
+    if (this.roof) return this.hero.position.y;
+    if (this.level) {
+      this.level.route.sample(this.runner.distance, 0, 0, this._v.floor);
+      return this._v.floor.y;
+    }
+    return 0;
   }
 
   /* ---------------- Collision, vitality ---------------- */
@@ -1261,7 +1350,11 @@ export class MeltdownGame {
       const pane = level.breakables.find((b) => b.userData.pane?.hit === hazard);
       if (pane) {
         const result = level.breakTarget(pane, 99);
-        if (result) debris.burst(result.position, { kind: "glass", count: 60, speed: 6, area: [3, 3.4] });
+        if (result) debris.burst(result.position, { kind: "glass", count: 24, speed: 6, area: [3, 3.4] });
+        if (result) {
+          const sample = level.route.sample(r.distance);
+          this._fracture(pane, centre, this._v.crash.set(-Math.sin(sample.heading), 0.1, -Math.cos(sample.heading)).multiplyScalar(Math.max(4, r.speed)));
+        }
         audio.glassShatter(true);
       }
     }
@@ -1283,6 +1376,7 @@ export class MeltdownGame {
     hud.flashDamage();
     hud.toast("HIT", dropped ? `-${dropped} BALLS` : "", "warn");
     audio.stumble();
+    this.sfx?.impact(1);
     // The dropped balls physically spill out behind you.
     if (dropped) debris.burst(centre, { kind: "ball", count: Math.min(12, dropped), speed: 3, up: 3 });
 
@@ -1293,6 +1387,73 @@ export class MeltdownGame {
     }
   }
 
+  /* ---------------- Story hand-off and endless laps ---------------- */
+
+  /** Mode "corridor": through the lift at the end of the Labs. Stays black for the host. */
+  _corridorDone() {
+    this.phase = "corridorDone";
+    this.fade.override = 1;
+    this.runner.firing = false;
+    this.hud.setPrompt(null);
+    this.events.emit("corridor-complete", { stats: this.stats });
+  }
+
+  /** Endless Labs: at the end of the corridor, a new, reshuffled lap - a little faster. */
+  async _nextLap() {
+    if (this.phase !== "run") return;
+    const r = this.runner;
+    this.phase = "fade";
+    r.firing = false;
+    this.fade.override = null;
+    this.fade.target = 1;
+    this.endless.distance += this.level.route.totalLength;
+    this.endless.laps += 1;
+    const keep = { balls: r.balls, vitality: Math.min(START_VITALITY, r.vitality + 15) };
+    this.events.emit("lap", { laps: this.endless.laps, distance: this.endless.distance });
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    this.speedScale = 1 + 0.07 * this.endless.laps;
+    await this.load({ ...keep, seed: this.endless.laps, carry: true });
+    this.fade.value = 1;
+    this.fade.target = 0;
+    this.hud.showBanner(`LAP ${this.endless.laps + 1}`, "NEW LAYOUT // FASTER", 2600);
+    this.begin();
+  }
+
+  /**
+   * Straight to the roof, with no corridor: the story's finale (after the
+   * Skyline) and endless Roof. Loads the body and the launcher, then the
+   * roof comes up and its lift doors open.
+   */
+  async enterRoof({ balls = START_BALLS, vitality = START_VITALITY } = {}) {
+    if (this.level) {
+      this.hud.unbind();
+      this.level.dispose();
+      this.level = null;
+    }
+    this.roof?.dispose();
+    this.roof = null;
+    this._timers.length = 0;
+    this.cut = null;
+    this.ui.letterbox.classList.remove("on");
+    this.hud.vitals.style.visibility = "";
+    this.hud.hideSummary();
+    this.avatar.hold = 1;
+    this.avatar.reachUp = 0;
+    this.projectiles.clear();
+    this.debris.clear();
+    this.shatter.clear();
+    this.sfx?.startLevel();
+    this._resetRunner();
+    Object.assign(this.runner, { balls, vitality: Math.max(1, vitality - 25) }); // startRoof adds the +25 breath back
+    this.clock = 0;
+    this.phase = "idle";
+    this.fade.override = 1;
+    const [assets] = await Promise.all([loadMeltdownAssets(this.assetBase, { names: ["launcher"] }), this._loadCharacter(this.character)]);
+    this._mountLauncherModel(assets);
+    this.assetsReady = true;
+    await this.startRoof({ fromBlack: true });
+  }
+
   /* ---------------- End of Phase A ---------------- */
 
   _startDeparture() {
@@ -1301,7 +1462,7 @@ export class MeltdownGame {
     this.runner.finished = true;
     this.runner.firing = false;
     this.cut = this.level.beginDeparture(this.camera.position);
-    this.hud.showBanner("SECTOR 03 CLEARED", "UP TO THE ROOF", 2600);
+    this.hud.showBanner("SECTOR 02 CLEARED", this.mode === "corridor" ? "UP TO THE SKYLINE" : "UP TO THE ROOF", 2600);
     this.hud.setPrompt(null);
     this.events.emit("phase", { phase: "depart" });
   }
@@ -1326,6 +1487,8 @@ export class MeltdownGame {
   /** The run is over, one way or the other. */
   _end(escaped, title, rows, eyebrow) {
     this.phase = "over";
+    if (!escaped) this.sfx?.gameOver();
+    this.sfx?.updateElevator(0, false);
     this.runner.firing = false;
     this.ui.letterbox.classList.remove("on");
     this.hud.vitals.style.visibility = "";
@@ -1346,7 +1509,7 @@ export class MeltdownGame {
    * roof's lift doors open.
    */
   async startRoof({ fromBlack = false } = {}) {
-    if (!["run", "arrive", "depart", "idle"].includes(this.phase)) return;
+    if (!["run", "arrive", "depart", "idle", "corridorDone"].includes(this.phase)) return;
     this.phase = "fade";
     this.runner.firing = false;
     this.fade.override = fromBlack ? 1 : null;
@@ -1354,13 +1517,13 @@ export class MeltdownGame {
     this.fade.value = fromBlack ? 1 : this.fade.value;
     const wait = new Promise((resolve) => setTimeout(resolve, fromBlack ? 50 : 650));
     await Promise.all([wait, this.loadRoofAssets()]);
-    if (this.phase !== "fade" || !this.level) return;
+    if (this.phase !== "fade") return;
 
-    this.level.root.visible = false;
+    if (this.level) this.level.root.visible = false;
     this.projectiles.clear();
     this.debris.clear();
     this.roof?.dispose();
-    const roof = new RoofLevel({ assets: this.roofAssets, ...this.roofOptions });
+    const roof = new RoofLevel({ assets: this.roofAssets, endless: this.mode === "endless-roof", ...this.roofOptions });
     this.roof = roof;
     roof.addTo(this.scene);
     this._bindRoofEvents(roof);
@@ -1399,7 +1562,7 @@ export class MeltdownGame {
     this.fade.override = null;
     this.fade.value = 1;
     this.fade.target = 0;
-    this.hud.showBanner("SECTOR 03 // THE ROOF", "HOLD ON", 3200);
+    this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "HOLD ON", 3200);
     this.events.emit("phase", { phase: "roof" });
   }
 
@@ -1490,6 +1653,9 @@ export class MeltdownGame {
       if (result.partial) return true;
       r.balls = Math.min(MAX_BALLS, r.balls + (result.spheres ?? 0));
       debris.burst(result.position, { kind: "sack", count: 26, speed: 4 });
+      this._chunks(result.position, 14, { tint: 0xd8f6ff, speed: 3.5 });
+      this.sfx?.glassBreak();
+      this.sfx?.sphereCollected();
       hud.toast("BALLS", `+${result.spheres}`);
       audio.glassShatter(false);
       audio.pickup();
@@ -1500,6 +1666,7 @@ export class MeltdownGame {
     debris.dust(point, { size: result.partial ? 1.2 : 2.2, life: 0.7, color: 0x5a2a22 });
     debris.sparks(point, { count: 8, speed: 3 });
     audio.thud();
+    this.sfx?.impact(result.partial ? 0.4 : 0.7);
     r.breaks += result.partial ? 0 : 1;
     if (!result.partial) r.downs += 1;
     return true;
@@ -1537,6 +1704,7 @@ export class MeltdownGame {
     this.hud.flashDamage();
     this.hud.toast(hit.source === "fire" ? "BURNING" : "HIT", "", "warn");
     this.audio.stumble();
+    this.sfx?.impact(hit.source === "patient" ? 1 : 0.7);
     this.debris.sparks(this.avatar.root.position.clone().setY(1.2), { count: 16 });
     if (r.vitality <= 0) {
       r.alive = false;
@@ -1553,7 +1721,7 @@ export class MeltdownGame {
       ["Sent over the edge", this.roof ? this.roof.state.falls : 0],
       ["Hits taken", r.hits],
       ["Balls left", r.balls, true],
-    ], escaped ? "LEVEL 3 COMPLETE" : "SECTOR 03 // THE ROOF");
+    ], escaped ? "YOU GOT OUT" : "THE ROOF");
   }
 
   _updateRoofFrame(dt, time) {
@@ -1630,6 +1798,7 @@ export class MeltdownGame {
     // Balls fly through the cutscene's slow motion too.
     this.projectiles.update(sdt, { breakables: roof.breakables, solids: roof.solids, onBreakable: (o, p, b) => this._onBallBreakable(o, p, b), onSolid: (o, p) => this._onBallSolid(o, p) });
     this.debris.update(sdt);
+    this.shatter.update(sdt);
     this.launcher.muzzle.getWorldPosition(this._v.muzzle);
     this.beam.update(dt, { origin: this._v.muzzle, target: hero.aim, darkness: 0, time, projectiles: this.projectiles });
     this.audio.setRotor(roof.rotorLevel);

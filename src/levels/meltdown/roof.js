@@ -590,8 +590,14 @@ export class RoofLevel {
    * @param {number} [o.seed]    randomises the helicopter timer
    * @param {number} [o.heliSeconds] force the hidden timer (tests)
    */
-  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds } = {}) {
+  /**
+   * @param {object} [o]
+   * @param {boolean} [o.endless]  survival: no helicopter, waves keep coming,
+   *   the roof comes apart over two minutes; it ends when you go down.
+   */
+  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false } = {}) {
     this.assets = assets;
+    this.endless = endless;
     this.events = createEmitter();
     this.root = new THREE.Group();
     this.root.name = "RoofRoot";
@@ -620,7 +626,8 @@ export class RoofLevel {
     this.state = {
       time: 0,
       wave: 0,
-      heliAt: heliSeconds ?? 40 + this.random() * 18,
+      heliAt: endless ? Infinity : heliSeconds ?? 40 + this.random() * 18,
+      nextWaveAt: 0,
       heliSeen: false,
       heliArrived: false,
       cleared: false,
@@ -1020,7 +1027,7 @@ export class RoofLevel {
       // The last of them: everyone left, at once, as the helicopter nears.
       3: { scientist: "scientistRadioman", gadget: "gadgetCoil", at: MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)), enter: new THREE.Vector3(-5, 0, -4), hatches: [0, 1, 3] },
     };
-    const spec = SPECS[index];
+    const spec = SPECS[index] ?? this._endlessWave(index);
     const scientist = new Scientist(this, {
       model: this._character(spec.scientist),
       position: spec.at,
@@ -1034,6 +1041,30 @@ export class RoofLevel {
       this._addEnemy(patient);
     }
     this.events.emit("wave", { index, scientist: spec.scientist });
+  }
+
+  /** Waves after the third (endless): bigger as it goes on, from random hatches. */
+  _endlessWave(index) {
+    const r = this.random;
+    const hatches = [0, 1, 2, 3].sort(() => r() - 0.5).slice(0, Math.min(4, 2 + Math.floor((index - 3) / 2)));
+    const fromDoor = r() < 0.5;
+    return {
+      scientist: index % 2 ? "scientistRadioman" : "scientistRust",
+      gadget: index % 2 ? "gadgetBrass" : "gadgetCoil",
+      at: fromDoor ? MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)) : new THREE.Vector3(-3 + r() * 6, 0, -12),
+      enter: fromDoor ? new THREE.Vector3(-4 + r() * 10, 0, -5) : null,
+      hatches,
+    };
+  }
+
+  /** Endless runs spawn forever: drop enemies that have gone over the edge or been gone a while. */
+  _cullFallen() {
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const e = this.enemies[i];
+      if (!e.removed) continue;
+      this.groups.enemies.remove(e.root);
+      this.enemies.splice(i, 1);
+    }
   }
 
   _addEnemy(enemy) {
@@ -1162,6 +1193,16 @@ export class RoofLevel {
     if (!frozen && s.wave === 0 && s.time > 1.2) this._spawnWave(1);
     if (!frozen && s.wave === 1 && (s.time > 19 || (s.time > 4 && this.enemiesAlive === 0))) this._spawnWave(2);
     if (!frozen && s.wave === 2 && (s.time > 36 || (s.time > 24 && this.enemiesAlive === 0))) this._spawnWave(3);
+    // Endless: after the three set waves, another every 12-24 s (sooner the
+    // longer you last), or as soon as the roof is nearly clear.
+    if (this.endless && s.wave >= 3) {
+      if (!s.nextWaveAt) s.nextWaveAt = s.time + 24;
+      if (s.time > s.nextWaveAt || (this.enemiesAlive <= 1 && s.time > s.nextWaveAt - 16)) {
+        this._spawnWave(s.wave + 1);
+        s.nextWaveAt = s.time + Math.max(12, 24 - s.wave * 0.8);
+      }
+      this._cullFallen();
+    }
 
     for (const enemy of this.enemies) {
       if (enemy.removed) continue;
@@ -1187,7 +1228,7 @@ export class RoofLevel {
     }
 
     // The roof is clear: the helicopter stops circling and comes in now.
-    const everyone = s.wave === 3 && this.enemiesAlive === 0;
+    const everyone = !this.endless && s.wave === 3 && this.enemiesAlive === 0;
     if (!s.cleared && everyone) {
       s.cleared = true;
       this.events.emit("clear", {});
@@ -1327,7 +1368,7 @@ export class RoofLevel {
 
   _updateChaos(dt, time, ctx) {
     const s = this.state;
-    const chaos = s.heliArrived ? 1 : THREE.MathUtils.clamp(s.time / s.heliAt, 0, 1);
+    const chaos = s.heliArrived ? 1 : THREE.MathUtils.clamp(s.time / (this.endless ? 120 : s.heliAt), 0, 1);
     s.chaos = chaos;
     const live = s.ending !== "left" && s.ending !== "victory";
 
