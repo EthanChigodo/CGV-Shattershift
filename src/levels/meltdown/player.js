@@ -21,6 +21,7 @@
 
 import * as THREE from "../../three.js";
 import { cloneCharacter, rigPlayerMesh } from "./characters.js";
+import { applyFigureLook } from "../../figure/look.js";
 
 function shadowTexture() {
   const canvas = document.createElement("canvas");
@@ -89,6 +90,11 @@ export class PlayerAvatar {
     const mesh = model.getObjectByName("CharacterMerged");
     if (!mesh) return;
     const { uniforms, body } = rigPlayerMesh(mesh);
+    // The figure's look and damage (src/figure/look.js); the wear and shoes
+    // set before the model arrived (or on the previous model) carry over.
+    this.look = applyFigureLook(mesh, body);
+    this.look.setWear(this._wear ?? 0);
+    this.look.setGear(this._gear ?? false);
     // Models face +Z; the runner travels down -Z.
     model.rotation.y = Math.PI;
     this.model = model;
@@ -162,6 +168,18 @@ export class PlayerAvatar {
     this.shadow.position.y = 0.025 - height; // stays on the floor under a jump
     this.shadow.scale.setScalar((1 - lift * 0.45) * (sliding ? 1.25 : 1));
     this.shadowMaterial.opacity = 1 - lift * 0.65;
+  }
+
+  /** Damage: 0 clean, 0.33 dusty, 0.66 bloodied - see src/figure/look.js. */
+  setWear(value) {
+    this._wear = value;
+    this.look?.setWear(value);
+  }
+
+  /** The scientist's vest and radio, after his sacrifice. */
+  setGear(on) {
+    this._gear = on;
+    this.look?.setGear(on);
   }
 
   setVisible(visible) {

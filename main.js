@@ -16,6 +16,7 @@ import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 import { ShatterFX } from "./src/fx/shatter.js";
+import { figureStage } from "./src/figure/look.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -281,7 +282,16 @@ async function loadPlayerBody(name = savedCharacter()) {
   }
 }
 
+/** Where the run is in the story, for the figure's wear (src/figure/look.js). */
+function storyPosition() {
+  return state === "intro" || state === "launch" || state === "preview" ? 0 : currentLevel;
+}
+
 function updatePlayerBody(dt) {
+  // Damage follows the story: clean waking up, worse with every level.
+  const stage = figureStage(storyPosition());
+  playerBody.setWear(stage.wear);
+  playerBody.setGear(stage.gear);
   if (!playerBodyReady) return;
   const moving = state === "playing" && !paused;
   const speed = !moving ? 0 : currentLevel === 1 ? run.speed : currentLevel === 2 ? foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1) : 0;
@@ -1116,6 +1126,10 @@ function getMeltdown() {
     reducedMotion: settings.reducedMotion,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
+  // Level 3's body gets the figure's state for the third level played.
+  const stage = figureStage(3);
+  meltdown.avatar?.setWear(stage.wear);
+  meltdown.avatar?.setGear(stage.gear);
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
   // The story: through the lift at the end of the Labs, up to the Skyline.
@@ -1523,8 +1537,11 @@ function startGravityLift({ boarded = false } = {}) {
   preloadMeltdown();
   gravityLift = new GravityFaultRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
-    // The same character as in Levels 1 and 2 (null while it is still loading).
+    // The same character as in Levels 1 and 2 (null while it is still loading),
+    // already as they will be in the next level - the story puts the
+    // scientist's gear on them on the way up (the L2 -> L3 ride).
     character: playerBodyTemplate,
+    figure: figureStage(currentLevel + 1),
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
   });
@@ -2554,6 +2571,7 @@ globalThis.__dbg = {
   enterMeltdown,
   get gravityLift() { return gravityLift; },
   get playerBodyTemplate() { return playerBodyTemplate; },
+  get playerBody() { return playerBody; },
   demoGravityLift,
   get run() { return run; },
   causewayPace,

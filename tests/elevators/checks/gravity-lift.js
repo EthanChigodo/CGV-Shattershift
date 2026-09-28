@@ -261,6 +261,49 @@ export const clamps = {
   },
 };
 
+/**
+ * The figure follows the story (src/figure/look.js): dusty in the first
+ * level played, bloodied in the second, and geared up with the scientist's
+ * vest from the ride after it - in the game's body, the lift ride's and
+ * Level 3's.
+ */
+export const figure = {
+  name: "figure wear by level",
+  async run(page) {
+    const r = await page.evaluate(async () => {
+      const d = globalThis.__dbg;
+      const w0 = performance.now();
+      while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
+      const read = (avatar) => avatar?.look ? { wear: +avatar.look.wear.toFixed(2), gear: avatar.look.gear } : null;
+      const out = {};
+      d.resetGame("story");
+      d.step(2);
+      d.render();
+      out.level1 = read(d.playerBody);
+      d.demoJump(2);
+      d.step(2);
+      d.render();
+      out.level2 = read(d.playerBody);
+      d.demoGravityLift();
+      d.step(2);
+      d.render();
+      out.ride = read(d.gravityLift?._avatar);
+      d.resetGame("story");
+      d.demoJump(3);
+      const t0 = performance.now();
+      while (performance.now() - t0 < 60000 && !(d.currentLevel === 3 && d.meltdown?.avatar?.look)) await new Promise((resolve) => setTimeout(resolve, 250));
+      out.level3 = read(d.meltdown?.avatar);
+      return out;
+    });
+    const failures = [];
+    const want = { level1: { wear: 0.33, gear: false }, level2: { wear: 0.66, gear: false }, ride: { wear: 0.66, gear: true }, level3: { wear: 0.66, gear: true } };
+    for (const [k, v] of Object.entries(want)) {
+      if (JSON.stringify(r[k]) !== JSON.stringify(v)) failures.push(`${k}: ${JSON.stringify(r[k])}, want ${JSON.stringify(v)}`);
+    }
+    return { failures, notes: r };
+  },
+};
+
 /** Restarting mid-ride frees it, and repeated rides do not leak GPU memory. */
 export const memory = {
   name: "restart and memory",
