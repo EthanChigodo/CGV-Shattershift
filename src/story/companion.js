@@ -50,9 +50,9 @@ function shadowTexture() {
 }
 
 /**
- * Okoro's bag: a worn canvas duffel on a strap across his chest (right hip,
- * strap over the left shoulder). Local origin at the strap's top; the duffel
- * hangs below it so it can swing.
+ * Okoro's bag: a worn canvas duffel riding his right hip. Its strap is a
+ * separate ribbon (see Companion._updateStrap) so it can follow his body.
+ * Local origin up at the shoulder line; the duffel hangs below it.
  */
 function buildBag() {
   const group = new THREE.Group();
@@ -71,15 +71,41 @@ function buildBag() {
     band.scale.set(0.8, 1, 1);
     duffel.add(band);
   }
+  // Metal rings where the strap clips on, one at each end.
+  const metal = new THREE.MeshStandardMaterial({ color: 0x9a9c94, metalness: 0.85, roughness: 0.35 });
+  for (const z of [-STRAP_CLIP_Z, STRAP_CLIP_Z]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.005, 4, 10), metal);
+    ring.position.set(0, STRAP_CLIP_Y, z);
+    ring.rotation.y = Math.PI / 2;
+    duffel.add(ring);
+  }
   duffel.position.y = -0.56;
   group.add(duffel);
-  // The strap: from the left shoulder, across the chest, down to the bag.
-  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.66, 0.012), trim);
-  strap.position.set(0.13, -0.24, -0.15);
-  strap.rotation.z = -0.62;
-  group.add(strap);
   group.userData.duffel = duffel;
   return group;
+}
+
+/** Where the strap clips onto the duffel (duffel space). */
+const STRAP_CLIP_Y = 0.1;
+const STRAP_CLIP_Z = 0.17;
+const STRAP_SAMPLES = 44;
+const STRAP_WIDTH = 0.042;
+
+/** A flat webbing ribbon; its vertices are rewritten every frame. */
+function buildStrapMesh() {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(STRAP_SAMPLES * 2 * 3), 3));
+  const index = [];
+  for (let i = 0; i < STRAP_SAMPLES - 1; i += 1) {
+    const a = i * 2;
+    index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  geometry.setIndex(index);
+  const material = new THREE.MeshStandardMaterial({ color: 0x23261d, roughness: 0.9, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "BagStrap";
+  mesh.frustumCulled = false;
+  return mesh;
 }
 
 const _a = new THREE.Vector3();
@@ -88,6 +114,7 @@ const _dir = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _qi = new THREE.Quaternion();
 const _qe = new THREE.Quaternion();
+const [_s1, _s2, _s3, _s4, _s5, _s6, _s7] = Array.from({ length: 7 }, () => new THREE.Vector3());
 const _fwd = new THREE.Vector3(0, 0, -1);
 const Y = new THREE.Vector3(0, 1, 0);
 const _X = new THREE.Vector3(1, 0, 0);
@@ -125,6 +152,12 @@ export class Companion {
       // right hip (+X, facing -Z).
       this.bag.position.set(-0.02, 1.38, 0);
       this.body.add(this.bag);
+      // The strap: bag -> across the chest -> over the left shoulder -> down
+      // the back -> bag, rebuilt each frame from his bones.
+      this.strap = buildStrapMesh();
+      this.strap.visible = false;
+      this.root.add(this.strap);
+      this._strapCurve = new THREE.CatmullRomCurve3(Array.from({ length: 9 }, () => new THREE.Vector3()), false, "centripetal");
     }
 
     this.model = null;
@@ -309,6 +342,7 @@ export class Companion {
       duffel.rotation.z = moving ? Math.sin(this.phase) * 0.12 * Math.min(1, sp / 3) : 0;
       duffel.rotation.x = moving ? -0.1 - sp * 0.02 : 0;
     }
+    this._updateStrap();
     this._placeProps();
     this.shadow.scale.setScalar(1 - this.slump * 0.2);
   }
@@ -333,6 +367,58 @@ export class Companion {
     this.rig.rotate("chest", Y, this.headYaw * 0.15);
     this.rig.rotate("head", _X, this.headPitch * 0.55);
     this.rig.rotate("neck", _X, this.headPitch * 0.35);
+  }
+
+  /** Lay the bag strap over his body: from the bag, across the chest, over the left shoulder, down the back. */
+  _updateStrap() {
+    const strap = this.strap;
+    if (!strap) return;
+    const bones = this.rig?.valid ? this.rig.bones : null;
+    const duffel = this.bag.userData.duffel;
+    if (!bones?.chest || !bones.armL || !bones.hips || !this.bag.visible) {
+      strap.visible = false;
+      return;
+    }
+    strap.visible = true;
+    this.root.updateMatrixWorld(true);
+    const local = (object, out) => this.root.worldToLocal(object.getWorldPosition(out));
+    const chest = local(bones.chest, _s1);
+    const hips = local(bones.hips, _s2);
+    const shoulder = local(bones.armL, _s3);
+    // How far the coat stands off the bones, front and back.
+    const front = chest.z - 0.225;
+    const back = chest.z + 0.125;
+    const hipFront = hips.z - 0.2;
+    const hipBack = hips.z + 0.16;
+    const sx = shoulder.x * 0.62;
+    const p = this._strapCurve.points;
+    this.root.worldToLocal(duffel.localToWorld(p[0].set(0, STRAP_CLIP_Y, -STRAP_CLIP_Z)));
+    p[1].set(hips.x + 0.14, hips.y + 0.17, hipFront);
+    p[2].set(chest.x + 0.04, chest.y - 0.1, front);
+    p[3].set(sx * 0.92, shoulder.y - 0.02, front + 0.035);
+    p[4].set(sx, shoulder.y + 0.08, chest.z - 0.01);
+    p[5].set(sx * 0.85, shoulder.y - 0.02, back - 0.05);
+    p[6].set(chest.x + 0.04, chest.y - 0.12, back);
+    p[7].set(hips.x + 0.16, hips.y + 0.16, hipBack);
+    this.root.worldToLocal(duffel.localToWorld(p[8].set(0, STRAP_CLIP_Y, STRAP_CLIP_Z)));
+
+    const pos = strap.geometry.attributes.position;
+    const curve = this._strapCurve;
+    const half = STRAP_WIDTH / 2;
+    for (let i = 0; i < STRAP_SAMPLES; i += 1) {
+      const t = i / (STRAP_SAMPLES - 1);
+      curve.getPoint(t, _s4);
+      curve.getTangent(t, _s5);
+      // "Out" is away from the body's core (up, over the shoulder); the
+      // ribbon's width runs across it, so it lies flat on the coat.
+      _s6.set(_s4.x - chest.x, _s4.y - Math.min(_s4.y, shoulder.y - 0.18), _s4.z - chest.z).normalize();
+      _s7.crossVectors(_s5, _s6).normalize().multiplyScalar(half);
+      _s4.addScaledVector(_s6, 0.006);
+      pos.setXYZ(i * 2, _s4.x - _s7.x, _s4.y - _s7.y, _s4.z - _s7.z);
+      pos.setXYZ(i * 2 + 1, _s4.x + _s7.x, _s4.y + _s7.y, _s4.z + _s7.z);
+    }
+    pos.needsUpdate = true;
+    strap.geometry.computeVertexNormals();
   }
 
   _placeProps() {
@@ -360,6 +446,8 @@ export class Companion {
 
   dispose() {
     this.root.parent?.remove(this.root);
+    this.strap?.geometry.dispose();
+    this.strap?.material.dispose();
     this.shadowMaterial.map?.dispose();
     this.shadowMaterial.dispose();
     this.shadow.geometry.dispose();
