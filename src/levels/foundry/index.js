@@ -109,6 +109,10 @@ export class FoundryLevel {
    * @param {number} [options.variant]         0 = the authored layout; any other
    *                                           value reshuffles hazards and cells
    *                                           (endless mode's laps)
+   * @param {number} [options.gentleStart]     0..1: no filler hazards before this
+   *                                           fraction of the route (the story
+   *                                           opening, so the player can listen
+   *                                           to Dr. Okoro); set pieces stay
    */
   constructor({
     origin = new THREE.Vector3(0, 0, -146),
@@ -121,11 +125,12 @@ export class FoundryLevel {
     escapeSeconds = null,
     brightness = 1.6,
     variant = 0,
+    gentleStart = 0,
   } = {}) {
     // The escape timer is derived from how far the player actually has to run,
     // not hard-coded. At 194m the old fixed 26s could never expire, which made
     // the countdown decoration rather than a loss condition.
-    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness, variant };
+    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness, variant, gentleStart };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -546,8 +551,10 @@ export class FoundryLevel {
     });
 
     // --- Filler ---------------------------------------------------------
-    // The opening 24m stays deliberately clear so the player can look around.
-    this._fillHazards(at(0.1) + 14, L - 10, {
+    // The opening 24m stays deliberately clear so the player can look around
+    // (the story keeps more of it clear - `gentleStart`).
+    const gentle = this.options.gentleStart * this.route.totalLength;
+    this._fillHazards(Math.max(at(0.1) + 14, gentle), L - 10, {
       seed: 1301,
       avoid: [at(0.1), gateAt, switchAt, halfGateAt, bypassAt],
     });

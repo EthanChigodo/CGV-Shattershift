@@ -87,7 +87,10 @@ export class ReactionHits {
     this.failReason = null;
     this.onResult = null;
     this._s = null;
+    /** The game's pause menu is up: keys are the menu's, and nothing counts. */
+    this.paused = false;
     this._onKeyDown = (e) => {
+      if (this.paused) return;
       if (this.state === "running" && this.keyDown(e.code, e.repeat)) {
         e.preventDefault();
         e.stopImmediatePropagation();

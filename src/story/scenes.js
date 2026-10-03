@@ -105,6 +105,119 @@ export function wakeScene(a) {
   };
 }
 
+/** A polyline on the ground: arc length, and a point/heading at any distance along it. */
+export class PathLine {
+  constructor(points) {
+    this.points = points.map((p) => p.clone());
+    this.lengths = [0];
+    for (let i = 1; i < this.points.length; i += 1) this.lengths.push(this.lengths[i - 1] + this.points[i].distanceTo(this.points[i - 1]));
+    this.length = this.lengths[this.lengths.length - 1];
+  }
+
+  /** Arc length to point i. */
+  at(i) {
+    return this.lengths[i];
+  }
+
+  /** Point at distance s (clamped), and the heading (radians, -Z = 0) of that leg. */
+  sample(s, out = new THREE.Vector3()) {
+    const d = Math.max(0, Math.min(this.length, s));
+    let i = 1;
+    while (i < this.lengths.length - 1 && this.lengths[i] < d) i += 1;
+    const a = this.points[i - 1];
+    const b = this.points[i];
+    const span = this.lengths[i] - this.lengths[i - 1];
+    out.lerpVectors(a, b, span > 0 ? (d - this.lengths[i - 1]) / span : 0);
+    const heading = Math.atan2(-(b.x - a.x), -(b.z - a.z));
+    return { position: out, heading };
+  }
+}
+
+/**
+ * 1b. Out of the ward behind Okoro: through the door, down the passage,
+ * through the bulkhead into the Foundry - and up into the run's chase camera,
+ * so gameplay takes over with no cut.
+ *
+ * @param {object} a
+ * @param {THREE.Vector3[]} a.path   ground points, beside the bed -> into the Foundry
+ * @param {THREE.Vector3} a.chase    the chase camera's position at the run's start
+ * @param {THREE.Vector3} a.chaseLook
+ * @param {number} a.startZ          the run's start
+ * @param {import("./companion.js").Companion} a.okoro
+ * @param {(k:number) => void} [a.onProgress]  0 in the ward .. 1 in the Foundry
+ */
+export function walkOutScene(a) {
+  const lines = timeLines(SCENES.walkOut);
+  const path = new PathLine(a.path);
+  const doorS = path.at(1);
+  // The camera walks to just inside the Foundry, then rises into the chase view.
+  const camEnd = path.at(path.points.length - 2) - 0.5;
+  const SPEED = 3.0;
+  const walkTime = 0.9 + camEnd / SPEED;
+  const RISE = 1.8;
+  const duration = walkTime + RISE;
+  const v = () => new THREE.Vector3();
+  const camS = (t) => {
+    // Ease into a brisk walk.
+    const ramp = 0.9;
+    if (t < ramp) return (SPEED * t * t) / (2 * ramp);
+    return Math.min(camEnd, (SPEED * ramp) / 2 + SPEED * (t - ramp));
+  };
+  const eye = (t) => {
+    const p = path.sample(camS(t), v()).position;
+    return p.setY(1.62);
+  };
+  const ahead = (t) => {
+    const p = path.sample(camS(t) + 4, v()).position;
+    return p.setY(1.45);
+  };
+  // Okoro ends ~5 m into the run, ahead of where the player will start.
+  const okoroEnd = path.at(path.points.length - 2) + 5;
+  let okoroS = doorS;
+  const head = { bob: 0.9, bobRate: 7, breath: 0.6 };
+
+  return {
+    id: "walkOut",
+    lines,
+    duration,
+    head,
+    track: { vignette: [[0, 0.25], [walkTime, 0.1], [duration, 0]] },
+    camera(t, pose) {
+      // Walking behind him; then up and back into the run's chase camera.
+      const k = THREE.MathUtils.smoothstep(t, walkTime, duration);
+      pose.roll = 0;
+      pose.position.copy(eye(Math.min(t, walkTime))).lerp(a.chase, k);
+      pose.look.copy(ahead(Math.min(t, walkTime))).lerp(a.chaseLook, k);
+      pose.fov = 66 + 2 * k;
+      // The walking bob fades out as the camera leaves the body.
+      head.bob = 0.9 * (1 - k);
+      head.breath = 0.6 * (1 - k);
+    },
+    events: [
+      { at: 0.1, name: "okoro-run" },
+      { at: walkTime, name: "show-player" },
+      { at: duration, name: "hand-over" },
+    ],
+    onUpdate(t, dt) {
+      const o = a.okoro;
+      const s = camS(t);
+      a.onProgress?.(Math.min(1, s / camEnd));
+      // He waits at the door until you are close, then leads; once you are
+      // through the bulkhead he runs on to his place ahead of the run.
+      const want = t >= walkTime ? okoroEnd : Math.max(doorS, s + 2.6);
+      const speed = t >= walkTime ? 6.8 : SPEED + 0.6;
+      const step = Math.min(Math.max(0, want - okoroS), speed * dt);
+      okoroS += step;
+      const p = path.sample(okoroS, v());
+      o.root.position.copy(p.position);
+      o.root.rotation.y = p.heading;
+      o.speed = step > 1e-4 ? step / Math.max(1e-4, dt) : 0;
+      o.act(o.speed > 0.3 ? (o.speed > 4.5 ? "run" : "walk") : "beckon");
+      o.lookAt(o.speed > 0.3 ? null : eye(t));
+    },
+  };
+}
+
 /**
  * The elevator's reaction ladder on its own (preview and tests): four break
  * points, each harder, with Okoro's shouts. Phase 3 stages this in the

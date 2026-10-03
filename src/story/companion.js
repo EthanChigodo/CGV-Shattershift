@@ -174,7 +174,8 @@ export class Companion {
     this.headYaw = 0;
     this.props = [];
     /** Added to whatever the action poses (a scene leaning him over a bed...). */
-    this.adjust = { lean: 0, headNod: 0, twist: 0 };
+    /** `aimR` / `aimL` (0..1) raise an arm to point whatever he is doing - pointing on the run. */
+    this.adjust = { lean: 0, headNod: 0, twist: 0, aimR: 0, aimL: 0 };
   }
 
   /** Swap in the character (from loadStoryCharacter). */
@@ -329,6 +330,11 @@ export class Companion {
       pose.lean = (pose.lean ?? 0) + adj.lean;
       pose.headNod = (pose.headNod ?? 0) + adj.headNod;
       pose.twist = (pose.twist ?? 0) + adj.twist;
+      if (adj.aimR) {
+        pose.aimR = Math.max(pose.aimR ?? 0, adj.aimR);
+        pose.armSwing = (pose.armSwing ?? 0) * (1 - adj.aimR * 0.7);
+      }
+      if (adj.aimL) pose.aimL = Math.max(pose.aimL ?? 0, adj.aimL);
       this.rig.pose(pose);
       this._lookHead(dt, k);
       this.rig.apply();

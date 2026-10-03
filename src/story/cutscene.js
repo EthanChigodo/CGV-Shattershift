@@ -9,6 +9,7 @@
  *   const player = new CutscenePlayer({ ui, reactions, camera, voice });
  *   player.on("event", (name, data) => ...);        // the scene's cues
  *   player.on("reaction-fail", ({ id }) => ...);    // e.g. play a death
+ *   player.on("pause-request", () => ...);          // Esc tapped (held = skip)
  *   player.play(scene, ctx);
  *   // each frame:
  *   player.update(dt);           // moves the camera, shows lines, ...
@@ -22,7 +23,11 @@
  *   shots        [{ at, dur, from: {pos, look, fov, roll}, to: {...}, ease }]
  *                pos/look: THREE.Vector3, [x, y, z], or (ctx) => Vector3
  *   camera       (t, pose, ctx) => void - write pose.position/look/fov/roll
- *                yourself instead of shots (both can be used: shots first)
+ *                yourself instead of shots (both can be used: shots first);
+ *                pose.shake (0..1) adds a camera shake for that frame
+ *                (a quarter of it under reduced motion)
+ *                A shot with `whip: true` is a fast pan; reduced motion
+ *                turns it into a cut.
  *   head         { breath, bob, bobRate, sway } - first-person life
  *   track        { lids, blur, vignette, fade, tint }: [[t, value], ...]
  *   events       [{ at, name, data }]
@@ -38,6 +43,8 @@
 import * as THREE from "../three.js";
 
 const SKIP_HOLD = 0.7;
+/** Esc released sooner than this is a tap: pause, not skip. */
+export const TAP_PAUSE = 0.25;
 
 function ease(kind, k) {
   if (kind === "linear") return k;
@@ -76,11 +83,18 @@ export class CutscenePlayer {
    * @param {THREE.PerspectiveCamera} [o.camera]  moved every frame (null: read player.pose)
    * @param {{blip(who:string):void}} [o.voice]
    */
-  constructor({ ui, reactions, camera = null, voice = null }) {
+  constructor({ ui, reactions, camera = null, voice = null, reducedMotion = false }) {
     this.ui = ui;
     this.reactions = reactions;
     this.camera = camera;
     this.voice = voice;
+    /** Head bob/sway at a quarter, blur and blinks shortened, whip-pans cut. */
+    this.reducedMotion = reducedMotion;
+    /**
+     * Set by the host while its pause menu is up: the clock is frozen (the
+     * host stops calling update) and Esc belongs to the menu again.
+     */
+    this.paused = false;
     this.state = "idle";
     this.scene = null;
     this.ctx = null;
@@ -97,12 +111,34 @@ export class CutscenePlayer {
     this._reaction = null;
     this._line = null;
     this._handlers = new Map();
+    this._escDown = null;
     this._onKey = (e) => {
-      if (e.code !== "Escape" || !this.active) return;
-      this.skipHeld = e.type === "keydown";
+      if (e.code !== "Escape" || !this.active || this.paused) return;
       e.preventDefault();
       e.stopImmediatePropagation();
+      if (e.type === "keydown") {
+        if (e.repeat) return;
+        this.skipHeld = true;
+        this._escDown = performance.now();
+      } else {
+        this.skipHeld = false;
+        const held = this._escDown === null ? Infinity : (performance.now() - this._escDown) / 1000;
+        this._escDown = null;
+        if (held < TAP_PAUSE) this.tapEscape();
+      }
     };
+  }
+
+  /**
+   * A short tap of Esc: the host's pause menu (a hold skips instead). The
+   * tap is not counted toward the skip.
+   */
+  tapEscape() {
+    if (!this.active || this.paused) return;
+    this.skipHeld = false;
+    this.skipProgress = 0;
+    this.ui.setSkip(0, false);
+    this._emit("pause-request", { id: this.scene?.id });
   }
 
   on(name, fn) {
@@ -112,7 +148,9 @@ export class CutscenePlayer {
   }
 
   _emit(name, ...args) {
-    for (const fn of this._handlers.get(name) ?? []) fn(...args);
+    // A copy: a handler may play the next scene and add handlers of its own,
+    // which must not hear this scene's event.
+    for (const fn of [...(this._handlers.get(name) ?? [])]) fn(...args);
   }
 
   /** Hold-Esc-to-skip from the keyboard (capture phase, before the game's Esc = pause). */
@@ -308,12 +346,15 @@ export class CutscenePlayer {
     const t = this.t;
     const pose = this.pose;
     const ctx = this.ctx;
+    pose.shake = 0;
 
     // Shots: the last one started, eased from -> to.
     if (s.shots.length) {
       let shot = s.shots[0];
       for (const sh of s.shots) if (sh.at <= t) shot = sh;
-      const k = shot.dur ? ease(shot.ease, Math.min(1, Math.max(0, (t - shot.at) / shot.dur))) : 1;
+      // Reduced motion: a fast pan (`whip`) becomes a cut.
+      const dur = this.reducedMotion && shot.whip ? 0 : shot.dur;
+      const k = dur ? ease(shot.ease, Math.min(1, Math.max(0, (t - shot.at) / dur))) : 1;
       const to = shot.to ?? shot.from;
       toVec(shot.from.pos, ctx, this._from.position);
       toVec(shot.from.look, ctx, this._from.look);
@@ -333,12 +374,20 @@ export class CutscenePlayer {
     const head = s.head;
     const time = this.time;
     if (head) {
-      const breath = head.breath ?? 0;
-      const bob = head.bob ?? 0;
+      const calm = this.reducedMotion ? 0.25 : 1;
+      const breath = (head.breath ?? 0) * calm;
+      const bob = (head.bob ?? 0) * calm;
       const rate = head.bobRate ?? 8;
       pose.position.y += Math.sin(time * 1.6) * 0.012 * breath + Math.abs(Math.sin(time * rate * 0.5)) * 0.05 * bob;
       pose.position.x += Math.sin(time * rate * 0.25) * 0.02 * bob;
-      pose.roll += Math.sin(time * 0.7) * 0.012 * (head.sway ?? 0) + Math.sin(time * rate * 0.25) * 0.01 * bob;
+      pose.roll += Math.sin(time * 0.7) * 0.012 * (head.sway ?? 0) * calm + Math.sin(time * rate * 0.25) * 0.01 * bob;
+    }
+    // A scene's own shake (pose.shake, 0..1), a quarter under reduced motion.
+    if (pose.shake > 0) {
+      const amount = pose.shake * (this.reducedMotion ? 0.25 : 1);
+      pose.position.x += (Math.random() * 2 - 1) * 0.06 * amount;
+      pose.position.y += (Math.random() * 2 - 1) * 0.05 * amount;
+      pose.roll += (Math.random() * 2 - 1) * 0.02 * amount;
     }
     if (this.camera) {
       const cam = this.camera;
@@ -357,7 +406,7 @@ export class CutscenePlayer {
     const lids = sampleTrack(tr.lids, t);
     if (lids !== null) this.ui.setLids(lids);
     const blur = sampleTrack(tr.blur, t);
-    if (blur !== null) this.ui.setBlur(blur);
+    if (blur !== null) this.ui.setBlur(this.reducedMotion ? blur * 0.5 : blur);
     const vignette = sampleTrack(tr.vignette, t);
     if (vignette !== null) this.ui.setVignette(vignette);
     const fade = sampleTrack(tr.fade, t);

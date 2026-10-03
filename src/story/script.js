@@ -64,14 +64,24 @@ export const SCENES = {
     { who: "okoro", text: "Basement first. The service tunnels go round the security doors. Stay close." },
   ],
 
+  /** 1b. Out of the ward, down the service passage, into the foundry. */
+  walkOut: [
+    { who: "okoro", text: "This way. Stay right behind me.", at: 0.8 },
+  ],
+
   /**
    * 2. The Foundry: Okoro talks while you run. Not a cutscene - each line
-   * fires when the run reaches `atRoute` (0 = start, 1 = the lift).
+   * fires when the run reaches `atRoute` (0 = start, 1 = the lift). A line
+   * that comes due while another is still up waits for it.
+   *
+   * `cue` makes Okoro act on the line: "handoff" - he hands over the glass
+   * spheres (the counter fills); "point" - he points at the next switch.
+   * The first switch is ~40 m in, so the hand-off and the lesson come first.
    */
   foundryTalk: [
-    { who: "okoro", atRoute: 0.01, text: "This is the old foundry. The machines run on their own - don't stop moving." },
-    { who: "okoro", atRoute: 0.04, text: "Here, take these. Glass spheres. Everything in this tower is glass - they break all of it." },
-    { who: "okoro", atRoute: 0.12, text: "The glass cells on the walls are switches. Break them and the gates open." },
+    { who: "okoro", atRoute: 0.003, cue: "handoff", text: "Here - take these. Glass spheres. They break any glass in this tower." },
+    { who: "okoro", atRoute: 0.035, cue: "point", text: "See the glass cells? Switches. Break one and the gate opens." },
+    { who: "okoro", atRoute: 0.085, text: "This is the old foundry. The machines run on their own - don't stop moving." },
     { who: "okoro", atRoute: 0.22, text: "You'll want to know what you are. You were Subject 07. Project Ascension." },
     { who: "okoro", atRoute: 0.33, text: "They grew things in the labs upstairs. 'Fixed' people. That's what Vale called it." },
     { who: "okoro", atRoute: 0.44, text: "Dr. Vale ran the programme. When the board came asking, he armed the charges instead of answering." },

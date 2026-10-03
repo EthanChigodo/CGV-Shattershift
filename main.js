@@ -16,6 +16,11 @@ import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 import { ShatterFX } from "./src/fx/shatter.js";
+import { StoryLayer } from "./src/story/story-layer.js";
+import { Companion, loadStoryCharacter } from "./src/story/companion.js";
+import { wakeScene, walkOutScene } from "./src/story/scenes.js";
+import { WardStage } from "./src/story/stages/ward.js";
+import { FoundryGuide } from "./src/story/foundry-guide.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -100,10 +105,21 @@ let foundrySpeedScale = 1;
 let storyBalls = null;
 /** Level 3's module is running the Roof (not the Labs). */
 let onRoofStage = false;
+/**
+ * A real story run, started from the menu (Start / Run again): the only
+ * kind that plays cutscenes and has Dr. Okoro along. Endless never does,
+ * and neither do the demo jumps (keys 1-5) - `__dbg.story.jump()` reaches
+ * any scene instead.
+ */
+let storyRun = false;
+/** The check harness steps the game itself (`__dbg.manual`). */
+let manualStep = false;
 
 
 const settingsDefaults = {
   sensitivity: 100, aimAssist: true, reducedMotion: false, quality: "auto",
+  // The story's reaction hits (src/story/reaction.js).
+  longReactions: false, holdInsteadOfMash: false,
   // Which HUD panels are shown. See HUD_PANELS in src/ui/causeway-hud.js.
   hud: Object.fromEntries(HUD_PANELS.map((p) => [p.key, p.on])),
 };
@@ -138,6 +154,28 @@ const unlockMusic = async (event) => {
 addEventListener("pointerdown", unlockMusic, { passive: true });
 addEventListener("keydown", unlockMusic);
 
+/*
+ * The story layer: one per page, shared by every level (src/story/). The
+ * cutscenes, reaction hits, subtitles and Dr. Okoro's talk during play. It is
+ * clocked by updateGame, so pausing freezes it.
+ */
+const story = new StoryLayer({
+  getAudioContext: () => music.context,
+  blurTargets: [canvas],
+  options: { longWindows: settings.longReactions, holdInsteadOfMash: settings.holdInsteadOfMash, reducedMotion: settings.reducedMotion },
+});
+// Esc tapped during a cutscene: the pause menu (held: skip).
+story.player.on("pause-request", () => openPause());
+/** Dr. Okoro: one companion in the main scene (the ward and the Foundry). */
+const okoro = new Companion({ bag: true });
+okoro.root.visible = false;
+/** The ward the story opens in, while it exists. */
+let ward = null;
+/** Okoro's run through the Foundry, while it runs. */
+let foundryGuide = null;
+/** The player's body is shown during a main-scene cutscene from this point on. */
+let cutsceneShowsPlayer = false;
+
 const $ = (selector) => document.querySelector(selector);
 const ui = {
   level: $("#level"), ammo: $("#ammo"), health: $("#health"), score: $("#score"),
@@ -154,6 +192,7 @@ const ui = {
   settingsBackButton: $("#settingsBackButton"),
   sensitivitySlider: $("#sensitivitySlider"), reducedMotionToggle: $("#reducedMotionToggle"),
   aimAssistToggle: $("#aimAssistToggle"),
+  longReactionsToggle: $("#longReactionsToggle"), holdInsteadOfMashToggle: $("#holdInsteadOfMashToggle"),
   viewButton: $("#viewButton"), viewMenu: $("#viewMenu"), briefing: $("#briefingMissions"),
   qualitySelect: $("#qualitySelect"),
   manual: $("#manualScreen"), previewBar: $("#previewBar"), fade: $("#fadeOverlay"),
@@ -164,6 +203,8 @@ function applySettingsToControls() {
   ui.sensitivitySlider.value = settings.sensitivity;
   ui.aimAssistToggle.checked = settings.aimAssist;
   ui.reducedMotionToggle.checked = settings.reducedMotion;
+  if (ui.longReactionsToggle) ui.longReactionsToggle.checked = settings.longReactions;
+  if (ui.holdInsteadOfMashToggle) ui.holdInsteadOfMashToggle.checked = settings.holdInsteadOfMash;
   ui.qualitySelect.value = settings.quality;
   for (const input of document.querySelectorAll("[data-hud-key]")) input.checked = !!settings.hud[input.dataset.hudKey];
   applyHudPanels(settings.hud);
@@ -362,8 +403,13 @@ function foundryDistance() {
 function foundrySpeed() {
   if (!foundry) return 9.2;
   const progress = foundryDistance() / foundry.route.totalLength;
+  // The story's opening is gentler: slower, so the player can listen to Okoro.
+  if (storyRun && progress < STORY_GENTLE_START) return 5.6;
   return (FOUNDRY_SPEED_ZONES.find((zone) => progress < zone.until) ?? FOUNDRY_SPEED_ZONES[2]).speed * foundrySpeedScale;
 }
+
+/** The first 15% of the Foundry, in a story run: no filler hazards, a slower pace. */
+const STORY_GENTLE_START = 0.15;
 
 /** @param {number} [variant]  0 = the authored layout; endless laps reshuffle it */
 function buildFoundry(variant = 0) {
@@ -383,6 +429,7 @@ function buildFoundry(variant = 0) {
     brightness: 1.6,
     runSpeed: FOUNDRY_SPEED_ZONES[2].speed,
     variant,
+    gentleStart: storyRun ? STORY_GENTLE_START : 0,
   });
   foundry.addTo(scene);
   foundry.root.visible = false;
@@ -485,6 +532,7 @@ function updateFoundry(dt, time) {
   }
 
   level1Audio.updateBrokenGlass(foundryCentre, jumpHeight < 0.12);
+  updateFoundryGuide(dt);
   foundryHud.update({ distance, level: foundry });
   foundryHud.setRun({ score, combo, spheres: ammo, comboRatio: comboTimer / 2.6 });
 }
@@ -1515,6 +1563,9 @@ const FOUNDRY_LIFT_HANDOFF = 2.2;
 function startGravityLift({ boarded = false } = {}) {
   if (gravityLift) return;
   currentLevel = 2; state = "lift"; transitionTarget = 3; liftTimer = 0;
+  // Okoro leaves the main scene with the Foundry (the ride has its own scene).
+  foundryGuide = null;
+  hideOkoro();
   // Free Level 2 (and its lift) now rather than on the way into Level 3.
   setFoundryActive(false);
   if (foundry) { foundryHud.unbind(); foundry.dispose(); foundry = null; }
@@ -1527,6 +1578,8 @@ function startGravityLift({ boarded = false } = {}) {
     character: playerBodyTemplate,
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
+    // The story's version: Okoro drops the launcher, the clamps are reaction hits.
+    story: storyRun && runKind === "story" ? { layer: story, okoroTemplate } : null,
   });
   gravityLift.onPointerMove(pointer.x, pointer.y);
   // The ride has its own alerts; clear the game's message line for them.
@@ -1575,6 +1628,7 @@ function demoGravityLift() {
 /* ==================================================================== */
 
 function resetStats(mode = causewayMode) {
+  endStoryStage();
   leaveGravityLift();
   if (currentLevel === 3 || meltdown?.visible) leaveMeltdown(1);
   foundrySpeedScale = 1; endlessRun.laps = 0; endlessRun.distance = 0;
@@ -1610,6 +1664,7 @@ function resetStats(mode = causewayMode) {
  * through startCampaign() / startEndless().
  */
 function resetGame(mode = causewayMode) {
+  storyRun = false;
   runKind = mode === "endless" ? "endless" : "story";
   endlessEnv = mode === "endless" ? "skyline" : null;
   resetStats(mode); state = "playing";
@@ -1643,10 +1698,172 @@ function resetRunner() {
 
 /** Start pressed: the story, from the basement up. */
 function startCampaign() {
+  storyRun = true;
   resetStats("story");
   runKind = "story"; endlessEnv = null; storyBalls = null;
   music.playRound1();
   enterFoundry();
+  // Okoro brings the spheres: none until he hands them over.
+  ammo = 0;
+  updateUI();
+  if (!story.hasSeen("wake")) beginOpening();
+  else startFoundryGuide();
+}
+
+/* ==================================================================== */
+/* STORY - Phase 2: the opening                                          */
+/* ==================================================================== */
+
+/**
+ * The wake-up: black, the monitor, HALCYON; the lids fail twice and open on
+ * the ward ceiling; Okoro over the bed; up, and out behind him through the
+ * service passage into the Foundry, where the camera rises into the run's
+ * chase view and play begins (src/story/stages/ward.js, scenes.js).
+ */
+function beginOpening() {
+  state = "cutscene";
+  cameraThird = true;
+  cutsceneShowsPlayer = false;
+  ward?.dispose();
+  ward = new WardStage({ startZ: FOUNDRY_ORIGIN_Z });
+  scene.add(ward.root);
+  showOkoro(ward.okoroStart.position, ward.okoroStart.heading);
+  setWardLight(1);
+  ui.fade.style.opacity = "0";
+  run.fadeOut = 0;
+  story.play(wakeScene({ ...ward.anchors, okoro }), {
+    camera,
+    on: {
+      event: (name) => {
+        if (name === "monitor") level1Audio.uiClick?.();
+      },
+      done: ({ skipped }) => {
+        // Holding Esc skips the whole opening, straight to the run.
+        if (skipped || !ward) finishOpening();
+        else playWalkOut();
+      },
+    },
+  });
+}
+
+function playWalkOut() {
+  story.play(walkOutScene({ ...ward.walkAnchors(), okoro, onProgress: (k) => setWardLight(1 - k) }), {
+    camera,
+    on: {
+      event: (name) => {
+        if (name === "show-player") cutsceneShowsPlayer = true;
+      },
+      done: () => finishOpening(),
+    },
+  });
+}
+
+/** The opening is over (or skipped): the run begins, Okoro ahead. */
+function finishOpening() {
+  ward?.dispose();
+  ward = null;
+  setWardLight(0);
+  cutsceneShowsPlayer = false;
+  if (state !== "cutscene") return;
+  state = "playing";
+  snapCamera = true;
+  camera.fov = 68; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
+  startFoundryGuide();
+}
+
+/** The ward is lit by the scene's own lights, brightened; 0 = the Foundry's values. */
+function setWardLight(k) {
+  const t = THREE.MathUtils.clamp(k, 0, 1);
+  hemi.intensity = THREE.MathUtils.lerp(0.35, 1.3, t);
+  hemi.color.setRGB(1, 0.816, 0.627).lerp(_wardSky.set(0xdfefff), t);
+  sun.intensity = THREE.MathUtils.lerp(0.35, 0.7, t);
+}
+const _wardSky = new THREE.Color();
+
+function showOkoro(position, heading) {
+  if (okoro.root.parent !== scene) scene.add(okoro.root);
+  okoro.root.visible = true;
+  okoro.root.position.copy(position);
+  okoro.root.rotation.y = heading;
+  okoro.act("idle").lookAt(null);
+  okoro.speed = 0;
+  Object.assign(okoro.adjust, { lean: 0, headNod: 0, twist: 0, aimR: 0, aimL: 0 });
+}
+
+function hideOkoro() {
+  okoro.root.visible = false;
+  scene.remove(okoro.root);
+}
+
+/** Okoro runs the Foundry with you (story runs only). */
+function startFoundryGuide() {
+  if (!storyRun || runKind !== "story" || !foundry) return;
+  const talk = !story.hasSeen("foundryTalk");
+  foundryGuide = new FoundryGuide({ okoro, level: foundry, lift: foundryLift, talk });
+  showOkoro(okoro.root.position, 0);
+  foundryGuide.start(foundryDistance(), { lateral: 0 });
+  okoro.act("run");
+}
+
+function updateFoundryGuide(dt) {
+  if (!foundryGuide) return;
+  const out = foundryGuide.update(dt, {
+    distance: foundryDistance(),
+    speed: foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1),
+    lane,
+    exiting: foundryExit,
+    riding: !!foundryLift?.state.riding,
+  });
+  for (const line of out.lines) {
+    story.talk(line);
+    story.markSeen("foundryTalk");
+  }
+  if (out.cues.includes("handoff")) {
+    // From his bag: the spheres the run needs.
+    ammo += 12;
+    level1Audio.sphereCollected();
+    showMessage("+12 GLASS SPHERES // FROM DR. OKORO");
+    updateUI();
+  }
+  okoro.update(dt, { speed: foundryGuide.gaitSpeed });
+}
+
+/** Debug jumps to the later phases' scenes (`__dbg.story.jump(name)`). */
+const storyJumps = {
+  /** Phase 3: the Gravity Fault ride, story version. */
+  lift() {
+    story.markSeen("wake");
+    startCampaign();
+    ammo = 12;
+    startGravityLift();
+    return true;
+  },
+};
+
+/** Tear down the story's main-scene pieces (restart, quit, a level change). */
+function endStoryStage() {
+  story.stop();
+  ward?.dispose();
+  ward = null;
+  foundryGuide = null;
+  hideOkoro();
+  cutsceneShowsPlayer = false;
+}
+
+/** A main-scene cutscene frame (the opening): the world idles, the scene drives the camera. */
+function updateMainCutscene(dt, time, frame) {
+  const sdt = dt * (frame?.timeScale ?? 1);
+  ward?.update(dt, time);
+  if (foundry && currentLevel === 2) {
+    updateFoundryBox();
+    foundry.update({ dt, time, distance: Math.max(0, foundryDistance()), playerPosition: foundryCentre });
+  }
+  if (okoro.root.visible) okoro.update(sdt);
+  avatar.position.set(playerX, playerY, runZ + .5);
+  avatar.visible = cutsceneShowsPlayer;
+  updatePlayerBody(sdt);
+  document.body.classList.remove("aiming");
+  shatterFX.update(sdt);
 }
 
 /** Sector 1 - the Shifting Foundry, in the basement. */
@@ -1739,6 +1956,7 @@ async function enterRoof() {
 
 /** Endless: one environment, until you go down. */
 function startEndless(env) {
+  storyRun = false;
   resetStats(env === "skyline" ? "endless" : "story");
   missions.active = [];
   runKind = "endless"; endlessEnv = env; storyBalls = null;
@@ -1922,6 +2140,9 @@ function demoJump(stage) {
   if (state !== "playing") return;
   music.fadeOut();
   leaveGravityLift();
+  // Demo jumps are dev shortcuts: no cutscenes, no Okoro (__dbg.story.jump for those).
+  endStoryStage();
+  storyRun = false;
   runKind = "story"; endlessEnv = null;
   if (currentLevel === 1 && causeway) { setCausewayActive(false); level1Audio.cleanupLevel(); }
   if (currentLevel === 3) leaveMeltdown(stage === 2 ? 3 : 2);
@@ -2015,6 +2236,9 @@ function updateGame(dt, time) {
   if (state === "preview") { updatePreview(dt, time); return; }
   if (state === "launch") { updateLaunch(dt, time); return; }
   if (paused) return;
+  // The story layer: cutscenes, reactions, and Okoro's talk during play.
+  const storyFrame = story.update(dt);
+  if (state === "cutscene") { updateMainCutscene(dt, time, storyFrame); return; }
   // Level 3 runs its own world, camera and HUD (src/levels/meltdown/game.js).
   if (currentLevel === 3) { updateMeltdownFrame(dt, time); return; }
   // So does the lift ride between Levels 2 and 3 (src/elevators/).
@@ -2089,6 +2313,8 @@ function updateGame(dt, time) {
     foundryLift.floorPoint(avatar.position);
     avatar.visible = true;
     if (currentLevel === 2 && foundry) updateFoundry(dt, time);
+    // Okoro rides up with you.
+    updateFoundryGuide(dt);
     const handoff = THREE.MathUtils.clamp((ride.t - FOUNDRY_LIFT_HANDOFF) / 0.5, 0, 1);
     ui.fade.style.opacity = Math.max(ride.fade, handoff).toFixed(3);
     if (handoff >= 1 || ride.done) { level1Audio.updateElevator(0, false); startGravityLift({ boarded: true }); }
@@ -2197,7 +2423,8 @@ function animate() {
   const rawDt = clock.getDelta();
   const dt = Math.min(.033, rawDt);
   renderer.info.reset();
-  updateGame(dt, clock.elapsedTime);
+  // Checks that step the game themselves (__dbg.manual) stop the real clock.
+  if (!manualStep) updateGame(dt, clock.elapsedTime);
   renderFrame();
   updatePerformance(rawDt);
 }
@@ -2220,8 +2447,9 @@ function closeSettings() {
 }
 
 function openPause() {
-  if (state !== "playing" && state !== "lift") return;
+  if (state !== "playing" && state !== "lift" && state !== "cutscene") return;
   paused = true;  run.focusing = false;
+  story.setPaused(true);
   music.pauseDuck();
   level1Audio.setPaused(true);
   if (currentLevel === 3) meltdown?.setPaused(true);
@@ -2239,6 +2467,7 @@ function closePause() {
   const wasPaused = paused;
   ui.pause.classList.remove("active");
   paused = false;
+  story.setPaused(false);
   if (wasPaused) music.restore();
   if (wasPaused) level1Audio.setPaused(false);
   if (currentLevel === 3) meltdown?.setPaused(false);
@@ -2261,6 +2490,7 @@ function togglePhoto() {
 
 function quitToMenu() {
   closePause(); cancelStory();
+  storyRun = false;
   level1Audio.cleanupLevel();
   if (photoActive) togglePhoto();
   ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
@@ -2349,8 +2579,18 @@ for (const button of characterButtons) {
 }
 showCharacterChoice();
 loadPlayerBody();
+// Dr. Okoro's model (cached: every scene's companion clones the same template).
+let okoroTemplate = null;
+const okoroReady = loadStoryCharacter(MELTDOWN_ASSET_BASE, "scientistGood")
+  .then((template) => {
+    okoroTemplate = template;
+    okoro.setModel(template);
+    return template;
+  })
+  .catch((error) => console.warn("[story] Okoro's model failed to load; stand-in kept", error));
 
-$("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); startCampaign(); });
+// A new story from the menu plays every scene again ("Run again" after a death does not).
+$("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); story.forgetSeen(); startCampaign(); });
 ui.endlessButton.addEventListener("click", () => { ui.start.classList.remove("active"); refreshEndlessMenu(); ui.endless.classList.add("active"); });
 for (const button of document.querySelectorAll("[data-endless]")) {
   button.addEventListener("click", () => startEndless(button.dataset.endless));
@@ -2382,7 +2622,9 @@ addEventListener("click", (event) => {
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
 ui.aimAssistToggle.addEventListener("change", (event) => { settings.aimAssist = event.target.checked; saveSettings(); });
-ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); meltdown?.setReducedMotion(settings.reducedMotion); });
+ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
+ui.longReactionsToggle.addEventListener("change", (event) => { settings.longReactions = event.target.checked; saveSettings(); story.setOptions({ longWindows: settings.longReactions }); });
+ui.holdInsteadOfMashToggle.addEventListener("change", (event) => { settings.holdInsteadOfMash = event.target.checked; saveSettings(); story.setOptions({ holdInsteadOfMash: settings.holdInsteadOfMash }); });
 ui.qualitySelect.addEventListener("change", (event) => {
   settings.quality = event.target.value;
   autoLow = false;
@@ -2393,6 +2635,7 @@ ui.qualitySelect.addEventListener("change", (event) => {
 $("#resetSettingsButton").addEventListener("click", () => {
   settings = { ...settingsDefaults, hud: { ...settingsDefaults.hud } };
   applySettingsToControls(); saveSettings(); applyQuality();
+  story.setOptions({ longWindows: settings.longReactions, holdInsteadOfMash: settings.holdInsteadOfMash, reducedMotion: settings.reducedMotion });
 });
 
 // Photo mode controls.
@@ -2438,6 +2681,7 @@ function placeReticle() {
 }
 addEventListener("pointerdown", (event) => {
   if (state === "launch" && causeway) { skipLaunch(); return; }
+  if (state === "cutscene" || story.player.active) return;
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
@@ -2477,6 +2721,11 @@ addEventListener("keydown", (event) => {
     return;
   }
   if (state === "launch" && causeway) { skipLaunch(); return; }
+  // A cutscene has the controls (its reaction keys are caught before this).
+  if (state === "cutscene" || story.player.active) {
+    if (event.code === "Space") event.preventDefault();
+    return;
+  }
   // Level 3 has its own controls; the keys it uses are not also acted on
   // here (Esc, the demo jumps, H and V still are).
   if (currentLevel === 3 && meltdown && state === "playing" && !paused && meltdown.onKeyDown(event)) return;
@@ -2541,6 +2790,15 @@ animate();
  */
 let stepTime = 0;
 globalThis.__dbg = {
+  /** true: only __dbg.step advances the game (the page still renders). */
+  get manual() { return manualStep; },
+  set manual(v) { manualStep = !!v; },
+  get paused() { return paused; },
+  startEndless,
+  restartRun,
+  endRun,
+  openPause,
+  closePause,
   get state() { return state; },
   get currentLevel() { return currentLevel; },
   get runZ() { return runZ; },
@@ -2590,4 +2848,23 @@ globalThis.__dbg = {
   setAmmo(v) { ammo = v; },
   get playerX() { return playerX; },
   renderer, scene, camera, THREE,
+  /** The story: the layer, Okoro, and a jump to any scene (story runs only). */
+  story: {
+    layer: story,
+    okoro,
+    ready: okoroReady,
+    get guide() { return foundryGuide; },
+    get ward() { return ward; },
+    get storyRun() { return storyRun; },
+    get log() { return story.log; },
+    /** Start a scene as a story run would reach it. */
+    jump(name) {
+      closePause();
+      finishStory();
+      for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
+      if (name === "wake") { story.forgetSeen(); startCampaign(); return true; }
+      if (name === "foundry") { story.markSeen("wake"); startCampaign(); return true; }
+      return storyJumps[name]?.() ?? false;
+    },
+  },
 };

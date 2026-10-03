@@ -87,6 +87,7 @@ import { BrakeClamps } from "./clamps.js";
 import { DiagnosticView } from "./diagnostic.js";
 import { ElevatorHud } from "../ui/elevator-hud.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
+import { StoryRideDirector } from "./story-ride.js";
 
 /** Level 2 is floor 140 of Ascension Tower; Level 3 is further up. */
 export const START_FLOOR = 141;
@@ -165,8 +166,11 @@ export class GravityFaultRide {
    * @param {boolean} [o.boarded]  the player boarded in Level 2 already (the
    *   Calibration Lift): skip the board phase and start as the lift climbs
    * @param {string} [o.assetBase]  Level 3's asset folder, for the launcher model
+   * @param {object} [o.story]  the story's version (story-ride.js): Dr. Okoro
+   *   drops the launcher, and the clamps are reaction hits -
+   *   { layer: StoryLayer, okoroTemplate }. Without it the ride is unchanged.
    */
-  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null, assetBase = null }) {
+  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null, assetBase = null, story = null }) {
     this.renderer = renderer;
     this.reducedMotion = reducedMotion;
     this.boarded = boarded;
@@ -233,6 +237,8 @@ export class GravityFaultRide {
     this.hud.show();
 
     this.phases = boarded ? PHASES.filter(([name]) => name !== "board") : PHASES.slice();
+    // The story's clamps end when the last reaction lands, not on a clock.
+    if (story) this.phases = this.phases.map(([name, length]) => [name, name === "clamps" ? 600 : length]);
     this.state = {
       phaseIndex: 0,
       /** Seconds into the current phase. */
@@ -261,6 +267,7 @@ export class GravityFaultRide {
     this.cabin.setDoors(boarded ? 0 : 1);
     this.cabin.display.userData.draw(String(START_FLOOR));
     this._place(0);
+    this.director = story ? new StoryRideDirector(this, story) : null;
   }
 
   /** Name of the current phase. */
@@ -275,6 +282,8 @@ export class GravityFaultRide {
 
   update(dt, time) {
     if (this.result.done) return;
+    // The story's director: its reactions run in real time, the ride slows.
+    if (this.director) dt *= this.director.update(dt);
     const s = this.state;
     s.pt += dt;
     s.age += dt;
@@ -282,6 +291,7 @@ export class GravityFaultRide {
 
     // Advance through the phases.
     let [name, length] = this.phases[s.phaseIndex];
+    if (this.director) s.pt = this.director.clampTime(name, s.pt);
     while (s.pt >= length) {
       s.pt -= length;
       s.phaseIndex += 1;
@@ -331,7 +341,7 @@ export class GravityFaultRide {
     // Fades are the host's overlay; the ride only says how dark.
     const last = this.state.phaseIndex === this.phases.length - 1;
     const fadeOut = last ? THREE.MathUtils.clamp((s.pt - (length - FADE_OUT)) / FADE_OUT, 0, 1) : 0;
-    this.fade = Math.max(1 - s.age / FADE_IN, fadeOut);
+    this.fade = Math.max(1 - s.age / FADE_IN, fadeOut, this.director?.fade ?? 0);
 
     this.shake.update(dt);
     this._updateCamera(dt, time);
@@ -382,6 +392,7 @@ export class GravityFaultRide {
       this.hud.alert("BRAKES RELEASED // ASCENDING", "good");
       this.events.emit("resume", {});
     }
+    this.director?.enter(name);
   }
 
   /** Per-frame work for the current phase: velocity, lights, one-shot beats. */
@@ -512,6 +523,9 @@ export class GravityFaultRide {
     const s = this.state;
     s.lights.main = 0.45 + 0.3 * flicker(this.uniforms.uTime.value, 2.2);
     s.lights.a = 1;
+    // The story: Okoro dropped it in the fall - nothing comes through the roof.
+    if (this.director) once("thud", 0, () => {});
+    if (this.director) once("crash", 0, () => {});
     once("thud", 0.05, () => {
       this.shake.add(0.35);
       this.shake.kick(0, -0.06, 0);
@@ -571,6 +585,10 @@ export class GravityFaultRide {
    * until all three are locked (or time runs out and they force-lock).
    */
   _clampsBeat(pt, dt, time) {
+    if (this.director) {
+      this.director.clampsBeat(pt, dt, time);
+      return;
+    }
     const s = this.state;
     const left = Math.max(0, CLAMP_TIME - pt);
     const done = this.clamps.locked === 3;
@@ -599,6 +617,8 @@ export class GravityFaultRide {
 
   /** Called by the host on a click: fire the launcher at the crosshair. */
   fire() {
+    // The story's clamps are reaction hits; its launcher fires on success.
+    if (this.director) return false;
     if (this.phase !== "clamps" || this.clamps.locked === 3 || this.fireCooldown > 0) return false;
     this.fireCooldown = 0.2;
     const from = new THREE.Vector3();
@@ -614,7 +634,7 @@ export class GravityFaultRide {
 
   /** Is the player aiming right now (for the host's crosshair)? */
   get wantsAim() {
-    return this.phase === "clamps" && this.clamps.locked < 3;
+    return !this.director && this.phase === "clamps" && this.clamps.locked < 3;
   }
 
   _clampLocked(index) {
@@ -625,7 +645,8 @@ export class GravityFaultRide {
     this.sparks.emit(this.clamps.worldPosition(this.clamps.clamps[index], _v), 60, { direction: _dir.set(0, 1, 0), spread: 1, speed: 5 });
     if (!s.forced) this.result.stabilised += 1;
     this.events.emit("clamp-lock", { index, locked: n });
-    if (n === 3 && !s.forced) {
+    // (The story has a fourth: the brake itself - its director ends the phase.)
+    if (n === 3 && !s.forced && !this.director) {
       const left = Math.max(0, CLAMP_TIME - s.pt);
       this.result.bonus = this.result.stabilised * 400 + 800 + Math.round(left) * 50;
       this.hud.alert(`BRAKES LOCKED // +${this.result.bonus}`, "good");
@@ -853,6 +874,7 @@ export class GravityFaultRide {
 
   dispose() {
     this.visible = false;
+    this.director?.dispose();
     this._disposeAvatar();
     this.sparks.dispose();
     this.glass.dispose();
