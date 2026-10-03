@@ -56,6 +56,10 @@ import { MeltdownHud } from "../../ui/meltdown-hud.js";
 import { MeltdownAudio } from "../../audio/meltdown-audio.js";
 import { Level1Audio } from "../../audio/level1-audio.js";
 import { ShatterFX } from "../../fx/shatter.js";
+import { LabsDirector } from "../../story/labs-director.js";
+import { latchReaction } from "../../story/reaction.js";
+import { EndingDirector } from "../../story/ending-director.js";
+import { SCENES as STORY_LINES } from "../../story/script.js";
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                               */
@@ -297,6 +301,13 @@ export class MeltdownGame {
     this.roofClock = 0;
     this._timers = [];
     this.cut = null;
+    /**
+     * The story (src/story/labs-director.js), when the host runs the Labs as
+     * part of a story run: { layer, okoroTemplate, valeTemplate, assetBase }.
+     * Null everywhere else - the preview, Endless - and the Labs play as before.
+     */
+    this.story = null;
+    this.director = null;
 
     this._v = {
       desired: new THREE.Vector3(), look: new THREE.Vector3(), smoothedLook: new THREE.Vector3(),
@@ -352,6 +363,11 @@ export class MeltdownGame {
     this.speedScale = 1;
   }
 
+  /** The story's cutscenes for the next load() (mode "corridor" only), or null. */
+  setStory(story) {
+    this.story = story;
+  }
+
   async load({ balls = START_BALLS, vitality = START_VITALITY, seed = 0, carry = false } = {}) {
     this.shatter.clear();
     this.sfx?.startLevel();
@@ -387,6 +403,9 @@ export class MeltdownGame {
     this.hud.bind(level);
     this.hud.hideSummary();
     this._bindLevelEvents(level);
+    this.director?.dispose();
+    this.director = this.story && this.mode === "corridor" ? new LabsDirector(this, this.story) : null;
+    this.storyBag = false;
 
     // An endless lap carries the run's counters on.
     const kept = carry ? (({ shots, breaks, downs, hits }) => ({ shots, breaks, downs, hits }))(this.runner) : {};
@@ -413,6 +432,7 @@ export class MeltdownGame {
     this.environment.refresh();
     this.assetsReady = true;
     this.loadRoofAssets();
+    await this.director?.onAssets();
   }
 
   /** The lift doors open and the run begins. */
@@ -471,6 +491,10 @@ export class MeltdownGame {
     }
     this.roof?.dispose();
     this.roof = null;
+    this.director?.dispose();
+    this.director = null;
+    this.finale?.dispose();
+    this.finale = null;
     this.projectiles.clear();
     this.debris.clear();
     this.shatter.clear();
@@ -597,7 +621,12 @@ export class MeltdownGame {
   _bindLevelEvents(level) {
     const { hud, audio, debris } = this;
     const on = (name, fn) => level.events.on(name, (p) => level === this.level && fn(p));
-    on("complete", () => (this.mode === "endless-labs" ? this._nextLap() : this._startDeparture()));
+    on("complete", () => {
+      if (this.mode === "endless-labs") this._nextLap();
+      // The story: the blocked lift, the desk, the sacrifice - not a run in.
+      else if (this.phase === "run" && this.director?.onComplete()) this.events.emit("phase", { phase: "story" });
+      else this._startDeparture();
+    });
     on("timer-expired", () => {
       if (this.phase !== "run" || this.mode === "endless-labs") return;
       this.runner.vitality = 0;
@@ -706,7 +735,12 @@ export class MeltdownGame {
       if (code === "Space" && this.phase === "roof") {
         event.preventDefault?.();
         const hero = this.hero;
-        // At the ledge with the ladder in reach, Space is the jump for it.
+        // At the ledge with the ladder in reach, Space is the jump for it -
+        // in the story, a latch reaction (two keys, fast) decides the catch.
+        if (this.story && this.roof?.canGrab(hero.position)) {
+          this._startLadderLatch();
+          return true;
+        }
         if (this.roof?.grab(hero.position)) return true;
         if (hero.dodgeCooldown <= 0) {
           const dir = hero.velocity.lengthSq() > 0.5 ? hero.velocity.clone() : hero.aim.clone().sub(hero.position).setY(0);
@@ -752,6 +786,7 @@ export class MeltdownGame {
   /* ================================================================ */
 
   render() {
+    this.director?.beforeRender(this.renderer);
     this.composer.render();
   }
 
@@ -764,7 +799,7 @@ export class MeltdownGame {
     }
     this._updateFade(dt);
     const phase = this.phase;
-    const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
+    const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
     const playing = onRoof ? phase === "roof" && this.runner.alive : phase === "run" && this.runner.alive && !this.runner.finished;
     this._updateLauncher(dt, playing);
 
@@ -818,16 +853,33 @@ export class MeltdownGame {
   _updateRunFrame(dt, time, playing) {
     const { level, runner: r, avatar, camera } = this;
     const V = this._v;
-    const cutscene = this.phase === "idle" || this.phase === "arrive" || this.phase === "depart";
+    // "story": one of the story's cutscenes (labs-director.js) has the
+    // camera; the run is held - no movement, no clock, no fire.
+    const story = this.phase === "story";
+    const cutscene = this.phase === "idle" || this.phase === "arrive" || this.phase === "depart" || story;
 
     if (this.phase === "arrive") {
       this.cut = level.updateArrival(dt);
+      this.director?.updateArrival(this.cut, dt);
       if (this.cut?.done) {
-        this.phase = "run";
         this.cut = null;
         r.baseSpeed = level.speedAt(0);
-        this.hud.toast("A / D LANES", "SPACE JUMP // SHIFT SLIDE", "", 3600);
-        this._after(2.2, () => this.hud.toast("HOLD CLICK", "TO FIRE", "", 3000));
+        if (this.director?.afterArrival()) {
+          this.phase = "story";
+          this.events.emit("phase", { phase: "story" });
+        } else {
+          this.phase = "run";
+          this.hud.toast("A / D LANES", "SPACE JUMP // SHIFT SLIDE", "", 3600);
+          this._after(2.2, () => this.hud.toast("HOLD CLICK", "TO FIRE", "", 3000));
+          this.events.emit("phase", { phase: "run" });
+        }
+      }
+    } else if (story) {
+      this.director?.updateScene(dt, time);
+      // The scene handed back (the breach or the bend is over).
+      if (this.director?.stage === "run") {
+        this.phase = "run";
+        this.snapCamera = true;
         this.events.emit("phase", { phase: "run" });
       }
     } else if (this.phase === "depart") {
@@ -840,6 +892,11 @@ export class MeltdownGame {
     }
 
     if (!cutscene) this._updateMovement(dt, playing);
+    // The story during the run: Okoro alongside; the bend attack.
+    if (this.phase === "run" && this.director?.updateRun(dt, time)) {
+      this.phase = "story";
+      this.events.emit("phase", { phase: "story" });
+    }
 
     // The fire: vitality drains steadily, and the fire front's distance
     // behind you is that vitality made visible.
@@ -858,7 +915,11 @@ export class MeltdownGame {
     level.setFireFront(r.fireDistance);
 
     const firstPerson = !cutscene && CAMERA_MODES[this.cameraMode] === "FIRST PERSON";
-    if (cutscene && this.cut) {
+    if (this.phase === "story") {
+      // The story's cutscenes are first person: the body stays out of the shot.
+      avatar.setVisible(false);
+      avatar.shadow.visible = false;
+    } else if (cutscene && this.cut) {
       this._applyCutscene(this.cut, dt);
     } else {
       // The body.
@@ -1430,6 +1491,10 @@ export class MeltdownGame {
       this.level.dispose();
       this.level = null;
     }
+    this.director?.dispose();
+    this.director = null;
+    this.finale?.dispose();
+    this.finale = null;
     this.roof?.dispose();
     this.roof = null;
     this._timers.length = 0;
@@ -1637,6 +1702,74 @@ export class MeltdownGame {
     });
   }
 
+  /**
+   * The story's jump for the ladder: the leap starts, time slows, and the
+   * latch reaction decides it. Caught: the existing leap-and-hang ending.
+   * Missed: you fall (the story layer's death), then you're back on the
+   * roof just before the jump - and the helicopter is still there, its
+   * window held open for the retry.
+   */
+  _startLadderLatch() {
+    const layer = this.story.layer;
+    if (this.phase !== "roof" || layer.active) return;
+    this.phase = "latch";
+    this.runner.firing = false;
+    const hero = this.hero;
+    this._latch = { from: hero.position.clone(), fall: 0 };
+    this.hud.setPrompt(null);
+    this.audio.whoosh();
+    layer.play(
+      {
+        id: "ladderLatch",
+        letterbox: false,
+        skippable: false,
+        duration: 0.7,
+        reactions: [{ at: 0.3, id: "latch", spec: latchReaction(), lead: 0.3, slow: 0.15 }],
+      },
+      {
+        camera: null,
+        deathSeconds: 1.7,
+        deathLine: STORY_LINES.fallen[0],
+        on: {
+          fail: () => {
+            this._latch.falling = true;
+            this.audio.scream?.();
+          },
+          retry: () => {
+            // Back on the roof just before the jump; it waits for you.
+            layer.stop();
+            hero.position.copy(this._latch.from);
+            hero.velocity.set(0, 0, 0);
+            this.roof.holdExtraction?.();
+            this.phase = "roof";
+            this.snapCamera = true;
+            this._latch = null;
+          },
+          done: () => {
+            this._latch = null;
+            this.phase = "roof";
+            if (!this.roof.grab(hero.position)) this.hud.toast("TOO LATE", "", "warn");
+          },
+        },
+      }
+    );
+  }
+
+  /** The story's ending (ending-director.js), then the usual summary. */
+  _startFinale(title) {
+    this.phase = "finale";
+    this.runner.firing = false;
+    this.ui.letterbox.classList.remove("on");
+    this.finale?.dispose();
+    this.finale = new EndingDirector(this, this.story, () => {
+      this.finale?.dispose();
+      this.finale = null;
+      this.phase = "ending";
+      this._roofSummary(true, title);
+    });
+    this.events.emit("phase", { phase: "finale" });
+  }
+
   _startCutscene() {
     this.phase = "ending";
     this.runner.firing = false;
@@ -1780,6 +1913,27 @@ export class MeltdownGame {
       const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
       for (const h of hits) this._roofHit(h);
       this._updateRoofCamera(dt);
+    } else if (this.phase === "finale") {
+      // The story's ending: the roof burns on under the departing cabin.
+      roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
+      this.finale?.update(dt, time);
+    } else if (this.phase === "latch") {
+      // The story's latch: the world holds (the helicopter's window too)
+      // while the keys are up. A miss: over the edge and down.
+      const l = this._latch;
+      if (l?.falling) {
+        l.fall += dt;
+        hero.position.x += dt * 2.2;
+        hero.position.y = -4.9 * l.fall * l.fall;
+      } else {
+        // The leap toward the ladder, slowed right down.
+        hero.position.x += dt * 0.4;
+        hero.position.y = Math.min(0.9, hero.position.y + dt * 1.5);
+      }
+      avatar.root.position.copy(hero.position);
+      avatar.update(dt * 0.3, { speed: 0, height: 1, aiming: false });
+      avatar.reachUp = l?.falling ? 0.3 : 0.8;
+      this._updateRoofCamera(dt);
     } else {
       roof.update({ dt: sdt, time, player: hero.position, playerVelocity: hero.velocity });
       if (cut && cut.kind !== "arrival") {
@@ -1787,7 +1941,10 @@ export class MeltdownGame {
         if (cut.done && this.phase === "ending") {
           this.avatar.hold = 1;
           this.avatar.reachUp = 0;
-          this._roofSummary(true, roof.state.ending === "victory" ? "EXTRACTED" : "BARELY OUT");
+          const title = roof.state.ending === "victory" ? "EXTRACTED" : "BARELY OUT";
+          // The story: the pilot, the reveal, the title and the credits first.
+          if (this.story) this._startFinale(title);
+          else this._roofSummary(true, title);
         }
       } else {
         this._updateRoofCamera(dt);

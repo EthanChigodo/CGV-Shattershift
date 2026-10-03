@@ -1564,6 +1564,15 @@ export class RoofLevel {
     return player.x > EDGE - 4.5 && Math.hypot(dx, dz) < 4.6;
   }
 
+  /**
+   * The story's latch was missed and the player is back on the roof: the
+   * helicopter's waiting window starts over, so a retry can't run it out.
+   */
+  holdExtraction() {
+    const s = this.state;
+    if (s.ending === "extraction") s.extractT = Math.min(s.extractT, 2.7);
+  }
+
   /** The player jumped for it: play the leap and carry them off. */
   grab(player) {
     const s = this.state;

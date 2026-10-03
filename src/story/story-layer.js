@@ -80,6 +80,11 @@ export class StoryLayer {
     return this.player.active || !!this._death;
   }
 
+  /** Seconds into the default death after a missed reaction (0 when there is none). */
+  get deathTime() {
+    return this._death ? this._death.t : 0;
+  }
+
   /** The id of the scene playing, or null. */
   get sceneId() {
     return this.active ? this._scene?.id ?? null : null;

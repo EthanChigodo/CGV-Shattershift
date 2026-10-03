@@ -21,6 +21,9 @@ import { Companion, loadStoryCharacter } from "./src/story/companion.js";
 import { wakeScene, walkOutScene } from "./src/story/scenes.js";
 import { WardStage } from "./src/story/stages/ward.js";
 import { FoundryGuide } from "./src/story/foundry-guide.js";
+import { Fireball } from "./src/story/stages/fireball.js";
+import { blastScene } from "./src/story/scenes-skyline.js";
+import { SCENES as STORY_LINES } from "./src/story/script.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -747,6 +750,12 @@ const _forward = new THREE.Vector3(0, 0, -1);
 
 function updateCauseway(dt, time) {
   const distance = causewayDistance();
+  // The story: near the end of the skybridge, the tower behind blows.
+  if (skylineStory && !skylineStory.done && causewayMode === "story" && distance >= SKYLINE_BLAST_AT && state === "playing") {
+    beginSkylineBlast();
+    return;
+  }
+  skylineStory?.fireball.update(dt);
   run.time += dt;
 
   // ---- Speed: W sprints, S brakes, hits cost momentum ------------------
@@ -933,6 +942,7 @@ function updateCausewayLift(dt) {
 
 /** The Skyline's lift reaches the top: on to the Roof, the finale. */
 function finishCausewayLift() {
+  disposeSkylineStory();
   level1Audio.cleanupLevel();
   music.fadeOut();
   causewayHud.hideReport();
@@ -1169,6 +1179,8 @@ function getMeltdown() {
   // The story: through the lift at the end of the Labs, up to the Skyline.
   meltdown.events.on("corridor-complete", ({ stats }) => {
     if (currentLevel !== 3 || state !== "playing") return;
+    // The grief scene left the frame black; the Skyline brings its own fade.
+    story.stop();
     score += meltdownScore(stats, false) + 2000 + Math.round(stats.vitality) * 10;
     storyBalls = stats.balls;
     // Not from inside Level 3's own update: hand over once it has returned.
@@ -1203,6 +1215,13 @@ async function enterMeltdown() {
   meltdownEntering = true;
   const game = getMeltdown();
   game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
+  // The story's Labs: the breach, Okoro, the bend, the desk (labs-director.js).
+  game.setStory(storyRun && runKind === "story" ? {
+    layer: story,
+    okoroTemplate,
+    valeTemplate: () => valeTemplate,
+    assetBase: MELTDOWN_ASSET_BASE,
+  } : null);
   onRoofStage = false;
   ui.fade.style.opacity = "1";
   run.fadeOut = 0;
@@ -1253,7 +1272,7 @@ function updateMeltdownFrame(dt, time) {
     health = meltdown.runner.vitality;
     ammo = meltdown.runner.balls;
   }
-  document.body.classList.toggle("aiming", state === "playing" && !photoActive && !document.querySelector(".screen.active"));
+  document.body.classList.toggle("aiming", state === "playing" && !photoActive && !story.player.active && !document.querySelector(".screen.active"));
 }
 
 function meltdownScore(s, escaped) {
@@ -1828,6 +1847,135 @@ function updateFoundryGuide(dt) {
   okoro.update(dt, { speed: foundryGuide.gaitSpeed });
 }
 
+/* ==================================================================== */
+/* STORY - Phase 5: the Skyline's blast, sprint, jump and latch          */
+/* ==================================================================== */
+
+/** Where the tower behind blows, and where you land (route distances). */
+const SKYLINE_BLAST_AT = 500;
+const SKYLINE_LEDGE = 540;
+const SKYLINE_STAND = 546;
+/** The story's Skyline extras while the Skyline runs in a story run: { ledge, fireball, done }. */
+let skylineStory = null;
+
+/** The far building's edge to catch: a concrete lip at the start of the atrium. */
+function buildSkylineStory() {
+  disposeSkylineStory();
+  const group = new THREE.Group();
+  group.name = "SkylineStory";
+  // Lit from below by the fires (an emissive warmth: no real light, which
+  // would recompile the level's materials).
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x6d6a64, roughness: 0.92, metalness: 0.05, emissive: 0x3a1a0a, emissiveIntensity: 0.9 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x3a3c3e, roughness: 0.6, metalness: 0.7, emissive: 0x1a0c06 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb98a6c, roughness: 0.7, emissive: 0x8a4a2c });
+  const sleeve = new THREE.MeshStandardMaterial({ color: 0x5f9aa4, roughness: 0.85, emissive: 0x2a4a4e });
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(12.4, 0.9, 0.8), concrete);
+  lip.position.set(0, -0.43, CAUSEWAY_ORIGIN_Z - (SKYLINE_LEDGE + 0.4));
+  group.add(lip);
+  // Torn rebar where the bridge used to meet it.
+  for (let i = 0; i < 9; i += 1) {
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.9 + (i % 3) * 0.3, 5), steel);
+    bar.rotation.x = Math.PI / 2 + ((i % 4) - 1.5) * 0.25;
+    bar.position.set(-5.2 + i * 1.3, -0.35 + (i % 2) * 0.2, CAUSEWAY_ORIGIN_Z - SKYLINE_LEDGE + 0.35);
+    group.add(bar);
+  }
+  // Your hands on the lip, while you hang from it.
+  const hands = new THREE.Group();
+  for (const side of [-1, 1]) {
+    // Forearm from below the edge up over it, the hand gripping the top:
+    // a palm and four knuckles curled over the far side.
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, 0.3, 4, 8), sleeve);
+    arm.rotation.x = 0.7;
+    arm.position.set(side * 0.3, -0.05, 0.1);
+    const hand = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.06, 4, 8), skin);
+    hand.rotation.x = Math.PI / 2;
+    hand.position.set(side * 0.3, 0.04, -0.05);
+    hands.add(hand);
+    for (let f = 0; f < 4; f += 1) {
+      const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.045, 3, 6), skin);
+      finger.rotation.x = Math.PI / 2 + 0.6;
+      finger.position.set(side * 0.3 + (f - 1.5) * 0.024, 0.03, -0.11);
+      hands.add(finger);
+    }
+    hands.add(arm);
+  }
+  hands.position.set(0, 0.02, CAUSEWAY_ORIGIN_Z - SKYLINE_LEDGE - 0.12);
+  hands.visible = false;
+  group.add(hands);
+  const fireball = new Fireball();
+  group.add(fireball.root);
+  scene.add(group);
+  skylineStory = { group, fireball, hands, done: false, flash: 0, materials: [concrete, steel, skin, sleeve] };
+}
+
+function disposeSkylineStory() {
+  if (!skylineStory) return;
+  skylineStory.fireball.dispose();
+  skylineStory.group.traverse((o) => o.isMesh && o.geometry.dispose());
+  for (const m of skylineStory.materials) m.dispose();
+  skylineStory.group.removeFromParent();
+  skylineStory = null;
+}
+
+function beginSkylineBlast() {
+  const s = skylineStory;
+  state = "cutscene";
+  keysDown.clear();
+  causewayHud.warning(null);
+  const chase = causeway.state.chase;
+  const at = (d, x = 0, y = 0) => new THREE.Vector3(x, y, CAUSEWAY_ORIGIN_Z - d);
+  const start = causewayDistance();
+  const reactions = story.reactions;
+  const scene = blastScene({
+    at,
+    startD: start,
+    ledgeD: SKYLINE_LEDGE,
+    standD: SKYLINE_STAND,
+    frontStart: Number.isFinite(chase.front) ? Math.max(chase.front, start - 40) : start - 34,
+    setCollapse: (front) => { chase.front = front; },
+    sprint: () => {
+      const on = story.player.state === "reaction" && story.player._reaction?.id === "sprint" && reactions.running;
+      return { active: on, bar: on ? reactions._s.bar : 1, elapsed: on ? reactions._s.total : 0 };
+    },
+    dying: () => story.deathTime,
+    fireball: at(start - 75, 6, 9),
+  });
+  story.play(scene, {
+    camera,
+    deathSeconds: 1.9,
+    deathLine: STORY_LINES.fallen[0],
+    on: {
+      event: (name) => {
+        if (name === "blast") {
+          s.fireball.burst(at(start - 75, 6, 9), { size: 34 });
+          s.flash = 1;
+          level1Audio.impact(1);
+          level1Audio.glassBreak();
+          level1Audio.podBreak?.();
+        } else if (name === "jump") level1Audio.throwBall?.();
+        else if (name === "caught") { level1Audio.impact(0.7); s.flash = 0.3; s.hands.visible = true; }
+        else if (name === "up") s.hands.visible = false;
+      },
+      // A miss: no hands on anything.
+      retry: () => { s.hands.visible = false; },
+      fail: () => level1Audio.impact(0.5),
+      done: () => finishSkylineBlast(),
+    },
+  });
+}
+
+function finishSkylineBlast() {
+  if (skylineStory) skylineStory.done = true;
+  if (state !== "cutscene") return;
+  state = "playing";
+  runZ = CAUSEWAY_ORIGIN_Z - SKYLINE_STAND;
+  lane = 1; playerX = 0; jumpHeight = 0; jumpVelocity = 0; sliding = 0;
+  run.speed = CAUSEWAY_SPEED.base * 0.6;
+  run.lookX = 0; run.lookY = 0;
+  snapCamera = true;
+  camera.fov = 70; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
+}
+
 /** Debug jumps to the later phases' scenes (`__dbg.story.jump(name)`). */
 const storyJumps = {
   /** Phase 3: the Gravity Fault ride, story version. */
@@ -1838,11 +1986,55 @@ const storyJumps = {
     startGravityLift();
     return true;
   },
+  /** Phase 4: into the Labs as the story arrives there (the breach, unless seen). */
+  labs() {
+    story.markSeen("wake");
+    startCampaign();
+    ammo = 12;
+    endStoryStage();
+    enterMeltdown();
+    return true;
+  },
+  /** Phase 5: the Skyline, a few metres before the blast. */
+  skyline() {
+    story.markSeen("wake");
+    startCampaign();
+    endStoryStage();
+    setFoundryActive(false);
+    if (!causeway) buildCauseway("story");
+    enterSkyline();
+    skipLaunch();
+    updateGame(0.1, clock.elapsedTime);
+    runZ = CAUSEWAY_ORIGIN_Z - (SKYLINE_BLAST_AT - 6);
+    snapCamera = true;
+    return true;
+  },
+  /** Phase 5: the Roof, story version (the ladder needs the latch). */
+  roof() {
+    story.markSeen("wake");
+    startCampaign();
+    endStoryStage();
+    setFoundryActive(false);
+    enterRoof();
+    return true;
+  },
+  /** Phase 6: the ending - the roof, then straight into the helicopter. */
+  ending() {
+    storyJumps.roof();
+    const game = getMeltdown();
+    const go = () => {
+      if (game.phase === "roof" || game.phase === "roofArrive") game._startFinale("EXTRACTED");
+      else if (game.phase === "fade" || game.phase === "idle") setTimeout(go, 100);
+    };
+    go();
+    return true;
+  },
 };
 
 /** Tear down the story's main-scene pieces (restart, quit, a level change). */
 function endStoryStage() {
   story.stop();
+  disposeSkylineStory();
   ward?.dispose();
   ward = null;
   foundryGuide = null;
@@ -1857,6 +2049,19 @@ function updateMainCutscene(dt, time, frame) {
   if (foundry && currentLevel === 2) {
     updateFoundryBox();
     foundry.update({ dt, time, distance: Math.max(0, foundryDistance()), playerPosition: foundryCentre });
+  }
+  // The Skyline's blast: the level runs on (the bridge coming down) under the scene's camera.
+  if (currentLevel === 1 && causeway) {
+    const d = Math.max(causewayDistance(), CAUSEWAY_ORIGIN_Z - camera.position.z);
+    causeway.update({ dt: sdt, time, distance: d, player: playerWorld(_playerPos), playing: false });
+    scene.fog.color.copy(causeway.fogColor);
+    scene.fog.density = causeway.fogDensity;
+    scene.background.copy(causeway.hazeColor);
+    if (skylineStory) {
+      skylineStory.fireball.update(dt);
+      skylineStory.flash = Math.max(0, skylineStory.flash - dt * 1.2);
+      postfx.uniforms.uFlash.value = skylineStory.flash * 0.35;
+    }
   }
   if (okoro.root.visible) okoro.update(sdt);
   avatar.position.set(playerX, playerY, runZ + .5);
@@ -1920,6 +2125,9 @@ function enterSkyline() {
   causewayHud.setMissions(missions.active);
   applyQuality();
   skylineLift?.setDoorsOpen(0);
+  // The story's blast, sprint and latch near the end of the bridge.
+  if (storyRun && runKind === "story") buildSkylineStory();
+  else disposeSkylineStory();
   state = "launch"; launchTimer = 0;
   level1Audio.startLevel();
   ui.fade.style.opacity = "1";
@@ -1933,6 +2141,13 @@ async function enterRoof() {
   meltdownEntering = true;
   const game = getMeltdown();
   game.setMode(runKind === "endless" ? "endless-roof" : "full");
+  // The story's roof: the ladder jump needs the latch; the ending follows.
+  game.setStory(storyRun && runKind === "story" ? {
+    layer: story,
+    okoroTemplate,
+    valeTemplate: () => valeTemplate,
+    assetBase: MELTDOWN_ASSET_BASE,
+  } : null);
   onRoofStage = true;
   ui.fade.style.opacity = "1";
   run.fadeOut = 0;
@@ -2588,6 +2803,11 @@ const okoroReady = loadStoryCharacter(MELTDOWN_ASSET_BASE, "scientistGood")
     return template;
   })
   .catch((error) => console.warn("[story] Okoro's model failed to load; stand-in kept", error));
+// Dr. Vale (the monitor in the Labs, the pilot at the end): loaded in the background.
+let valeTemplate = null;
+const valeReady = loadStoryCharacter(MELTDOWN_ASSET_BASE, "scientistEvil")
+  .then((template) => (valeTemplate = template))
+  .catch((error) => console.warn("[story] Vale's model failed to load", error));
 
 // A new story from the menu plays every scene again ("Run again" after a death does not).
 $("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); story.forgetSeen(); startCampaign(); });
@@ -2852,9 +3072,11 @@ globalThis.__dbg = {
   story: {
     layer: story,
     okoro,
-    ready: okoroReady,
+    ready: Promise.all([okoroReady, valeReady]),
     get guide() { return foundryGuide; },
     get ward() { return ward; },
+    get skyline() { return skylineStory; },
+    getMeltdown,
     get storyRun() { return storyRun; },
     get log() { return story.log; },
     /** Start a scene as a story run would reach it. */

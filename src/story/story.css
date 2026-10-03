@@ -88,6 +88,16 @@ body.story-cutscene .message { opacity: 0 !important; transition: opacity .4s; }
 .story-title h1 { margin: 0; color: #fff; font-size: clamp(42px, 8vw, 104px); font-weight: 900; letter-spacing: .14em; }
 .story-title p { margin: 14px 0 0; color: #b9c4c9; font-size: 13px; font-weight: 700; letter-spacing: .4em; }
 
+/* End credits: a centred column scrolling up over black. */
+.story-credits { position: absolute; inset: 0; overflow: hidden; opacity: 0; transition: opacity .8s; }
+.story-credits.show { opacity: 1; }
+.story-credits .roll { position: absolute; left: 50%; top: 0; width: min(86vw, 760px); margin-left: calc(min(86vw, 760px) / -2); text-align: center; color: #e8eef2; will-change: transform; }
+.story-credits h2 { margin: 2.4em 0 .4em; color: #ffb547; font-size: 13px; font-weight: 800; letter-spacing: .32em; }
+.story-credits h1 { margin: 0 0 .2em; font-size: clamp(32px, 5vw, 60px); font-weight: 900; letter-spacing: .14em; }
+.story-credits p { margin: .25em 0; font-size: 15px; line-height: 1.5; }
+.story-credits p small { display: block; color: #9aa7ad; font-size: 11px; letter-spacing: .04em; }
+.story-credits .gap { height: 40vh; }
+
 @media (prefers-reduced-motion: reduce) {
   .story-key.next, .story-react.fail .keys { animation: none; }
 }

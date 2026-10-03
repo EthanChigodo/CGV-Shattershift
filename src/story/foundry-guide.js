@@ -39,18 +39,27 @@ export class FoundryGuide {
    * @param {import("../levels/common/calibration-lift.js").CalibrationLift} [o.lift]
    * @param {object[]} [o.lines]  SCENES.foundryTalk
    * @param {boolean} [o.talk]    false: no lines (already heard this session)
+   * @param {object} [o.options]  for other levels (the Labs):
+   *   lead: {min, max, rest, talk, handoff} metres;
+   *   blocked: "wait" (stop short of a shut gate - the Foundry) or "vault"
+   *     (go over it - the Labs' lasers and gaps, which nobody can stop for);
+   *   avoidPlayerWithin: keep out of the player's lane while closer than this
    */
-  constructor({ okoro, level, lift = null, lines = SCENES.foundryTalk, talk = true }) {
+  constructor({ okoro, level, lift = null, lines = SCENES.foundryTalk, talk = true, options = {} }) {
     this.okoro = okoro;
     this.level = level;
     this.lift = lift;
     this.lines = lines;
     this.talkOn = talk;
+    this.leads = { ...LEAD, ...(options.lead ?? {}) };
+    this.blocked = options.blocked ?? "wait";
+    this.avoidPlayerWithin = options.avoidPlayerWithin ?? 0;
+    this.height = 0;
     this.said = new Set();
     this.d = 0;
     this.lateral = 0;
     this.lane = 1;
-    this.lead = LEAD.rest;
+    this.lead = this.leads.rest;
     this.mode = "run"; // "run" | "wait" (at a shut gate) | "lift" | "inLift"
     this.point = 0;
     this.handoff = 0;
@@ -102,9 +111,11 @@ export class FoundryGuide {
    * @param {number} p.lane      the player's lane index
    * @param {boolean} [p.exiting]  past the end: run for the lift
    * @param {boolean} [p.riding]   the lift is riding up
+   * @param {number} [p.playerLateral]  the player's lateral offset (for avoidPlayerWithin)
    * @returns {{lines: object[], cues: string[]}}
    */
-  update(dt, { distance, speed, lane = 1, exiting = false, riding = false }) {
+  update(dt, { distance, speed, lane = 1, exiting = false, riding = false, playerLateral = null }) {
+    const LEAD = this.leads;
     const out = { lines: [], cues: [] };
     const o = this.okoro;
     const total = this.level.route.totalLength;
@@ -140,26 +151,37 @@ export class FoundryGuide {
     this.lead += (leadTarget - this.lead) * Math.min(1, dt * 1.6);
     let want = distance + THREE.MathUtils.clamp(this.lead, this.handoff > 0 ? 3.2 : LEAD.min, LEAD.max);
 
-    // Lanes: keep his own while it stays clear, else the nearest clear one.
+    // Lanes: keep his own while it stays clear, else the nearest clear one -
+    // and, where asked, never the player's own while he is close to them.
     this.laneTimer -= dt;
     const here = LANES[this.lane];
-    if (this.laneTimer <= 0 || !this.free(here, this.d) || !this.free(here, this.d + 2.5)) {
+    const near = this.avoidPlayerWithin > 0 && playerLateral !== null && this.d - distance < this.avoidPlayerWithin;
+    const playerLane = playerLateral === null ? lane : LANES.indexOf(LANES.reduce((a, b) => (Math.abs(b - playerLateral) < Math.abs(a - playerLateral) ? b : a)));
+    const ok = (i) => !(near && i === playerLane);
+    if (this.laneTimer <= 0 || !this.free(here, this.d) || !this.free(here, this.d + 2.5) || !ok(this.lane)) {
       this.laneTimer = 0.2;
-      if (!this._laneFree(here, this.d)) {
-        const order = [0, 1, 2].sort((a, b) => Math.abs(a - this.lane) - Math.abs(b - this.lane) || Math.abs(a - lane) - Math.abs(b - lane));
-        const pick = order.find((i) => this._laneFree(LANES[i], this.d));
+      if (!this._laneFree(here, this.d) || !ok(this.lane)) {
+        const order = [0, 1, 2].sort((a, b) => Math.abs(a - this.lane) - Math.abs(b - this.lane) || Math.abs(b - lane) - Math.abs(a - lane));
+        const pick = order.find((i) => ok(i) && this._laneFree(LANES[i], this.d)) ?? order.find((i) => ok(i));
         if (pick !== undefined) this.lane = pick;
       }
     }
 
-    // A shut gate ahead in every lane: stop short of it.
+    // A shut gate ahead in every lane: stop short of it (or, where nobody
+    // can stop - the Labs - go over it).
     const step = Math.max(0, want - this.d);
     const maxStep = (speed + 4) * dt;
     let next = this.d + Math.min(step, maxStep);
+    let vaulting = false;
     if (!this.free(LANES[this.lane], next + 1.2)) {
       const free = LANES.some((x) => this.free(x, next + 1.2));
-      if (!free) next = this.d; // wait here
+      if (!free) {
+        if (this.blocked === "wait") next = this.d;
+        else vaulting = true;
+      }
     }
+    // A vault: a quick hop over whatever it is.
+    this.height += ((vaulting ? 1.1 : 0) - this.height) * Math.min(1, dt * (vaulting ? 10 : 6));
     const moved = next - this.d;
     this.d = Math.max(this.d, next);
     this.mode = moved > 1e-4 ? "run" : "wait";
@@ -198,7 +220,7 @@ export class FoundryGuide {
   }
 
   _place(speed) {
-    this.okoro.follow(this.level.route, this.d, this.lateral);
+    this.okoro.follow(this.level.route, this.d, this.lateral, this.height);
     this.okoro._guideSpeed = speed;
   }
 

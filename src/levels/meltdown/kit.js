@@ -1622,6 +1622,12 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     };
     group.userData.state = () => state;
     group.userData.worldPosition = () => mover.getWorldPosition(world).clone();
+    /** The lane they step into (lateral offset). */
+    group.userData.lane = lane;
+    /** Rock them back without hurting them (the story's cosmetic pistol). */
+    group.userData.stagger = () => {
+      stagger = 1;
+    };
 
     group.userData.tick = (dt, time) => {
       t += dt;

@@ -88,6 +88,10 @@ export class StoryUI {
     this.titleP = document.createElement("p");
     this.titleEl.append(this.titleH, this.titleP);
 
+    // The end credits: a column that the host scrolls (so pause holds it).
+    this.creditsEl = div("story-credits", this.root);
+    this.creditsRoll = div("roll", this.creditsEl);
+
     container.appendChild(this.root);
     this.current = null;
     this.reset();
@@ -108,7 +112,32 @@ export class StoryUI {
     this.setSkip(0, false);
     this.hideReaction();
     this.title(null);
+    this.credits(null);
     document.body.classList.remove("story-cutscene");
+  }
+
+  /** Show the end credits (HTML), or hide them with null. */
+  credits(html) {
+    if (!html) {
+      this.creditsEl.classList.remove("show");
+      return;
+    }
+    this.creditsRoll.innerHTML = html;
+    this.creditsEl.classList.add("show");
+    this.setCreditsScroll(0);
+  }
+
+  /** 0 = the roll's top just below the screen, 1 = its bottom gone off the top. */
+  setCreditsScroll(k) {
+    const h = this.creditsRoll.offsetHeight || 2000;
+    const view = this.creditsEl.offsetHeight || innerHeight;
+    const y = view - Math.max(0, Math.min(1, k)) * (h + view);
+    this.creditsRoll.style.transform = `translateY(${y.toFixed(1)}px)`;
+  }
+
+  /** How tall the roll is relative to the screen (for pacing the scroll). */
+  get creditsLength() {
+    return (this.creditsRoll.offsetHeight || 2000) / (this.creditsEl.offsetHeight || innerHeight);
   }
 
   /** Cutscene mode: letterbox, and the level HUDs fade out. */

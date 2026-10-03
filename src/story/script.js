@@ -18,6 +18,29 @@
 
 export const GAME_TITLE = "FRACTURE RUN";
 
+/**
+ * The end credits' own lines (the asset credits come from the credits data).
+ * Fill in `names` for each role; a role with none shows the team's name.
+ */
+export const STORY_CREDITS = {
+  team: "The Shattershift team",
+  roles: [
+    { role: "Sector 01 - The Shifting Foundry", names: [] },
+    { role: "Sector 02 - The Labs, and the Roof", names: [] },
+    { role: "Sector 03 - The Skyline", names: [] },
+    { role: "The Gravity Fault lift", names: [] },
+    { role: "Story and cutscenes", names: [] },
+    { role: "Music and sound", names: [] },
+  ],
+  cast: [
+    ["Subject 07", "You"],
+    ["Dr. Elias Okoro", "scientist_good.glb"],
+    ["Dr. Vale", "scientist_evil.glb"],
+    ["HALCYON", "The building"],
+  ],
+  thanks: "Thank you for playing.",
+};
+
 export const CAST = {
   okoro: { name: "DR. OKORO", colour: "#6fe3d6", pitch: 1.0 },
   vale: { name: "DR. VALE", colour: "#ff5a4e", pitch: 0.72 },

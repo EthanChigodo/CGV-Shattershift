@@ -31,7 +31,9 @@
  *   head         { breath, bob, bobRate, sway } - first-person life
  *   track        { lids, blur, vignette, fade, tint }: [[t, value], ...]
  *   events       [{ at, name, data }]
- *   reactions    [{ at, id, spec, lead = 2, slow = 0.12 }] - see reaction.js
+ *   reactions    [{ at, id, spec, lead = 2, slow = 0.12, retryFrom }] - see
+ *                reaction.js; `slow` 0 freezes the scene clock while it is
+ *                up; `retryFrom` an earlier reaction's id to go back to on a miss
  *   onUpdate     (t, dt, ctx, player) => void - per-frame scene logic
  *   letterbox    default true
  *   skippable    default true (hold Esc). A skip runs up to the next
@@ -247,31 +249,43 @@ export class CutscenePlayer {
         this._startReaction(next);
       }
     }
+    // A handler may have stopped this scene (or started another) just now.
+    if (this.scene !== s) return { state: this.state, t: this.t, timeScale: this.timeScale };
     if (this.state === "failed") {
       this._apply(dt);
       return { state: this.state, t: this.t, timeScale: 0 };
     }
 
     this._fireEvents(this.t);
+    if (this.scene !== s) return { state: this.state, t: this.t, timeScale: this.timeScale };
     this._apply(dt);
     s.onUpdate?.(this.t, dt * this.timeScale, this.ctx, this);
     if (this.state === "playing" && this.t >= s.duration) this._finish(false);
     return { state: this.state, t: this.t, timeScale: this.timeScale };
   }
 
-  /** After a failed reaction: back to `lead` seconds before it, and go again. */
-  retry() {
+  /**
+   * After a failed reaction: back to `lead` seconds before it, and go again.
+   * A reaction with `retryFrom: id` (or a `fromId` here) goes back to that
+   * earlier reaction instead - and every reaction from there is played again.
+   */
+  retry(fromId = null) {
     if (this.state !== "failed" || !this._reaction) return;
-    const r = this._reaction;
+    const failed = this._reaction;
+    const backTo = fromId ?? failed.retryFrom;
+    const r = (backTo && this.scene.reactions.find((x) => x.id === backTo)) || failed;
     const from = Math.max(0, r.at - (r.lead ?? 2));
+    for (const x of this.scene.reactions) if (x.at >= r.at) this._resolved.delete(x.id);
     for (const e of this.scene.events) if (e.at >= from) this._fired.delete(e);
     this.t = from;
     this.state = "playing";
     this.timeScale = 1;
     this._reaction = null;
     this.reactions.cancel();
-    this._emit("retry", { id: r.id, from });
-    this._apply(0);
+    const scene = this.scene;
+    this._emit("retry", { id: r.id, failed: failed.id, from });
+    // (A host may end the scene on a retry, and hand control back.)
+    if (this.scene === scene) this._apply(0);
   }
 
   /** Jump past the talking: to the next reaction, or the end. */
@@ -305,6 +319,8 @@ export class CutscenePlayer {
     if (this.skipProgress >= 1) {
       this.skipProgress = 0;
       this.skipHeld = false;
+      // The hold is spent: letting go of Esc afterwards is not a tap.
+      this._escDown = null;
       this.skip();
     }
   }
@@ -318,7 +334,11 @@ export class CutscenePlayer {
   }
 
   _fireEvents(t, skipped = false) {
-    for (const e of this.scene.events) {
+    const s = this.scene;
+    if (!s) return;
+    for (const e of s.events) {
+      // An event handler may stop the scene or start the next one.
+      if (this.scene !== s) return;
       if (e.at > t || this._fired.has(e)) continue;
       this._fired.add(e);
       this._emit("event", e.name, { ...e.data, skipped, at: e.at });
@@ -328,6 +348,7 @@ export class CutscenePlayer {
   _finish(skipped) {
     const s = this.scene;
     this._fireEvents(s.duration, skipped);
+    if (this.scene !== s) return;
     this.state = "done";
     this.ui.say(null);
     this.ui.setSkip(0, false);

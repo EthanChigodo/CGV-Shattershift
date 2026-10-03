@@ -105,6 +105,11 @@ export const ROOF_ASSETS = {
 /** Loaded once per page and shared by every level instance (and a restart). */
 const cache = new Map();
 
+/** Every asset key requested so far this page (for the credits check). */
+export function loadedAssetNames() {
+  return [...cache.keys()];
+}
+
 /**
  * Load every asset. Each result is a template Group whose origin sits at the
  * model's bottom-centre, plus its size, so slots can fit it without caring
