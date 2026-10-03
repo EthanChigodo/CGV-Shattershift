@@ -135,7 +135,10 @@ retries at the reaction; a settings toggle for longer reaction windows and
 "hold instead of mash"; all dialogue in one script file so the team can edit
 lines without touching code.
 
-**Phases** (commit and push after each):
+**Phases** (commit and push after each). The detailed plan for Phases 2-7 -
+what each delivers, how it will be built, and its testing criteria - is
+[`story-phases-plan.md`](./story-phases-plan.md).
+
 
 | Phase | What | Status |
 |---|---|---|
