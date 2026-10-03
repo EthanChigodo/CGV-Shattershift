@@ -57,6 +57,7 @@ import { MeltdownAudio } from "../../audio/meltdown-audio.js";
 import { Level1Audio } from "../../audio/level1-audio.js";
 import { ShatterFX } from "../../fx/shatter.js";
 import { LabsDirector } from "../../story/labs-director.js";
+import { AOPass } from "./ao.js";
 import { latchReaction } from "../../story/reaction.js";
 import { EndingDirector } from "../../story/ending-director.js";
 import { SCENES as STORY_LINES } from "../../story/script.js";
@@ -222,8 +223,18 @@ export class MeltdownGame {
     // Bloom sells fire, lasers and emissive glass; at half resolution,
     // because a full-res bloom chain would double the fill-rate cost. The
     // grading pass (heat haze, hit split, vignette, grain) runs last.
-    this.composer = new EffectComposer(renderer);
+    // The first target carries a depth texture, for the ambient occlusion
+    // pass at High quality (ao.js); otherwise it costs nothing extra.
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(size.x, size.y) });
+    this.composer = new EffectComposer(renderer, target);
+    // The composer's second target is a clone, and a cloned depth texture
+    // shares the first one's GPU texture - sampling it while drawing into the
+    // other would be a feedback loop. Each gets its own.
+    this.composer.renderTarget2.depthTexture = new THREE.DepthTexture(size.x, size.y);
     this.composer.addPass(new RenderPass(scene, this.camera));
+    this.ao = new AOPass(this.camera);
+    this.ao.enabled = false;
+    this.composer.addPass(this.ao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.6, 0.45, 0.92);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -245,6 +256,18 @@ export class MeltdownGame {
     this.sfx = sfx ?? (audio ? new Level1Audio(() => this.audio.ctx) : null);
     this.beam = new LauncherLight(scene);
     this.environment = createEnvironmentDimmer(scene);
+    // A key light over the player that casts real shadows - High quality
+    // only (setQuality). Off (invisible) otherwise, so it costs nothing
+    // below High; switching it recompiles the materials once.
+    this.keyLight = new THREE.DirectionalLight(0xffe2c4, 0.85);
+    this.keyLight.visible = false;
+    this.keyLight.shadow.mapSize.set(1024, 1024);
+    this.keyLight.shadow.bias = -0.0004;
+    this.keyLight.shadow.normalBias = 0.03;
+    const sc = this.keyLight.shadow.camera;
+    sc.left = -14; sc.right = 14; sc.top = 14; sc.bottom = -14; sc.near = 1; sc.far = 50;
+    scene.add(this.keyLight, this.keyLight.target);
+    this.quality = { shadows: false, ao: false };
     this.credits = createCreditsPanel(container);
 
     const el = (className) => {
@@ -427,8 +450,10 @@ export class MeltdownGame {
     if (level !== this.level) return;
     this.hud.setLoading(null);
     this._mountLauncherModel(loaded);
+    this._applyShadowFlags();
     // Compile and upload everything now rather than on first sight mid-run.
     level.prewarm(this.renderer, this.camera);
+    this._logTextureMemory("the Labs");
     this.environment.refresh();
     this.assetsReady = true;
     this.loadRoofAssets();
@@ -547,6 +572,57 @@ export class MeltdownGame {
     this.bloom.enabled = on;
   }
 
+  /**
+   * The graphics budget (main.js, from the quality setting): `shadows` - the
+   * key light's shadow map; `ao` - screen-space ambient occlusion. Both only
+   * at High: they are the most expensive things on screen.
+   */
+  setQuality({ shadows = false, ao = false } = {}) {
+    this.quality = { shadows, ao };
+    this.ao.enabled = ao;
+    this.keyLight.visible = shadows;
+    this.keyLight.castShadow = shadows;
+    // Borrow the renderer's shadow map while High is on; give it back as it was.
+    const sm = this.renderer.shadowMap;
+    if (shadows && !this._hostShadowMap) {
+      this._hostShadowMap = { enabled: sm.enabled, type: sm.type };
+      sm.enabled = true;
+      sm.type = THREE.PCFSoftShadowMap;
+    } else if (!shadows && this._hostShadowMap) {
+      sm.enabled = this._hostShadowMap.enabled;
+      sm.type = this._hostShadowMap.type;
+      this._hostShadowMap = null;
+    }
+    this._applyShadowFlags();
+  }
+
+  /** Who casts and who receives, for the current setting. */
+  _applyShadowFlags() {
+    const on = this.quality.shadows;
+    const roots = [this.level?.groups.hazards, this.level?.groups.pickups, this.roof?.root].filter(Boolean);
+    for (const root of roots) {
+      root.traverse((o) => {
+        if (o.isMesh && o.material?.isMeshStandardMaterial) o.castShadow = on;
+      });
+    }
+    const receivers = [this.level?.root, this.roof?.root].filter(Boolean);
+    for (const root of receivers) {
+      root.traverse((o) => {
+        if (o.isMesh && o.material?.isMeshStandardMaterial) o.receiveShadow = on;
+      });
+    }
+    this.avatar.root.traverse((o) => {
+      if (o.isMesh && o !== this.avatar.shadow) o.castShadow = on;
+    });
+  }
+
+  /** Keep the key light (and its shadow box) over the player. */
+  _placeKeyLight(at) {
+    if (!this.quality.shadows) return;
+    this.keyLight.position.set(at.x + 5, at.y + 13, at.z + 3);
+    this.keyLight.target.position.copy(at);
+  }
+
   get cameraModeName() {
     return CAMERA_MODES[this.cameraMode];
   }
@@ -589,7 +665,33 @@ export class MeltdownGame {
   async _loadCharacter(name) {
     const loaded = await loadMeltdownAssets(this.assetBase, { names: [name] });
     const asset = loaded.get(name);
-    if (asset && name === this.character) this.avatar.setModel(asset.template);
+    if (asset && name === this.character) {
+      this.avatar.setModel(asset.template);
+      this._applyShadowFlags();
+    }
+  }
+
+  /**
+   * The textures a stage holds on the GPU, logged once it has loaded (the
+   * graphics pass keeps an eye on the budget). Mipmapped RGBA, estimated.
+   */
+  _logTextureMemory(where) {
+    const seen = new Set();
+    let bytes = 0;
+    this.scene.traverse((o) => {
+      for (const m of [].concat(o.material ?? [])) {
+        for (const value of Object.values(m)) {
+          if (!value?.isTexture || seen.has(value)) continue;
+          seen.add(value);
+          const img = value.image;
+          const w = img?.width ?? 0;
+          const h = img?.height ?? 0;
+          bytes += w * h * 4 * (value.generateMipmaps ? 1.33 : 1);
+        }
+      }
+    });
+    this.textureMemory = { where, textures: seen.size, megabytes: +(bytes / 1048576).toFixed(1) };
+    console.info(`[meltdown] ${where}: ~${this.textureMemory.megabytes} MB of textures (${seen.size})`);
   }
 
   _mountLauncherModel(assets) {
@@ -787,6 +889,8 @@ export class MeltdownGame {
 
   render() {
     this.director?.beforeRender(this.renderer);
+    // The host renders shadows on demand (autoUpdate is off in the game).
+    if (this.quality.shadows) this.renderer.shadowMap.needsUpdate = true;
     this.composer.render();
   }
 
@@ -938,6 +1042,7 @@ export class MeltdownGame {
     }
 
     level.update({ dt, time, distance: r.distance, playerPosition: avatar.root.position, clock: this.phase === "run" && this.mode !== "endless-labs" });
+    this._placeKeyLight(avatar.root.position);
     if (playing) this._checkHazards(dt);
     if (!cutscene) this._updateCamera(dt, time);
     this._placeLauncher(firstPerson);
@@ -1621,7 +1726,9 @@ export class MeltdownGame {
     this.cut = roof.beginArrival();
     this.snapCamera = true;
     this._applyCutscene(this.cut, 0.016);
+    this._applyShadowFlags();
     roof.prewarm(this.renderer, this.camera);
+    this._logTextureMemory("the Roof");
 
     this.phase = "roofArrive";
     this.fade.override = null;
@@ -1952,6 +2059,7 @@ export class MeltdownGame {
     }
 
     this._placeLauncher(false);
+    this._placeKeyLight(hero.position);
     // Balls fly through the cutscene's slow motion too.
     this.projectiles.update(sdt, { breakables: roof.breakables, solids: roof.solids, onBreakable: (o, p, b) => this._onBallBreakable(o, p, b), onSolid: (o, p) => this._onBallSolid(o, p) });
     this.debris.update(sdt);

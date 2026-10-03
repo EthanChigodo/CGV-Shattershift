@@ -20,6 +20,7 @@
 
 import * as THREE from "../three.js";
 import { cloneCharacter, HumanoidRig } from "../levels/meltdown/characters.js";
+import { RunGait } from "../levels/meltdown/gait.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
 
 /** Load and prepare a story character template ("scientistGood" / "scientistEvil"). */
@@ -192,6 +193,18 @@ export class Companion {
     model.traverse((o) => {
       if (o.isMesh) o.frustumCulled = false; // skinned bounds don't follow the pose
     });
+    // Walking and running: the planted-foot gait the player uses (gait.js),
+    // measured on this skeleton - thigh to knee to ankle.
+    this.gait = null;
+    const b = this.rig.bones;
+    if (this.rig.valid && b.calfL && b.footL) {
+      model.updateMatrixWorld(true);
+      const y = (bone) => model.worldToLocal(bone.getWorldPosition(new THREE.Vector3())).y;
+      const ankle = y(b.footL);
+      const hipY = y(b.thighL) - ankle;
+      const kneeY = y(b.calfL) - ankle;
+      if (hipY > 0.3 && kneeY > 0.1 && kneeY < hipY) this.gait = new RunGait({ hipY, kneeY });
+    }
   }
 
   /** Switch what he's doing. `speed` for walk/run can also come from update(). */
@@ -258,10 +271,18 @@ export class Companion {
     const t = this.time;
     if (speed !== null) this.speed = speed;
     this.blend = Math.min(1, this.blend + dt * 4);
-    const moving = (this.action === "walk" || this.action === "run") && this.speed > 0.2;
+    const gaitAction = this.action === "walk" || this.action === "run";
+    const moving = gaitAction && this.speed > 0.2;
     const sp = moving ? this.speed : 0;
-    // Steps: ~1.6/s walking, ~3/s running (a full cycle is two steps).
-    if (moving) this.phase += dt * Math.PI * (1.55 + sp * 0.24);
+    // The legs: planted feet, cadence and stride from the real speed (gait.js).
+    const g = this.gait && this.rig?.valid ? this.gait.update(dt, { speed: gaitAction ? sp : 0, grounded: true }) : null;
+    if (g) {
+      // Arms swing against the legs: left arm back while the left leg is forward.
+      this.phase = this.gait.cycle * Math.PI * 2 - Math.PI * 0.25;
+    } else if (moving) {
+      // (No skeleton to measure: the old sine cycle, ~1.6 steps/s walking, ~3 running.)
+      this.phase += dt * Math.PI * (1.55 + sp * 0.24);
+    }
     this.crouch += ((this.action === "crouch" ? 1 : 0) - this.crouch) * k(6);
     this.slump += ((this.action === "slump" ? 1 : 0) - this.slump) * k(2.2);
 
@@ -277,11 +298,13 @@ export class Companion {
       case "run": {
         pose = {
           phase: this.phase,
-          stride: THREE.MathUtils.clamp(0.28 + sp * 0.075, 0.25, 0.78),
-          knee: 0.35 + sp * 0.12,
-          armSwing: 0.22 + sp * 0.06,
-          lean: 0.04 + sp * 0.035,
-          elbow: 0.3 + sp * 0.08,
+          // With the gait the legs are posed below; the sine is the fallback.
+          stride: g ? 0 : THREE.MathUtils.clamp(0.28 + sp * 0.075, 0.25, 0.78),
+          knee: g ? 0 : 0.35 + sp * 0.12,
+          armSwing: (0.22 + Math.min(sp, 10) * 0.06) * (g ? this.gait.amp : 1),
+          lean: g ? g.lean * 0.9 : 0.04 + sp * 0.035,
+          // Runners carry their elbows bent near a right angle.
+          elbow: 0.35 + Math.min(1, sp / 6) * 0.95,
         };
         break;
       }
@@ -320,7 +343,12 @@ export class Companion {
 
     // Crouching / sitting drops the hips so the feet stay on the floor.
     const drop = this.action === "sit" ? 0.52 : this.crouch * 0.38;
-    this.body.position.y += (-drop + (moving ? Math.abs(Math.sin(this.phase)) * 0.03 * Math.min(1, sp / 3) : 0) - this.body.position.y) * k(12);
+    if (g && gaitAction) {
+      // The pelvis rides the gait exactly, or the planted feet would float or sink.
+      this.body.position.y = -drop + g.bob;
+    } else {
+      this.body.position.y += (-drop + (moving && !g ? Math.abs(Math.sin(this.phase)) * 0.03 * Math.min(1, sp / 3) : 0) - this.body.position.y) * k(12);
+    }
     // Slumped: down onto the floor.
     this.body.rotation.x = -this.slump * 1.35;
     this.body.position.z = this.slump * 0.6;
@@ -336,6 +364,18 @@ export class Companion {
       }
       if (adj.aimL) pose.aimL = Math.max(pose.aimL ?? 0, adj.aimL);
       this.rig.pose(pose);
+      if (g && gaitAction) {
+        // Thigh and knee from the gait's IK; the foot kept flat while planted.
+        for (const [side, hip, knee, planted] of [["R", g.hipR, g.kneeR, g.footR.planted], ["L", g.hipL, g.kneeL, g.footL.planted]]) {
+          this.rig.rotate(`thigh${side}`, _X, hip);
+          this.rig.rotate(`calf${side}`, _X, knee);
+          this.rig.rotate(`foot${side}`, _X, -(hip + knee) * (planted ? 1 : 0.55));
+        }
+        // The torso twists with the stride, the chest against it (above the
+        // hips, so a planted foot isn't swung sideways).
+        this.rig.rotate("spineLow", Y, g.twist * 0.5);
+        this.rig.rotate("chest", Y, -g.twist * 0.9);
+      }
       this._lookHead(dt, k);
       this.rig.apply();
     } else {

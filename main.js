@@ -117,6 +117,14 @@ let onRoofStage = false;
 let storyRun = false;
 /** The check harness steps the game itself (`__dbg.manual`). */
 let manualStep = false;
+/**
+ * The story's checkpoint: the sector the player is in and what they carried
+ * into it. A death in a story run restarts that sector - with its cutscenes -
+ * not the whole run. { stage: "foundry"|"labs"|"skyline"|"roof", score, ammo, balls }
+ */
+let storyCheckpoint = null;
+/** The last run ended in a story death (the end screen offers the sector again). */
+let storyDeath = false;
 
 
 const settingsDefaults = {
@@ -328,7 +336,7 @@ async function loadPlayerBody(name = savedCharacter()) {
 function updatePlayerBody(dt) {
   if (!playerBodyReady) return;
   const moving = state === "playing" && !paused;
-  const speed = !moving ? 0 : currentLevel === 1 ? run.speed : currentLevel === 2 ? foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1) : 0;
+  const speed = !moving ? 0 : currentLevel === 1 ? run.speed : currentLevel === 2 ? foundryPace : 0;
   const lateralVel = dt > 0 ? (playerX - playerBodyX) / dt : 0;
   playerBodyX = playerX;
   const glow = currentLevel === 1 ? 0.32 : 0.06;
@@ -395,6 +403,8 @@ const foundrySize = new THREE.Vector3();
 const foundryGrazed = new Map();
 let foundryInvulnerable = 0;
 let foundrySlow = 0;
+/** The Foundry run's actual pace (m/s), easing toward foundrySpeed(). */
+let foundryPace = 0;
 let combo = 1;
 let comboTimer = 0;
 
@@ -628,8 +638,18 @@ function applyQuality() {
   minimap.measure();
   if (meltdown) {
     meltdown.setBloom(q !== "low");
+    meltdownQuality();
     if (meltdown.visible) meltdown.syncRenderer();
   }
+}
+
+/**
+ * Level 3's real shadows and ambient occlusion: only when High is chosen
+ * outright (Auto stays within its frame budget, Low and Medium go without).
+ */
+function meltdownQuality() {
+  const high = settings.quality === "high";
+  meltdown?.setQuality({ shadows: high, ao: high });
 }
 
 function causewayDistance() {
@@ -1174,6 +1194,7 @@ function getMeltdown() {
     reducedMotion: settings.reducedMotion,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
+  meltdownQuality();
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
   // The story: through the lift at the end of the Labs, up to the Skyline.
@@ -1213,6 +1234,7 @@ function preloadMeltdown() {
 async function enterMeltdown() {
   if (meltdownEntering) return;
   meltdownEntering = true;
+  if (storyRun && runKind === "story") storyCheckpoint = { stage: "labs", score, ammo, balls: null };
   const game = getMeltdown();
   game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
   // The story's Labs: the breach, Okoro, the bend, the desk (labs-director.js).
@@ -1724,6 +1746,7 @@ function startCampaign() {
   enterFoundry();
   // Okoro brings the spheres: none until he hands them over.
   ammo = 0;
+  storyCheckpoint = { stage: "foundry", score: 0, ammo: 0, balls: null };
   updateUI();
   if (!story.hasSeen("wake")) beginOpening();
   else startFoundryGuide();
@@ -1828,7 +1851,7 @@ function updateFoundryGuide(dt) {
   if (!foundryGuide) return;
   const out = foundryGuide.update(dt, {
     distance: foundryDistance(),
-    speed: foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1),
+    speed: foundryPace,
     lane,
     exiting: foundryExit,
     riding: !!foundryLift?.state.riding,
@@ -2077,6 +2100,7 @@ function enterFoundry() {
   currentLevel = 2; state = "playing"; health = 100;
   resetRunner();
   runZ = FOUNDRY_ORIGIN_Z; cameraThird = true;
+  foundryPace = 0;
   if (!foundry) buildFoundry();
   foundryExit = false;
   setFoundryActive(true);
@@ -2126,8 +2150,10 @@ function enterSkyline() {
   applyQuality();
   skylineLift?.setDoorsOpen(0);
   // The story's blast, sprint and latch near the end of the bridge.
-  if (storyRun && runKind === "story") buildSkylineStory();
-  else disposeSkylineStory();
+  if (storyRun && runKind === "story") {
+    buildSkylineStory();
+    storyCheckpoint = { stage: "skyline", score, ammo, balls: storyBalls };
+  } else disposeSkylineStory();
   state = "launch"; launchTimer = 0;
   level1Audio.startLevel();
   ui.fade.style.opacity = "1";
@@ -2139,6 +2165,7 @@ function enterSkyline() {
 async function enterRoof() {
   if (meltdownEntering) return;
   meltdownEntering = true;
+  if (storyRun && runKind === "story") storyCheckpoint = { stage: "roof", score, ammo, balls: storyBalls };
   const game = getMeltdown();
   game.setMode(runKind === "endless" ? "endless-roof" : "full");
   // The story's roof: the ladder jump needs the latch; the ending follows.
@@ -2192,10 +2219,56 @@ function startEndless(env) {
   else if (env === "roof") enterRoof();
 }
 
-/** "Run again" / "Restart run" / R: the same kind of run, from the top. */
-function restartRun() {
+/**
+ * "Run again" / R: after a death in the story, the sector you died in, from
+ * its beginning and with its cutscenes; otherwise the same kind of run from
+ * the top ("Restart run" on the pause menu always starts the run over).
+ */
+function restartRun({ fromTop = false } = {}) {
   if (runKind === "endless" && endlessEnv) startEndless(endlessEnv);
+  else if (!fromTop && storyDeath && storyCheckpoint) restartStage(storyCheckpoint);
   else startCampaign();
+}
+
+/** The end screen's main button: the sector again after a story death, else the run. */
+function restartButtonLabel() {
+  const names = { foundry: "SECTOR 01", labs: "SECTOR 02", skyline: "SECTOR 03", roof: "THE ROOF" };
+  $("#restartButton").textContent = storyDeath ? `RETRY ${names[storyCheckpoint.stage]}` : "RUN AGAIN";
+}
+
+/** The scenes each sector plays, which a restart of that sector plays again. */
+const STAGE_SCENES = {
+  foundry: ["wake", "walkOut", "foundryTalk"],
+  labs: ["breach", "bendAttack", "hide", "grief"],
+  skyline: ["blast"],
+  roof: ["ladderLatch", "ending"],
+};
+
+/** Back to the start of a story sector, as it was when you first reached it. */
+function restartStage(cp) {
+  const checkpoint = { ...cp };
+  for (const id of STAGE_SCENES[checkpoint.stage] ?? []) story.seen.delete(id);
+  storyDeath = false;
+  ui.end.classList.remove("active");
+  if (checkpoint.stage === "foundry") { startCampaign(); return; }
+  storyRun = true;
+  resetStats("story");
+  runKind = "story"; endlessEnv = null;
+  score = checkpoint.score;
+  ammo = checkpoint.ammo;
+  storyBalls = checkpoint.balls;
+  music.playRound1();
+  if (checkpoint.stage === "labs") {
+    setCausewayActive(false);
+    enterMeltdown();
+  } else if (checkpoint.stage === "skyline") {
+    setFoundryActive(false);
+    enterSkyline();
+  } else if (checkpoint.stage === "roof") {
+    setFoundryActive(false);
+    enterRoof();
+  }
+  updateUI();
 }
 
 /* ---- Endless records ------------------------------------------------------ */
@@ -2314,6 +2387,9 @@ const failReasons = {
 function endRun(won, reason = null, detail = null) {
   if (state === "ended") return;
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
+  // A death in the story: the end screen offers that sector again.
+  storyDeath = !won && storyRun && runKind === "story" && !!storyCheckpoint;
+  restartButtonLabel();
   if (currentLevel === 1) music.gameOverDuck();
   // Level 3 plays it itself (the MeltdownGame shares level1Audio).
   if (!won && currentLevel !== 3) level1Audio.gameOver();
@@ -2490,7 +2566,11 @@ function updateGame(dt, time) {
     if (currentLevel === 1 && causeway) {
       updateCauseway(simDt, simTime);
     } else if (currentLevel === 2) {
-      runZ -= dt * foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1);
+      // Speed eases between zones and after a hit (a runner can't change
+      // pace instantly): quick to slow on impact, slower to build back up.
+      const targetPace = foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1);
+      foundryPace += (targetPace - foundryPace) * Math.min(1, dt * (targetPace < foundryPace ? 9 : 2.6));
+      runZ -= dt * foundryPace;
       // Level 2 runs its own collision - the foundry's hazards are nested
       // inside groups.
       updateFoundry(dt, time);
@@ -2825,7 +2905,7 @@ $("#settingsBackButton").addEventListener("click", closeSettings);
 $("#pauseButton").addEventListener("click", () => { paused ? closePause() : openPause(); });
 $("#resumeButton").addEventListener("click", closePause);
 $("#pauseSettingsButton").addEventListener("click", () => openSettings("pause"));
-$("#restartRunButton").addEventListener("click", () => { closePause(); restartRun(); });
+$("#restartRunButton").addEventListener("click", () => { closePause(); restartRun({ fromTop: true }); });
 $("#quitButton").addEventListener("click", quitToMenu);
 $("#restartButton").addEventListener("click", () => { restartRun(); });
 $("#endMenuButton").addEventListener("click", quitToMenu);
@@ -3076,6 +3156,8 @@ globalThis.__dbg = {
     get guide() { return foundryGuide; },
     get ward() { return ward; },
     get skyline() { return skylineStory; },
+    get checkpoint() { return storyCheckpoint; },
+    get death() { return storyDeath; },
     getMeltdown,
     get storyRun() { return storyRun; },
     get log() { return story.log; },

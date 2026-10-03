@@ -173,14 +173,16 @@ export async function run(page, { shots }) {
   check("...and Esc resumes it", esc.resumed && esc.moving, JSON.stringify(esc));
   check("holding Esc skips straight to Foundry control", esc.state === "playing" && esc.guide && !esc.ward && !esc.stillPaused, JSON.stringify(esc));
 
-  // ---- A restart skips the wake ----------------------------------------------
+  // ---- A death restarts the sector, cutscenes and all -------------------------
   const restart = await page.evaluate(() => {
     __dbg.endRun(false);
+    const label = document.querySelector("#restartButton").textContent;
     __dbg.restartRun();
     for (let i = 0; i < 5; i += 1) __dbg.step(1, 1 / 30);
-    return { state: __dbg.state, scene: __dbg.story.layer.sceneId, guide: !!__dbg.story.guide, okoro: __dbg.story.okoro.root.visible };
+    return { label, state: __dbg.state, level: __dbg.currentLevel, scene: __dbg.story.layer.sceneId, okoro: __dbg.story.okoro.root.visible };
   });
-  check("death and restart in the Foundry skips the wake", restart.state === "playing" && !restart.scene && restart.guide && restart.okoro, JSON.stringify(restart));
+  check("after a death the end screen offers the sector again", restart.label === "RETRY SECTOR 01", restart.label);
+  check("a death in the Foundry restarts it with the wake-up", restart.state === "cutscene" && restart.level === 2 && restart.scene === "wake" && restart.okoro, JSON.stringify(restart));
 
   // ---- Endless: none of it ----------------------------------------------------
   const endless = await page.evaluate(() => {

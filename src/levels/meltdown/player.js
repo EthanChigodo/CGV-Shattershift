@@ -21,6 +21,7 @@
 
 import * as THREE from "../../three.js";
 import { cloneCharacter, rigPlayerMesh } from "./characters.js";
+import { RunGait } from "./gait.js";
 
 function shadowTexture() {
   const canvas = document.createElement("canvas");
@@ -99,6 +100,22 @@ export class PlayerAvatar {
     this.shoulder.position.set(body.shoulderX + 0.08, body.shoulderY + 0.12, 0.02);
     this.shoulderBase = this.shoulder.position.clone();
     this.bodyInfo = body;
+    // The planted-foot running gait (gait.js).
+    this.gait = new RunGait(body);
+  }
+
+  /**
+   * Where the feet are drawn this frame, in world space - for the gait
+   * checks (a planted foot must not slide). Null before the model loads.
+   */
+  footPositions() {
+    const g = this.gait?.out;
+    if (!g || !this.bodyInfo) return null;
+    this.root.updateMatrixWorld(true);
+    // Model space -> body space (the model is turned to face -Z).
+    const hipX = Math.max(0.08, this.bodyInfo.shoulderX * 0.45);
+    const at = (foot, side) => this.body.localToWorld(new THREE.Vector3(-side * hipX, foot.y - this.body.position.y, -foot.z));
+    return { right: at(g.footR, -1), left: at(g.footL, 1), contactR: g.contactR, contactL: g.contactL };
   }
 
   /**
@@ -115,26 +132,48 @@ export class PlayerAvatar {
   update(dt, { speed = 0, lateralVel = 0, height = 0, sliding = false, pushing = false, stumble = 0, aiming = false } = {}) {
     const k = (rate) => 1 - Math.exp(-dt * rate);
     const running = speed > 0.5 || pushing;
-    // Cadence rises with speed but stride does most of the work, the way
-    // sprinting really goes: ~2.6 steps/s at 8 m/s, ~3.2 at 14.
-    const cadence = pushing ? 1.4 : 1.9 + speed * 0.1;
-    if (running && height <= 0.02) this.phase += dt * cadence * Math.PI * 2 * 0.5;
+    const grounded = height <= 0.02 && !sliding;
+    const landed = this._airborne && height <= 0.02;
+    this._airborne = height > 0.05;
     this.tuck += ((height > 0.05 ? 1 : 0) - this.tuck) * k(height > 0.05 ? 16 : 22);
     this.crouch += ((sliding ? 1 : 0) - this.crouch) * k(sliding ? 20 : 10);
-    this.lean += (THREE.MathUtils.clamp(-lateralVel * 0.035, -0.28, 0.28) - this.lean) * k(10);
+    // Lane changes bank the body into the turn.
+    this.lean += (THREE.MathUtils.clamp(-lateralVel * 0.045, -0.32, 0.32) - this.lean) * k(10);
     this.lurch += (stumble - this.lurch) * k(12);
+
+    // The gait: planted feet, cadence from speed, the pelvis dropping on
+    // contact, lean from acceleration, a squash on landing (gait.js).
+    const g = this.gait ? this.gait.update(dt, { speed: sliding ? 0 : speed, grounded, landed, pushing }) : null;
+    if (g) {
+      // The camera bob reads this: |sin| is lowest at each footfall.
+      this.phase = this.gait.cycle * Math.PI * 2;
+    } else if (running && height <= 0.02) {
+      this.phase += dt * (pushing ? 1.4 : 1.9 + speed * 0.1) * Math.PI;
+    }
 
     this.body.rotation.z = this.lean;
     this.body.rotation.x = -this.lurch * 0.35;
-    this.body.position.y = running && height <= 0.02 && !sliding ? Math.abs(Math.sin(this.phase)) * 0.06 : 0;
+    const squash = g ? g.squash : 0;
+    this.body.position.y = g ? (grounded ? g.bob : 0) - squash * 0.05 : running && height <= 0.02 && !sliding ? Math.abs(Math.sin(this.phase)) * 0.06 : 0;
+    this.body.scale.y = 1 - squash * 0.05;
 
     const u = this.uniforms;
     if (u) {
-      u.uPhase.value = this.phase;
+      u.uPhase.value = g ? this.phase - Math.PI * 0.4 : this.phase;
       u.uStride.value = pushing ? 0.3 : running ? THREE.MathUtils.clamp(0.45 + speed * 0.028, 0.45, 0.85) * (1 - this.tuck) : 0;
       u.uArmSwing.value = running ? 0.55 * (1 - this.crouch * 0.6) : 0.05;
-      u.uLean.value = (running ? 0.12 + speed * 0.008 : 0) + (pushing ? 0.35 : 0) - this.crouch * 0.55;
-      u.uCrouch.value = this.crouch;
+      if (g) {
+        u.uGait.value = 1;
+        u.uLegR.value.set(g.hipR, g.kneeR);
+        u.uLegL.value.set(g.hipL, g.kneeL);
+        // Both hands on the launcher keep the shoulders square (the mount doesn't twist).
+        u.uTwist.value = g.twist * (1 - this.crouch) * (1 - this.hold * 0.75);
+        u.uLean.value = g.lean * (1 - this.crouch) + (pushing ? 0.35 : 0) - this.crouch * 0.55;
+      } else {
+        u.uLean.value = (running ? 0.12 + speed * 0.008 : 0) + (pushing ? 0.35 : 0) - this.crouch * 0.55;
+      }
+      // A landing folds the knees for a moment.
+      u.uCrouch.value = this.crouch + squash * 0.22;
       u.uTuck.value = this.tuck;
       u.uHold.value = this.hold;
       u.uReachUp.value = this.reachUp;

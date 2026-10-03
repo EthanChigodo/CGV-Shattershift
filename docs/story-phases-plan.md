@@ -9,12 +9,17 @@ decisions the team made) is in §0.3 of the same file.
 | Phase | What | Status |
 |---|---|---|
 | 1 | Shared systems: dialogue script, cutscene player, reaction hits, Okoro, preview, tests | **Done** |
-| 2 | Opening: wake-up in the ward, walk to the basement, Okoro in the Foundry | Next |
-| 3 | The Gravity Fault lift: gun drop, reaction hits, death and retry | Planned |
-| 4 | Labs: breach, bend attack, hiding + sacrifice, grief in the lift | Planned |
-| 5 | Skyline and roof: explosion, sprint, jump and latch; helicopter latch | Planned |
-| 6 | Ending: pilot reveal, title card, credits | Planned |
-| 7 | Graphics pass: running animation and physics, lighting, textures | Planned |
+| 2 | Opening: wake-up in the ward, walk to the basement, Okoro in the Foundry | **Done** |
+| 3 | The Gravity Fault lift: gun drop, reaction hits, death and retry | **Done** |
+| 4 | Labs: breach, bend attack, hiding + sacrifice, grief in the lift | **Done** |
+| 5 | Skyline and roof: explosion, sprint, jump and latch; helicopter latch | **Done** |
+| 6 | Ending: pilot reveal, title card, credits | **Done** |
+| 7 | Graphics pass: running animation and physics, lighting, textures | **Mostly done** (no photo PBR sets) |
+
+What was built, and where: `docs/level-3-handoff.md` §0.7. One change from
+this plan, decided by the user: **a death restarts the sector you died in,
+with its cutscenes** (not the run, and not skipping the talk) - see
+"Story checkpoints" in §2.
 
 Contents:
 
@@ -98,10 +103,11 @@ Done once, in the first phase that needs it:
   They feed `ReactionHits.setOptions`. Added in Phase 3, when reactions
   first reach the game.
 - **Story checkpoints.** A failed reaction retries at that reaction, which
-  is built in. Dying in normal gameplay keeps the current behaviour,
-  restarting the stage, and the stage's opening cutscene is then skipped
-  automatically. Seen-once flags per scene are kept for the session so a
-  restart doesn't replay talk.
+  is built in. Dying in normal gameplay restarts the **sector** you died
+  in (the Foundry, the Labs, the Skyline or the Roof) from its start, with
+  the score and spheres you arrived with, and **its cutscenes play again**
+  (the user's decision; built). "Restart run" on the pause menu restarts the
+  whole run.
 - **Reduced motion.** With the existing setting on:
   - Head bob, sway and camera shake drop to a quarter.
   - Blink and blur effects are shortened.

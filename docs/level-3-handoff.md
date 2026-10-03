@@ -6,8 +6,9 @@ retype decisions. For full design detail (numbers, tables, rationale) see
 [`level-3-meltdown.md`](./level-3-meltdown.md) - this is the shorter "what's
 the state of things and how do I get moving" version.
 
-Last updated: the session building the story cutscenes (§0.3 - phase
-table there shows what's done). Before that it reordered the story
+Last updated: the session that built story Phases 2-7 (§0.3's phase table,
+§0.7 for what each built), including "a death restarts the sector with its
+cutscenes" and Okoro's planted-foot run. Before that it reordered the story
 (Foundry -> Labs -> Skyline -> Roof), added Endless for every environment,
 and brought Level 1's glass physics and sound to every level.
 
@@ -143,17 +144,73 @@ what each delivers, how it will be built, and its testing criteria - is
 | Phase | What | Status |
 |---|---|---|
 | 1 | Shared systems: dialogue script, cutscene player (first-person camera, letterbox, subtitles, skip), reaction hits, the scientist companion, a preview page and tests | **done** (see §0.6) |
-| 2 | Opening: wake-up, the walk to the basement, Okoro in the Foundry | planned |
-| 3 | The elevator: gun drop, reaction hits, death and retry | planned |
-| 4 | Labs: breach, bend attack, hiding + sacrifice, grief in the lift | planned |
-| 5 | Skyline and roof: explosion, sprint, jump and latch; helicopter latch | planned |
-| 6 | Ending: pilot reveal, title card, credits | planned |
-| 7 | Graphics pass (requested by the team): more realistic running physics/animation, lighting and textures | planned |
+| 2 | Opening: wake-up, the walk to the basement, Okoro in the Foundry | **done** (§0.7) |
+| 3 | The elevator: gun drop, reaction hits, death and retry | **done** (§0.7) |
+| 4 | Labs: breach, bend attack, hiding + sacrifice, grief in the lift | **done** (§0.7) |
+| 5 | Skyline and roof: explosion, sprint, jump and latch; helicopter latch | **done** (§0.7) |
+| 6 | Ending: pilot reveal, title card, credits | **done** (§0.7) |
+| 7 | Graphics pass (requested by the team): more realistic running physics/animation, lighting and textures | **mostly done** (§0.7): gait, shadows, AO, ramps; photo PBR textures not done |
+
+### 0.7 What Phases 2-7 built
+
+Everything below plays only in a **story run started from the menu**
+(`storyRun` in `main.js`). Endless never sees any of it, and neither do the
+demo keys 1-5; `__dbg.story.jump(name)` reaches every scene instead
+(`wake`, `foundry`, `lift`, `labs`, `skyline`, `roof`, `ending`).
+
+- **One story layer per page** (`src/story/story-layer.js`): the UI,
+  reactions, cutscene player and voice, Okoro's talk during play (queued,
+  never overlapping), seen-once flags, a default death-and-retry. Clocked
+  by `updateGame`, so pause freezes it. **Esc tapped** during a cutscene =
+  pause; **held** = skip. Reduced motion quarters bob/sway/shake.
+- **Death restarts the sector, cutscenes and all** (the user's call): the
+  end screen's button becomes "RETRY SECTOR 0N" and puts you back at the
+  start of that sector with the score and spheres you came in with
+  (`storyCheckpoint`, `restartStage`). "Restart run" on the pause menu still
+  starts the whole run over.
+- **Phase 2** - `stages/ward.js` (the ward, behind the Foundry's start),
+  `wakeScene` + `walkOutScene` (scenes.js; the walk-out rises into the
+  chase camera, no cut), `foundry-guide.js` (Okoro 3-8 m ahead on a free
+  lane, talk by route progress, the 12-sphere hand-off, waits in the lift).
+  The story's Foundry has a gentler first 15% (`gentleStart`).
+- **Phase 3** - `src/elevators/story-ride.js`: the Gravity Fault ride with
+  `story` set. Okoro drops the launcher, picking it up is a reaction, the
+  clamps are `reactionLadder` 0-3, a miss drops the cabin and retries at that
+  clamp. Without `story` the ride is the teammate's, unchanged.
+- **Phase 4** - `labs-director.js` + `scenes-labs.js` (MeltdownGame
+  `setStory` + phase "story"): breach (incubators burst, Vale on a monitor
+  rendered to a texture), Okoro running with a cosmetic pistol, the bend
+  attack (mash; a loss costs 30 vitality and retries), the desk / bag /
+  sacrifice, grief in the lift.
+- **Phase 5** - `scenes-skyline.js` + `stages/fireball.js`: the blast at
+  500 m, sprint (A/D), jump, latch, hands on the ledge, the sky. The roof's
+  ladder jump needs the latch (`game.js _startLadderLatch`; a miss retries
+  and `roof.holdExtraction()` keeps the helicopter waiting).
+- **Phase 6** - `ending-director.js`, `scenes-ending.js`, `stages/cabin.js`,
+  `credits-roll.js`: the cabin, the reveal, the fly-away, the title on
+  black, the credits (every loaded model, checked), the end screen. Team
+  names for the credits go in `STORY_CREDITS` in `script.js`.
+- **Phase 7** - `src/levels/meltdown/gait.js`: a planted-foot running gait
+  (two-bone IK, cadence from speed, pelvis drop on contact, heel kick, knee
+  drive, lean from acceleration, landing squash) used by the player's
+  shader rig **and** by every Companion (Okoro, Vale, the patients) on
+  their real skeletons - planted feet move under 1 cm. Level 3 at **High**
+  quality only: a shadow-casting key light over the player and screen-space
+  ambient occlusion (`ao.js`); off below High, so Auto costs nothing extra.
+  The Foundry's pace eases instead of jumping. Each stage logs its texture
+  memory. Not done: photo PBR texture sets (Poly Haven / ambientCG) - they
+  need downloading, which wasn't done without asking; all three levels
+  already use generated normal/roughness maps.
+
+Checks: `node tests/story/run.js` - the Phase 1 checks plus `opening`,
+`lift`, `labs`, `skyline`, `ending`, `restart` (index.html through
+`__dbg`). `node tests/story/bench.js [root]` times the Labs at Auto and
+High (software GL: compare runs, not absolutes).
 
 ### 0.6 Story systems - what Phase 1 built (`src/story/`)
 
-Nothing here is wired into the game yet - Phases 2-6 do that, one beat at a
-time. Try it all at `preview/story.html` (keys **1** wake-up, **2** the
+Phases 2-6 wired all of this into the game (§0.7). The pieces on their
+own are still at `preview/story.html` (keys **1** wake-up, **2** the
 elevator's reaction ladder, **3** Okoro walking and talking, **4** the
 struggle / sprint / latch reactions; hold **Esc** to skip; the two
 checkboxes are the accessibility options).
