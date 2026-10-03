@@ -41,6 +41,9 @@ export const CHARACTER_PROFILES = {
   patient: { rotateX: Math.PI / 2, height: 1.74, repairBones: true },
   scientistRadioman: { rotateX: Math.PI / 2, height: 1.82 },
   scientistRust: { rotateX: 0, height: 1.84 },
+  // The story's two scientists (src/story/): Dr. Okoro (ally) and Dr. Vale.
+  scientistGood: { rotateX: Math.PI / 2, height: 1.8 },
+  scientistEvil: { rotateX: 0, height: 1.83 },
   playerFemale: {
     rotateX: 0,
     height: 1.68,

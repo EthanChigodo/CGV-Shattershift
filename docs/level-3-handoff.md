@@ -139,13 +139,43 @@ lines without touching code.
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | Shared systems: dialogue script, cutscene player (first-person camera, letterbox, subtitles, skip), reaction hits, the scientist companion, a preview page and tests | **in progress** |
+| 1 | Shared systems: dialogue script, cutscene player (first-person camera, letterbox, subtitles, skip), reaction hits, the scientist companion, a preview page and tests | **done** (see §0.6) |
 | 2 | Opening: wake-up, the walk to the basement, Okoro in the Foundry | planned |
 | 3 | The elevator: gun drop, reaction hits, death and retry | planned |
 | 4 | Labs: breach, bend attack, hiding + sacrifice, grief in the lift | planned |
 | 5 | Skyline and roof: explosion, sprint, jump and latch; helicopter latch | planned |
 | 6 | Ending: pilot reveal, title card, credits | planned |
 | 7 | Graphics pass (requested by the team): more realistic running physics/animation, lighting and textures | planned |
+
+### 0.6 Story systems - what Phase 1 built (`src/story/`)
+
+Nothing here is wired into the game yet - Phases 2-6 do that, one beat at a
+time. Try it all at `preview/story.html` (keys **1** wake-up, **2** the
+elevator's reaction ladder, **3** Okoro walking and talking, **4** the
+struggle / sprint / latch reactions; hold **Esc** to skip; the two
+checkboxes are the accessibility options).
+
+| File | What it is |
+|---|---|
+| `script.js` | **Every line of dialogue**, per scene, plus the cast (names, subtitle colours, voice pitch) and `GAME_TITLE`. Lines time themselves from their length; `at`/`hold`/`gap` override. `foundryTalk` lines fire by route progress (`atRoute` 0..1) during play. Edit words here only. |
+| `story-ui.js` + `story.css` | The overlay: letterbox, eyelids, blur (on the game canvases you pass as `blurTargets`), vignette, red tint, fade, subtitles (speaker-coloured; `[brackets]` = italic stage direction), hold-Esc ring, reaction prompts, title card. `setCutscene(true)` adds `body.story-cutscene`, which hides every level HUD. `setGameplay(true)` raises subtitles above the HUD for talk during play. |
+| `cutscene.js` | `CutscenePlayer`: plays a scene (data) on the host's clock - first-person camera shots (eased from/to, positions can be functions so they track moving people), breathing/bob/sway, keyframed overlays, events, and **reaction points**. Hold Esc skips the talking up to the next reaction (never past one) and fires every event it jumps over. A failed reaction stops the scene (`reaction-fail` event); the host plays its death, then `retry()` rewinds to `lead` seconds before that reaction. |
+| `reaction.js` | `ReactionHits`: press / combo / sequence / mash (one key or alternating two) / hold, chained with `then`. Wrong reaction key = fail; movement keys are ignored. Options `longWindows` (x1.6) and `holdInsteadOfMash`. Factories: `reactionLadder(step)` (the elevator: 1 key -> 2 together -> 3 in order -> 4 in order + mash), `latchReaction()`, `sprintReaction()` (A/D), `struggleReaction()`. Keys come from Q E R F Z X C V. |
+| `companion.js` | `Companion`: Okoro or Vale on `HumanoidRig` - actions idle, talk, walk, run, point, beckon, offer, aim, crouch, hold, wave, slump, sit; `lookAt` turns head/neck/chest (yaw and pitch); `hold(object)` keeps a prop in a hand; `follow(route, d, lateral)` stands him on a level route; `adjust` adds lean/nod on top of any action. Okoro carries the bag. `loadStoryCharacter(base, "scientistGood" / "scientistEvil")`. |
+| `voice.js` | `StoryVoice`: a soft three-syllable blip per line, pitched per speaker. |
+| `scenes.js` | Scene factories: `wakeScene(anchors)` (done - staged in the preview's test room; Phase 2 stages it in the game), `ladderScene()` (the reaction ladder). |
+
+Models: `scientist_good.glb` / `scientist_evil.glb` (a teammate's) are
+registered as `scientistGood` / `scientistEvil` in
+`src/levels/meltdown/characters.js` + `assets.js`, and credited in game.
+
+Tests: `node tests/story/run.js` - 70 cases: every reaction kind and option,
+the ladder, the prompt; lines/events/skip/fail-retry; the wake-up start to
+finish; both models rigged, every action, head turn, props.
+
+Not yet: the settings menu toggles for the two reaction options (they exist
+on `ReactionHits.setOptions`; add them to the game's settings when Phase 3
+puts reactions in the game).
 
 ### 0.4 Other wishes (planned)
 
@@ -234,6 +264,9 @@ Full game: `http://localhost:4173/`. Pick **Play as**, then **Start Story**
 (starts in the Foundry) or **Endless** (pick an environment). During a run,
 demo keys **1-4** jump to the Foundry, the Labs, the Skyline, the Roof;
 **5** rides the Gravity Fault lift.
+
+Story systems (cutscenes, reactions, Dr. Okoro):
+`http://localhost:4173/preview/story.html` - keys 1-4 (see §0.6).
 
 Level 3 on its own: `http://localhost:4173/preview/meltdown.html`,
 hard-refresh (`Ctrl+Shift+R`), pick a patient, click to start - it plays the
@@ -332,8 +365,9 @@ tests/meltdown/              run.js + checks: route, fairness, roof,
 ## 6. How this was tested
 
 Headless Chromium (SwiftShader) via Playwright: `tests/meltdown/run.js`
-(Level 3), `tests/causeway/run.js` (Level 1, drives the full game), and
-`tests/elevators/run.js` (the Gravity Fault ride), plus ad-hoc scripts that
+(Level 3), `tests/causeway/run.js` (Level 1, drives the full game),
+`tests/elevators/run.js` (the Gravity Fault ride) and `tests/story/run.js`
+(the story systems), plus ad-hoc scripts that
 drive the whole story and every Endless mode through `__dbg`.
 
 Headless rendering runs at a few frames a second, so gameplay is verified by

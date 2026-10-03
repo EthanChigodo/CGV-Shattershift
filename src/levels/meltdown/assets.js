@@ -88,6 +88,8 @@ export const CHARACTER_ASSETS = {
   playerMale: { file: "player_male.glb", profile: "playerMale" },
   scientistRadioman: { file: "scientist_radioman.glb", profile: "scientistRadioman" },
   scientistRust: { file: "scientist_rust.glb", profile: "scientistRust" },
+  scientistGood: { file: "scientist_good.glb", profile: "scientistGood" },
+  scientistEvil: { file: "scientist_evil.glb", profile: "scientistEvil" },
 };
 
 /**
