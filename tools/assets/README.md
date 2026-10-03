@@ -60,6 +60,22 @@ these files contain animations.
 | `dead_end_weapons.glb` | dead_end_weapons.glb | 1024, 8000 | Yes (2) |
 | `weapon_set.glb` | weapon_set.glb | 1024, 8000 | No |
 | `dragon_flail.glb` | dragon_flail.glb | 1024, 8000 | No |
+| `scientist_good.glb` | good_scientist.glb | 1024, 10000 | Yes (82 bones) |
+| `scientist_evil.glb` | evil_scientist.glb | 1024, 10000, `--no-morph` | Yes (81 bones) |
+
+Two extra `convert.py` flags exist for cases like the last two rows:
+
+- `--no-morph` drops shape keys. `evil_scientist.glb` ships with 428 facial
+  morph targets, which made the export 4.1 MB instead of 1 MB and would have
+  Three.js evaluate a 428-entry influence array every frame for nothing a
+  runner game can show.
+- `--anim` keeps animation clips (the default strips them, since none of the
+  supplied models had a useful one). It is **not** usable on
+  `evil_scientist.glb`: its only clip, `MorphBake`, is four morph-weight
+  channels over 10 s (no skeletal motion), and Blender 5.2's glTF exporter
+  crashes (`KeyError: None`) while gathering it. Neither character has an
+  idle/walk/run clip, so both need animating in code like the other
+  characters (see `src/levels/meltdown/characters.js`).
 
 ~238 MB of source became ~22 MB. Units vary wildly between files (the
 characters are in centimetres, the helicopter is ~1,900 units long, the

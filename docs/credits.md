@@ -68,12 +68,15 @@ game's credits screen, not only here. All were converted with
 | `dead_end_weapons.glb` | "Dead end weapons" by Professor E12^2 - sketchfab.com/3d-models/dead-end-weapons-255e81ecd8f8407696c0ecc243823adc | Textures 1024 px, rigs kept | Enemy gadget candidate |
 | `weapon_set.glb` | "Weapon set" by rudolfs - sketchfab.com/3d-models/weapon-set-cb2e607fc7734e6fbf84211b6a65912f | Re-exported | Enemy gadget candidate |
 | `dragon_flail.glb` | "Dragon Flail" by Roeland Van Sichem De Combe - sketchfab.com/3d-models/dragon-flail-a1ddde08ead04e3aa271f0a9c8bc0088 | Re-exported | Melee enemy weapon candidate |
+| `scientist_good.glb` (good_scientist) | "scientist" by Geont (Sketchfab user Fungler) - sketchfab.com/3d-models/scientist-ed65738d0ed44e0ba8493af2d1a5112b | Textures 1024 px, rig kept (82 bones) | "Good scientist" character - not used yet |
+| `scientist_evil.glb` (evil_scientist) | "Scientist" by Scientist Broken (Sketchfab user ultra700cybercam) - sketchfab.com/3d-models/scientist-4d3ce8401dd74121b691c6a82a486f3c | Textures 1024 px, rig kept (81 bones); 428 facial morph targets and a 4-channel morph-weight clip ("MorphBake") stripped | "Evil scientist" character - not used yet |
 
 All licensed **CC-BY-4.0** (creativecommons.org/licenses/by/4.0/). The ones
 the game uses are credited in game (press `K` in the preview; the data is
 `src/levels/meltdown/credits.js` - keep it in step with this table).
-`dead_end_weapons.glb`, `weapon_set.glb` and `dragon_flail.glb` are not used
-yet.
+`dead_end_weapons.glb`, `weapon_set.glb`, `dragon_flail.glb`,
+`scientist_good.glb` and `scientist_evil.glb` are not used yet - when one is
+wired in, add its entry to `credits.js` so the in-game credits stay in step.
 
 > **Worth a team decision:** three of these are fan recreations of commercial
 > games/franchises (Silent Hill 4, Rust,
