@@ -69,8 +69,22 @@ export async function run(page, { shots }) {
     return { ok, d: __dbg.causewayDistance(), state: __dbg.state };
   });
   check("the blast fires near the end of the bridge", blast.ok && blast.d >= 499 && blast.d < 503, JSON.stringify(blast));
-  await page.evaluate(() => __t.until(() => __t.L.player.t > 1.0, 120));
-  await shot("01-fireball-look-back");
+  await page.evaluate(() => __t.until(() => __t.L.player.t > 1.6, 120));
+  await shot("01-tower-floor-by-floor");
+  const tower = await page.evaluate(() => {
+    const t = __dbg.story.skyline.tower;
+    const mid = t.state.floorsGone;
+    __t.until(() => t.state.whole > 0, 200);
+    return { mid, floors: t.floors, all: t.state.floorsGone, whole: t.state.whole };
+  });
+  check("the tower goes floor by floor, then all at once", tower.mid > 2 && tower.mid < tower.floors && tower.all === tower.floors && tower.whole > 0, JSON.stringify(tower));
+  await shot("01b-the-whole-tower");
+  const ramp = await page.evaluate(() => {
+    __t.until(() => __t.R.running, 300);
+    const shell = __dbg.causeway.shell;
+    return { angle: shell.tilt?.angle ?? 0, low: shell.deckHeight(480), high: shell.deckHeight(530) };
+  });
+  check("the bridge swings down into a ramp up to the tip", ramp.angle > 0.15 && ramp.low < ramp.high - 5, JSON.stringify(ramp));
 
   // Miss the sprint: the bridge takes you; back to the sprint.
   const sprintMiss = await page.evaluate(() => {
@@ -113,9 +127,9 @@ export async function run(page, { shots }) {
     __t.until(() => __t.R.running && __t.R._s.spec.label === "GRAB", 200);
   });
   await shot("03-mid-air-latch-prompt");
-  await page.evaluate(() => { __t.play(); __t.until(() => __t.L.player.t > 4.0, 200); });
+  await page.evaluate(() => { __t.play(); __t.until(() => __t.L.player.t > 6.0, 200); });
   await shot("04-hands-on-the-ledge");
-  await page.evaluate(() => __t.until(() => __t.L.player.t > 7.5, 300));
+  await page.evaluate(() => __t.until(() => __t.L.player.t > 9.2, 300));
   await shot("05-on-your-back-the-sky");
   const after = await page.evaluate(() => {
     __t.until(() => __dbg.state === "playing", 600);
@@ -145,12 +159,22 @@ export async function run(page, { shots }) {
     const m = __dbg.story.getMeltdown();
     m.roofOptions = { heliSeconds: 3 };
     __dbg.story.jump("roof");
-    const ok = await __t.wait(() => m.phase === "roof", 120000);
+    // The roof is heavy (the scan, the brute, the kit): software GL takes a while.
+    const ok = await __t.wait(() => m.phase === "roof", 240000);
     const r = m.roof;
+    // Step to the hover without waiting on the wall clock (each software-GL frame is slow).
+    __t.until(() => r.state.ending === "extraction" && r.state.extractT > 2.8, 900);
     await __t.wait(() => r.state.ending === "extraction" && r.state.extractT > 2.8, 60000);
-    // Stand at the ledge, by the ladder.
-    const bottom = r.ladderBottom(new __dbg.THREE.Vector3());
-    m.hero.position.set(bottom.x - 2.2, 0, bottom.z);
+    // Stand at the ledge, by the ladder: on real floor (the scan's edge is ragged).
+    const THREE = __dbg.THREE;
+    const bottom = r.ladderBottom(new THREE.Vector3());
+    const spot = new THREE.Vector3();
+    for (let x = bottom.x - 1; x > r.eastEdge - 4.4; x -= 0.2) {
+      const h = r.groundAt(spot.set(x, 0, bottom.z), 99);
+      if (h !== null && Number.isFinite(h)) { spot.y = h; break; }
+    }
+    m.hero.position.copy(spot);
+    if (m.hero.vy !== undefined) m.hero.vy = 0;
     m.runner.invulnerable = 999;
     __t.step(1);
     const canGrab = r.canGrab(m.hero.position);
@@ -162,7 +186,7 @@ export async function run(page, { shots }) {
     const wrong = ["KeyQ", "KeyE", "KeyR", "KeyF", "KeyZ", "KeyX", "KeyC", "KeyV"].find((k) => !__t.R._s.keys.includes(k));
     __t.key(wrong);
     __t.step(20);
-    const fell = m.hero.position.y < -1;
+    const fell = m.hero.position.y < from.y - 1;
     __t.until(() => m.phase === "roof", 200);
     const back = m.hero.position.distanceTo(from) < 1.5 && m.phase === "roof";
     const window = r.state.extractT;

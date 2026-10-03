@@ -22,10 +22,11 @@ import * as labs from "./checks/labs.js";
 import * as skyline from "./checks/skyline.js";
 import * as ending from "./checks/ending.js";
 import * as restart from "./checks/restart.js";
+import * as briefing from "./checks/briefing.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
-const ALL = [reactions, cutscene, companion, opening, lift, labs, skyline, ending, restart];
+const ALL = [reactions, cutscene, companion, briefing, opening, lift, labs, skyline, ending, restart];
 
 const PAGES = {
   preview: {

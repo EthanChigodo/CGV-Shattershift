@@ -202,6 +202,9 @@ export async function run(page, { shots }) {
     const lift = __t.m.level?.endLift;
     __t.until(() => (lift?.state.cabinY ?? 0) > 6, 600);
     const climbed = lift?.state.cabinY ?? 0;
+    // Step the rest of the ride (~11 s) without waiting on the wall clock -
+    // software GL renders each step slowly - then let any async handover land.
+    __t.until(() => __dbg.currentLevel === 1, 900);
     const ok = await __t.wait(() => __dbg.currentLevel === 1, 120000);
     return { climbed, ok, level: __dbg.currentLevel, state: __dbg.state, fade: document.querySelector(".story-fade").style.opacity };
   });

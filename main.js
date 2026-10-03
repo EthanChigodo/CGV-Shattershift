@@ -9,7 +9,7 @@ import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
-import { PlayerAvatar } from "./src/levels/meltdown/player.js";
+import { PlayerAvatar, THROW_RELEASE } from "./src/levels/meltdown/player.js";
 import { loadMeltdownAssets } from "./src/levels/meltdown/assets.js";
 import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
 import { MusicManager } from "./src/audio/music-manager.js";
@@ -21,7 +21,10 @@ import { Companion, loadStoryCharacter } from "./src/story/companion.js";
 import { wakeScene, walkOutScene } from "./src/story/scenes.js";
 import { WardStage } from "./src/story/stages/ward.js";
 import { FoundryGuide } from "./src/story/foundry-guide.js";
-import { Fireball } from "./src/story/stages/fireball.js";
+import { DemolitionTower } from "./src/story/stages/demolition-tower.js";
+import { PoliceHelicopters } from "./src/fx/police-helicopters.js";
+import { Prologue } from "./src/story/prologue.js";
+import { themeAt as causewayThemeAt } from "./src/levels/causeway/layout.js";
 import { blastScene } from "./src/story/scenes-skyline.js";
 import { SCENES as STORY_LINES } from "./src/story/script.js";
 
@@ -529,9 +532,14 @@ function updateFoundry(dt, time) {
     updateUI();
   }
 
-  if (hits.length && foundryInvulnerable <= 0) {
+  if (hits.length && foundryInvulnerable <= 0 && absorbWithShield(_forward)) {
+    // A kinetic shield (serum) takes the hit.
+    foundryInvulnerable = 1.1;
+    level1Audio.impact(0.65);
+  } else if (hits.length && foundryInvulnerable <= 0) {
     const hazard = hits[0];
     health -= 18;
+    run.damage = 1;
     foundryInvulnerable = 1.1;
     foundrySlow = 0.55;
     combo = 1; comboTimer = 0;
@@ -775,7 +783,8 @@ function updateCauseway(dt, time) {
     beginSkylineBlast();
     return;
   }
-  skylineStory?.fireball.update(dt);
+  skylineStory?.tower.update(dt);
+  hideRampProps();
   run.time += dt;
 
   // ---- Speed: W sprints, S brakes, hits cost momentum ------------------
@@ -1114,6 +1123,55 @@ function updateCausewayPresentation(dt) {
   ui.reticle.style.setProperty("--ball", `#${ball.colour.toString(16).padStart(6, "0")}`);
 }
 
+/**
+ * The Skyline's HUD and screen looks in the Foundry, the Labs and on the
+ * Roof - the same numbers, read the same way, in every level: spheres,
+ * score and combo; integrity on the ECG; sphere type, speed and focus; the
+ * serums running. (The Skyline drives its own in updateCausewayPresentation.)
+ */
+const unifiedTrack = { breaks: 0, hits: 0, downs: 0 };
+function updateUnifiedHud(dt) {
+  const inLabs = currentLevel === 3 && meltdown;
+  if (inLabs) {
+    // The Labs and the Roof keep their own counts: a break builds the combo,
+    // a hit breaks it, as in the Skyline.
+    const r = meltdown.runner;
+    if (r.breaks + r.downs > unifiedTrack.breaks + unifiedTrack.downs) { combo = Math.min(9, combo + 1); comboTimer = 2.6; }
+    if (r.hits > unifiedTrack.hits) { combo = 1; comboTimer = 0; run.damage = 1; }
+    if (r.breaks < unifiedTrack.breaks || r.hits < unifiedTrack.hits) { combo = 1; comboTimer = 0; }
+    Object.assign(unifiedTrack, { breaks: r.breaks, hits: r.hits, downs: r.downs });
+    if (comboTimer > 0) { comboTimer = Math.max(0, comboTimer - dt); if (comboTimer === 0) combo = 1; }
+  }
+  run.damage = Math.max(0, run.damage - dt * 1.6);
+  const ball = arsenal.current;
+  const speed = currentLevel === 2 ? foundryPace : inLabs ? (meltdown.phase === "roof" ? meltdown.hero.velocity.length() : meltdown.runner.speed) : 0;
+  const live = inLabs ? score + meltdownScore(meltdown.stats, false) : score;
+  causewayHud.setCore({
+    spheres: ammo, score: live, combo, comboRatio: comboTimer / 2.6,
+    camera: inLabs ? meltdown.cameraModeName.toLowerCase().replace(/^./, (c) => c.toUpperCase()) : cameraThird ? "Chase" : "First person",
+    low: ammo < 4,
+  });
+  causewayHud.setTools({ ball: ball.key, spheres: ammo, cost: arsenal.cost(), speed, speedRatio: THREE.MathUtils.clamp(speed / 18, 0, 1), focus: run.focus });
+  causewayHud.setVitals({ integrity: health, smoke: 0, heat: inLabs ? meltdown.heatLevel ?? 0 : 0, sedation: 0 });
+  causewayHud.setSerums(arsenal.list());
+  ui.reticle.style.setProperty("--ball", `#${ball.colour.toString(16).padStart(6, "0")}`);
+  // The Foundry renders through the Skyline's post pipeline: give it the
+  // same looks - the hit, the heartbeat, the serums (Level 3 has its own grade).
+  if (currentLevel === 2) {
+    const u = postfx.uniforms;
+    const fear = THREE.MathUtils.clamp((100 - health) / 70, 0, 1);
+    const bpm = 70 + fear * 80;
+    run.heartPhase = (run.heartPhase + dt * bpm / 60) % 1;
+    const beat = Math.exp(-((run.heartPhase - 0.08) ** 2) / 0.002) + 0.6 * Math.exp(-((run.heartPhase - 0.26) ** 2) / 0.002);
+    u.uPulse.value = beat * (0.15 + fear * 0.85);
+    u.uDamage.value = run.damage;
+    u.uOverdrive.value = arsenal.level("overdrive");
+    u.uPrism.value = arsenal.level("prism") * 0.7;
+    u.uFocus.value = 1 - run.timeScale;
+    u.uSpeed.value = Math.max(0, (foundryPace - 11.5) / 5);
+  }
+}
+
 /** Level preview: a guided flythrough with world-attached labels. */
 function startPreview() {
   resetStats("story");
@@ -1192,6 +1250,8 @@ function getMeltdown() {
     audio: MELTDOWN_AUDIO,
     sfx: level1Audio,
     reducedMotion: settings.reducedMotion,
+    // One set of sphere types and serums for every level.
+    arsenal,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdownQuality();
@@ -1306,10 +1366,11 @@ function meltdownScore(s, escaped) {
 const MELTDOWN_ENDINGS = {
   EXTRACTED: "You cleared the roof and climbed out on the rescue ladder. Ascension Tower burns behind you.",
   "BARELY OUT": "You jumped for the ladder with them still on the roof, and it held. Ascension Tower burns behind you.",
-  "CAUGHT BY THE FIRE": "The fire caught up. Shoot what blocks you, grab ball sacks and power-up vials, and do not stop.",
+  "CAUGHT BY THE FIRE": "The fire caught up. Shoot what blocks you, grab sphere sacks and serum vials, and do not stop.",
   "THE BUILDING WENT UP": "The building went up before you reached the lift. The evac signs count down - keep moving.",
-  "THEY GOT YOU": "The roof was too much. Keep moving, dodge (SPACE) through their charges, and lure them off the open ledges.",
+  "THEY GOT YOU": "The roof was too much. Keep moving, dodge (SPACE) through their charges, get off a laser's line before it locks, and lure them off the open ledges.",
   "LEFT BEHIND": "The helicopter could not wait. When it hangs off the east ledge, get to the edge and jump (SPACE) for the ladder.",
+  "YOU FELL": "Off the edge. The east side and the middle of the west are open, and so is the deck's - watch your footing when they knock you back.",
 };
 
 /** Level 3 finished: its numbers into the game's score, and the end screen. */
@@ -1442,8 +1503,9 @@ function fire() {
   const inCauseway = currentLevel === 1 && causeway;
   // Level 1's throw physics (a glass sphere on a gravity arc) in the Foundry too.
   const physical = inCauseway || (currentLevel === 2 && !!foundry);
-  const ball = inCauseway ? arsenal.current : physical ? BALLS.glass : null;
-  const cost = inCauseway ? arsenal.cost() : 1;
+  // The Skyline's sphere types and serums in the Foundry too.
+  const ball = physical ? arsenal.current : null;
+  const cost = physical ? arsenal.cost() : 1;
   if (ammo < cost || ammo <= 0 && cost > 0) {
     showMessage(ammo <= 0 ? "NO SPHERES" : `${ball.name.toUpperCase()} NEEDS ${cost}`);
     return;
@@ -1451,10 +1513,13 @@ function fire() {
   ammo -= cost;
 
   const speed = ball?.speed ?? 34;
-  const gravity = physical ? ball.gravity : 0;
   _origin.copy(camera.position);
-  if (inCauseway && !cameraThird) {
-    // Throw from the right hand rather than the eye.
+  if (inCauseway && skyLauncher.rig.visible) {
+    // Fired from the launcher's muzzle.
+    skyLauncher.muzzle.getWorldPosition(_origin);
+    skyLauncher.recoil = 1;
+  } else if (inCauseway && !cameraThird) {
+    // (No launcher model yet: from the right hand rather than the eye.)
     const right = _segment.set(1, 0, 0).applyQuaternion(camera.quaternion);
     _origin.addScaledVector(right, 0.28).y -= 0.22;
   }
@@ -1462,11 +1527,93 @@ function fire() {
   // Aim at the target under (or, with aim assist, near) the crosshair, else
   // at whatever solid is there, else 60 m out.
   const aim = resolveAim(aliveTargets(), inCauseway ? causeway.solids : []);
-  if (aim.target) leadTarget(aim.target, aim.point, _origin, speed, _aim);
-  else _aim.copy(aim.point);
-  const count = inCauseway && arsenal.isActive("prism") ? 3 : 1;
+  const count = physical && arsenal.isActive("prism") ? 3 : 1;
+  run.shots += count;
+  updateUI();
+  // The Foundry: Subject 07 throws by hand. The arm winds up and the sphere
+  // leaves the hand at the release, aimed at what was under the crosshair.
+  if (currentLevel === 2 && playerBodyReady && avatar.visible) {
+    playerBody.throw();
+    pendingThrows.push({ delay: THROW_RELEASE, target: aim.target, point: aim.point.clone(), ball, count });
+    return;
+  }
+  launchSpheres(_origin, aim.target, aim.point, ball, count, physical);
+}
+
+/* ---- The launcher in the Skyline ------------------------------------------ */
+
+/**
+ * Subject 07 keeps the launcher from the lift up to the Labs (the Gravity
+ * Fault ride), so in the Skyline the spheres are fired, not thrown: the same
+ * spheres on the same arcs (Level 1's physics), out of its muzzle. In first
+ * person it's held low on the right of the view; in the chase view it sits
+ * on the shoulder, both hands on it. Only the Foundry throws by hand.
+ */
+const skyLauncher = { rig: new THREE.Group(), muzzle: new THREE.Object3D(), model: null, recoil: 0 };
+skyLauncher.rig.name = "SkylineLauncher";
+skyLauncher.muzzle.position.set(0, 0.02, -0.66);
+skyLauncher.rig.add(skyLauncher.muzzle);
+skyLauncher.rig.visible = false;
+scene.add(camera); // so what it holds is drawn
+loadMeltdownAssets(MELTDOWN_ASSET_BASE, { names: ["launcher"] }).then((assets) => {
+  const asset = assets.get("launcher");
+  if (!asset) return;
+  const model = asset.template.clone(true);
+  // As Level 3 mounts it: long axis down -Z, ~1.25 m.
+  model.scale.setScalar(1.25 / Math.max(asset.size.x, asset.size.z));
+  model.rotation.y = Math.PI / 2;
+  const box = new THREE.Box3().setFromObject(model);
+  model.position.sub(box.getCenter(new THREE.Vector3()));
+  // Drawn on the effects layer too, so the main camera always sees it.
+  model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.layers.enable(LAYERS.FX); } });
+  skyLauncher.model = model;
+  skyLauncher.rig.add(model);
+});
+
+/** Where it is this frame: on the camera (first person) or the shoulder. */
+function placeSkyLauncher(dt) {
+  const on = currentLevel === 1 && !!causeway && (state === "playing" || state === "ended" || state === "lift") && !photoActive;
+  skyLauncher.rig.visible = on && !!skyLauncher.model && (cameraThird ? avatar.visible : state !== "lift");
+  playerBody.hold = currentLevel === 1 ? 1 : 0;
+  if (!skyLauncher.rig.visible) return;
+  skyLauncher.recoil = Math.max(0, skyLauncher.recoil - dt * 7);
+  const r = skyLauncher.recoil;
+  if (!cameraThird) {
+    if (skyLauncher.rig.parent !== camera) camera.add(skyLauncher.rig);
+    const bob = settings.reducedMotion ? 0 : Math.sin(run.stepPhase * 2) * Math.min(1, run.speed / 8);
+    skyLauncher.rig.position.set(0.34 + bob * 0.01, -0.34 + Math.abs(bob) * 0.012, -0.6 + r * 0.12);
+    skyLauncher.rig.rotation.set(0.05 + r * 0.2, 0.05, bob * 0.02);
+  } else {
+    if (skyLauncher.rig.parent !== playerBody.shoulder) playerBody.shoulder.add(skyLauncher.rig);
+    skyLauncher.rig.position.set(-0.04, -0.07, -0.18 + r * 0.1);
+    skyLauncher.rig.rotation.set(r * 0.15, 0, 0);
+  }
+}
+
+/** Thrown, waiting for the hand to let go (the Foundry's overhand throw). */
+const pendingThrows = [];
+function updatePendingThrows(dt) {
+  for (let i = pendingThrows.length - 1; i >= 0; i -= 1) {
+    const p = pendingThrows[i];
+    p.delay -= dt;
+    if (p.delay > 0) continue;
+    pendingThrows.splice(i, 1);
+    if (state !== "playing") continue;
+    // A target that moved in the meantime is led from where it is now.
+    const target = p.target?.userData.alive ? p.target : null;
+    const point = target ? worldSphere(target).center.clone() : p.point;
+    launchSpheres(playerBody.releasePoint(_origin), target, point, p.ball, p.count, true);
+  }
+}
+
+/** Spheres away from `origin` toward an aim point (leading a moving target). */
+function launchSpheres(origin, target, point, ball, count, physical) {
+  const speed = ball?.speed ?? 34;
+  const gravity = physical ? ball.gravity : 0;
+  if (target) leadTarget(target, point, origin, speed, _aim);
+  else _aim.copy(point);
   for (let i = 0; i < count; i += 1) {
-    const dir = _aim.clone().sub(_origin);
+    const dir = _aim.clone().sub(origin);
     const distance = dir.length();
     dir.normalize();
     if (count > 1) dir.applyAxisAngle(_up, (i - 1) * 0.07);
@@ -1476,19 +1623,19 @@ function fire() {
     const velocity = dir.multiplyScalar(speed).addScaledVector(_up, 0.5 * gravity * t);
     const mesh = new THREE.Mesh(projectileGeometry, ball ? projectileMaterials[ball.key] : legacyProjectileMaterial);
     mesh.scale.setScalar(ball?.radius ?? 0.18);
-    mesh.position.copy(_origin);
+    mesh.position.copy(origin);
     mesh.layers.set(LAYERS.FX);
     scene.add(mesh);
     projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
   }
-  run.shots += count;
   if (physical) level1Audio.throwBall();
-  updateUI();
 }
 
 /** A special sphere going off: cryo puts out fires, shock breaks everything nearby. */
 function detonate(p, point) {
-  if (!causeway || p.ball === "glass") return;
+  if (p.ball === "glass") return;
+  if (currentLevel === 2 && foundry) { detonateFoundry(p, point); return; }
+  if (!causeway) return;
   const def = BALLS[p.ball];
   causeway.splash(point, def.splash, p.ball);
   if (p.ball === "shock") {
@@ -1499,6 +1646,28 @@ function detonate(p, point) {
     triggerShake(0.25);
   }
   if (p.ball === "cryo") p.scored = true;
+}
+
+/**
+ * The special spheres in the Foundry: shock shatters every cell and switch
+ * within reach; cryo freezes the machinery around it for a few seconds
+ * (pistons stop where they are - still solid, but no longer moving).
+ */
+function detonateFoundry(p, point) {
+  const def = BALLS[p.ball];
+  shatterFX.chunks(point, 26, { tint: p.ball === "cryo" ? 0xbff4ff : 0xd9a6ff, speed: 5, radius: def.splash * 0.3, size: 0.08 });
+  if (p.ball === "shock") {
+    for (const target of foundry.breakables.slice()) {
+      if (!target.userData.alive || target.getWorldPosition(_sv).distanceTo(point) > def.splash) continue;
+      const r = shatter(target, { point: _sv.clone(), direction: p.velocity, ball: "shock" });
+      if (r) p.scored = true;
+    }
+    triggerShake(0.25);
+  } else if (p.ball === "cryo") {
+    const frozen = foundry.freezeNear(point, def.splash, 4);
+    if (frozen) { showMessage(`CRYO // ${frozen} MACHINE${frozen > 1 ? "S" : ""} FROZEN`); p.scored = true; }
+  }
+  level1Audio.glassBreak();
 }
 
 const _seg = new THREE.Line3();
@@ -1695,8 +1864,36 @@ function resetStats(mode = causewayMode) {
   for (const mesh of breakables) { mesh.visible = true; mesh.userData.alive = true; mesh.scale.setScalar(1); }
   for (const mesh of obstacles) mesh.userData.hit = false;
   for (const p of projectiles) scene.remove(p.mesh); projectiles.length = 0;
+  pendingThrows.length = 0;
   shatterFX.clear();
   ui.end.classList.remove("active"); updateUI();
+}
+
+/**
+ * Police helicopters over the Skyline (src/fx/police-helicopters.js): they
+ * circle the city with their lights going and searchlights sweeping the
+ * streets - and now and then the skybridge. Loaded the first time the
+ * Skyline (or the menu behind it) shows.
+ */
+let police = null;
+function updatePolice(dt, time, active) {
+  if (!active) {
+    if (police) police.root.visible = false;
+    return;
+  }
+  if (!police) {
+    police = new PoliceHelicopters({ count: 3 });
+    scene.add(police.root);
+    police.load(MELTDOWN_ASSET_BASE);
+  }
+  police.root.visible = true;
+  const distance = CAUSEWAY_ORIGIN_Z - camera.position.z;
+  police.update(dt, time, {
+    worldZ: (d) => CAUSEWAY_ORIGIN_Z - d,
+    distance,
+    deckY: causeway?.shell?.deckHeight(distance + 8) ?? 0,
+    overDeck: causewayThemeAt(distance, causewayMode) === "bridge",
+  });
 }
 
 /**
@@ -1744,8 +1941,9 @@ function startCampaign() {
   runKind = "story"; endlessEnv = null; storyBalls = null;
   music.playRound1();
   enterFoundry();
-  // Okoro brings the spheres: none until he hands them over.
+  // Okoro brings the spheres: none until he hands over the bag.
   ammo = 0;
+  wearSphereBag(false);
   storyCheckpoint = { stage: "foundry", score: 0, ammo: 0, balls: null };
   updateUI();
   if (!story.hasSeen("wake")) beginOpening();
@@ -1837,6 +2035,87 @@ function hideOkoro() {
   scene.remove(okoro.root);
 }
 
+/* ---- The sphere bag: Dr. Okoro's backpack of glass spheres -------------- */
+
+/**
+ * The bag of spheres (assets/meltdown/backpack.glb). Okoro carries it into
+ * the Foundry and tosses it to you on the run; you wear it from then on.
+ * Origin at the top of the bag (the grab handle), hanging down -Y.
+ */
+const sphereBag = new THREE.Group();
+sphereBag.name = "SphereBag";
+const BAG_HEIGHT = 0.5;
+{
+  // A stand-in until the model is in: a canvas pack.
+  const standIn = new THREE.Mesh(new THREE.BoxGeometry(0.36, BAG_HEIGHT, 0.2), new THREE.MeshStandardMaterial({ color: 0x3e4535, roughness: 0.9 }));
+  standIn.position.y = -BAG_HEIGHT / 2;
+  sphereBag.add(standIn);
+  loadMeltdownAssets(MELTDOWN_ASSET_BASE, { names: ["backpack"] }).then((assets) => {
+    const asset = assets.get("backpack");
+    if (!asset) return;
+    const model = asset.template.clone(true);
+    model.scale.setScalar(BAG_HEIGHT / asset.size.y);
+    model.position.y = -BAG_HEIGHT;
+    // Its straps face the wearer's back (the model's -Z).
+    model.rotation.y = Math.PI;
+    model.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    sphereBag.add(model);
+    standIn.visible = false;
+  });
+}
+/** The toss from Okoro's hand to your back: { t, from }. */
+let bagToss = null;
+const BAG_TOSS_SECONDS = 0.62;
+/** Seconds after the hand-off line before he lets go (he turns to you first). */
+const BAG_TOSS_DELAY = 0.5;
+
+/** Put the bag on the player's back (or take it off). */
+function wearSphereBag(on) {
+  okoro.drop(sphereBag);
+  bagToss = null;
+  if (!on) { playerBody.wear(null); sphereBag.removeFromParent(); return; }
+  playerBody.wear(sphereBag);
+  // On the back: top at the shoulder blades, straps against the body.
+  sphereBag.position.set(0, BAG_HEIGHT * 0.55, 0.06);
+  sphereBag.rotation.set(0, 0, 0);
+  sphereBag.visible = true;
+}
+
+/** Okoro carries the bag in his left hand, by the grab handle. */
+function giveOkoroTheBag() {
+  playerBody.wear(null);
+  okoro.drop(sphereBag);
+  // The hand's frame points -Z down the forearm; the bag hangs that way.
+  okoro.hold(sphereBag, { hand: "L", rotation: [Math.PI / 2, 0, 0] });
+  sphereBag.visible = true;
+}
+
+function startBagToss() {
+  okoro.drop(sphereBag, scene);
+  bagToss = { t: 0, from: sphereBag.position.clone(), spin: sphereBag.rotation.x };
+}
+
+const _bagTo = new THREE.Vector3();
+const _bagBack = new THREE.Vector3(0, 1.15, 0.25);
+function updateBagToss(dt) {
+  if (!bagToss) return;
+  bagToss.t += dt;
+  const k = Math.min(1, bagToss.t / BAG_TOSS_SECONDS);
+  if (playerBodyReady) playerBody.back.getWorldPosition(_bagTo);
+  else _bagTo.copy(avatar.position).add(_bagBack);
+  _bagTo.y += BAG_HEIGHT * 0.55;
+  sphereBag.position.lerpVectors(bagToss.from, _bagTo, k);
+  sphereBag.position.y += Math.sin(Math.PI * k) * 0.9;
+  // A tumble in the air that settles upright as you catch it.
+  sphereBag.rotation.set(bagToss.spin * (1 - k) + Math.sin(k * Math.PI) * 1.4, avatar.rotation.y, 0);
+  if (k < 1) return;
+  wearSphereBag(true);
+  ammo += 12;
+  level1Audio.sphereCollected();
+  showMessage("+12 GLASS SPHERES // DR. OKORO'S BAG");
+  updateUI();
+}
+
 /** Okoro runs the Foundry with you (story runs only). */
 function startFoundryGuide() {
   if (!storyRun || runKind !== "story" || !foundry) return;
@@ -1845,6 +2124,9 @@ function startFoundryGuide() {
   showOkoro(okoro.root.position, 0);
   foundryGuide.start(foundryDistance(), { lateral: 0 });
   okoro.act("run");
+  // No spheres until he hands over the bag.
+  if (ammo <= 0) giveOkoroTheBag();
+  else wearSphereBag(true);
 }
 
 function updateFoundryGuide(dt) {
@@ -1861,24 +2143,38 @@ function updateFoundryGuide(dt) {
     story.markSeen("foundryTalk");
   }
   if (out.cues.includes("handoff")) {
-    // From his bag: the spheres the run needs.
-    ammo += 12;
-    level1Audio.sphereCollected();
-    showMessage("+12 GLASS SPHERES // FROM DR. OKORO");
-    updateUI();
+    // He turns, arm out, and tosses you the bag of spheres the run needs.
+    foundryGuide.tossIn = BAG_TOSS_DELAY;
+  }
+  if (foundryGuide.tossIn !== undefined) {
+    foundryGuide.tossIn -= dt;
+    if (foundryGuide.tossIn <= 0) {
+      foundryGuide.tossIn = undefined;
+      if (sphereBag.parent === okoro.root) startBagToss();
+    }
   }
   okoro.update(dt, { speed: foundryGuide.gaitSpeed });
+  updateBagToss(dt);
 }
 
 /* ==================================================================== */
 /* STORY - Phase 5: the Skyline's blast, sprint, jump and latch          */
 /* ==================================================================== */
 
-/** Where the tower behind blows, and where you land (route distances). */
+/**
+ * Where the tower behind blows, and where you land (route distances). The
+ * bridge's slots are 8 m long: the ramp swings about the tip (a slot
+ * boundary), the slot past it falls away, and the far building's edge is
+ * the next boundary.
+ */
 const SKYLINE_BLAST_AT = 500;
-const SKYLINE_LEDGE = 540;
-const SKYLINE_STAND = 546;
-/** The story's Skyline extras while the Skyline runs in a story run: { ledge, fireball, done }. */
+const SKYLINE_RAMP_FROM = 472;
+const SKYLINE_TIP = 536;
+const SKYLINE_LEDGE = 544;
+const SKYLINE_STAND = 550;
+/** The tower that's demolished: beside the bridge, behind you, its base far below. */
+const SKYLINE_TOWER = { d: 425, x: -42, base: -34 };
+/** The story's Skyline extras while the Skyline runs in a story run: { ledge, tower, done }. */
 let skylineStory = null;
 
 /** The far building's edge to catch: a concrete lip at the start of the atrium. */
@@ -1925,15 +2221,17 @@ function buildSkylineStory() {
   hands.position.set(0, 0.02, CAUSEWAY_ORIGIN_Z - SKYLINE_LEDGE - 0.12);
   hands.visible = false;
   group.add(hands);
-  const fireball = new Fireball();
-  group.add(fireball.root);
+  // The tower that's demolished floor by floor (stages/demolition-tower.js).
+  const tower = new DemolitionTower({ floors: 24, width: 22 });
+  tower.root.position.set(SKYLINE_TOWER.x, SKYLINE_TOWER.base, CAUSEWAY_ORIGIN_Z - SKYLINE_TOWER.d);
+  group.add(tower.root);
   scene.add(group);
-  skylineStory = { group, fireball, hands, done: false, flash: 0, materials: [concrete, steel, skin, sleeve] };
+  skylineStory = { group, tower, hands, done: false, flash: 0, materials: [concrete, steel, skin, sleeve] };
 }
 
 function disposeSkylineStory() {
   if (!skylineStory) return;
-  skylineStory.fireball.dispose();
+  skylineStory.tower.dispose();
   skylineStory.group.traverse((o) => o.isMesh && o.geometry.dispose());
   for (const m of skylineStory.materials) m.dispose();
   skylineStory.group.removeFromParent();
@@ -1949,19 +2247,48 @@ function beginSkylineBlast() {
   const at = (d, x = 0, y = 0) => new THREE.Vector3(x, y, CAUSEWAY_ORIGIN_Z - d);
   const start = causewayDistance();
   const reactions = story.reactions;
+  const shell = causeway.shell;
+  // Behind the ramp the bridge falls away as before; the ramp itself swings.
+  chase.front = SKYLINE_RAMP_FROM;
+  s.blasted = true;
+  hideRampProps();
+  const tower = s.tower;
+  tower.onFloor = (i) => {
+    if (i % 3 === 0) level1Audio.impact(0.35 + (i / tower.floors) * 0.3);
+    triggerShake(0.08);
+  };
+  tower.onWhole = () => {
+    s.flash = 1;
+    level1Audio.impact(1);
+    level1Audio.glassBreak();
+    level1Audio.podBreak?.();
+  };
+  // Where to look: the floor going now (up the building), then its middle.
+  const towerFocus = new THREE.Vector3();
+  const focusTower = () => {
+    const going = tower.started ? Math.min(tower.floors, tower.time / tower.interval) : 0;
+    const floors = tower.state.whole > 0 ? tower.floors * 0.55 : going + 0.5;
+    return towerFocus.copy(at(SKYLINE_TOWER.d, SKYLINE_TOWER.x * 0.85, SKYLINE_TOWER.base + floors * 4.2 - tower.state.sink));
+  };
   const scene = blastScene({
     at,
+    deck: (d) => shell.deckHeight(d),
     startD: start,
+    tipD: SKYLINE_TIP,
     ledgeD: SKYLINE_LEDGE,
     standD: SKYLINE_STAND,
-    frontStart: Number.isFinite(chase.front) ? Math.max(chase.front, start - 40) : start - 34,
-    setCollapse: (front) => { chase.front = front; },
+    wholeAt: tower.wholeDelay,
+    setTilt: (angle, drop) => {
+      const t = shell.tilt;
+      if (t && Math.abs(t.angle - angle) < 1e-4 && Math.abs(t.drop - drop) < 1e-4) return;
+      shell.setTilt({ from: SKYLINE_RAMP_FROM, pivot: SKYLINE_TIP, angle, drop, gapTo: SKYLINE_LEDGE });
+    },
     sprint: () => {
       const on = story.player.state === "reaction" && story.player._reaction?.id === "sprint" && reactions.running;
       return { active: on, bar: on ? reactions._s.bar : 1, elapsed: on ? reactions._s.total : 0 };
     },
     dying: () => story.deathTime,
-    fireball: at(start - 75, 6, 9),
+    tower: focusTower,
   });
   story.play(scene, {
     camera,
@@ -1969,12 +2296,12 @@ function beginSkylineBlast() {
     deathLine: STORY_LINES.fallen[0],
     on: {
       event: (name) => {
-        if (name === "blast") {
-          s.fireball.burst(at(start - 75, 6, 9), { size: 34 });
-          s.flash = 1;
-          level1Audio.impact(1);
-          level1Audio.glassBreak();
-          level1Audio.podBreak?.();
+        if (name === "detonate") {
+          if (!tower.started) tower.detonate();
+          level1Audio.impact(0.6);
+        } else if (name === "tilt") {
+          level1Audio.impact(0.9);
+          triggerShake(0.4);
         } else if (name === "jump") level1Audio.throwBall?.();
         else if (name === "caught") { level1Audio.impact(0.7); s.flash = 0.3; s.hands.visible = true; }
         else if (name === "up") s.hands.visible = false;
@@ -1985,6 +2312,20 @@ function beginSkylineBlast() {
       done: () => finishSkylineBlast(),
     },
   });
+}
+
+/**
+ * What stood on the ramp's stretch of the bridge (and the door at the far
+ * end) goes over the side with it - including anything streamed in since.
+ */
+function hideRampProps() {
+  if (!skylineStory?.blasted || !causeway) return;
+  for (const rec of causeway.live) {
+    if (rec.rampHidden || rec.entry.d < SKYLINE_RAMP_FROM || rec.entry.d >= SKYLINE_LEDGE || !rec.root) continue;
+    // (The level shows and hides its props' roots by distance: hide what's under them.)
+    rec.root.traverse((o) => { if (o !== rec.root) o.visible = false; });
+    rec.rampHidden = true;
+  }
 }
 
 function finishSkylineBlast() {
@@ -2081,7 +2422,8 @@ function updateMainCutscene(dt, time, frame) {
     scene.fog.density = causeway.fogDensity;
     scene.background.copy(causeway.hazeColor);
     if (skylineStory) {
-      skylineStory.fireball.update(dt);
+      hideRampProps();
+      skylineStory.tower.update(dt);
       skylineStory.flash = Math.max(0, skylineStory.flash - dt * 1.2);
       postfx.uniforms.uFlash.value = skylineStory.flash * 0.35;
     }
@@ -2104,6 +2446,8 @@ function enterFoundry() {
   if (!foundry) buildFoundry();
   foundryExit = false;
   setFoundryActive(true);
+  // Outside the story's opening, you start with the bag already on.
+  if (!storyRun || runKind !== "story") wearSphereBag(true);
   shatterFX.clear();
   level1Audio.startLevel();
   ui.fade.style.opacity = "1";
@@ -2340,6 +2684,8 @@ function shatter(target, hit = {}) {
     combo = Math.min(9, combo + 1);
     comboTimer = 2.6;
     if (foundryResult.kind === "switch") showMessage(`${foundryResult.label} // ONLINE`);
+    else if (foundryResult.serum) { activateSerum(foundryResult.serum); level1Audio.serumCollected(); }
+    else if (gainedSpheres) showMessage(`+${gainedSpheres} SPHERES`);
   } else {
     target.userData.alive = false; target.visible = false;
     score += target.userData.points;
@@ -2496,7 +2842,11 @@ function updateGame(dt, time) {
       currentLevel === 2 && (state === "playing" || state === "lift") && !paused && !storyPlaying
     );
   }
-  const hudWanted = inCauseway && ((state === "playing" && !paused && !photoActive) || state === "preview");
+  // One HUD for every level (the Skyline's): in the Foundry and the Labs and
+  // on the Roof too, with their own level-specific widgets alongside.
+  const unified = (currentLevel === 2 || (currentLevel === 3 && !!meltdown?.visible)) && (state === "playing" || state === "lift") && !gravityLift;
+  document.body.classList.toggle("hud-unified", unified);
+  const hudWanted = (inCauseway || unified) && ((state === "playing" && !paused && !photoActive) || state === "preview");
   if (hudWanted) causewayHud.show(); else if (state !== "preview") causewayHud.hide();
   causewayHud.update(dt);
 
@@ -2511,10 +2861,14 @@ function updateGame(dt, time) {
   if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
   if (run.fadeOut > 0) { run.fadeOut = Math.max(0, run.fadeOut - dt * 1.4); ui.fade.style.opacity = run.fadeOut.toFixed(3); }
   if (!inCauseway) clearPostLooks();
+  updatePolice(inCauseway ? dt : 0, time, inCauseway);
+  placeSkyLauncher(paused ? 0 : dt);
   // Level 1 is a night scene lit by fire; Levels 2 and 3 keep their tuning.
   renderer.toneMappingExposure = inCauseway ? 1.0 : 1.08;
 
   if (photoActive) { photo.update(camera); return; }
+  // The briefing film has the screen while it plays.
+  if (prologue?.active) { prologue.update(dt, time); return; }
   if (state === "intro") {
     if (causeway) {
       const d = causeway.menuCamera(time, camera, settings.reducedMotion);
@@ -2530,22 +2884,27 @@ function updateGame(dt, time) {
   // The story layer: cutscenes, reactions, and Okoro's talk during play.
   const storyFrame = story.update(dt);
   if (state === "cutscene") { updateMainCutscene(dt, time, storyFrame); return; }
-  // Level 3 runs its own world, camera and HUD (src/levels/meltdown/game.js).
-  if (currentLevel === 3) { updateMeltdownFrame(dt, time); return; }
-  // So does the lift ride between Levels 2 and 3 (src/elevators/).
-  if (gravityLift) { updateGravityLiftFrame(dt, time); return; }
 
-  // Time dilation for Level 1: focus (bullet time) and hit-stop on big breaks.
+  // Time dilation - the Skyline's, in every level: focus (bullet time, RMB)
+  // and hit-stop on big breaks. The tools (serums) tick on the same clock.
   let simDt = dt;
-  if (inCauseway && state === "playing") {
+  const dilating = state === "playing" && !gravityLift && (inCauseway || currentLevel === 2 || (currentLevel === 3 && meltdown?.acceptsFocus));
+  if (dilating) {
     const focusing = run.focusing && run.focus > 0.02;
     if (focusing) run.focus = Math.max(0, run.focus - dt * 0.38);
+    else run.focus = Math.min(1, run.focus + dt * (inCauseway ? 0 : 0.09));
     let targetScale = focusing ? 0.38 : 1;
     if (run.hitStop > 0) { run.hitStop -= dt; targetScale = 0.2; }
     run.timeScale += (targetScale - run.timeScale) * Math.min(1, dt * 12);
     simDt = dt * run.timeScale;
+    if (!inCauseway) arsenal.update(simDt);
   } else run.timeScale = 1;
   simTime += simDt;
+
+  // Level 3 runs its own world, camera and HUD (src/levels/meltdown/game.js).
+  if (currentLevel === 3) { updateMeltdownFrame(simDt, time); updateUnifiedHud(dt); return; }
+  // So does the lift ride between Levels 2 and 3 (src/elevators/).
+  if (gravityLift) { updateGravityLiftFrame(dt, time); return; }
 
   updateSmoke(dt, time);
 
@@ -2569,11 +2928,13 @@ function updateGame(dt, time) {
       // Speed eases between zones and after a hit (a runner can't change
       // pace instantly): quick to slow on impact, slower to build back up.
       const targetPace = foundrySpeed() * (foundrySlow > 0 ? 0.45 : 1);
-      foundryPace += (targetPace - foundryPace) * Math.min(1, dt * (targetPace < foundryPace ? 9 : 2.6));
-      runZ -= dt * foundryPace;
+      foundryPace += (targetPace - foundryPace) * Math.min(1, simDt * (targetPace < foundryPace ? 9 : 2.6));
+      // Overdrive (a serum) runs you faster, as in the Skyline.
+      runZ -= simDt * foundryPace * (arsenal.isActive("overdrive") ? 1.25 : 1);
       // Level 2 runs its own collision - the foundry's hazards are nested
       // inside groups.
-      updateFoundry(dt, time);
+      updateFoundry(simDt, simTime);
+      updateUnifiedHud(dt);
 
       // Level 2 exits on the foundry's own `complete` event - breaking the
       // extraction valve - rather than on a hard-coded z. If the player somehow
@@ -2607,7 +2968,7 @@ function updateGame(dt, time) {
     camera.lookAt(_look);
     foundryLift.floorPoint(avatar.position);
     avatar.visible = true;
-    if (currentLevel === 2 && foundry) updateFoundry(dt, time);
+    if (currentLevel === 2 && foundry) updateFoundry(dt, simTime);
     // Okoro rides up with you.
     updateFoundryGuide(dt);
     const handoff = THREE.MathUtils.clamp((ride.t - FOUNDRY_LIFT_HANDOFF) / 0.5, 0, 1);
@@ -2649,6 +3010,7 @@ function updateGame(dt, time) {
   if (causewayLive) causeway.setHighlight(aim.target);
   document.body.classList.toggle("aiming", state === "playing" && !paused && !photoActive && !document.querySelector(".screen.active"));
 
+  updatePendingThrows(simDt);
   updateProjectiles(simDt);
 
   shatterFX.update(simDt);
@@ -2702,6 +3064,7 @@ function updatePerformance(rawDt) {
 }
 
 function renderFrame() {
+  if (prologue?.active) { prologue.render(); return; }
   if (gravityLift?.visible) { gravityLift.render(); return; }
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
@@ -2797,37 +3160,20 @@ function quitToMenu() {
   music.showMenu();
 }
 
-const storyBeats = [
-  "Ascension Tower. Level 212. The Meridian resonance laboratory. 03:47.",
-  "Trial seven ran through the night. It failed. The subject did not die.",
-  "Doctor Vale armed the demolition charges to bury what she made.",
-  "You are Subject Seven. You wake in the basement, and someone is on your side.",
-  "The foundry, the labs, the skyline. A helicopter waits on the roof. Get out.",
-];
-let storyTimeouts = [];
+/*
+ * The briefing: the prologue film (src/story/prologue.js) - what Project
+ * Ascension was, why the patients were taken, who ran it, how it was found
+ * out, and why the tower is coming down tonight. Staged in the engine, told
+ * in captions (no voice), over the story track. Esc, Space or SKIP ends it.
+ */
 let storyPlaying = false;
-
-for (const _ of storyBeats) ui.storyDots.appendChild(document.createElement("i"));
-
-function showStoryBeat(index) {
-  if (index >= storyBeats.length) { finishStory(); return; }
-  const text = storyBeats[index];
-  ui.storyLine.textContent = text;
-  ui.storyLine.classList.add("show");
-  ui.storyDots.children[index].classList.add("on");
-  const hold = Math.max(2800, text.length * 68);
-  storyTimeouts.push(setTimeout(() => {
-    ui.storyLine.classList.remove("show");
-    storyTimeouts.push(setTimeout(() => showStoryBeat(index + 1), 520));
-  }, hold));
-}
+let prologue = null;
 
 function cancelStory() {
-  storyTimeouts.forEach(clearTimeout); storyTimeouts = [];
   storyPlaying = false;
 }
 
-function startStory() {
+async function startStory() {
   cancelStory();
   music.showStory();
   storyPlaying = true;
@@ -2836,15 +3182,30 @@ function startStory() {
   ui.storyPrompt.hidden = true;
   ui.storyPlayer.hidden = false;
   ui.storySkipButton.hidden = false;
-  ui.storyLine.classList.remove("show");
-  for (const dot of ui.storyDots.children) dot.classList.remove("on");
-  showStoryBeat(0);
+  ui.storyLine.textContent = "Loading the briefing...";
+  ui.storyLine.classList.add("show");
+  // The sleeping Subject 07 in it is whoever you play as.
+  if (prologue && prologue.character !== savedCharacter()) { prologue.dispose(); prologue = null; }
+  prologue ??= new Prologue({ renderer, assetBase: MELTDOWN_ASSET_BASE, character: savedCharacter() });
+  try {
+    await prologue.load();
+  } catch (error) {
+    console.warn("[briefing] could not load", error);
+    finishStory();
+    return;
+  }
+  if (!storyPlaying) return;
+  ui.story.classList.remove("active");
+  prologue.start(() => finishStory());
 }
 
 function finishStory() {
+  const wasPlaying = storyPlaying || prologue?.active;
   cancelStory();
+  prologue?.skip();
+  ui.storyLine.classList.remove("show");
   ui.story.classList.remove("active");
-  ui.start.classList.add("active");
+  if (wasPlaying || !ui.start.classList.contains("active")) ui.start.classList.add("active");
   music.showMenu();
 }
 
@@ -2985,6 +3346,8 @@ addEventListener("pointerdown", (event) => {
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
+    // Focus (bullet time) is every level's, as in the Skyline.
+    if (event.button === 2 && state === "playing") run.focusing = true;
     return;
   }
   // The lift ride: shoot the brake clamps.
@@ -2993,17 +3356,25 @@ addEventListener("pointerdown", (event) => {
     return;
   }
   if (event.button === 0) fire();
-  if (event.button === 2 && state === "playing" && currentLevel === 1) run.focusing = true;
+  if (event.button === 2 && state === "playing") run.focusing = true;
 });
+
+/** The sphere types are every level's now (the Skyline's rules everywhere). */
+function cycleSphere(step) {
+  if (photoActive || state !== "playing" || paused) return;
+  const ball = arsenal.cycle(step);
+  const verb = currentLevel === 2 ? "THROW" : "SHOT";
+  showMessage(`${ball.name.toUpperCase()} SPHERE // ${ball.cost} PER ${verb}`);
+  meltdown?.hud?.toast?.(`${ball.name.toUpperCase()} SPHERE`, `${ball.cost} PER SHOT`, "", 1200);
+}
 addEventListener("pointerup", (event) => {
   if (event.button === 2) run.focusing = false;
   meltdown?.onPointerUp(event);
 });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 addEventListener("wheel", (event) => {
-  if (photoActive || state !== "playing" || currentLevel !== 1 || paused) return;
-  const ball = arsenal.cycle(event.deltaY > 0 ? 1 : -1);
-  showMessage(`${ball.name.toUpperCase()} SPHERE // ${ball.cost} PER THROW`);
+  if (gravityLift) return;
+  cycleSphere(event.deltaY > 0 ? 1 : -1);
 }, { passive: true });
 
 addEventListener("keydown", (event) => {
@@ -3055,10 +3426,7 @@ addEventListener("keydown", (event) => {
   if (event.code === "KeyS" || event.code === "ArrowDown") {
     if (currentLevel === 1) { keysDown.add("down"); event.preventDefault(); }
   }
-  if ((event.code === "KeyQ" || event.code === "KeyE") && state === "playing" && currentLevel === 1 && !event.repeat) {
-    const ball = arsenal.cycle(event.code === "KeyE" ? 1 : -1);
-    showMessage(`${ball.name.toUpperCase()} SPHERE // ${ball.cost} PER THROW`);
-  }
+  if ((event.code === "KeyQ" || event.code === "KeyE") && !event.repeat && !gravityLift) cycleSphere(event.code === "KeyE" ? 1 : -1);
   if (event.code === "KeyC" && (state === "playing" || state === "lift")) { cameraThird = !cameraThird; updateUI(); showMessage(cameraThird ? "CHASE CAMERA" : "FIRST-PERSON CAMERA"); }
 });
 addEventListener("keyup", (event) => {
@@ -3070,6 +3438,7 @@ addEventListener("blur", () => { keysDown.clear(); run.focusing = false; meltdow
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  prologue?._resize();
   postfx.resize();
   minimap.measure();
   placeReticle();
@@ -3123,6 +3492,10 @@ globalThis.__dbg = {
   get postfx() { return postfx; },
   get music() { return music.snapshot(); },
   get level1Audio() { return level1Audio.snapshot(); },
+  /** The briefing film (src/story/prologue.js), once started; startBriefing() starts it. */
+  get prologue() { return prologue; },
+  startBriefing: () => startStory(),
+  finishBriefing: () => finishStory(),
   get shardBursts() { return shatterFX.bursts.length; },
   foundryDistance,
   causewayDistance,

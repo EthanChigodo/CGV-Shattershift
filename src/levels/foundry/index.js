@@ -73,6 +73,16 @@ export const BEATS = [
   },
 ];
 
+/**
+ * The serums a Foundry vial can hold (the Skyline's power-ups; thermal sight
+ * is left out - there's no smoke down here to see through).
+ */
+const FOUNDRY_SERUMS = [
+  { key: "prism", colour: "#b273ff" },
+  { key: "shield", colour: "#4fe8ff" },
+  { key: "overdrive", colour: "#ff3d8b" },
+];
+
 /** Roughly one hazard every this many metres in the filler stretches. */
 const HAZARD_SPACING = 14;
 /** Roughly one pressure cell every this many metres. */
@@ -477,7 +487,10 @@ export class FoundryLevel {
     while (at < to) {
       const side = random() < 0.5 ? -1 : 1;
       if (random() < 0.55) {
-        this._add(this.groups.machinery, this.kit.conveyor({ side, speed: 0.9 + random() * 0.8, halfWidth }), at);
+        const belt = this._add(this.groups.machinery, this.kit.conveyor({ side, speed: 0.9 + random() * 0.8, halfWidth }), at);
+        // Spheres bounce off the crates. (They sit outside the lanes, so the
+        // runner can't reach them - and they're kept out of the near-miss test.)
+        for (const crate of belt.userData.solids ?? []) this.obstacles.push(crate);
       } else {
         this._add(this.groups.machinery, this.kit.heatVent({ side, halfWidth, seed: 30 + index }), at);
       }
@@ -824,12 +837,14 @@ export class FoundryLevel {
         const lateral = -4.4 + random() * 8.8;
         const height = heights[Math.floor(random() * heights.length)];
 
-        // Every cell returns the sphere it cost. Hitting things sustains the
-        // run and only missing drains it, which is the Smash Hit rule and the
-        // reason spheres can be a real resource without becoming a trap: at
-        // 55% return, a player who shot every cell ran dry before the
-        // extraction valve and could not finish the level at all.
-        const cell = this.kit.pressureCell({ points: 60, spheres: 1 });
+        // Every cell returns three spheres (the user's call: one felt stingy).
+        // Hitting things sustains the run and only missing drains it, which is
+        // the Smash Hit rule and the reason spheres can be a real resource
+        // without becoming a trap: at 55% return, a player who shot every
+        // cell ran dry before the extraction valve and could not finish.
+        // Every seventh is a serum vial instead: the Skyline's power-ups.
+        const serum = index % 7 === 3 && i === 0 ? FOUNDRY_SERUMS[Math.floor(index / 7) % FOUNDRY_SERUMS.length] : null;
+        const cell = this.kit.pressureCell({ points: serum ? 120 : 60, spheres: 3, serum: serum?.key ?? null, colour: serum?.colour ?? null });
         this._add(this.groups.targets, cell, at, lateral, height);
         cell.userData.glass.userData.routeDistance = at;
         this.breakables.push(cell.userData.glass);
@@ -908,6 +923,7 @@ export class FoundryLevel {
       label: data.label,
       kind: data.kind,
       spheres: data.spheres ?? 0,
+      serum: data.serum ?? null,
       position,
     };
 
@@ -998,6 +1014,25 @@ export class FoundryLevel {
     return brightness;
   }
 
+  /**
+   * A cryo sphere's splash: the machinery within `radius` of `point` stops
+   * dead for `seconds` (still solid, just no longer moving). Returns how many
+   * moving hazards it caught.
+   */
+  freezeNear(point, radius, seconds = 4) {
+    let count = 0;
+    const at = this._scratch;
+    for (const entry of this._animated) {
+      const piece = entry.piece;
+      if (!piece.isObject3D) continue;
+      piece.getWorldPosition(at);
+      if (Math.hypot(at.x - point.x, at.z - point.z) > radius) continue;
+      entry.frozen = seconds;
+      if (piece.userData.hazardMesh) count += 1;
+    }
+    return count;
+  }
+
   impact(strength = 1) {
     this.state.alarm = Math.min(1.4, this.state.alarm + strength);
     this.events.emit("impact", { strength, alarm: this.state.alarm });
@@ -1051,6 +1086,11 @@ export class FoundryLevel {
     const alarmed = this.state.alarm > 0.05;
     for (const entry of this._animated) {
       if (Math.abs(entry.distance - distance) > 70) continue;
+      // Frozen by a cryo sphere: held where it is until it thaws.
+      if (entry.frozen > 0) {
+        entry.frozen -= dt;
+        continue;
+      }
       // During an impact every strobe in earshot fires, not just armed ones.
       if (alarmed && entry.piece.userData.armed !== undefined) {
         entry.piece.userData.tick?.(dt, time * 2.6);

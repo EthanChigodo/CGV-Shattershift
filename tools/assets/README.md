@@ -82,5 +82,34 @@ characters are in centimetres, the helicopter is ~1,900 units long, the
 steampunk weapon ~3.5 cm) - that is fine, `fillAssetSlots` scales everything by
 measured size. Rigged meshes were not decimated (it can tear skin weights).
 
-Not used: the supplied smoke `.glb` (3,459 separately animated planes - about
+### Third batch: heavy scenes, a kit and a scan
+
+Some of these were far beyond `convert.py` (a 737 fuselage with thousands of
+objects, a 3,367-object rooftop kit, a multi-million-triangle photogrammetry
+scan), so three more scripts:
+
+| Script | What it does |
+| --- | --- |
+| `convert_heavy.py` | One shared decimation ratio to a total `--tris` budget, `--drop` tiny objects, `--keep-x` a slice (e.g. a cockpit out of a fuselage), `--keep-box`, `--join` per material, `--weld` (merge by distance after joining - closes a scan's seams), `--smooth` by angle, `--max-size`, `--render` a preview PNG. Custom split normals are cleared before decimating (otherwise the result looks shredded). |
+| `extract_kit.py` | Pulls named groups out of a modular kit into one `.glb` each, re-centred (bottom at y = 0), planar-decimated then collapsed to a per-piece budget. Unparents before applying the world matrix (otherwise pieces land in the wrong place). |
+| `heightmap.py` | Casts rays straight down over a model on a grid (BVH) and writes the highest hit per cell as JSON (+ a grey PNG): the roof's walkable floor, sampled by `roof.js`. Holes in it are filled in JS (`fillScanHoles`). |
+
+| Output | Source file | How |
+| --- | --- | --- |
+| `backpack.glb` | military_backpack.glb | `convert_heavy.py`, 1024 px |
+| `duffel_bag.glb` | military_duffel_bag.glb | `convert.py`, 1024 px |
+| `police_helicopter.glb` | dolphin_helicopter_as-365harbin_z-9.glb | `convert.py`, 1024 px, rig kept (baked to static parts at load in `src/fx/police-helicopters.js`) |
+| `city_night.glb` | city_at_night_low_poly_skyscrapers.glb | `convert.py`, 1024 px |
+| `roof_hvac*.glb`, `roof_tank.glb`, `roof_dish2.glb`, `roof_mast*.glb` | sci-fi_rooftops.glb | `extract_kit.py`; the pipe walkways were dropped (5 MB) |
+| `brute.glb` | two-headed_chained_brute_-_dungeon_horror.glb | `convert_heavy.py --tris=140000 --smooth` (34k still looked torn) |
+| `operating_room.glb` | charite_university_hospital_-_operating_room.glb | `convert_heavy.py`, 4.5 MB |
+| `roof_scan.glb` | le_radeau_de_la_meduse_2019.glb | `convert_heavy.py --join --weld --tris=100000 --tex=512`, 7.1 MB |
+| `roof_scan_heights.json` | roof_scan.glb | `heightmap.py` |
+
+Draco compression would shrink the big four a lot, but Three.js' Draco decoder
+isn't vendored in `lib/three` and adding it means a download - not done.
+
+Not used: `boeing_737-800_cockpit.glb` (converted, then dropped - a whole
+airliner flight deck doesn't fit the helicopter's cabin; see the handoff
+notes); the supplied smoke `.glb` (3,459 separately animated planes - about
 3,500 draw calls a frame; the level's fire/smoke are a custom shader instead).

@@ -111,11 +111,13 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     smoke: new THREE.PointsMaterial({ map: textures.smoke, color: 0x6f665e, size: 2.2, transparent: true, opacity: 0.18, depthWrite: false, sizeAttenuation: true }),
   };
 
+  // The vials hold the Skyline's serums now (game.js VIAL_SERUM), in the
+  // serums' own colours: thermal, overdrive, prism, shield.
   const POWERUP_COLOURS = {
-    coolant: { core: 0x6fe8ff, label: "COOLANT" },
-    adrenaline: { core: 0xff5a6a, label: "ADRENALINE" },
-    overcharge: { core: 0xffd23c, label: "OVERCHARGE" },
-    barrier: { core: 0x6a8cff, label: "BARRIER" },
+    coolant: { core: 0xff8a2a, label: "THERMAL SIGHT" },
+    adrenaline: { core: 0xff3d8b, label: "OVERDRIVE" },
+    overcharge: { core: 0xb273ff, label: "PRISM SPLIT" },
+    barrier: { core: 0x4fe8ff, label: "KINETIC SHIELD" },
   };
 
   /* -------------------------------------------------------------- */
@@ -387,9 +389,11 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
 
   /**
    * One ventilation duct, two jobs. "blocker" falls across the whole corridor
-   * on its chains and has to be mashed clear. "bridge" lies across a floor
+   * and has to be jumped (over it, or onto it). "bridge" lies across a floor
    * gap and is the only safe ground there.
    */
+  /** Height of a fallen blocker duct: a jump clears it (the apex is ~1.5 m). */
+  const DUCT_TOP = 1.0;
   /**
    * One straight section of the supplied ventilation kit, laid along local Z
    * and stretched to exactly `w x h x length` around the origin. The source
@@ -434,10 +438,11 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       return group;
     }
 
-    // A big trunk duct: ~2.1 m tall once scaled, so it visibly fills the
-    // height its collider blocks - you cannot jump or slide it, only push.
+    // A trunk duct that tears off its chains and lands across the corridor,
+    // ~1 m tall: jump over it, or onto it and off the far side. Run into it
+    // and it hurts (the host's hazard check) - you scramble over.
     duct.rotation.y = Math.PI / 2; // across the corridor
-    duct.scale.set(1.3, 1.9, 1);
+    duct.scale.set(1.3, DUCT_TOP / 1.1, 1);
     group.add(duct);
 
     const chains = [];
@@ -448,21 +453,19 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       chains.push(c);
     }
 
-    const hit = collider(length, 2.1, 1.6, 0, { duct: true });
+    const hit = collider(length, DUCT_TOP, 1.6, 0, { duct: true, top: DUCT_TOP });
     group.add(hit);
 
     const HANG_Y = 6.4;
-    const BLOCK_Y = 1.05; // duct centre when down: spans ~0 - 2.1 m
-    let progress = 0;
-    let mashCount = 0;
-    const MASH_NEEDED = 6;
-    let dropY = HANG_Y;
+    const DOWN_Y = DUCT_TOP / 2; // duct centre when down: spans 0 - DUCT_TOP
+    let y = HANG_Y;
+    let snapped = false;
 
     const apply = () => {
-      const y = THREE.MathUtils.lerp(dropY, HANG_Y, progress);
       duct.position.y = y;
-      duct.rotation.z = progress * 0.5;
+      // The chains snap as it lands; until then they hold it up.
       for (const c of chains) {
+        c.visible = !snapped;
         const len = Math.max(0.2, 7.6 - y);
         c.scale.y = len;
         c.position.y = y + len / 2;
@@ -473,17 +476,15 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
 
     group.userData.setFallen = (t) => {
       const fall = Math.min(1, t / 0.85);
-      dropY = THREE.MathUtils.lerp(HANG_Y, BLOCK_Y, fall * fall);
+      y = THREE.MathUtils.lerp(HANG_Y, DOWN_Y, fall * fall);
+      snapped = fall >= 1;
+      // A small bounce-tilt as it hits the floor.
+      duct.rotation.z = snapped ? 0 : Math.sin(fall * Math.PI) * 0.06;
       apply();
     };
-    group.userData.push = (amount = 1) => {
-      mashCount += amount;
-      progress = Math.min(1, mashCount / MASH_NEEDED);
-      apply();
-      return progress;
-    };
-    group.userData.pushProgress = () => progress;
-    group.userData.pushable = true;
+    // Something to stand on: the top of the duct, once it's down.
+    group.userData.standTop = () => (snapped ? DUCT_TOP : null);
+    group.userData.standDepth = 1.6;
     group.userData.hazardMesh = hit;
     return group;
   }
@@ -870,6 +871,12 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       ball.position.set(Math.cos(a) * 0.28, Math.sin(a * 1.7) * 0.15, Math.sin(a) * 0.28);
       glass.add(ball);
     }
+    // An army duffel slumped against the stand, the spare spheres in it.
+    const duffel = new THREE.Group();
+    duffel.position.set(0.55, 0, 0.2);
+    duffel.rotation.y = 0.6;
+    duffel.add(assetSlot("duffelBag", { size: [0.9, 0, 0], longAxis: "x" }));
+    group.add(duffel);
     const anchor = new THREE.Object3D();
     anchor.position.y = 0.9;
     group.add(anchor);

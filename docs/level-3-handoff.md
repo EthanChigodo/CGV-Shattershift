@@ -202,6 +202,59 @@ demo keys 1-5; `__dbg.story.jump(name)` reaches every scene instead
   need downloading, which wasn't done without asking; all three levels
   already use generated normal/roughness maps.
 
+### 0.8 The feedback round (after Phase 7)
+
+The user's list of eleven changes, with their answers: the **Skyline is the
+quality bar** for every level (same balls, stats, serums, HUD, focus);
+**throwing by hand is the Foundry's only** - everywhere else has the
+launcher; the briefing becomes a **silent short film** of everything before
+the game. Levels 1 and 2 are the teammates' - these were changed only as far
+as the user asked.
+
+- **Foundry** (`src/levels/foundry/`, `main.js`): Okoro tosses the player a
+  real bag (`backpack.glb`; +12 spheres) and they wear it. Spheres leave the
+  **hand** - the player rig's `uThrow` uniform swings the right arm
+  (`player.js` `throw()`, release at `THROW_RELEASE`), the ball flies from the
+  hand. Glass cells give **3** spheres; every 7th cell is a serum vial
+  (prism / shield / overdrive). The conveyor sits against the wall and its
+  crates stop balls. Cryo freezes moving parts (`freezeNear`), shock shatters
+  nearby targets, the shield absorbs hits. Focus and Q/E/wheel sphere cycling
+  work here too.
+- **Labs** (`kit.js`, `index.js`, `game.js`): fallen ducts lie at 1 m - jump
+  **onto** them (you can stand on them); running into one costs 20 integrity
+  and you scramble over. The shared `arsenal` replaces heat: glass/cryo/shock
+  balls with their own cost and gravity, serum vials instead of the old
+  power-ups, shield absorbs, overdrive speeds up.
+- **One HUD** (`body.hud-unified`, `updateUnifiedHud` in `main.js`): the
+  Skyline's HUD for all three levels; the old per-level HUDs are hidden.
+- **Skyline** (`scenes-skyline.js`, `stages/demolition-tower.js`,
+  `causeway/shell.js`): the tower blows floor by floor, then whole; the
+  bridge **tilts** into a ramp (`shell.setTilt`), you sprint up it and jump
+  off the tip. The launcher replaces throwing. Police helicopters
+  (`src/fx/police-helicopters.js`) circle with red/blue strobes and white
+  searchlights.
+- **Roof** (`roof.js` rewrite): the floor is the supplied rooftop scan
+  (`roof_scan.glb`) with a baked height map; walk off an edge and you fall
+  ("YOU FELL"). Climb the ladder to the upper level (W). Fire is gone
+  (police-light strobes instead). Patients come out of a hut **door**; a
+  brute joins later waves; scientists fire **lasers** (aimed line, lock,
+  beam) and **grenades** (hurt enemies too). The helicopter takes
+  **165-190 s**; Endless drops **5 spheres every 30 s**.
+- **Briefing** (`src/story/prologue.js`, replaces the old voiced beats): nine
+  chapters, ~97 s plus the title, captions only, Esc skips. The tower, Vale's
+  pitch, the subjects (the operating-room scan), trials one to six, Subject
+  07, Okoro's leak, the police, the demolition order, Okoro going back. Each
+  chapter is its own small scene; edit the words in `CHAPTERS`.
+  `__dbg.startBriefing()` / `__dbg.prologue` for stepping it.
+- **Not used: the 737 cockpit.** It is a whole airliner flight deck (seats,
+  rear wall, shell and panels in the same meshes); inside this helicopter's
+  cabin it buried the pilot, and with everything behind him cut away almost
+  none of the panel was left. The cabin keeps its drawn, glowing panel.
+
+New models and their licences: `docs/credits.md` (third batch - two are
+CC BY-NC and the city is Sketchfab Standard; read the note there). How they
+were converted: `tools/assets/README.md`.
+
 Checks: `node tests/story/run.js` - the Phase 1 checks plus `opening`,
 `lift`, `labs`, `skyline`, `ending`, `restart` (index.html through
 `__dbg`). `node tests/story/bench.js [root]` times the Labs at Auto and

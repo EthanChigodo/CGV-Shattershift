@@ -150,10 +150,14 @@ export async function run(page, { shots }) {
   // ---- A roof death never shows it ----------------------------------------------------
   const death = await page.evaluate(async () => {
     __dbg.story.jump("roof");
+    // Read the game after the jump: it may be a new one.
+    await __t.wait(() => __t.m?.phase === "roof", 240000);
     const m = __t.m;
-    await __t.wait(() => m.phase === "roof", 120000);
     m.runner.vitality = 1;
     m.runner.invulnerable = 0;
+    // A shield serum carried up from earlier would (rightly) absorb the hit.
+    __dbg.arsenal?.reset();
+    m.arsenal?.reset();
     m._roofHit({ damage: 50, from: m.hero.position.clone().add(new __dbg.THREE.Vector3(1, 0, 0)), knock: 1, source: "patient" });
     __t.step(30);
     return { phase: m.phase, finale: !!m.finale, scene: __t.L.sceneId, state: __dbg.state };

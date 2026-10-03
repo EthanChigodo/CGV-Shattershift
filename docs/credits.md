@@ -71,7 +71,34 @@ game's credits screen, not only here. All were converted with
 | `scientist_good.glb` (good_scientist) | "scientist" by Geont (Sketchfab user Fungler) - sketchfab.com/3d-models/scientist-ed65738d0ed44e0ba8493af2d1a5112b | Textures 1024 px, rig kept (82 bones) | Dr. Okoro, the ally scientist (`src/story/`) |
 | `scientist_evil.glb` (evil_scientist) | "Scientist" by Scientist Broken (Sketchfab user ultra700cybercam) - sketchfab.com/3d-models/scientist-4d3ce8401dd74121b691c6a82a486f3c | Textures 1024 px, rig kept (81 bones); 428 facial morph targets and a 4-channel morph-weight clip ("MorphBake") stripped | Dr. Vale, the villain / pilot (`src/story/`) |
 
-All licensed **CC-BY-4.0** (creativecommons.org/licenses/by/4.0/). The ones
+### Third batch: models for the story's later changes (Sketchfab)
+
+Supplied by the team; author, source and licence read from each file's glTF
+metadata. Converted with `tools/assets/convert_heavy.py`,
+`extract_kit.py` and `heightmap.py` (see `tools/assets/README.md`).
+
+| File | Title / author / source | Licence | Modifications | Used in |
+| --- | --- | --- | --- | --- |
+| `backpack.glb` | "Military Backpack" by Neslihan Çakmak - sketchfab.com/3d-models/military-backpack-06be5c0f15aa4aa3af8ebcc4c83d02a3 | CC BY 4.0 | Decimated, textures resized | Dr. Okoro's bag of spheres (the Foundry; worn by the player) |
+| `duffel_bag.glb` | "Military Duffel bag" by Sousinho - sketchfab.com/3d-models/military-duffel-bag-d69478f0c5334e189e98f99e84bbe3e6 | CC BY 4.0 | Textures resized | Sphere sacks (the Labs) |
+| `police_helicopter.glb` | "Dolphin Helicopter (AS-365/Harbin Z-9)" by Martini-SF - sketchfab.com/3d-models/dolphin-helicopter-as-365harbin-z-9-d27aaf297dc94a3abb31571217179612 | **CC BY-NC 4.0** | Skin baked to static parts, police livery, rotor blades rebuilt in code, textures resized | Police helicopters (Skyline, roof, briefing) |
+| `city_night.glb` | "city at night low poly skyscrapers" by dasy444 - sketchfab.com/3d-models/city-at-night-low-poly-skyscrapers-dc1294de66194054961c16aa74fda2cb | **Sketchfab Standard** | Textures resized; its sky dome hidden | The city (briefing) |
+| `roof_hvac.glb`, `roof_hvac2.glb`, `roof_hvac3.glb`, `roof_tank.glb`, `roof_dish2.glb`, `roof_mast.glb`, `roof_mast2.glb` | "SCI-FI Rooftops" by Quadra3D - sketchfab.com/3d-models/sci-fi-rooftops-8f8a0ba6325a43afbdadd3c7687c953a | CC BY 4.0 | Kit split into pieces, decimated, repainted at load; the pipe walkways dropped (too heavy) | Roof plant: air handlers, a tank, a dish, masts |
+| `brute.glb` | "Two-Headed Chained Brute - Dungeon Horror" by Pigcraft - sketchfab.com/3d-models/two-headed-chained-brute-dungeon-horror-d6abe131426b4dab9c126481030ebf8b | CC BY 4.0 | Decimated to 140k tris, re-shaded, textures resized, animated in code | The brute (roof waves) |
+| `operating_room.glb` | "Charité University Hospital - Operating Room" by ChrisRE - sketchfab.com/3d-models/charite-university-hospital-operating-room-9ec46c4d615a4581a235eebfb162f574 | **CC BY-NC 4.0** | Decimated, textures resized | The operating theatre (briefing) |
+| `roof_scan.glb` + `roof_scan_heights.json` | "Le Radeau de la Méduse 2019" by 234D - sketchfab.com/3d-models/le-radeau-de-la-meduse-2019-60039ce2f5ac4225880bfd837e3e3932 (a photogrammetry scan of a rooftop) | CC BY 4.0 | Joined, welded, decimated to 100k tris, 512 px textures, scaled x1.4 in game; walkable height map baked from it | The roof (the finale) |
+
+> **Licences worth a team decision:** CC BY-NC 4.0 (the police helicopter,
+> the operating room) allows a non-commercial university project but not a
+> commercial release. The city's **Sketchfab Standard** licence permits use
+> in a project but not redistributing the model file itself - which a public
+> repository does. Keep the repo private, or swap the city out before
+> publishing. Not used: the two explosion downloads (`.rar` archives of
+> Cinema 4D `.c4d` scenes, which no web pipeline can read - the explosions
+> are made in code) and `sci-fi_rooftops.glb`'s pipe walkways.
+
+All licensed **CC-BY-4.0** (creativecommons.org/licenses/by/4.0/) unless the
+third batch's table says otherwise. The ones
 the game uses are credited in game (press `K` in the preview; the data is
 `src/levels/meltdown/credits.js` - keep it in step with this table).
 `dead_end_weapons.glb`, `weapon_set.glb` and `dragon_flail.glb` are not used

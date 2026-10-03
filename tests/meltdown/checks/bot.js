@@ -97,7 +97,7 @@ export const BOT_SOURCE = `
         if (!b.visible || d < 6 || d > 34) continue;
         if (!target || d < target.d) target = { b, d };
       }
-      r.firing = Boolean(target) && r.lockout <= 0 && r.heat < 85;
+      r.firing = Boolean(target) && (r.lockout ?? 0) <= 0;
       if (target) {
         target.b.getWorldPosition(p).project(g.camera);
         g.pointer.set(p.x, p.y);

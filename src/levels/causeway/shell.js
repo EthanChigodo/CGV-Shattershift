@@ -61,6 +61,7 @@ export class ShellTreadmill {
     this.group.name = "Shell";
     this.slotK = new Array(segments).fill(null);
     this.collapseFront = -Infinity;
+    this.tilt = null;
     this._m = new THREE.Matrix4();
     this._local = new THREE.Matrix4();
     this._seg = new THREE.Matrix4();
@@ -250,6 +251,27 @@ export class ShellTreadmill {
   reset() {
     this.slotK.fill(null);
     this.collapseFront = -Infinity;
+    this.tilt = null;
+  }
+
+  /**
+   * The story's skybridge failing (the Skyline's blast): bridge slots from
+   * `from` up to `pivot` swing down about the pivot by `angle` (radians),
+   * which also sinks by `drop` metres - the near end has lost its tower, so
+   * the deck becomes a ramp up to a broken tip. Slots between the pivot and
+   * `gapTo` are gone (the gap to jump). Null puts the bridge back.
+   * @param {{from:number, pivot:number, angle:number, drop:number, gapTo:number}|null} tilt
+   */
+  setTilt(tilt) {
+    this.tilt = tilt ? { ...tilt } : null;
+    this.slotK.fill(null);
+  }
+
+  /** Deck height at a route distance on the tilted bridge (0 elsewhere). */
+  deckHeight(distance) {
+    const t = this.tilt;
+    if (!t || distance < t.from || distance > t.pivot) return 0;
+    return -t.drop - (t.pivot - distance) * Math.sin(t.angle);
   }
 
   _stamp(slot, k) {
@@ -258,7 +280,18 @@ export class ShellTreadmill {
     let dropY = 0;
     let tilt = 0;
     let roll = 0;
-    if (theme === "bridge" && centre + SEGMENT / 2 < this.collapseFront) {
+    let z = -centre;
+    const ramp = this.tilt;
+    if (ramp && centre > ramp.pivot && centre < ramp.gapTo) {
+      // The broken span between the tip and the next building: gone.
+      dropY = -1000;
+    } else if (ramp && theme === "bridge" && centre - SEGMENT / 2 >= ramp.from - 0.01 && centre <= ramp.pivot) {
+      // Swung down about the pivot: a ramp up to the tip.
+      const back = ramp.pivot - centre;
+      tilt = ramp.angle;
+      dropY = -ramp.drop - back * Math.sin(ramp.angle);
+      z = -ramp.pivot + back * Math.cos(ramp.angle);
+    } else if (theme === "bridge" && centre + SEGMENT / 2 < this.collapseFront) {
       // Seconds since this slot let go, derived from the front's distance.
       const t = (this.collapseFront - (centre + SEGMENT / 2)) / 9;
       dropY = -4.9 * t * t;
@@ -266,7 +299,7 @@ export class ShellTreadmill {
       roll = t * 0.22 * ((k % 3) - 1);
     }
     this._q.setFromEuler(this._e.set(tilt, 0, roll));
-    this._seg.compose(this._p.set(0, dropY, -centre), this._q, this._s.set(1, 1, 1));
+    this._seg.compose(this._p.set(0, dropY, z), this._q, this._s.set(1, 1, 1));
     for (const spec of this.specs) {
       for (let j = 0; j < spec.perSlot; j += 1) {
         let matrix = this._zero;

@@ -687,6 +687,8 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform vec2 uLegR;
   uniform vec2 uLegL;
   uniform float uTwist;
+  // The right arm's throw: (pitch, elbow fold, inward, weight).
+  uniform vec4 uThrow;
 
   mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
   mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
@@ -723,6 +725,14 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     float inward = right ? uHold * 0.12 : uHold * 0.42;
     fold = fold * (1.0 - uReachUp * 0.85) + max(0.0, swing) * 0.5;
     pitch += uReachUp * 2.75;
+    // An overhand throw with the right arm (player.js throw()): the pose
+    // (pitch, fold, inward) it calls for, blended in by uThrow.w.
+    if (right && uThrow.w > 0.0) {
+      swing *= 1.0 - uThrow.w;
+      pitch = mix(pitch, uThrow.x, uThrow.w);
+      fold = mix(fold, uThrow.y, uThrow.w);
+      inward = mix(inward, uThrow.z, uThrow.w);
+    }
     float elbowW = smoothstep(uElbowX - 0.05, uElbowX + 0.05, ax);
     vec3 elbow = vec3(side * uElbowX, uShoulderY, 0.0);
     // Forearm folds forward (about Y in the T-pose frame).
@@ -797,6 +807,7 @@ export function rigPlayerMesh(mesh) {
     uLegR: { value: new THREE.Vector2() },
     uLegL: { value: new THREE.Vector2() },
     uTwist: { value: 0 },
+    uThrow: { value: new THREE.Vector4() },
   };
   const material = mesh.material.clone();
   material.onBeforeCompile = (shader) => {
@@ -818,7 +829,7 @@ export function rigPlayerMesh(mesh) {
     );
     shader.vertexShader = shader.vertexShader.replace(/(#include <defaultnormal_vertex>[\s\S]*?)#include <begin_vertex>/, "$1");
   };
-  material.customProgramCacheKey = () => "meltdown-player-rig-gait";
+  material.customProgramCacheKey = () => "meltdown-player-rig-gait-throw";
   mesh.material = material;
   // The rig moves vertices outside the rest-pose bounds.
   mesh.frustumCulled = false;

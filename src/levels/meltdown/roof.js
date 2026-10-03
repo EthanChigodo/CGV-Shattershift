@@ -6,17 +6,18 @@
  * out, and they send the last of their test subjects at you. Somewhere a
  * rescue helicopter is inbound - you are never told when.
  *
- *   - Three waves, each a scientist with a gadget (ranged: telegraphs, then
- *     fires a slow orb you can dodge) who lets patients loose (melee: they
- *     stalk you, wind up, then charge in a straight line).
- *   - The east and west ledges are open: the parapet has collapsed and the
- *     fire is climbing the facade below. Sidestep a charging patient near
- *     one and they go straight over - a kill that costs no balls.
- *   - The helicopter timer is hidden and random (40-58 s). The only tells
+ *   - Six waves out of the stair hut's door: scientists with gadgets (a
+ *     laser that tracks then locks, lobbed grenades with a warning ring, slow
+ *     orbs) and patients (melee: they stalk you, wind up, then charge in a
+ *     straight line); from the fourth, the two-headed brute.
+ *   - Two levels: the roof, and a steel deck on legs over its east side,
+ *     up a stair. The east edge and the middle of the west are open (as are
+ *     the deck's west and south sides): sidestep a charging patient near one
+ *     and they go straight over - but walk off one and so do you.
+ *   - The helicopter timer is hidden and random (165-190 s). The only tells
  *     are the rotor sound growing and, late, the helicopter itself.
- *   - It gets worse the longer you are up here (`chaos`): fire patches break
- *     out across the roof, the facade explodes, the building shudders,
- *     embers fill the air, and the last wave comes all at once.
+ *   - It gets worse the longer you are up here (`chaos`): the facade explodes,
+ *     the building shudders, ash fills the air. No fire on the roof.
  *   - Clear the roof: the helicopter comes down over the pad and you climb
  *     its rope ladder (victory). Still fighting when it arrives: it cannot
  *     land, so it hangs off the east ledge with the ladder down, and you
@@ -30,30 +31,116 @@
  * hides Phase A's root while the roof is up.
  *
  *   RoofRoot
- *   |-- Set         slab, parapets, stair hut, hatches, helipad, cover, skyline
- *   |-- Hazards     edge fires and smoke
+ *   |-- Set         slab, parapets, lift and stair huts, the deck, helipad, cover
+ *   |-- Hazards     ash
  *   |-- Pickups     ball sacks
  *   |-- Enemies     scientists and patients (their hurtboxes are breakables)
  *   |-- Orbs        the scientists' shots
+ *   |-- Weapons     their lasers and grenades
  *   |-- Helicopter
- *   `-- Lights      moon, sky fill, floods, fire glow
+ *   `-- Lights      moon, sky fill, floods, police lights from below
  */
 
 import * as THREE from "../../three.js";
 import { createMeltdownKit } from "./kit.js";
 import { createFireMaterials } from "./fire.js";
-import { fillAssetSlots } from "./assets.js";
+import { fillAssetSlots, assetSlot } from "./assets.js";
 import { cloneCharacter, HumanoidRig } from "./characters.js";
 import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 
-/** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
-export const EDGE = 16;
-const WALK_LIMIT = EDGE - 0.7;
-const HELIPAD = new THREE.Vector3(0, 0, -8);
-export const ROOF_SPAWN = new THREE.Vector3(0, 0, 8);
+/**
+ * Half-sizes of the roof: x to +/-EDGE (the east ledge is where the
+ * helicopter waits), z to +/-DEPTH. Parapets run along the north and south
+ * sides and part of the west; everywhere else the edge is open - and you
+ * can go over it.
+ */
+export const EDGE = 22;
+export const DEPTH = 18;
+const HELIPAD = new THREE.Vector3(-2, 0, -9);
+export const ROOF_SPAWN = new THREE.Vector3(0, 0, 10);
 /** The lift housing's doorway (the lift you come up in; see elevator.js). */
-const LIFT_DOOR = new THREE.Vector3(0, 0, EDGE - 3.1);
+const LIFT_DOOR = new THREE.Vector3(0, 0, DEPTH - 3.1);
+/**
+ * The second level: a steel deck on legs over the east side of the roof,
+ * reached by a stair from the south. The high ground - and the scientists'
+ * favourite target.
+ */
+const DECK = { minX: 9, maxX: 19, minZ: -3, maxZ: 7, y: 3.4 };
+const STAIR = { minX: 11.2, maxX: 13.4, minZ: 7, maxZ: 13.5 };
+/** The stair hut the patients come out of (the "small building"), and its door. */
+const HUT = { x: -14, z: -10, w: 8.2, d: 6, h: 3.2 };
+const HUT_DOOR = new THREE.Vector3(HUT.x + 1.2, 0, HUT.z + HUT.d / 2);
+/** Height a step can climb (onto the stair, never onto the deck from the side). */
+const STEP = 0.7;
+/** The roof scan is scaled up by this (the user: "the rooftop can be larger"). */
+const SCAN_SCALE = 1.4;
+
+/**
+ * A scan's surface has pinholes (and a ray down one lands far below): a cell
+ * much lower than most of its 5x5 neighbours - or empty with surface all
+ * round it - takes their median instead. Edges stay edges.
+ */
+function fillScanHoles(grid) {
+  const { nx, nz } = grid;
+  const src = grid.heights;
+  const out = src.slice();
+  for (let j = 0; j < nz; j += 1) {
+    for (let i = 0; i < nx; i += 1) {
+      const near = [];
+      for (let dj = -2; dj <= 2; dj += 1) {
+        for (let di = -2; di <= 2; di += 1) {
+          const a = i + di;
+          const b = j + dj;
+          if ((di || dj) && a >= 0 && b >= 0 && a < nx && b < nz && src[b * nx + a] !== null) near.push(src[b * nx + a]);
+        }
+      }
+      if (near.length < 16) continue; // at an edge: leave it be
+      near.sort((x, y) => x - y);
+      const median = near[near.length >> 1];
+      const h = src[j * nx + i];
+      if (h === null || h < median - 1.2) out[j * nx + i] = median;
+    }
+  }
+  return { ...grid, heights: out };
+}
+
+/** The built-in layout's points, kept so a scan layout can be undone. */
+const BUILT_IN = {
+  helipad: HELIPAD.clone(), spawn: ROOF_SPAWN.clone(), lift: LIFT_DOOR.clone(), door: HUT_DOOR.clone(),
+  deck: { ...DECK }, stair: { ...STAIR }, hut: { ...HUT },
+};
+
+/**
+ * Point the shared layout constants at the scanned roof (or back at the
+ * built-in one). One roof exists at a time, so the module's points are the
+ * current roof's - which keeps every use of them (the enemies' AI, the
+ * endings, the host's spawn) as it was.
+ */
+function applyLayout(scan) {
+  Object.assign(DECK, BUILT_IN.deck);
+  Object.assign(STAIR, BUILT_IN.stair);
+  Object.assign(HUT, BUILT_IN.hut);
+  HELIPAD.copy(BUILT_IN.helipad);
+  ROOF_SPAWN.copy(BUILT_IN.spawn);
+  LIFT_DOOR.copy(BUILT_IN.lift);
+  HUT_DOOR.copy(BUILT_IN.door);
+  if (!scan) return;
+  // No built deck or stair on the scan: its building is the second level.
+  Object.assign(DECK, { minX: 1e9, maxX: -1e9, minZ: 1e9, maxZ: -1e9 });
+  Object.assign(STAIR, { minX: 1e9, maxX: -1e9, minZ: 1e9, maxZ: -1e9 });
+  const b = scan.building;
+  const f = scan.floor;
+  HUT_DOOR.copy(scan.door);
+  // The lift up from the Skyline: in the open deck west of the building,
+  // doors facing north; you walk out of it toward the middle of the roof.
+  LIFT_DOOR.set((f.minX + b.minX) / 2 + 1.5, 0, f.maxZ - 3.4);
+  ROOF_SPAWN.set(LIFT_DOOR.x + 1.5, 0, LIFT_DOOR.z - 4.6);
+  // The pad: the open deck south of the building, toward the east.
+  HELIPAD.set((b.minX + b.maxX) / 2 + 3, 0, (b.maxZ + f.maxZ) / 2 + 0.5);
+}
+/** Fall this far below the roof and you're gone. */
+const FALL_LIMIT = -9;
 /** Seconds of the arrival: doors open, you walk out, the camera settles. */
 const ARRIVAL_SECONDS = 3.4;
 const ARRIVAL_CUT = 2.9;
@@ -61,14 +148,23 @@ const ARRIVAL_CUT = 2.9;
 const ARRIVAL_CAMERA = new THREE.Vector3(0, 11.5, 8.5);
 const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
 
-const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
-const MACHINE_DOOR = new THREE.Vector3(12.5, 0, -12.5);
-
 /** Seconds the helicopter waits at the ledge for you to jump for the ladder. */
 export const EXTRACT_WINDOW = 16;
+/**
+ * The hidden helicopter timer, in seconds (it used to be 40-58: now a long
+ * hold-out), and when each of the story's waves comes.
+ */
+const HELI_SECONDS = [165, 190];
+const WAVE_TIMES = [1.2, 24, 48, 74, 100, 126];
 
 const PATIENT = { hp: 2, stalk: 2.3, charge: 10, windup: 0.62, chargeRange: 22, damage: 14, notice: 12 };
+/** The two-headed brute: slow, heavy, hard to put down, hits like a truck. */
+const BRUTE = { hp: 9, stalk: 1.7, charge: 8.2, windup: 1.05, chargeRange: 18, damage: 26, notice: 14, height: 2.7 };
 const SCIENTIST = { hp: 3, walk: 2.8, aim: 0.85, orbSpeed: 11, damage: 10 };
+/** The scientists' laser: tracks you, locks, fires down the locked line. */
+const LASER = { track: 0.85, lock: 0.3, beam: 0.16, damage: 12, width: 0.6, range: 40 };
+/** The scientists' grenades: lobbed at where you're going, a short fuse. */
+const GRENADE = { flight: 1.05, fuse: 0.95, radius: 3.4, damage: 22, knock: 8 };
 
 function rng(seed) {
   // Scramble the seed and throw the first draws away: a Lehmer generator's
@@ -241,6 +337,10 @@ const SKY_FRAGMENT = /* glsl */ `
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+/** Eight directions round a circle's rim (wall tests against the scan). */
+const RING = Array.from({ length: 8 }, (_, i) => [Math.cos((i / 8) * Math.PI * 2), Math.sin((i / 8) * Math.PI * 2)]);
+const _laserFrom = new THREE.Vector3();
+const _laserTo = new THREE.Vector3();
 
 class Enemy {
   constructor(level, { kind, model, position, hp }) {
@@ -310,10 +410,57 @@ class Enemy {
     this.t = 0;
   }
 
-  /** Push out of cover and keep on the roof (patients can leave by the ledge). */
+  /** Push out of cover (and the parapets). */
   collide(radius = 0.45) {
     this.level.resolveCircle(this.position, radius);
-    this.position.z = THREE.MathUtils.clamp(this.position.z, -WALK_LIMIT, WALK_LIMIT);
+  }
+
+  /**
+   * Stand on whatever is underfoot (the roof, the deck, the stair) - or, off
+   * an edge, fall. Returns false once there's nothing under them.
+   */
+  settle(dt) {
+    const ground = this.level.groundAt(this.position, this.position.y);
+    if (ground !== null && this.position.y <= ground + 0.05) {
+      this.position.y = ground;
+      this.fallSpeed = 0;
+      return true;
+    }
+    this.fallSpeed = (this.fallSpeed ?? 0) - 22 * dt;
+    this.position.y = Math.max(ground ?? -Infinity, this.position.y + this.fallSpeed * dt);
+    return ground !== null;
+  }
+
+  /** Walk toward `target` (through the stair if it's on the other level), not off an edge. */
+  walk(target, speed, dt) {
+    const goal = this.level.routeToward(this.position, target, _w);
+    if (goal.climb) {
+      // Up the ladder, hand over hand; over the top onto the building's roof.
+      const l = this.level.scan.ladder;
+      this.position.x = l.x;
+      this.position.z = l.z;
+      this.position.y = Math.min(l.top, this.position.y + 2.0 * dt);
+      this.climbing = true;
+      if (this.position.y >= l.top - 0.01) {
+        this.position.x = l.x - l.nx * 0.9;
+        this.position.z = l.z - l.nz * 0.9;
+        this.climbing = false;
+      }
+      return 1;
+    }
+    this.climbing = false;
+    _v.subVectors(goal, this.position).setY(0);
+    const d = _v.length();
+    if (d < 0.3) return d;
+    _v.divideScalar(d);
+    const step = Math.min(d, speed * dt);
+    const nx = this.position.x + _v.x * step;
+    const nz = this.position.z + _v.z * step;
+    // Never step off into nothing (charging is another matter).
+    if (this.level.groundAt(_v.set(nx, this.position.y, nz), this.position.y) === null) return d;
+    this.position.x = nx;
+    this.position.z = nz;
+    return d;
   }
 
   updateDown(dt) {
@@ -327,14 +474,33 @@ class Enemy {
 
 class Patient extends Enemy {
   constructor(level, opts) {
-    super(level, { ...opts, kind: "patient", hp: PATIENT.hp });
+    const spec = opts.brute ? BRUTE : PATIENT;
+    super(level, { ...opts, kind: opts.brute ? "brute" : "patient", hp: spec.hp });
+    this.spec = spec;
+    this.brute = !!opts.brute;
     this.state = "emerge";
-    this.hatch = opts.position.clone();
-    this.position.y = -1.7;
+    // Out of the hut's door: from just inside it, out onto the roof.
+    this.from = opts.position.clone();
+    this.out = opts.out?.clone() ?? opts.position.clone().add(new THREE.Vector3(0, 0, 2.4));
     this.cooldown = 0.5 + opts.delay;
+    this.delay = opts.delay;
     this.dir = new THREE.Vector3();
     this.travelled = 0;
     this.phase = Math.random() * 10;
+    this.root.visible = false;
+    if (this.brute) {
+      // A big body: a bigger hurtbox.
+      this.hurt.scale.set(1.5, BRUTE.height, 1.3);
+      this.hurt.position.y = BRUTE.height / 2;
+    }
+  }
+
+  /** The brute has no skeleton: it heaves and sways as a whole. */
+  _heave(time, amount, lean = 0) {
+    if (this.rig || !this.brute) return;
+    this.body.position.y = Math.abs(Math.sin(time * 3.2 + this.phase)) * 0.12 * amount;
+    this.body.rotation.z = Math.sin(time * 1.6 + this.phase) * 0.08 * amount;
+    this.body.rotation.x = lean;
   }
 
   update(dt, time, ctx) {
@@ -343,30 +509,39 @@ class Patient extends Enemy {
     this.cooldown = Math.max(0, this.cooldown - dt);
     const player = ctx.player;
     const rig = this.rig;
+    const spec = this.spec;
 
     switch (this.state) {
       case "emerge": {
-        // Hauling themselves up out of the hatch.
-        const k = Math.min(1, this.t / 1.3);
-        this.position.y = THREE.MathUtils.lerp(-1.7, 0, 1 - (1 - k) * (1 - k));
-        this.face(player, dt, 4);
-        rig?.pose({ reach: 1.1 - k * 0.4, lean: 0.4, headNod: 0.3, phase: time * 6, stride: 0.2 * (1 - k) });
+        // Through the hut's door and out onto the roof.
+        if (this.t < this.delay) break;
+        if (!this.root.visible) {
+          this.root.visible = true;
+          this.level.openDoor();
+        }
+        const k = Math.min(1, (this.t - this.delay) / 1.4);
+        this.position.lerpVectors(this.from, this.out, k);
+        this.face(this.out.clone().add(_v.subVectors(this.out, this.from)), dt, 6);
+        rig?.pose({ phase: time * 6 + this.phase, stride: 0.4, knee: 0.6, reach: 0.8, lean: 0.35, headNod: 0.2 });
+        this._heave(time, 1, 0.1);
         if (k >= 1) this.setState("stalk");
         break;
       }
       case "stalk": {
         this.face(player, dt, 5);
-        _v.subVectors(player, this.position).setY(0);
-        const d = _v.length();
-        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), PATIENT.stalk * dt);
+        const d = this.position.distanceTo(player);
+        if (d > 1.2) this.walk(player, spec.stalk, dt);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
-        this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
+        if (!this.settle(dt)) this._fall(_v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)).multiplyScalar(2));
         rig?.pose({ phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3, headTilt: Math.sin(time * 1.7 + this.phase) * 0.3 });
-        if (d < PATIENT.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
+        this._heave(time, 1, 0.12);
+        // They only charge you on their own level.
+        const level = Math.abs(player.y - this.position.y) < 1;
+        if (level && d < spec.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
           this.setState("windup");
-          this.level.events.emit("patient-windup", { position: this.position.clone() });
+          this.level.events.emit("patient-windup", { position: this.position.clone(), brute: this.brute });
         }
         break;
       }
@@ -374,54 +549,60 @@ class Patient extends Enemy {
         // The telegraph: a crouch and a scream, arms thrown back. The
         // direction locks at the end - move and they miss.
         this.face(player, dt, 10);
-        const k = Math.min(1, this.t / PATIENT.windup);
+        const k = Math.min(1, this.t / spec.windup);
         rig?.pose({ crouch: 0.35 * k, lean: 0.5 * k, reach: -0.6 * k, headNod: -0.5 * k, elbow: 0.2 });
         this.body.position.x = Math.sin(time * 60) * 0.02 * k;
-        if (this.t >= PATIENT.windup) {
+        this._heave(time * 3, k, 0.3 * k);
+        if (this.t >= spec.windup) {
           this.dir.subVectors(player, this.position).setY(0).normalize();
           this.yaw = Math.atan2(this.dir.x, this.dir.z);
           this.body.rotation.y = this.yaw;
           this.body.position.x = 0;
           this.travelled = 0;
           this.setState("charge");
-          this.level.events.emit("patient-charge", { position: this.position.clone() });
+          this.level.events.emit("patient-charge", { position: this.position.clone(), brute: this.brute });
         }
         break;
       }
       case "charge": {
-        const step = PATIENT.charge * dt;
+        const step = spec.charge * dt;
         this.position.addScaledVector(this.dir, step);
         this.travelled += step;
         rig?.pose({ phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
-        // Straight off the open ledge.
-        if (Math.abs(this.position.x) > EDGE - 0.1) {
-          this.velocity.copy(this.dir).multiplyScalar(PATIENT.charge * 0.7);
-          this.die("fall");
-          this.level.events.emit("enemy-fall", { enemy: this, position: this.position.clone() });
+        this._heave(time * 2.5, 1.4, 0.35);
+        // Straight off the edge (of the roof, or the deck).
+        if (!this.settle(dt)) {
+          this._fall(this.dir.clone().multiplyScalar(spec.charge * 0.7));
           break;
         }
-        if (!ctx.frozen && this.position.distanceTo(_w.copy(player).setY(0)) < 0.95) {
-          ctx.hits.push({ damage: PATIENT.damage, from: this.position.clone(), knock: 7, source: "patient" });
+        if (!ctx.frozen && Math.abs(player.y - this.position.y) < 1.2 && this.position.distanceTo(_w.copy(player).setY(this.position.y)) < (this.brute ? 1.4 : 0.95)) {
+          ctx.hits.push({ damage: spec.damage, from: this.position.clone(), knock: this.brute ? 12 : 7, source: this.brute ? "brute" : "patient" });
           this.setState("recover");
           break;
         }
-        if (this.level.blocked(this.position, 0.45) || Math.abs(this.position.z) > WALK_LIMIT) {
+        if (this.level.blocked(this.position, 0.45)) {
           // Into cover or a parapet: stunned for a moment. Shoot them now.
           this.collide();
           this.setState("stunned");
           this.level.events.emit("patient-stunned", { position: this.position.clone() });
           break;
         }
-        if (this.travelled > PATIENT.chargeRange) this.setState("recover");
+        if (this.travelled > spec.chargeRange) this.setState("recover");
         break;
       }
       case "recover":
       case "stunned": {
         const hold = this.state === "stunned" ? 1.5 : 0.9;
         rig?.pose({ lean: 0.2 - this.stagger * 0.6, headNod: 0.6, headTilt: Math.sin(this.t * 9) * 0.3, reach: 0.2, elbow: 0.7 });
+        this._heave(time, 0.4, -0.1);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
+        // Knocked back over an edge by a hit, they go too.
+        if (!this.settle(dt)) {
+          this._fall(this.velocity.clone());
+          break;
+        }
         if (this.t > hold) {
           this.cooldown = 1.2;
           this.setState("stalk");
@@ -446,12 +627,20 @@ class Patient extends Enemy {
     }
     if (this.stagger > 0 && this.alive && this.state !== "charge") {
       this.body.rotation.x = -this.stagger * 0.3;
-    } else if (this.alive) this.body.rotation.x = 0;
+    } else if (this.alive && !this.brute) this.body.rotation.x = 0;
   }
 
   setState(state) {
     this.state = state;
     this.t = 0;
+  }
+
+  /** Off the edge: over they go. */
+  _fall(velocity) {
+    this.velocity.copy(velocity);
+    this.velocity.y = Math.max(this.velocity.y, 0);
+    this.die("fall");
+    this.level.events.emit("enemy-fall", { enemy: this, position: this.position.clone() });
   }
 }
 
@@ -465,6 +654,8 @@ class Scientist extends Enemy {
     this.phase = Math.random() * 10;
     this.gadget = opts.gadget ?? null;
     this.charge = 0;
+    this.weapon = "laser";
+    this.laserAim = new THREE.Vector3();
     // The gadget glows before it fires - that is the tell.
     this.glowMaterial = new THREE.MeshBasicMaterial({ color: 0x7ef4ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
     this.glow = new THREE.Mesh(level.kit.geometries.unitSphere, this.glowMaterial);
@@ -482,15 +673,23 @@ class Scientist extends Enemy {
   }
 
   pickSpot(player) {
-    // A point on a ring around the player, kept off the ledges.
+    // A point on a ring around the player, on the main roof, kept off the
+    // edges (they keep their feet on the roof - it's the patients who go over).
     for (let i = 0; i < 8; i += 1) {
       const a = this.random() * Math.PI * 2;
       const r = 9 + this.random() * 4;
       this.target.set(player.x + Math.cos(a) * r, 0, player.z + Math.sin(a) * r);
-      this.target.x = THREE.MathUtils.clamp(this.target.x, -EDGE + 3.5, EDGE - 3.5);
-      this.target.z = THREE.MathUtils.clamp(this.target.z, -EDGE + 2.5, EDGE - 2.5);
-      if (!this.level.blocked(this.target, 0.6)) return;
+      const b = this.level.bounds;
+      this.target.x = THREE.MathUtils.clamp(this.target.x, b.minX + 3.5, b.maxX - 3.5);
+      this.target.z = THREE.MathUtils.clamp(this.target.z, b.minZ + 2.5, b.maxZ - 2.5);
+      if (!this.level.blocked(this.target, 0.6) && this.level.groundAt(this.target, 0) === 0) return;
     }
+  }
+
+  /** What to hit you with next: the laser most, then a grenade, now and then an orb. */
+  pickWeapon() {
+    const r = this.random();
+    this.weapon = r < 0.45 ? "laser" : r < 0.8 ? "grenade" : "orb";
   }
 
   update(dt, time, ctx) {
@@ -504,18 +703,20 @@ class Scientist extends Enemy {
     switch (this.state) {
       case "enter":
       case "move": {
-        _v.subVectors(this.target, this.position).setY(0);
-        const d = _v.length();
-        if (d > 0.3) {
-          this.face(this.target, dt, 6);
-          this.position.addScaledVector(_v.divideScalar(d), SCIENTIST.walk * dt);
-        }
+        this.face(this.target, dt, 6);
+        const d = this.walk(this.target, SCIENTIST.walk, dt);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
-        this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
+        this.settle(dt);
         rig?.pose({ phase: time * 7 + this.phase, stride: 0.45, knee: 0.8, armSwing: 0.45, lean: 0.12, aimR: 0.3 });
-        if (d <= 0.3 || this.t > 5) this.setState(this.state === "enter" ? "release" : "aim");
+        if (d <= 0.3 || this.t > 5) {
+          if (this.state === "enter") this.setState("release");
+          else {
+            this.pickWeapon();
+            this.setState("aim");
+          }
+        }
         break;
       }
       case "release": {
@@ -532,16 +733,42 @@ class Scientist extends Enemy {
       }
       case "aim": {
         this.face(player, dt, 8);
-        const k = Math.min(1, this.t / SCIENTIST.aim);
-        glow = k;
-        rig?.pose({ aimR: 1, lean: -0.05, headNod: 0.1 });
-        if (this.t >= SCIENTIST.aim && !ctx.frozen) {
+        if (this.weapon === "laser") {
+          // A thin red line tracks you, then locks - get off the line.
+          const k = Math.min(1, this.t / LASER.track);
+          glow = k;
+          rig?.pose({ aimR: 1, lean: -0.05, headNod: 0.1 });
           this.handPosition(_w);
-          // Lead the target a little: standing still is how you get hit.
-          const aimAt = player.clone().addScaledVector(ctx.playerVelocity, 0.35).setY(1.15);
-          this.level.fireOrb(_w, aimAt);
-          this.cooldown = 1.1 + this.random() * 0.8;
-          this.setState("recoil");
+          if (this.t < LASER.track - LASER.lock) this.laserAim.copy(player).setY(player.y + 1.15);
+          this.level.showLaser(this, _w, this.laserAim, 0.25 + k * 0.5, false);
+          if (this.t >= LASER.track && !ctx.frozen) {
+            this.level.fireLaser(this, _w, this.laserAim, ctx);
+            this.cooldown = 1.3 + this.random() * 0.8;
+            this.setState("recoil");
+          }
+        } else if (this.weapon === "grenade") {
+          // Arm back, then the lob - at where you're heading.
+          const k = Math.min(1, this.t / 0.6);
+          rig?.pose({ aimL: k * 1.6, aimR: 0.2, lean: -0.2 * k, twist: -0.4 * k, headNod: -0.15 });
+          if (this.t >= 0.6 && !ctx.frozen) {
+            this.handPosition(_w);
+            const target = player.clone().addScaledVector(ctx.playerVelocity, 0.9);
+            this.level.throwGrenade(_w, target);
+            this.cooldown = 1.6 + this.random() * 0.9;
+            this.setState("recoil");
+          }
+        } else {
+          const k = Math.min(1, this.t / SCIENTIST.aim);
+          glow = k;
+          rig?.pose({ aimR: 1, lean: -0.05, headNod: 0.1 });
+          if (this.t >= SCIENTIST.aim && !ctx.frozen) {
+            this.handPosition(_w);
+            // Lead the target a little: standing still is how you get hit.
+            const aimAt = player.clone().addScaledVector(ctx.playerVelocity, 0.35).setY(player.y + 1.15);
+            this.level.fireOrb(_w, aimAt);
+            this.cooldown = 1.1 + this.random() * 0.8;
+            this.setState("recoil");
+          }
         }
         break;
       }
@@ -552,7 +779,10 @@ class Scientist extends Enemy {
           if (this.random() < 0.55) {
             this.pickSpot(player);
             this.setState("move");
-          } else this.setState("aim");
+          } else {
+            this.pickWeapon();
+            this.setState("aim");
+          }
         }
         break;
       }
@@ -568,7 +798,10 @@ class Scientist extends Enemy {
       if (this.state === "aim") this.t = Math.min(this.t, SCIENTIST.aim * 0.3); // a hit spoils the shot
     } else if (this.alive) this.body.rotation.x = 0;
 
+    // The aiming line goes out the moment they stop aiming it (a hit, a move).
+    if (!(this.state === "aim" && this.weapon === "laser")) this.level.hideLaserAim(this);
     this.handPosition(this.glow.position).sub(this.position);
+    this.glowMaterial.color.setHex(this.weapon === "laser" ? 0xff3a2e : 0x7ef4ff);
     this.glowMaterial.opacity = glow * (0.6 + Math.sin(time * 40) * 0.2);
     this.glow.scale.setScalar(0.25 + glow * 0.45);
   }
@@ -595,14 +828,25 @@ export class RoofLevel {
    * @param {boolean} [o.endless]  survival: no helicopter, waves keep coming,
    *   the roof comes apart over two minutes; it ends when you go down.
    */
-  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false } = {}) {
+  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, heights = null } = {}) {
     this.assets = assets;
     this.endless = endless;
+    /**
+     * The roof is the scanned rooftop (two levels: the deck, and the roof of
+     * the building on it) when its model and baked height map are both in;
+     * otherwise the built-in layout (a deck on legs, a stair hut).
+     */
+    this.scan = this._readScan(heights);
+    applyLayout(this.scan);
+    this.bounds = this.scan ? this.scan.floor : { minX: -EDGE, maxX: EDGE, minZ: -DEPTH, maxZ: DEPTH };
+    /** The east edge, where the helicopter waits off the side (and how far north). */
+    this.eastEdge = this.bounds.maxX;
+    this.holdZ = this.scan ? (this.scan.building.minZ + this.scan.building.maxZ) / 2 : -11;
     this.events = createEmitter();
     this.root = new THREE.Group();
     this.root.name = "RoofRoot";
     this.groups = {};
-    for (const name of ["set", "hazards", "pickups", "enemies", "orbs", "lights"]) {
+    for (const name of ["set", "hazards", "pickups", "enemies", "orbs", "weapons", "lights"]) {
       const g = new THREE.Group();
       g.name = name[0].toUpperCase() + name.slice(1);
       this.groups[name] = g;
@@ -626,7 +870,7 @@ export class RoofLevel {
     this.state = {
       time: 0,
       wave: 0,
-      heliAt: endless ? Infinity : heliSeconds ?? 40 + this.random() * 18,
+      heliAt: endless ? Infinity : heliSeconds ?? HELI_SECONDS[0] + this.random() * (HELI_SECONDS[1] - HELI_SECONDS[0]),
       nextWaveAt: 0,
       heliSeen: false,
       heliArrived: false,
@@ -638,12 +882,16 @@ export class RoofLevel {
       extractT: 0,
     };
 
-    this._buildSet();
+    if (this.scan) this._buildScanSet();
+    else {
+      this._buildSet();
+      this._buildDeck();
+    }
     this._buildSkyline();
     this._buildLights();
-    this._buildEdges();
     this._buildPickups();
     this._buildOrbs();
+    this._buildWeapons();
     this._buildHelicopter();
     this._buildChaos();
     fillAssetSlots(this.root, this.assets);
@@ -679,131 +927,82 @@ export class RoofLevel {
     return piece;
   }
 
-  _buildSet() {
+  /**
+   * A model from the rooftop kit (tools/assets/extract_kit.py), fitted to a
+   * footprint: a plain stand-in until it loads, then the model, repainted
+   * (the kit comes untextured). `cover` makes the footprint solid.
+   */
+  _prop(name, { x, z, y = 0, size, rotY = 0, material, cover = true }) {
+    const [w, h, d] = size;
+    const standIn = this.kit.box(w, h, d, material, 0, 0, 0);
+    const piece = new THREE.Group();
+    piece.add(standIn);
+    const slot = assetSlot(name, { size: [w, h, d], rotateY: 0 }, [standIn]);
+    slot.userData.onFilled = (holder) => {
+      holder.traverse((o) => {
+        if (o.isMesh) o.material = material;
+      });
+    };
+    piece.add(slot);
+    this._put(piece, x, y, z, rotY);
+    if (cover) {
+      const turned = Math.abs(Math.sin(rotY)) > 0.7;
+      const fw = turned ? d : w;
+      const fd = turned ? w : d;
+      this.cover.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, y + h / 2, z), new THREE.Vector3(fw * 0.9, h, fd * 0.9)));
+      const collider = new THREE.Mesh(this.kit.geometries.unitBox, this.kit.materials.collider);
+      collider.scale.set(fw * 0.9, h, fd * 0.9);
+      collider.position.set(x, y + h / 2, z);
+      this.groups.set.add(collider);
+      this.solids.push(collider);
+    }
+    return piece;
+  }
+
+  /**
+   * The lift housing you come up in, doors facing the roof (-Z): a hollow hut
+   * (so the open doors show the cabin) around a placeholder lift.
+   */
+  _buildLiftHousing() {
     const k = this.kit;
     const mat = k.materials;
-    const roofing = this._track(new THREE.MeshStandardMaterial({ map: roofingTexture(), roughnessMap: k.textures.floorRoughness, roughness: 1, metalness: 0.05 }));
-    roofing.envMapIntensity = 0.5;
-    this.owned.textures.push(roofing.map);
     const concrete = mat.concreteWall;
-
-    // The slab, and the building falling away beneath it.
-    this._box(EDGE * 2 + 0.6, 0.6, EDGE * 2 + 0.6, roofing, 0, -0.6, 0);
-    const facade = this._track(new THREE.MeshStandardMaterial({ color: 0x3a3a3c, emissive: 0xffffff, emissiveMap: windowsTexture(19, 0.12), emissiveIntensity: 0.9, roughness: 0.9 }));
-    facade.emissiveMap.repeat.set(3, 6);
-    this.owned.textures.push(facade.emissiveMap);
-    this._box(EDGE * 2 - 0.2, 70, EDGE * 2 - 0.2, facade, 0, -70.6, 0);
-
-    // Parapets north and south; the east and west ones have collapsed.
-    for (const z of [-EDGE, EDGE]) {
-      this._box(EDGE * 2 + 0.6, 1.0, 0.45, concrete, 0, 0, z, { solid: true, cover: true });
-      this._box(EDGE * 2 + 0.6, 0.12, 0.6, mat.trim, 0, 1.0, z);
-    }
-    for (const x of [-EDGE, EDGE]) {
-      // Stubs of the fallen parapet at the corners, rubble on the lip, and
-      // a painted warning line you will learn to respect.
-      for (const z of [-EDGE + 1.2, EDGE - 1.2]) this._box(0.45, 0.9, 2.4, concrete, x, 0, z, { solid: true, cover: true });
-      this._box(0.3, 0.02, EDGE * 2 - 4, mat.hazard, x - Math.sign(x) * 0.6, 0.005, 0);
-      const r = rng(Math.round(x + 40));
-      for (let i = 0; i < 7; i += 1) {
-        const rock = new THREE.Mesh(k.geometries.rock, mat.rubbleDark);
-        const s = 0.25 + r() * 0.45;
-        rock.scale.set(s * 1.4, s, s);
-        rock.position.set(x - Math.sign(x) * r() * 0.8, s * 0.3, (r() - 0.5) * (EDGE * 2 - 6));
-        rock.rotation.set(r(), r() * 3, r());
-        this.groups.set.add(rock);
-      }
-    }
-
-    // The lift housing you come up in, doors facing the roof: a hollow hut
-    // (so the open doors show the cabin) around a placeholder lift.
+    const x = LIFT_DOOR.x;
     const hutZ = LIFT_DOOR.z + 1.4;
     const hutH = 3.5;
-    this._box(5, hutH, 2.8, mat.collider, 0, 0, hutZ, { solid: true, cover: true });
+    this._box(5, hutH, 2.8, mat.collider, x, 0, hutZ, { solid: true, cover: true });
     for (const s of [-1, 1]) {
-      this._box(1.15, hutH, 0.3, concrete, s * 1.925, 0, LIFT_DOOR.z + 0.15);
-      this._box(0.25, hutH, 2.8, concrete, s * 2.375, 0, hutZ);
+      this._box(1.15, hutH, 0.3, concrete, x + s * 1.925, 0, LIFT_DOOR.z + 0.15);
+      this._box(0.25, hutH, 2.8, concrete, x + s * 2.375, 0, hutZ);
     }
-    this._box(2.7, hutH - ROOF_LIFT.height, 0.3, concrete, 0, ROOF_LIFT.height, LIFT_DOOR.z + 0.15);
-    this._box(5, hutH, 0.25, concrete, 0, 0, hutZ + 1.275);
-    this._box(5.3, 0.2, 3.1, mat.trim, 0, hutH, hutZ);
+    this._box(2.7, hutH - ROOF_LIFT.height, 0.3, concrete, x, ROOF_LIFT.height, LIFT_DOOR.z + 0.15);
+    this._box(5, hutH, 0.25, concrete, x, 0, hutZ + 1.275);
+    this._box(5.3, 0.2, 3.1, mat.trim, x, hutH, hutZ);
     this.lift = this._put(createLift(k, { ...ROOF_LIFT, label: "R" }), LIFT_DOOR.x, 0, LIFT_DOOR.z);
     this.lift.userData.lift.setLight(1);
-    this._put(k.alarmBeacon({ x: 0, y: 2.6, speed: 3.6 }), 1.95, 0.35, LIFT_DOOR.z - 0.2);
+    this._put(k.alarmBeacon({ x: 0, y: 2.6, speed: 3.6 }), x + 1.95, 0.35, LIFT_DOOR.z - 0.2);
+  }
 
-    // The machine room the second scientist comes out of.
-    this._box(7, 3.8, 5, concrete, EDGE - 4.6, 0, -EDGE + 3.6, { solid: true, cover: true });
-    this._box(1.5, 2.4, 0.1, mat.pitBlack, MACHINE_DOOR.x - 0.8, 0, -EDGE + 6.12);
-
-    // Hatches the patients climb out of.
-    for (const h of HATCHES) {
-      this._box(1.6, 0.35, 1.6, mat.darkMetal, h.x, 0, h.z);
-      this._box(1.2, 0.02, 1.2, mat.pitBlack, h.x, 0.35, h.z);
-      const lid = this._box(1.6, 0.08, 1.6, mat.paintedMetal, h.x, 0, h.z);
-      lid.position.set(h.x - 0.8, 0.75, h.z);
-      lid.rotation.z = 1.2;
-    }
-
-    // Helipad.
-    const pad = this._track(new THREE.MeshStandardMaterial({ map: helipadTexture(), transparent: true, roughness: 0.7, metalness: 0.1 }));
+  /** The helipad marking at HELIPAD, ringed with lights. */
+  _buildHelipad(radius) {
+    const k = this.kit;
+    const pad = this._track(new THREE.MeshStandardMaterial({ map: helipadTexture(), transparent: true, roughness: 0.7, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -2 }));
     this.owned.textures.push(pad.map);
-    const padMesh = new THREE.Mesh(new THREE.CircleGeometry(6.5, 48), pad);
+    const padMesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), pad);
     padMesh.rotation.x = -Math.PI / 2;
-    padMesh.position.set(HELIPAD.x, 0.01, HELIPAD.z);
+    padMesh.position.set(HELIPAD.x, 0.03, HELIPAD.z);
     this.owned.geometries.push(padMesh.geometry);
     this.groups.set.add(padMesh);
     for (let i = 0; i < 8; i += 1) {
       const a = (i / 8) * Math.PI * 2;
-      const led = new THREE.Mesh(k.geometries.unitSphere, mat.warning);
+      const led = new THREE.Mesh(k.geometries.unitSphere, k.materials.warning);
       led.scale.setScalar(0.18);
-      led.position.set(HELIPAD.x + Math.cos(a) * 6.7, 0.08, HELIPAD.z + Math.sin(a) * 6.7);
+      led.position.set(HELIPAD.x + Math.cos(a) * (radius + 0.2), 0.08, HELIPAD.z + Math.sin(a) * (radius + 0.2));
       this.groups.set.add(led);
     }
+  }
 
-    // Cover: AC units (the vent fan model), a water tank, vents, a dish.
-    const acUnit = (x, z, rot = 0) => {
-      const w = 2.6;
-      const d = 1.8;
-      this._box(rot ? d : w, 1.7, rot ? w : d, mat.paintedMetal, x, 0, z, { solid: true, cover: true });
-      const fan = k.ventFanUnit();
-      fan.scale.setScalar(0.75);
-      this._put(fan, x, 1.7, z, rot);
-    };
-    acUnit(-8, 5);
-    acUnit(7.5, -2, Math.PI / 2);
-    acUnit(-3.5, -1);
-    acUnit(4, 8, Math.PI / 2);
-
-    const tank = new THREE.Group();
-    const barrel = new THREE.Mesh(k.geometries.unitCyl, mat.ductMetal);
-    barrel.scale.set(3, 3.2, 3);
-    barrel.position.y = 3.6;
-    tank.add(barrel);
-    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) tank.add(k.box(0.18, 2, 0.18, mat.darkMetal, 0, x, z));
-    this._put(tank, -11, 0, 11);
-    this.cover.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(-11, 1, 11), new THREE.Vector3(2.4, 2, 2.4)));
-
-    for (const [x, z] of [[11, 7], [-12, -6], [2, -14]]) {
-      const vent = new THREE.Mesh(k.geometries.unitCyl, mat.ductMetal);
-      vent.scale.set(0.9, 1.4, 0.9);
-      vent.position.set(x, 0.7, z);
-      this.groups.set.add(vent);
-      this.cover.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, 0.7, z), new THREE.Vector3(0.9, 1.4, 0.9)));
-    }
-    for (const [x, z, r] of [[-EDGE + 0.7, 13, 0], [EDGE - 0.7, 12, Math.PI]]) {
-      this._put(k.utilityBoxUnit(), x, 0, z, r + Math.PI / 2);
-    }
-    // Floodlights on poles at the parapets.
-    this.floods = [];
-    for (const [x, z] of [[-EDGE + 1, -EDGE + 0.6], [EDGE - 1, EDGE - 0.6]]) {
-      this._box(0.16, 5.5, 0.16, mat.darkMetal, x, 0, z);
-      const head = this._box(0.9, 0.4, 0.5, mat.trim, x, 5.5, z);
-      head.rotation.x = 0.4;
-      this._box(0.7, 0.05, 0.35, mat.lightTube, x, 5.45, z - Math.sign(z) * 0.25);
-      this.floods.push(new THREE.Vector3(x, 5.2, z - Math.sign(z) * 0.4));
-    }
-
-    // Sky dome.
+  _buildSky() {
     this.skyMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: this.fire.time },
       vertexShader: SKY_VERTEX,
@@ -819,6 +1018,410 @@ export class RoofLevel {
     sky.renderOrder = -1;
     this.owned.geometries.push(sky.geometry);
     this.root.add(sky);
+  }
+
+  /**
+   * The scanned rooftop (assets/meltdown/roof_scan.glb, scaled up by
+   * SCAN_SCALE): the deck, the building on it (its roof the second level, up
+   * a ladder on its south face), its doorway the patients come out of, the
+   * tower at the west end. Walls, edges and both levels come from the baked
+   * height map - the scan itself is only drawn. Our own pieces on it: the
+   * lift you arrive in, the helipad, the ladder, the door's lamp, some plant.
+   */
+  _buildScanSet() {
+    const k = this.kit;
+    const mat = k.materials;
+    const s = this.scan;
+    const b = s.building;
+    const f = s.floor;
+    const model = s.asset.template.clone(true);
+    model.scale.setScalar(s.scale);
+    model.position.y = -s.deck * s.scale;
+    model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      o.frustumCulled = false;
+      // The scan's light is baked into its photos: let it show through the night.
+      const m = o.material.clone();
+      m.emissiveMap = m.map;
+      m.emissive = new THREE.Color(0xffffff);
+      m.emissiveIntensity = 0.32;
+      m.roughness = 0.92;
+      m.metalness = 0;
+      m.envMapIntensity = 0.3;
+      o.material = this._track(m);
+    });
+    model.name = "RoofScan";
+    this.groups.set.add(model);
+
+    // The rest of the building, below the scan, down into the city.
+    const facade = this._track(new THREE.MeshStandardMaterial({ color: 0x3a3a3c, emissive: 0xffffff, emissiveMap: windowsTexture(19, 0.12), emissiveIntensity: 0.9, roughness: 0.9 }));
+    facade.emissiveMap.repeat.set(4, 6);
+    this.owned.textures.push(facade.emissiveMap);
+    const fw = f.maxX - f.minX;
+    const fd = f.maxZ - f.minZ;
+    this._box(fw - 0.8, 70, fd - 0.8, facade, (f.minX + f.maxX) / 2, -76, (f.minZ + f.maxZ) / 2);
+
+    this._buildLiftHousing();
+    this._buildHelipad(3.4);
+
+    // The ladder up the building's south face.
+    const l = s.ladder;
+    const steel = this._track(new THREE.MeshStandardMaterial({ color: 0x8a9096, roughness: 0.45, metalness: 0.8 }));
+    for (const dx of [-0.32, 0.32]) this.groups.set.add(this.kit.box(0.06, l.top + 1.0, 0.06, steel, 0, l.x + dx, l.z - 0.25));
+    for (let y = 0.3; y < l.top + 0.9; y += 0.3) this.groups.set.add(this.kit.box(0.64, 0.04, 0.04, steel, y, l.x, l.z - 0.25));
+    const hoops = new THREE.Mesh(this.kit.geometries.unitBox, mat.hazard);
+    hoops.scale.set(0.8, 0.05, 0.05);
+    hoops.position.set(l.x, l.top + 1.0, l.z - 0.25);
+    this.groups.set.add(hoops);
+
+    // The doorway the patients come through: a caged lamp over it, and a
+    // steel door that swings open for each one.
+    this._put(k.alarmBeacon({ x: 0, y: 0, speed: 4.4 }), HUT_DOOR.x + 1.1, 2.5, HUT_DOOR.z + 0.05);
+    this.door = new THREE.Group();
+    this.door.position.set(HUT_DOOR.x - 0.75, 0, HUT_DOOR.z + 0.04);
+    this.door.add(k.box(1.5, 2.3, 0.07, mat.paintedMetal, 0, 0.75, 0));
+    this.groups.set.add(this.door);
+    this.doorOpen = 0;
+    this.doorAngle = 0;
+
+    // Plant, for cover, in the open stretches of deck.
+    const plant = this._track(new THREE.MeshStandardMaterial({ color: 0x6e7680, roughness: 0.55, metalness: 0.6 }));
+    const frame = this._track(new THREE.MeshStandardMaterial({ color: 0x2f3439, roughness: 0.6, metalness: 0.7 }));
+    const tankPaint = this._track(new THREE.MeshStandardMaterial({ color: 0xb9bcb6, roughness: 0.5, metalness: 0.45 }));
+    const westX = (f.minX + b.minX) / 2;
+    const eastX = (b.maxX + f.maxX) / 2;
+    const southZ = (b.maxZ + f.maxZ) / 2;
+    this._prop("roofHvac", { x: westX, z: (f.minZ + b.maxZ) / 2 - 1, size: [3.2, 1.5, 2.8], rotY: Math.PI / 2, material: plant });
+    this._prop("roofHvac3", { x: b.minX + 4.5, z: southZ + 1.6, size: [3.2, 1.2, 3], material: plant });
+    this._prop("roofTank", { x: eastX + 1, z: southZ + 1.5, size: [3.4, 6.5, 3.4], material: tankPaint });
+    this._prop("roofDish2", { x: eastX, z: b.minZ + 2.2, size: [4, 3.8, 3.6], rotY: -0.6, material: tankPaint });
+    this._prop("roofMast", { x: f.minX + 3, z: f.minZ + 1.6, size: [1.4, 10, 1.4], material: frame, cover: false });
+
+    // Floodlights on two corners.
+    this.floods = [];
+    for (const [x, z] of [[f.minX + 1.2, f.minZ + 1.2], [f.maxX - 1.2, f.maxZ - 1.2]]) {
+      this._box(0.16, 5.5, 0.16, mat.darkMetal, x, 0, z);
+      this._box(0.9, 0.4, 0.5, mat.trim, x, 5.5, z);
+      this.floods.push(new THREE.Vector3(x, 5.2, z - Math.sign(z) * 0.4));
+    }
+    this._buildSky();
+  }
+
+  _buildSet() {
+    const k = this.kit;
+    const mat = k.materials;
+    const roofing = this._track(new THREE.MeshStandardMaterial({ map: roofingTexture(), roughnessMap: k.textures.floorRoughness, roughness: 1, metalness: 0.05 }));
+    roofing.map.repeat.set(11, 9);
+    roofing.envMapIntensity = 0.5;
+    this.owned.textures.push(roofing.map);
+    const concrete = mat.concreteWall;
+    // The kit's paint: weathered plant-room steel, darker frames, pale tanks.
+    const plant = this._track(new THREE.MeshStandardMaterial({ color: 0x6e7680, roughness: 0.55, metalness: 0.6 }));
+    const frame = this._track(new THREE.MeshStandardMaterial({ color: 0x2f3439, roughness: 0.6, metalness: 0.7 }));
+    const tankPaint = this._track(new THREE.MeshStandardMaterial({ color: 0xb9bcb6, roughness: 0.5, metalness: 0.45 }));
+    for (const m of [plant, frame, tankPaint]) m.envMapIntensity = 0.7;
+
+    // The slab, and the building falling away beneath it.
+    this._box(EDGE * 2 + 0.6, 0.6, DEPTH * 2 + 0.6, roofing, 0, -0.6, 0);
+    const facade = this._track(new THREE.MeshStandardMaterial({ color: 0x3a3a3c, emissive: 0xffffff, emissiveMap: windowsTexture(19, 0.12), emissiveIntensity: 0.9, roughness: 0.9 }));
+    facade.emissiveMap.repeat.set(4, 6);
+    this.owned.textures.push(facade.emissiveMap);
+    this._box(EDGE * 2 - 0.2, 70, DEPTH * 2 - 0.2, facade, 0, -70.6, 0);
+
+    // Parapets along the north and south, and the two ends of the west side;
+    // the middle of the west and all of the east are open. Mind the edge.
+    const parapet = (len, x, z, alongX) => {
+      this._box(alongX ? len : 0.45, 1.0, alongX ? 0.45 : len, concrete, x, 0, z, { solid: true, cover: true });
+      this._box(alongX ? len : 0.6, 0.12, alongX ? 0.6 : len, mat.trim, x, 1.0, z);
+    };
+    parapet(EDGE * 2 + 0.6, 0, -DEPTH, true);
+    parapet(EDGE * 2 + 0.6, 0, DEPTH, true);
+    parapet(12, -EDGE, -DEPTH + 6, false);
+    parapet(12, -EDGE, DEPTH - 6, false);
+    // Painted warning lines along every open edge.
+    this._box(0.3, 0.02, DEPTH * 2 - 2, mat.hazard, EDGE - 0.6, 0.005, 0);
+    this._box(0.3, 0.02, 12, mat.hazard, -EDGE + 0.6, 0.005, 0);
+    const r = rng(40);
+    for (let i = 0; i < 12; i += 1) {
+      const rock = new THREE.Mesh(k.geometries.rock, mat.rubbleDark);
+      const s = 0.25 + r() * 0.45;
+      rock.scale.set(s * 1.4, s, s);
+      const east = i % 2 === 0;
+      rock.position.set(east ? EDGE - r() * 0.8 : -EDGE + r() * 0.8, s * 0.3, east ? (r() - 0.5) * (DEPTH * 2 - 4) : (r() - 0.5) * 11);
+      rock.rotation.set(r(), r() * 3, r());
+      this.groups.set.add(rock);
+    }
+
+    this._buildLiftHousing();
+
+    // The stair hut the patients come out of: a concrete block with a steel
+    // door that swings open each time another one comes through.
+    this._box(HUT.w, HUT.h, HUT.d, concrete, HUT.x, 0, HUT.z, { solid: true, cover: true });
+    this._box(HUT.w + 0.4, 0.25, HUT.d + 0.4, mat.trim, HUT.x, HUT.h, HUT.z);
+    this._box(1.8, 2.5, 0.12, mat.pitBlack, HUT_DOOR.x, 0, HUT.z + HUT.d / 2 + 0.01);
+    this._box(2.2, 0.18, 0.2, mat.trim, HUT_DOOR.x, 2.55, HUT.z + HUT.d / 2 + 0.08);
+    this.door = new THREE.Group();
+    this.door.position.set(HUT_DOOR.x - 0.85, 0, HUT.z + HUT.d / 2 + 0.08);
+    const leaf = k.box(1.7, 2.4, 0.08, mat.paintedMetal, 0, 0.85, 0);
+    this.door.add(leaf);
+    this.groups.set.add(this.door);
+    this.doorOpen = 0;
+    this.doorAngle = 0;
+    this._put(k.alarmBeacon({ x: 0, y: 0, speed: 4.4 }), HUT_DOOR.x + 1.3, 2.4, HUT.z + HUT.d / 2 + 0.12);
+    // Plant on its roof.
+    this._prop("roofHvac", { x: HUT.x - 1.5, z: HUT.z, y: HUT.h + 0.25, size: [3.2, 1.5, 2.8], material: plant, cover: false });
+
+    this._buildHelipad(6.5);
+
+    // Cover and plant from the rooftop kit: air handlers, a water tank on
+    // its stand, a dish, pipe runs with their walkways, masts.
+    this._prop("roofHvac2", { x: 4.5, z: 0.5, size: [4.4, 1.7, 3.8], material: plant });
+    this._prop("roofHvac3", { x: -8.5, z: 6.5, size: [3.6, 1.3, 3.4], material: plant });
+    this._prop("roofHvac", { x: -4, z: -1, size: [3.2, 1.5, 2.8], rotY: Math.PI / 2, material: plant });
+    this._prop("roofTank", { x: -17, z: 9, size: [4, 7.5, 4], material: tankPaint });
+    this._prop("roofDish2", { x: 16, z: -13.5, size: [5, 4.5, 4.4], material: tankPaint });
+    this._prop("roofMast", { x: 20.2, z: -16, size: [1.6, 12, 1.6], material: frame, cover: false });
+    this._prop("roofMast2", { x: -20.2, z: 16.2, size: [1.6, 8, 1.6], material: frame, cover: false });
+    for (const [x, z] of [[11, 10], [-12, -1], [1, -16]]) {
+      const vent = new THREE.Mesh(k.geometries.unitCyl, mat.ductMetal);
+      vent.scale.set(0.9, 1.4, 0.9);
+      vent.position.set(x, 0.7, z);
+      this.groups.set.add(vent);
+      this.cover.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, 0.7, z), new THREE.Vector3(0.9, 1.4, 0.9)));
+    }
+    // Floodlights on poles at the parapets.
+    this.floods = [];
+    for (const [x, z] of [[-EDGE + 1, -DEPTH + 0.6], [EDGE - 6, DEPTH - 0.6]]) {
+      this._box(0.16, 5.5, 0.16, mat.darkMetal, x, 0, z);
+      const head = this._box(0.9, 0.4, 0.5, mat.trim, x, 5.5, z);
+      head.rotation.x = 0.4;
+      this._box(0.7, 0.05, 0.35, mat.lightTube, x, 5.45, z - Math.sign(z) * 0.25);
+      this.floods.push(new THREE.Vector3(x, 5.2, z - Math.sign(z) * 0.4));
+    }
+
+    this._buildSky();
+  }
+
+  /**
+   * The second level: a steel deck on legs over the east of the roof, up a
+   * stair from the south. Railed on its north and east sides; open to the
+   * west and the south - you can be knocked off it, or charge them off it.
+   */
+  _buildDeck() {
+    const k = this.kit;
+    const mat = k.materials;
+    const steel = this._track(new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.5, metalness: 0.75 }));
+    const grate = this._track(new THREE.MeshStandardMaterial({ color: 0x5c636b, roughness: 0.65, metalness: 0.7, map: k.textures.grate ?? null }));
+    const w = DECK.maxX - DECK.minX;
+    const d = DECK.maxZ - DECK.minZ;
+    const cx = (DECK.minX + DECK.maxX) / 2;
+    const cz = (DECK.minZ + DECK.maxZ) / 2;
+    // The floor (solid to balls, not cover: you walk under it).
+    const floor = this.kit.box(w, 0.22, d, grate, DECK.y - 0.22, cx, cz);
+    this.groups.set.add(floor);
+    const collider = new THREE.Mesh(this.kit.geometries.unitBox, this.kit.materials.collider);
+    collider.scale.set(w, 0.22, d);
+    collider.position.set(cx, DECK.y - 0.11, cz);
+    this.groups.set.add(collider);
+    this.solids.push(collider);
+    // Edge beams, legs, cross-bracing.
+    for (const z of [DECK.minZ, DECK.maxZ]) this.groups.set.add(this.kit.box(w, 0.35, 0.2, steel, DECK.y - 0.55, cx, z));
+    for (const x of [DECK.minX, DECK.maxX]) this.groups.set.add(this.kit.box(0.2, 0.35, d, steel, DECK.y - 0.55, x, cz));
+    for (const x of [DECK.minX + 0.2, cx, DECK.maxX - 0.2]) {
+      for (const z of [DECK.minZ + 0.2, DECK.maxZ - 0.2]) {
+        this.groups.set.add(this.kit.box(0.22, DECK.y - 0.2, 0.22, steel, 0, x, z));
+      }
+    }
+    // Railings: north and east.
+    const rail = (len, x, z, alongX) => {
+      this.groups.set.add(this.kit.box(alongX ? len : 0.06, 0.06, alongX ? 0.06 : len, steel, DECK.y + 1.0, x, z));
+      this.groups.set.add(this.kit.box(alongX ? len : 0.05, 0.05, alongX ? 0.05 : len, steel, DECK.y + 0.5, x, z));
+      for (let i = 0; i <= Math.round(len / 1.6); i += 1) {
+        const t = -len / 2 + (i / Math.round(len / 1.6)) * len;
+        this.groups.set.add(this.kit.box(0.06, 1.0, 0.06, steel, DECK.y, alongX ? x + t : x, alongX ? z : z + t));
+      }
+      this.cover.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, DECK.y + 0.55, z), new THREE.Vector3(alongX ? len : 0.3, 1.1, alongX ? 0.3 : len)));
+    };
+    rail(w, cx, DECK.minZ + 0.1, true);
+    rail(d, DECK.maxX - 0.1, cz, false);
+    // The stair: a steel flight from the roof up to the deck's south edge.
+    const sw = STAIR.maxX - STAIR.minX;
+    const sl = STAIR.maxZ - STAIR.minZ;
+    const steps = 14;
+    for (let i = 0; i < steps; i += 1) {
+      const z = STAIR.maxZ - (i + 0.5) * (sl / steps);
+      const y = ((i + 1) / steps) * DECK.y;
+      this.groups.set.add(this.kit.box(sw, 0.08, sl / steps + 0.04, grate, y - 0.08, (STAIR.minX + STAIR.maxX) / 2, z));
+    }
+    const pitch = Math.atan2(DECK.y, sl);
+    for (const x of [STAIR.minX, STAIR.maxX]) {
+      const stringer = this.kit.box(0.12, 0.3, Math.hypot(sl, DECK.y), steel, 0, 0, 0);
+      const holder = new THREE.Group();
+      holder.add(stringer);
+      stringer.position.y = -0.15;
+      holder.position.set(x, DECK.y / 2, (STAIR.minZ + STAIR.maxZ) / 2);
+      holder.rotation.x = pitch;
+      this.groups.set.add(holder);
+      const handrail = this.kit.box(0.05, 0.05, Math.hypot(sl, DECK.y), steel, 0, 0, 0);
+      const h2 = new THREE.Group();
+      h2.add(handrail);
+      h2.position.set(x, DECK.y / 2 + 0.95, (STAIR.minZ + STAIR.maxZ) / 2);
+      h2.rotation.x = pitch;
+      this.groups.set.add(h2);
+    }
+    // Something to hide behind up there.
+    this._prop("roofHvac", { x: DECK.maxX - 2.4, z: DECK.minZ + 2.2, y: DECK.y, size: [3, 1.4, 2.6], material: steel });
+    this.groups.set.add(this.kit.box(0.4, 0.02, w, mat.hazard, DECK.y + 0.005, cx, DECK.maxZ - 0.25));
+  }
+
+  /* ---------------- Where you can stand ---------------- */
+
+  /**
+   * The height of the walkable surface under `p` that someone at `fromY`
+   * can be on - the highest one no more than a step above them (so the deck
+   * is reached by its stair, not climbed from the side). Null: nothing under
+   * them - they're off the edge.
+   */
+  groundAt(p, fromY = 0) {
+    if (this.scan) {
+      // The scan: its baked heights. A cell too high to step onto is a wall -
+      // it holds you where you are (the movement code keeps you out of it).
+      const h = this.scanHeight(p.x, p.z);
+      if (h === null) return null;
+      if (this.onLadder(p) && fromY > h + 0.05) return fromY;
+      return h > fromY + STEP ? fromY : h;
+    }
+    let best = null;
+    const take = (h) => {
+      if (h <= fromY + STEP && (best === null || h > best)) best = h;
+    };
+    if (Math.abs(p.x) <= EDGE + 0.3 && Math.abs(p.z) <= DEPTH + 0.3) take(0);
+    if (p.x >= DECK.minX && p.x <= DECK.maxX && p.z >= DECK.minZ && p.z <= DECK.maxZ) take(DECK.y);
+    if (p.x >= STAIR.minX && p.x <= STAIR.maxX && p.z >= STAIR.minZ && p.z <= STAIR.maxZ) {
+      take(DECK.y * (STAIR.maxZ - p.z) / (STAIR.maxZ - STAIR.minZ));
+    }
+    return best;
+  }
+
+  /* ---------------- The roof scan (assets/meltdown/roof_scan.glb) ---------------- */
+
+  /**
+   * Read the scan's layout off its height map: the deck is the commonest
+   * height; the building on it is the big block 2.2-5 m above that (its roof
+   * is the second level); the ladder goes up its south face, a third of the
+   * way along from the west; the patients' door is near the east end of that
+   * face. Null without the model or the map (the built-in layout is used).
+   */
+  _readScan(source) {
+    const asset = this.assets.get("roofScan");
+    if (!asset || !source?.heights) return null;
+    const grid = fillScanHoles(source);
+    const S = SCAN_SCALE;
+    const counts = new Map();
+    for (const h of grid.heights) {
+      if (h === null) continue;
+      const k = Math.round(h * 10);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    let deckK = 0;
+    let best = 0;
+    for (const [k, c] of counts) if (c > best) [best, deckK] = [c, k];
+    const deck = deckK / 10;
+    const bounds = () => ({ minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity });
+    const building = bounds();
+    const floor = bounds();
+    const roofs = [];
+    for (let j = 0; j < grid.nz; j += 1) {
+      for (let i = 0; i < grid.nx; i += 1) {
+        const h = grid.heights[j * grid.nx + i];
+        if (h === null) continue;
+        const x = (grid.x0 + i * grid.cell) * S;
+        const z = (grid.z0 + j * grid.cell) * S;
+        const up = h - deck;
+        const into = (b) => {
+          b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x);
+          b.minZ = Math.min(b.minZ, z); b.maxZ = Math.max(b.maxZ, z);
+        };
+        if (up > 2.2 && up < 5) {
+          into(building);
+          roofs.push(up);
+        } else if (Math.abs(up) < 0.4) into(floor);
+      }
+    }
+    if (!roofs.length) return null;
+    roofs.sort((a, b) => a - b);
+    building.top = roofs[Math.floor(roofs.length / 2)] * S;
+    const scan = { asset, grid, scale: S, deck, building, floor };
+    // The ladder: up the south face (+z), a third of the way from the west end,
+    // where there's deck in front of it.
+    scan.ladder = { x: building.minX + (building.maxX - building.minX) * 0.33, z: building.maxZ + 0.45, top: building.top, nx: 0, nz: 1 };
+    // The door: near the east end of the same face (the scan's own doorway).
+    scan.door = new THREE.Vector3(building.maxX - 2.4 * S, 0, building.maxZ + 0.2);
+    return scan;
+  }
+
+  /**
+   * The scan's walkable height at (x, z), in roof metres (the deck is 0), or
+   * null off its edge. From the baked height map (tools/assets/heightmap.py).
+   */
+  scanHeight(x, z) {
+    const s = this.scan;
+    const i = Math.round((x / s.scale - s.grid.x0) / s.grid.cell);
+    const j = Math.round((z / s.scale - s.grid.z0) / s.grid.cell);
+    if (i < 0 || j < 0 || i >= s.grid.nx || j >= s.grid.nz) return null;
+    const h = s.grid.heights[j * s.grid.nx + i];
+    return h === null ? null : (h - s.deck) * s.scale;
+  }
+
+  /** A wall for someone at `fromY`: the scan's surface there is more than a step up. */
+  _scanWall(x, z, fromY) {
+    const h = this.scanHeight(x, z);
+    return h !== null && h > fromY + STEP;
+  }
+
+  /** On the ladder up the building (in its column, between the deck and the roof)? */
+  onLadder(p) {
+    const l = this.scan?.ladder;
+    if (!l) return false;
+    return Math.abs(p.x - l.x) < 0.55 && Math.abs(p.z - l.z) < 0.6 && p.y > -0.1 && p.y < l.top + 0.2;
+  }
+
+  /** Is `p` on the stair? */
+  onStair(p) {
+    return p.x >= STAIR.minX - 0.3 && p.x <= STAIR.maxX + 0.3 && p.z >= STAIR.minZ - 0.3 && p.z <= STAIR.maxZ + 0.3;
+  }
+
+  /**
+   * Where to walk to get from `from` toward `to`: straight there on the same
+   * level; otherwise by way of the stair (its foot, then its top, or back) -
+   * or, on the scanned roof, the ladder up the building (`out.climb` says
+   * "go up it now"); down off the building's roof is just a drop.
+   */
+  routeToward(from, to, out = new THREE.Vector3()) {
+    const rise = to.y - from.y;
+    out.climb = false;
+    if (Math.abs(rise) < 1) return out.copy(to);
+    if (this.scan) {
+      const l = this.scan.ladder;
+      if (rise < 0) return out.copy(to);
+      if (Math.hypot(from.x - l.x, from.z - l.z) > 0.5) return out.set(l.x, from.y, l.z);
+      out.set(l.x, from.y, l.z);
+      out.climb = true;
+      return out;
+    }
+    const x = (STAIR.minX + STAIR.maxX) / 2;
+    if (rise > 0) {
+      if (this.onStair(from)) return out.set(x, from.y, STAIR.minZ - 1.2);
+      return out.set(x, from.y, STAIR.maxZ + 0.6);
+    }
+    if (this.onStair(from)) return out.set(x, from.y, STAIR.maxZ + 1.2);
+    return out.set(x, from.y, STAIR.minZ + 0.2);
+  }
+
+  /** The hut's door swings open for the next one through it. */
+  openDoor() {
+    this.doorOpen = 1.8;
+    this.events.emit("door-open", { position: HUT_DOOR.clone() });
   }
 
   /** The city around you: lit towers standing in the smoke, far below and away. */
@@ -866,38 +1469,23 @@ export class RoofLevel {
       g.add(light);
       this.points.push({ light, base: 55, flicker: 0 });
     }
-    for (const x of [-EDGE - 0.5, EDGE + 0.5]) {
-      const light = new THREE.PointLight(0xff5a18, 40, 22, 1.5);
-      light.position.set(x, 1.5, 0);
+    // No fire up here any more: police lights wash up the facade from the
+    // street and the helicopters - red on one side, blue on the other,
+    // flashing out of step.
+    for (const [x, colour] of [[this.bounds.minX - 0.5, 0xff2a22], [this.bounds.maxX + 0.5, 0x2a5cff]]) {
+      const light = new THREE.PointLight(colour, 26, 26, 1.5);
+      light.position.set(x, -1.5, 0);
       g.add(light);
-      this.points.push({ light, base: 40, flicker: 1 });
-    }
-  }
-
-  /** Fire climbing the facade below both open ledges, and smoke off it. */
-  _buildEdges() {
-    const k = this.kit;
-    for (const x of [-EDGE - 0.6, EDGE + 0.6]) {
-      for (let z = -EDGE + 3; z <= EDGE - 3; z += 4.4) {
-        const f = k.fireSpot({ width: 2.4, depth: 1.2, height: 3 + this.random() * 1.6, light: false, smoke: true });
-        f.position.set(x, -2.2, z + (this.random() - 0.5) * 1.5);
-        this.groups.hazards.add(f);
-      }
-      for (let i = 0; i < 3; i += 1) {
-        const smoke = k.smokeJet({ count: 18 });
-        smoke.scale.set(3, 5, 3);
-        smoke.position.set(x + Math.sign(x) * 1.5, 0, -10 + i * 10);
-        this.groups.hazards.add(smoke);
-        this._ticking.push(smoke);
-      }
+      this.points.push({ light, base: 26, flicker: 1, police: x > 0 ? 0.5 : 0 });
     }
   }
 
   _buildPickups() {
     const k = this.kit;
-    for (const [x, z] of [[-13, 0], [13, 5], [0, 2]]) {
+    // One up on the deck: worth the climb.
+    for (const [x, z, y] of [[-13, 2, 0], [15, 2, DECK.y], [2, 7, 0], [-7, -15, 0]]) {
       const sack = k.sack({ hp: 1, spheres: 7 });
-      sack.position.set(x, 0.4, z);
+      sack.position.set(x, y + 0.4, z);
       this.groups.pickups.add(sack);
       this._ticking.push(sack);
       this.breakables.push(sack.userData.glass);
@@ -920,6 +1508,189 @@ export class RoofLevel {
     }
   }
 
+  /**
+   * The scientists' other weapons: a laser each (an aiming line that
+   * tracks, then a beam down the locked line) and a few grenades (lobbed,
+   * a warning ring where they land, then the blast).
+   */
+  _buildWeapons() {
+    const g = this.groups.weapons;
+    this.laserGeometry = new THREE.BoxGeometry(1, 1, 1);
+    this.laserGeometry.translate(0, 0, 0.5); // from the hand, along +Z
+    this.owned.geometries.push(this.laserGeometry);
+    this.lasers = new Map();
+    this._laserParts = { g };
+    const grenadeMat = this._track(new THREE.MeshStandardMaterial({ color: 0x2b2f26, roughness: 0.6, metalness: 0.5 }));
+    const blinkMat = this._track(new THREE.MeshBasicMaterial({ color: 0xff2a1a }));
+    this.ringGeometry = new THREE.RingGeometry(0.92, 1, 40);
+    this.ringGeometry.rotateX(-Math.PI / 2);
+    this.owned.geometries.push(this.ringGeometry);
+    this.grenades = [];
+    for (let i = 0; i < 6; i += 1) {
+      const mesh = new THREE.Mesh(this.kit.geometries.unitSphere, grenadeMat);
+      mesh.scale.set(0.16, 0.2, 0.16);
+      const blink = new THREE.Mesh(this.kit.geometries.unitSphere, blinkMat);
+      blink.scale.setScalar(0.45);
+      blink.position.y = 0.9;
+      mesh.add(blink);
+      const ringMat = this._track(new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      const ring = new THREE.Mesh(this.ringGeometry, ringMat);
+      ring.scale.setScalar(GRENADE.radius);
+      ring.visible = false;
+      mesh.visible = false;
+      g.add(mesh, ring);
+      this.grenades.push({ mesh, blink, ring, velocity: new THREE.Vector3(), state: "idle", t: 0 });
+    }
+  }
+
+  /** The laser rig for one scientist (made on first use). */
+  _laser(sci) {
+    let l = this.lasers.get(sci);
+    if (!l) {
+      const material = this._track(new THREE.MeshBasicMaterial({ color: 0xff2a1e, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      const mesh = new THREE.Mesh(this.laserGeometry, material);
+      mesh.visible = false;
+      mesh.frustumCulled = false;
+      this.groups.weapons.add(mesh);
+      l = { mesh, material, fade: 0, aiming: false };
+      this.lasers.set(sci, l);
+    }
+    return l;
+  }
+
+  /** Where a beam from `from` toward `to` stops: the first cover in its way, or its range. */
+  _laserEnd(from, to, out) {
+    const dir = _v.subVectors(to, from).normalize();
+    for (let s = 0.5; s < LASER.range; s += 0.4) {
+      out.copy(from).addScaledVector(dir, s);
+      if (out.y < (this.groundAt(out, out.y + 0.2) ?? -100) - 0.05) return out;
+      if (s > 1.2 && this.blocked(out, 0.05)) return out;
+    }
+    return out.copy(from).addScaledVector(dir, LASER.range);
+  }
+
+  _placeLaser(l, origin, to, width) {
+    const from = _laserFrom.copy(origin);
+    const end = this._laserEnd(from, to, _laserTo);
+    const length = from.distanceTo(end);
+    l.mesh.position.copy(from);
+    l.mesh.lookAt(end);
+    l.mesh.scale.set(width, width, length);
+    l.mesh.visible = true;
+    return end;
+  }
+
+  /** The aiming line: thin, flickering, following you. */
+  showLaser(sci, from, to, alpha) {
+    const l = this._laser(sci);
+    if (l.fade > 0) return;
+    l.aiming = true;
+    this._placeLaser(l, from, to, 0.025);
+    l.material.opacity = alpha * (0.6 + Math.random() * 0.4);
+  }
+
+  hideLaserAim(sci) {
+    const l = this.lasers.get(sci);
+    if (!l || !l.aiming || l.fade > 0) return;
+    l.aiming = false;
+    l.mesh.visible = false;
+  }
+
+  /** The shot: a hot beam down the locked line for a moment; on the line, you're hit. */
+  fireLaser(sci, origin, to, ctx) {
+    const l = this._laser(sci);
+    l.aiming = false;
+    const from = origin.clone();
+    const end = this._placeLaser(l, from, to, 0.16).clone();
+    l.fade = LASER.beam;
+    l.material.opacity = 1;
+    this.events.emit("laser-fired", { from: from.clone(), to: end.clone() });
+    // On the line (the beam's segment, at chest height)?
+    const seg = new THREE.Line3(from.clone(), end);
+    const chest = _v.copy(ctx.player).setY(ctx.player.y + 1.1);
+    const closest = seg.closestPointToPoint(chest, true, new THREE.Vector3());
+    if (closest.distanceTo(chest) < LASER.width) {
+      ctx.hits.push({ damage: LASER.damage, from: from.clone(), knock: 2.5, source: "laser" });
+    }
+  }
+
+  /** A grenade, lobbed from `from` to land at `to` after GRENADE.flight seconds. */
+  throwGrenade(from, to) {
+    const g = this.grenades.find((x) => x.state === "idle");
+    if (!g) return;
+    const land = to.clone();
+    land.y = this.groundAt(land, Math.max(land.y, 0) + 0.5) ?? -20;
+    const t = GRENADE.flight;
+    g.velocity.set((land.x - from.x) / t, (land.y - from.y) / t + 0.5 * 22 * t, (land.z - from.z) / t);
+    g.mesh.position.copy(from);
+    g.mesh.visible = true;
+    g.state = "flying";
+    g.t = 0;
+    this.events.emit("grenade-thrown", { position: from.clone() });
+  }
+
+  _updateWeapons(dt, time, ctx) {
+    for (const l of this.lasers.values()) {
+      if (l.fade <= 0) continue;
+      l.fade -= dt;
+      l.material.opacity = Math.max(0, l.fade / LASER.beam);
+      if (l.fade <= 0) l.mesh.visible = false;
+    }
+    for (const g of this.grenades) {
+      if (g.state === "idle") continue;
+      g.t += dt;
+      const p = g.mesh.position;
+      if (g.state === "flying") {
+        g.velocity.y -= 22 * dt;
+        p.addScaledVector(g.velocity, dt);
+        g.mesh.rotation.x += dt * 9;
+        const ground = this.groundAt(p, p.y + 0.3);
+        if (ground !== null && p.y <= ground + 0.12 && g.velocity.y < 0) {
+          p.y = ground + 0.12;
+          g.state = "armed";
+          g.t = 0;
+          g.ring.position.set(p.x, ground + 0.04, p.z);
+          g.ring.visible = true;
+        } else if (p.y < FALL_LIMIT) {
+          // Over the edge with it: gone.
+          g.state = "idle";
+          g.mesh.visible = false;
+        }
+      } else if (g.state === "armed") {
+        // Blinking faster and faster; the ring shows how far it reaches.
+        const k = g.t / GRENADE.fuse;
+        g.blink.visible = Math.sin(time * (14 + k * 40)) > 0;
+        g.ring.material.opacity = 0.35 + 0.45 * Math.abs(Math.sin(time * (8 + k * 20)));
+        if (g.t >= GRENADE.fuse) this._explodeGrenade(g, ctx);
+      }
+    }
+  }
+
+  _explodeGrenade(g, ctx) {
+    const at = g.mesh.position.clone();
+    g.state = "idle";
+    g.mesh.visible = false;
+    g.ring.visible = false;
+    this.events.emit("explosion", { position: at.clone(), strength: 0.75, grenade: true });
+    // You, if you're in it (on its level).
+    if (!ctx.frozen) {
+      const d = _v.copy(ctx.player).distanceTo(at);
+      if (d < GRENADE.radius && Math.abs(ctx.player.y - at.y) < 2) {
+        ctx.hits.push({ damage: Math.round(GRENADE.damage * (1 - (d / GRENADE.radius) * 0.6)), from: at, knock: GRENADE.knock, source: "grenade" });
+      }
+    }
+    // And anyone of theirs caught in it - lure them in.
+    for (const e of this.enemies) {
+      if (!e.alive || e.position.distanceTo(at) > GRENADE.radius) continue;
+      if (e.hit(3, at)) {
+        const i = this.breakables.indexOf(e.hurt);
+        if (i >= 0) this.breakables.splice(i, 1);
+        this.state.downs += 1;
+        this.events.emit("enemy-down", { enemy: e, position: e.position.clone(), by: "grenade" });
+      }
+    }
+  }
+
   _buildHelicopter() {
     const asset = this.assets.get("helicopter");
     this.heli = asset ? new Helicopter(asset.template) : null;
@@ -938,17 +1709,45 @@ export class RoofLevel {
 
   /* ---------------- Collision helpers ---------------- */
 
-  /** Is a circle at `p` inside any cover? */
+  /**
+   * Does a box stand in the way of someone at `p` (feet at p.y)? Only on
+   * their level: the deck's railing doesn't stop you on the roof below it,
+   * and the plant on the roof doesn't stop you up on the deck.
+   */
+  _inTheWay(box, p) {
+    return p.y < box.max.y - 0.25 && p.y + 1.7 > box.min.y;
+  }
+
+  /** Is a circle at `p` inside any cover (or, on the scan, a wall)? */
   blocked(p, radius = 0.45) {
     for (const box of this.cover) {
+      if (!this._inTheWay(box, p)) continue;
       if (p.x > box.min.x - radius && p.x < box.max.x + radius && p.z > box.min.z - radius && p.z < box.max.z + radius) return true;
+    }
+    if (this.scan) {
+      if (this._scanWall(p.x, p.z, p.y)) return true;
+      for (const [dx, dz] of RING) if (this._scanWall(p.x + dx * radius, p.z + dz * radius, p.y)) return true;
     }
     return false;
   }
 
-  /** Push a circle at `p` (in place) out of every cover box. */
+  /** Push a circle at `p` (in place) out of every cover box (and the scan's walls). */
   resolveCircle(p, radius = 0.45) {
+    if (this.scan && !this.onLadder(p)) {
+      // Step back out of any wall the circle's rim has gone into.
+      for (let pass = 0; pass < 4; pass += 1) {
+        let moved = false;
+        for (const [dx, dz] of RING) {
+          if (!this._scanWall(p.x + dx * radius, p.z + dz * radius, p.y)) continue;
+          p.x -= dx * 0.07;
+          p.z -= dz * 0.07;
+          moved = true;
+        }
+        if (!moved) break;
+      }
+    }
     for (const box of this.cover) {
+      if (!this._inTheWay(box, p)) continue;
       const cx = THREE.MathUtils.clamp(p.x, box.min.x, box.max.x);
       const cz = THREE.MathUtils.clamp(p.z, box.min.z, box.max.z);
       const dx = p.x - cx;
@@ -974,10 +1773,11 @@ export class RoofLevel {
     return p;
   }
 
-  /** Keep the player on the roof: the ledges are not a way out. */
+  /**
+   * Keep the player out of the cover and the parapets. The open edges don't
+   * hold you: walk off one and you fall (the host asks groundAt()).
+   */
   clampPlayer(p) {
-    p.x = THREE.MathUtils.clamp(p.x, -WALK_LIMIT, WALK_LIMIT);
-    p.z = THREE.MathUtils.clamp(p.z, -WALK_LIMIT, WALK_LIMIT);
     return this.resolveCircle(p, 0.45);
   }
 
@@ -1019,41 +1819,66 @@ export class RoofLevel {
     return holder;
   }
 
+  /** The brute: a static model (no skeleton), scaled to its height. */
+  _brute() {
+    const asset = this.assets.get("brute");
+    if (!asset) return null;
+    const model = asset.template.clone(true);
+    model.scale.setScalar(BRUTE.height / Math.max(0.01, asset.size.y));
+    model.traverse((o) => {
+      if (o.isMesh) o.frustumCulled = false;
+    });
+    return model;
+  }
+
+  /**
+   * The story's waves (WAVE_TIMES says when): everyone comes out of the hut's
+   * door - the scientists first, then the patients one at a time. The brute
+   * from the fourth on; the last is everyone left.
+   */
   _spawnWave(index) {
     this.state.wave = index;
     const SPECS = {
-      1: { scientist: "scientistRadioman", gadget: "gadgetBrass", at: new THREE.Vector3(-3, 0, -10), enter: null, hatches: [0, 1] },
-      2: { scientist: "scientistRust", gadget: "gadgetCoil", at: MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)), enter: new THREE.Vector3(6, 0, -6), hatches: [2, 3] },
-      // The last of them: everyone left, at once, as the helicopter nears.
-      3: { scientist: "scientistRadioman", gadget: "gadgetCoil", at: MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)), enter: new THREE.Vector3(-5, 0, -4), hatches: [0, 1, 3] },
+      1: { scientists: ["scientistRadioman"], patients: 2 },
+      2: { scientists: ["scientistRust"], patients: 3 },
+      3: { scientists: ["scientistRadioman"], patients: 3 },
+      4: { scientists: ["scientistRust"], patients: 2, brutes: 1 },
+      5: { scientists: ["scientistRadioman", "scientistRust"], patients: 3 },
+      6: { scientists: ["scientistRust"], patients: 4, brutes: 1 },
     };
     const spec = SPECS[index] ?? this._endlessWave(index);
-    const scientist = new Scientist(this, {
-      model: this._character(spec.scientist),
-      position: spec.at,
-      enter: spec.enter,
-      gadget: this._gadget(spec.gadget, 0.6),
-      seed: index * 17 + 3,
-    });
-    this._addEnemy(scientist);
-    for (const [i, hatch] of spec.hatches.entries()) {
-      const patient = new Patient(this, { model: this._character("patient"), position: HATCHES[hatch], delay: 0.6 + i * 0.8 });
-      this._addEnemy(patient);
+    const r = this.random;
+    let delay = 0;
+    for (const [i, name] of spec.scientists.entries()) {
+      const scientist = new Scientist(this, {
+        model: this._character(name),
+        position: HUT_DOOR.clone().add(new THREE.Vector3(0, 0, 0.5)),
+        enter: new THREE.Vector3(HUT_DOOR.x + 2 + r() * 8, 0, HUT_DOOR.z + 4 + r() * 6),
+        gadget: this._gadget(i % 2 ? "gadgetCoil" : "gadgetBrass", 0.6),
+        seed: index * 17 + 3 + i,
+      });
+      this._addEnemy(scientist);
+      this.openDoor();
     }
-    this.events.emit("wave", { index, scientist: spec.scientist });
+    const out = () => HUT_DOOR.clone().add(new THREE.Vector3((r() - 0.5) * 3, 0, 2.2 + r() * 2));
+    for (let i = 0; i < (spec.brutes ?? 0); i += 1) {
+      delay += 1.2;
+      this._addEnemy(new Patient(this, { brute: true, model: this._brute(), position: HUT_DOOR.clone().add(new THREE.Vector3(0, 0, -0.6)), out: out(), delay }));
+    }
+    for (let i = 0; i < spec.patients; i += 1) {
+      delay += 1.1;
+      this._addEnemy(new Patient(this, { model: this._character("patient"), position: HUT_DOOR.clone().add(new THREE.Vector3(0, 0, -0.6)), out: out(), delay }));
+    }
+    this.events.emit("wave", { index, scientist: spec.scientists[0], brute: (spec.brutes ?? 0) > 0 });
   }
 
-  /** Waves after the third (endless): bigger as it goes on, from random hatches. */
+  /** Waves past the story's (endless): bigger as it goes on, a brute every third. */
   _endlessWave(index) {
-    const r = this.random;
-    const hatches = [0, 1, 2, 3].sort(() => r() - 0.5).slice(0, Math.min(4, 2 + Math.floor((index - 3) / 2)));
-    const fromDoor = r() < 0.5;
+    const extra = Math.max(0, index - 6);
     return {
-      scientist: index % 2 ? "scientistRadioman" : "scientistRust",
-      gadget: index % 2 ? "gadgetBrass" : "gadgetCoil",
-      at: fromDoor ? MACHINE_DOOR.clone().add(new THREE.Vector3(-0.8, 0, 1.5)) : new THREE.Vector3(-3 + r() * 6, 0, -12),
-      enter: fromDoor ? new THREE.Vector3(-4 + r() * 10, 0, -5) : null,
-      hatches,
+      scientists: extra > 3 ? ["scientistRadioman", "scientistRust"] : [index % 2 ? "scientistRadioman" : "scientistRust"],
+      patients: Math.min(6, 3 + Math.floor(extra / 2)),
+      brutes: index % 3 === 0 ? 1 + (extra > 8 ? 1 : 0) : 0,
     };
   }
 
@@ -1108,7 +1933,7 @@ export class RoofLevel {
       let end = orb.life > 4 || p.y < 0.1 || Math.abs(p.x) > EDGE + 20 || Math.abs(p.z) > EDGE + 20;
       if (!end && this.blocked(p, 0.05) && p.y < 2.2) end = true;
       if (!end && !ctx.frozen) {
-        _v.copy(ctx.player).setY(1.1);
+        _v.copy(ctx.player).setY(ctx.player.y + 1.1);
         if (p.distanceTo(_v) < 0.75) {
           ctx.hits.push({ damage: SCIENTIST.damage, from: p.clone(), knock: 3, source: "orb" });
           end = true;
@@ -1190,19 +2015,24 @@ export class RoofLevel {
     const frozen = s.ending === "victory" || s.ending === "survive" || s.ending === "left";
     const ctx = { player, playerVelocity, hits, frozen };
 
-    if (!frozen && s.wave === 0 && s.time > 1.2) this._spawnWave(1);
-    if (!frozen && s.wave === 1 && (s.time > 19 || (s.time > 4 && this.enemiesAlive === 0))) this._spawnWave(2);
-    if (!frozen && s.wave === 2 && (s.time > 36 || (s.time > 24 && this.enemiesAlive === 0))) this._spawnWave(3);
-    // Endless: after the three set waves, another every 12-24 s (sooner the
-    // longer you last), or as soon as the roof is nearly clear.
-    if (this.endless && s.wave >= 3) {
+    // The story's waves, on the clock - or a little early once the roof is
+    // nearly clear (never sooner than 12 s after the last).
+    const waves = WAVE_TIMES.length;
+    if (!frozen && s.wave < waves) {
+      const due = WAVE_TIMES[s.wave];
+      const early = s.wave > 0 && this.enemiesAlive === 0 && s.time > WAVE_TIMES[s.wave - 1] + 12;
+      if (s.time > due || early) this._spawnWave(s.wave + 1);
+    }
+    // Endless: after the set waves, another every 12-24 s (sooner the longer
+    // you last), or as soon as the roof is nearly clear.
+    if (this.endless && s.wave >= waves) {
       if (!s.nextWaveAt) s.nextWaveAt = s.time + 24;
       if (s.time > s.nextWaveAt || (this.enemiesAlive <= 1 && s.time > s.nextWaveAt - 16)) {
         this._spawnWave(s.wave + 1);
-        s.nextWaveAt = s.time + Math.max(12, 24 - s.wave * 0.8);
+        s.nextWaveAt = s.time + Math.max(12, 24 - s.wave * 0.6);
       }
-      this._cullFallen();
     }
+    this._cullFallen();
 
     for (const enemy of this.enemies) {
       if (enemy.removed) continue;
@@ -1223,16 +2053,27 @@ export class RoofLevel {
     for (const p of this.points) {
       if (p.flicker) {
         p.flash = Math.max(0, (p.flash ?? 0) - dt * 3);
-        p.light.intensity = p.base * (0.8 + Math.sin(time * 11 + p.light.position.x) * 0.12 + Math.sin(time * 23) * 0.08) * (1 + s.chaos * 0.8 + p.flash * 6);
+        // Police strobes: double flashes, the two sides out of step.
+        const beat = (time * 1.8 + (p.police ?? 0)) % 1;
+        const on = beat < 0.1 || (beat > 0.18 && beat < 0.28) ? 1 : 0.15;
+        p.light.intensity = p.base * on * (1 + p.flash * 5);
       }
     }
+    // The hut's door: swings open for each one through it, then shuts.
+    if (this.door) {
+      this.doorOpen = Math.max(0, this.doorOpen - dt);
+      const want = this.doorOpen > 0 ? 1.7 : 0;
+      this.doorAngle += (want - this.doorAngle) * Math.min(1, dt * (want > this.doorAngle ? 7 : 3));
+      this.door.rotation.y = -this.doorAngle;
+    }
+    this._updateWeapons(dt, time, ctx);
 
     // The roof is clear: the helicopter stops circling and comes in now.
-    const everyone = !this.endless && s.wave === 3 && this.enemiesAlive === 0;
+    const everyone = !this.endless && s.wave === WAVE_TIMES.length && this.enemiesAlive === 0;
     if (!s.cleared && everyone) {
       s.cleared = true;
       this.events.emit("clear", {});
-      if (!s.heliArrived) s.heliAt = Math.min(s.heliAt, s.time + 8);
+      if (!s.heliArrived) s.heliAt = Math.min(s.heliAt, s.time + 12);
       else if (s.ending === "extraction") this._startVictory();
     }
 
@@ -1312,119 +2153,73 @@ export class RoofLevel {
 
   /**
    * The roof gets worse the longer you are on it: `chaos` runs 0 -> 1 as the
-   * hidden timer runs down. The fire under the ledges climbs higher; burning
-   * patches break out across the roof (a scorch mark glows first, then it
-   * catches - standing in one hurts); explosions tear out of the facade;
-   * the building shudders; embers and ash fill the air. The host reads
-   * `chaos` for fog, shake and sound.
+   * hidden timer runs down. No fire up here (the user's call) - explosions
+   * tear out of the facade below the edges, the building shudders, and ash
+   * fills the air. The host reads `chaos` for fog, shake and sound.
    */
   _buildChaos() {
-    this.patches = [];
-    this.scorchMaterial = this._track(new THREE.MeshBasicMaterial({ color: 0xff5a14, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
-    this.scorchGeometry = new THREE.CircleGeometry(1.2, 24);
-    this.scorchGeometry.rotateX(-Math.PI / 2);
-    this.owned.geometries.push(this.scorchGeometry);
-    this.state.patchTimer = 9;
-    this.state.blastTimer = 7;
-    this.state.tremorTimer = 13;
+    this.state.blastTimer = 9;
+    this.state.tremorTimer = 15;
 
-    // Embers and ash: one Points cloud over the whole roof.
-    const count = 260;
+    // Ash: one Points cloud over the whole roof.
+    const count = 220;
     const positions = new Float32Array(count * 3);
     this.emberSpeed = new Float32Array(count);
     const r = rng(99);
     for (let i = 0; i < count; i += 1) {
-      positions[i * 3] = (r() - 0.5) * 44;
+      positions[i * 3] = (r() - 0.5) * EDGE * 2.6;
       positions[i * 3 + 1] = r() * 14;
-      positions[i * 3 + 2] = (r() - 0.5) * 44;
-      this.emberSpeed[i] = 0.6 + r() * 1.8;
+      positions[i * 3 + 2] = (r() - 0.5) * DEPTH * 2.6;
+      this.emberSpeed[i] = 0.3 + r() * 0.9;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     this.owned.geometries.push(geometry);
     this.embers = new THREE.Points(geometry, this.kit.materials.ember.clone());
     this._track(this.embers.material);
+    this.embers.material.color.setHex(0x9a958e);
     this.embers.material.opacity = 0;
     this.embers.frustumCulled = false;
     this.groups.hazards.add(this.embers);
-    this.edgeFires = this.groups.hazards.children.filter((c) => c.name === "Fire");
-  }
-
-  _spawnPatch(player) {
-    for (let i = 0; i < 12; i += 1) {
-      const p = new THREE.Vector3((this.random() - 0.5) * 26, 0, (this.random() - 0.5) * 26);
-      if (p.distanceTo(_v.copy(player).setY(0)) < 4) continue;
-      if (this.blocked(p, 1.3)) continue;
-      if (p.distanceTo(HELIPAD) < 3 || this.patches.some((q) => q.position.distanceTo(p) < 3)) continue;
-      const scorch = new THREE.Mesh(this.scorchGeometry, this.scorchMaterial.clone());
-      this._track(scorch.material);
-      scorch.position.copy(p).setY(0.03);
-      scorch.scale.setScalar(0.2);
-      this.groups.hazards.add(scorch);
-      this.patches.push({ position: p, t: 0, scorch, fire: null });
-      return;
-    }
   }
 
   _updateChaos(dt, time, ctx) {
     const s = this.state;
-    const chaos = s.heliArrived ? 1 : THREE.MathUtils.clamp(s.time / (this.endless ? 120 : s.heliAt), 0, 1);
+    const chaos = s.heliArrived ? 1 : THREE.MathUtils.clamp(s.time / (this.endless ? 150 : s.heliAt), 0, 1);
     s.chaos = chaos;
     const live = s.ending !== "left" && s.ending !== "victory";
 
-    // Burning patches: more of them, sooner, as it goes on.
-    s.patchTimer -= dt;
-    if (live && s.time > 8 && s.patchTimer <= 0 && this.patches.length < 2 + chaos * 8) {
-      this._spawnPatch(ctx.player);
-      s.patchTimer = 7.5 - chaos * 5.5;
-    }
-    for (const patch of this.patches) {
-      patch.t += dt;
-      const warm = Math.min(1, patch.t / 1.4);
-      patch.scorch.scale.setScalar(0.2 + warm * 0.9);
-      patch.scorch.material.opacity = (patch.fire ? 0.25 : warm * (0.4 + Math.sin(time * 18) * 0.2));
-      if (!patch.fire && patch.t > 1.4) {
-        patch.fire = this.kit.fireSpot({ width: 2, depth: 2, height: 2.2, light: false, smoke: true });
-        patch.fire.position.copy(patch.position);
-        this.groups.hazards.add(patch.fire);
-        this.events.emit("roof-fire", { position: patch.position.clone() });
-      }
-      if (patch.fire && !ctx.frozen && _v.copy(ctx.player).setY(0).distanceTo(patch.position) < 1.2) {
-        ctx.hits.push({ damage: 7, from: patch.position.clone(), knock: 2.5, source: "fire" });
-      }
-    }
-
-    // Explosions tearing out of the facade below the ledges.
+    // Explosions tearing out of the facade below the edges.
     s.blastTimer -= dt;
-    if (live && s.time > 5 && s.blastTimer <= 0) {
+    if (live && s.time > 6 && s.blastTimer <= 0) {
       const side = this.random() < 0.5 ? -1 : 1;
-      const position = new THREE.Vector3(side * (EDGE + 0.8), -1 - this.random() * 5, (this.random() - 0.5) * 28);
-      this.events.emit("explosion", { position, strength: 0.5 + chaos * 0.7 });
+      const b = this.bounds;
+      const position = new THREE.Vector3(side > 0 ? b.maxX + 0.8 : b.minX - 0.8, -1 - this.random() * 5, THREE.MathUtils.lerp(b.minZ, b.maxZ, 0.1 + this.random() * 0.8));
+      this.events.emit("explosion", { position, strength: 0.5 + chaos * 0.6 });
       const glow = this.points.find((p) => p.flicker && Math.sign(p.light.position.x) === side);
       if (glow) glow.flash = 1;
-      s.blastTimer = 9 - chaos * 6 + this.random() * 2;
+      s.blastTimer = 12 - chaos * 7 + this.random() * 3;
     }
 
     // The building shudders.
     s.tremorTimer -= dt;
-    if (live && s.time > 10 && s.tremorTimer <= 0) {
+    if (live && s.time > 12 && s.tremorTimer <= 0) {
       this.events.emit("tremor", { strength: 0.3 + chaos * 0.5 });
-      s.tremorTimer = 15 - chaos * 8 + this.random() * 3;
+      s.tremorTimer = 18 - chaos * 9 + this.random() * 4;
     }
 
-    // Embers and ash, and the fire under the ledges climbing higher.
-    this.embers.material.opacity = 0.15 + chaos * 0.8;
+    // Ash drifting across.
+    this.embers.material.opacity = 0.1 + chaos * 0.5;
     const array = this.embers.geometry.attributes.position.array;
     for (let i = 0; i < this.emberSpeed.length; i += 1) {
-      array[i * 3 + 1] += this.emberSpeed[i] * dt * (0.6 + chaos);
+      array[i * 3 + 1] += this.emberSpeed[i] * dt * (0.4 + chaos * 0.6);
       array[i * 3] += Math.sin(time * 0.7 + i) * dt * 0.8 + dt * 1.2;
       if (array[i * 3 + 1] > 14) {
         array[i * 3 + 1] = -2;
-        array[i * 3] = (this.random() - 0.5) * 44;
+        array[i * 3] = (this.random() - 0.5) * EDGE * 2.6;
       }
     }
     this.embers.geometry.attributes.position.needsUpdate = true;
-    for (const f of this.edgeFires) f.scale.y = 1 + chaos * 0.9;
   }
 
   /* ---------------- The helicopter ---------------- */
@@ -1490,7 +2285,7 @@ export class RoofLevel {
   /** Where the helicopter holds while it waits for you at the east ledge. */
   get _holdPoint() {
     // Nose to +Z (yaw pi), so its door side - and the ladder - faces the roof.
-    return new THREE.Vector3(EDGE + 3.45, 7.1, -2.5);
+    return new THREE.Vector3(this.eastEdge + 3.45, 7.1, this.holdZ);
   }
 
   _updateExtraction(dt, time) {
@@ -1536,7 +2331,7 @@ export class RoofLevel {
    */
   ladderPoint(h, target = new THREE.Vector3()) {
     if (this.heli) return this.heli.ladderPoint(h, target);
-    const base = this.state.ending === "victory" ? new THREE.Vector3(HELIPAD.x + 0.25, 0.05, HELIPAD.z + 1.2) : new THREE.Vector3(EDGE + 2.2, 1.0, -1.3);
+    const base = this.state.ending === "victory" ? new THREE.Vector3(HELIPAD.x + 0.25, 0.05, HELIPAD.z + 1.2) : new THREE.Vector3(this.eastEdge + 2.2, 1.0, this.holdZ + 1.2);
     return target.copy(base).setY(base.y + h);
   }
 
@@ -1561,7 +2356,7 @@ export class RoofLevel {
     const bottom = this.ladderBottom(_w);
     const dx = bottom.x - player.x;
     const dz = bottom.z - player.z;
-    return player.x > EDGE - 4.5 && Math.hypot(dx, dz) < 4.6;
+    return player.x > this.eastEdge - 4.5 && Math.hypot(dx, dz) < 4.6;
   }
 
   /**

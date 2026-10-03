@@ -23,12 +23,25 @@ const FLOOR_Y = 0;
 /* Projectiles                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The look of each sphere type (src/systems/arsenal.js): glass, cryo, shock.
+ * Unknown kinds draw as glass.
+ */
+const KIND_COLOURS = { glass: [0xd9fbff, 0x9fe8ff], cryo: [0x7fe9ff, 0x4fd8ff], shock: [0xc77dff, 0xb04dff] };
+
 export class Projectiles {
   constructor(scene, { count = 28 } = {}) {
     this.scene = scene;
     this.geometry = new THREE.SphereGeometry(0.13, 14, 10);
-    this.material = new THREE.MeshStandardMaterial({ color: 0xc9d2d6, metalness: 0.95, roughness: 0.18, emissive: 0x6a9aa8, emissiveIntensity: 0.35 });
-    this.glowMaterial = new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.materials = {};
+    for (const [kind, [colour, glow]] of Object.entries(KIND_COLOURS)) {
+      this.materials[kind] = {
+        body: new THREE.MeshStandardMaterial({ color: colour, metalness: 0.6, roughness: 0.12, emissive: glow, emissiveIntensity: 0.45 }),
+        glow: new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
+      };
+    }
+    this.material = this.materials.glass.body;
+    this.glowMaterial = this.materials.glass.glow;
     this.balls = [];
     for (let i = 0; i < count; i += 1) {
       const mesh = new THREE.Mesh(this.geometry, this.material);
@@ -37,7 +50,7 @@ export class Projectiles {
       mesh.add(glow);
       mesh.visible = false;
       scene.add(mesh);
-      this.balls.push({ mesh, velocity: new THREE.Vector3(), life: 0, active: false, bounces: 0, power: 1 });
+      this.balls.push({ mesh, glow, velocity: new THREE.Vector3(), life: 0, active: false, bounces: 0, power: 1, gravity: -GRAVITY, kind: "glass" });
     }
     this._ray = new THREE.Raycaster();
     this._dir = new THREE.Vector3();
@@ -47,16 +60,30 @@ export class Projectiles {
 
   /** Brightness of the balls' glow: raised in the dark, where balls are flares. */
   setGlow(value) {
-    this.material.emissiveIntensity = 0.35 * value;
-    this.glowMaterial.opacity = Math.min(0.9, 0.35 * value);
+    for (const m of Object.values(this.materials)) {
+      m.body.emissiveIntensity = 0.45 * value;
+      m.glow.opacity = Math.min(0.9, 0.35 * value);
+    }
   }
 
-  fire(origin, direction, speed = 70, { power = 1, inherit } = {}) {
+  /**
+   * @param {object} [o]
+   * @param {number} [o.gravity]  m/s^2 down (the sphere type's: Level 1's arcs)
+   * @param {string} [o.kind]     glass | cryo | shock
+   * @param {number} [o.radius]   metres
+   */
+  fire(origin, direction, speed = 70, { power = 1, inherit, gravity = -GRAVITY, kind = "glass", radius = 0.13 } = {}) {
     const ball = this.balls.find((b) => !b.active) ?? this.balls.reduce((a, b) => (a.life > b.life ? a : b));
     ball.active = true;
     ball.life = 0;
     ball.bounces = 0;
     ball.power = power;
+    ball.gravity = gravity;
+    ball.kind = kind;
+    const look = this.materials[kind] ?? this.materials.glass;
+    ball.mesh.material = look.body;
+    ball.glow.material = look.glow;
+    ball.mesh.scale.setScalar(radius / 0.13);
     ball.mesh.position.copy(origin);
     ball.velocity.copy(direction).normalize().multiplyScalar(speed);
     if (inherit) ball.velocity.add(inherit);
@@ -78,7 +105,7 @@ export class Projectiles {
         continue;
       }
 
-      ball.velocity.y += GRAVITY * dt;
+      ball.velocity.y -= ball.gravity * dt;
       const p = ball.mesh.position;
       this._next.copy(ball.velocity).multiplyScalar(dt);
       const travel = this._next.length();
@@ -136,8 +163,10 @@ export class Projectiles {
   dispose() {
     for (const b of this.balls) this.scene.remove(b.mesh);
     this.geometry.dispose();
-    this.material.dispose();
-    this.glowMaterial.dispose();
+    for (const m of Object.values(this.materials)) {
+      m.body.dispose();
+      m.glow.dispose();
+    }
   }
 }
 

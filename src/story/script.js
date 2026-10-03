@@ -97,12 +97,13 @@ export const SCENES = {
    * fires when the run reaches `atRoute` (0 = start, 1 = the lift). A line
    * that comes due while another is still up waits for it.
    *
-   * `cue` makes Okoro act on the line: "handoff" - he hands over the glass
-   * spheres (the counter fills); "point" - he points at the next switch.
+   * `cue` makes Okoro act on the line: "handoff" - he tosses you the bag of
+   * glass spheres, which you wear from then on (the counter fills when you
+   * catch it); "point" - he points at the next switch.
    * The first switch is ~40 m in, so the hand-off and the lesson come first.
    */
   foundryTalk: [
-    { who: "okoro", atRoute: 0.003, cue: "handoff", text: "Here - take these. Glass spheres. They break any glass in this tower." },
+    { who: "okoro", atRoute: 0.003, cue: "handoff", text: "Here - catch! A bag of glass spheres. They break any glass in this tower." },
     { who: "okoro", atRoute: 0.035, cue: "point", text: "See the glass cells? Switches. Break one and the gate opens." },
     { who: "okoro", atRoute: 0.085, text: "This is the old foundry. The machines run on their own - don't stop moving." },
     { who: "okoro", atRoute: 0.22, text: "You'll want to know what you are. You were Subject 07. Project Ascension." },

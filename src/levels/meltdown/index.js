@@ -1360,47 +1360,31 @@ export class MeltdownLevel {
     return { hits, grazes };
   }
 
-  /** Mash-key press near a fallen duct. Returns null if nothing is in reach. */
-  pushNearby(playerDistance, radius = 3.4) {
-    for (const entry of this._pushables) {
-      if (!entry.group.userData.blocking) continue;
-      if (entry.group.userData.pushProgress() >= 1) continue;
-      if (Math.abs(entry.distance - playerDistance) > radius) continue;
-      const progress = entry.group.userData.push(1);
-      if (progress >= 1) {
-        const mesh = entry.group.userData.hazardMesh;
-        const index = this.obstacles.indexOf(mesh);
-        if (index >= 0) this.obstacles.splice(index, 1);
-        mesh.userData.disabled = true;
-        this.events.emit("duct-cleared", { distance: entry.distance });
-      }
-      return { progress, distance: entry.distance };
-    }
-    return null;
-  }
-
-  /** Is there a fallen, un-pushed duct within reach? (for the HUD prompt) */
+  /**
+   * Is there a fallen duct just ahead to jump? (for the HUD prompt) A duct
+   * lies across every lane, so it's jumped - over it, or onto it.
+   */
   ductAhead(playerDistance, radius = 6) {
-    return this._pushables.some(
-      (e) => e.group.userData.blocking && e.group.userData.pushProgress() < 1 && Math.abs(e.distance - playerDistance) < radius
-    );
+    return this._pushables.some((e) => {
+      const gap = e.distance - playerDistance;
+      return e.group.userData.standTop?.() !== null && gap > 0.6 && gap < radius;
+    });
   }
 
   /**
-   * Route distance of the nearest fallen, un-cleared duct in front of the
-   * player, or null. The host stops the runner short of it: a duct is
-   * something you push through, not something you can outrun - and every
-   * second spent pushing is a second the fire gains.
+   * The floor's height under the runner: the top of a fallen duct where one
+   * lies (`margin` = the runner's half-depth, so the feet catch the edge),
+   * else 0. The host only stands the runner on it from above - running into
+   * a duct is a hit.
    */
-  blockingDuctAhead(playerDistance, range = 4) {
-    let best = null;
+  groundAt(playerDistance, margin = 0.45) {
+    let ground = 0;
     for (const e of this._pushables) {
-      if (!e.group.userData.blocking || e.group.userData.pushProgress() >= 1) continue;
-      const gap = e.distance - playerDistance;
-      if (gap < -0.5 || gap > range) continue;
-      if (best === null || e.distance < best) best = e.distance;
+      const top = e.group.userData.standTop?.();
+      if (top === null || top === undefined) continue;
+      if (Math.abs(e.distance - playerDistance) <= e.group.userData.standDepth / 2 + margin) ground = Math.max(ground, top);
     }
-    return best;
+    return ground;
   }
 
   impact(strength = 1) {
