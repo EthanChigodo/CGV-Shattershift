@@ -31,10 +31,13 @@ export async function run(page) {
     };
   });
 
+  // Software GL in the checks renders the Labs' arrival at ~1.5 s a frame, with
+  // the roof's models loading alongside: rebuilding a stage takes minutes here.
+
   // ---- The Labs --------------------------------------------------------------------
   const labs = await page.evaluate(async () => {
     __dbg.story.jump("labs");
-    await __t.wait(() => __t.L.sceneId === "breach", 180000);
+    await __t.wait(() => __t.L.sceneId === "breach", 400000);
     __t.until(() => __t.m.phase === "run", 2000);
     const cp = { ...__dbg.story.checkpoint };
     // Die in the Labs.
@@ -44,7 +47,7 @@ export async function run(page) {
     const ended = __dbg.state;
     const label = document.querySelector("#restartButton").textContent;
     __dbg.restartRun();
-    const again = await __t.wait(() => __t.L.sceneId === "breach", 180000);
+    const again = await __t.wait(() => __t.L.sceneId === "breach", 400000);
     return { cp, ended, label, again, level: __dbg.currentLevel, score: __dbg.score };
   });
   check("a death in the Labs ends the run", labs.ended === "ended", labs.ended);
@@ -75,14 +78,14 @@ export async function run(page) {
   // ---- The Roof ------------------------------------------------------------------------
   const roof = await page.evaluate(async () => {
     __dbg.story.jump("roof");
-    await __t.wait(() => __t.m.phase === "roof", 180000);
+    await __t.wait(() => __t.m.phase === "roof", 400000);
     __t.m.runner.vitality = 1;
     __t.m.runner.invulnerable = 0;
     __t.m._roofHit({ damage: 50, from: __t.m.hero.position.clone().add(new __dbg.THREE.Vector3(1, 0, 0)), knock: 1, source: "patient" });
     __t.step(3);
     const label = document.querySelector("#restartButton").textContent;
     __dbg.restartRun();
-    const again = await __t.wait(() => __t.m.phase === "roofArrive" || __t.m.phase === "roof", 180000);
+    const again = await __t.wait(() => __t.m.phase === "roofArrive" || __t.m.phase === "roof", 400000);
     return { label, again, level: __dbg.currentLevel, vitality: __t.m.runner.vitality };
   });
   check("a death on the roof offers the roof again", roof.label === "RETRY THE ROOF", roof.label);

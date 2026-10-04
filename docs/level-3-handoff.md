@@ -146,7 +146,7 @@ what each delivers, how it will be built, and its testing criteria - is
 | 1 | Shared systems: dialogue script, cutscene player (first-person camera, letterbox, subtitles, skip), reaction hits, the scientist companion, a preview page and tests | **done** (see §0.6) |
 | 2 | Opening: wake-up, the walk to the basement, Okoro in the Foundry | **done** (§0.7) |
 | 3 | The elevator: gun drop, reaction hits, death and retry | **done** (§0.7) |
-| 4 | Labs: breach, bend attack, hiding + sacrifice, grief in the lift | **done** (§0.7) |
+| 4 | Labs: breach, bend attack, hiding + sacrifice (the ride up is the elevators' quiet ride) | **done** (§0.7) |
 | 5 | Skyline and roof: explosion, sprint, jump and latch; helicopter latch | **done** (§0.7) |
 | 6 | Ending: pilot reveal, title card, credits | **done** (§0.7) |
 | 7 | Graphics pass (requested by the team): more realistic running physics/animation, lighting and textures | **mostly done** (§0.7): gait, shadows, AO, ramps; photo PBR textures not done |
@@ -181,7 +181,9 @@ demo keys 1-5; `__dbg.story.jump(name)` reaches every scene instead
   `setStory` + phase "story"): breach (incubators burst, Vale on a monitor
   rendered to a texture), Okoro running with a cosmetic pistol, the bend
   attack (mash; a loss costs 30 vitality and retries), the desk / bag /
-  sacrifice, grief in the lift.
+  sacrifice. The doors shut on him and the elevators' quiet ride
+  (`src/elevators/quiet-ride.js`, from `main`) takes you up - it replaced
+  the grief scene when `main` was merged in.
 - **Phase 5** - `scenes-skyline.js` + `stages/fireball.js`: the blast at
   500 m, sprint (A/D), jump, latch, hands on the ledge, the sky. The roof's
   ladder jump needs the latch (`game.js _startLadderLatch`; a miss retries

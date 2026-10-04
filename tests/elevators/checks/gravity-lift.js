@@ -79,13 +79,17 @@ export const ride = {
       for (let i = 0; i < 60 * 60 && d.gravityLift; i += 1) {
         maxY = Math.max(maxY, ride.state.cabinY);
         d.step(1, 1 / 60);
+        // Let the browser breathe, as real frames would: Level 3 is built in
+        // the background while the ride plays.
+        if (i % 20 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       }
       const fadeAtEnd = Number(document.querySelector("#fadeOverlay").style.opacity);
-      // Level 3 loads asynchronously; wait for it to take over.
+      // Level 3 should be ready almost at once - it was built during the ride.
       const t0 = performance.now();
       while (performance.now() - t0 < 60000 && !(d.currentLevel === 3 && d.state === "playing")) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
+      const blackMs = Math.round(performance.now() - t0);
       return {
         shots,
         character,
@@ -98,6 +102,7 @@ export const ride = {
         level: d.currentLevel,
         state: d.state,
         meltdownVisible: !!d.meltdown?.visible,
+        blackMs,
       };
     });
     const failures = [];
@@ -109,7 +114,9 @@ export const ride = {
     if (!r.rideGone) failures.push("the ride was not disposed");
     if (!r.hudGone) failures.push("the lift HUD was left in the page");
     if (r.level !== 3 || r.state !== "playing" || !r.meltdownVisible) failures.push(`Level 3 did not start (level ${r.level}, state ${r.state})`);
-    return { failures, notes: { shots: r.shots, climbed: `${r.maxY.toFixed(0)} m` } };
+    // Even in slow software rendering; on a real GPU it is near instant.
+    if (r.blackMs > 1500) failures.push(`${(r.blackMs / 1000).toFixed(1)} s of black between the ride and Level 3`);
+    return { failures, notes: { shots: r.shots, climbed: `${r.maxY.toFixed(0)} m`, blackAfterRide: `${r.blackMs} ms` } };
   },
 };
 
@@ -258,6 +265,66 @@ export const clamps = {
     if (!idle.events.includes("clamps-forced") || idle.stabilised !== 0 || idle.bonus !== 0) failures.push(`left alone: ${JSON.stringify(idle)}`);
     if (!idle.finished) failures.push("left alone, the ride did not finish");
     return { failures, notes: { bonus: played.bonus, forcedAfter: `${idle.seconds.toFixed(1)} s` } };
+  },
+};
+
+/**
+ * The figure follows the story (Foundry -> Labs -> Skyline -> Roof): dusty
+ * in the Foundry and on the Gravity Fault ride out of it, bloodied in the
+ * Labs, and in the scientist's vest from the lift where he stays behind (the
+ * quiet ride) - on the Skyline and the Roof. In the game's body, the rides'
+ * and Level 3's.
+ */
+export const figure = {
+  name: "figure wear by stage",
+  async run(page) {
+    const r = await page.evaluate(async () => {
+      const d = globalThis.__dbg;
+      const w0 = performance.now();
+      while (!d.playerBodyTemplate && performance.now() - w0 < 30000) await new Promise((resolve) => setTimeout(resolve, 200));
+      const read = (avatar) => avatar?.look ? { wear: +avatar.look.wear.toFixed(2), gear: avatar.look.gear } : null;
+      const until = async (test) => {
+        const t0 = performance.now();
+        while (performance.now() - t0 < 60000 && !test()) await new Promise((resolve) => setTimeout(resolve, 250));
+      };
+      const out = {};
+      d.resetGame("story");
+      d.demoJump(1);
+      d.step(2);
+      d.render();
+      out.foundry = read(d.playerBody);
+      d.demoGravityLift();
+      d.step(2);
+      d.render();
+      out.gravityRide = read(d.gravityLift?._avatar);
+      d.resetGame("story");
+      d.demoJump(2);
+      await until(() => d.currentLevel === 3 && d.state === "playing" && d.meltdown?.avatar?.look);
+      out.labs = read(d.meltdown?.avatar);
+      d.demoQuietRide();
+      d.step(2);
+      d.render();
+      out.quietRide = read(d.gravityLift?._avatar);
+      d.resetGame("story");
+      d.demoJump(3);
+      d.step(2);
+      d.render();
+      out.skyline = read(d.playerBody);
+      d.resetGame("story");
+      d.demoJump(4);
+      await until(() => d.currentLevel === 3 && d.state === "playing" && d.meltdown?.avatar?.look);
+      out.roof = read(d.meltdown?.avatar);
+      return out;
+    });
+    const failures = [];
+    const dusty = { wear: 0.33, gear: false };
+    const bloodied = { wear: 0.66, gear: false };
+    const geared = { wear: 0.66, gear: true };
+    const want = { foundry: dusty, gravityRide: dusty, labs: bloodied, quietRide: geared, skyline: geared, roof: geared };
+    for (const [k, v] of Object.entries(want)) {
+      if (JSON.stringify(r[k]) !== JSON.stringify(v)) failures.push(`${k}: ${JSON.stringify(r[k])}, want ${JSON.stringify(v)}`);
+    }
+    return { failures, notes: r };
   },
 };
 

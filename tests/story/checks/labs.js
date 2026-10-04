@@ -4,7 +4,8 @@
  * Okoro running ahead and never in your lane close to you, his pistol never
  * changing anything, the bend attack (waits for you to land; a failure costs
  * vitality and retries; success costs nothing), the desk (the bag, Okoro
- * gone, the lift departs), the grief, and the hand-over to the Skyline.
+ * gone, the doors shut on him), then the quiet ride up (src/elevators/
+ * quiet-ride.js) and the hand-over to the Skyline.
  * Endless Labs has none of it.
  */
 
@@ -190,26 +191,23 @@ export async function run(page, { shots }) {
   await page.evaluate(() => __t.until(() => __t.d.log.some((e) => e[1] === "doors"), 900));
   await page.evaluate(() => __t.step(15));
   await shot("06-doors-closing");
-  const grief = await page.evaluate(() => {
-    const ok = __t.until(() => __t.L.sceneId === "grief", 900);
-    __t.step(45);
-    return { ok, okoro: __t.d.okoro.root.visible };
+  const ride = await page.evaluate(() => {
+    // The hide scene ends on the shut doors; the quiet ride takes over.
+    const ok = __t.until(() => !!__dbg.gravityLift?.cutscene, 900);
+    return { ok, okoro: __t.d?.okoro.root.visible ?? false, level: __dbg.currentLevel, state: __dbg.state };
   });
-  check("Okoro is gone from the corridor afterwards", !grief.okoro, JSON.stringify(grief));
-  check("the grief scene plays in the lift", grief.ok, JSON.stringify(grief));
-  await shot("07-grief");
+  check("Okoro is gone from the corridor afterwards", !ride.okoro, JSON.stringify(ride));
+  check("the quiet ride plays after the doors shut", ride.ok, JSON.stringify(ride));
+  await page.evaluate(() => __t.step(150));
+  await shot("07-quiet-ride");
   const up = await page.evaluate(async () => {
-    const lift = __t.m.level?.endLift;
-    __t.until(() => (lift?.state.cabinY ?? 0) > 6, 600);
-    const climbed = lift?.state.cabinY ?? 0;
-    // Step the rest of the ride (~11 s) without waiting on the wall clock -
+    // Step the rest of the ride (~20 s) without waiting on the wall clock -
     // software GL renders each step slowly - then let any async handover land.
-    __t.until(() => __dbg.currentLevel === 1, 900);
-    const ok = await __t.wait(() => __dbg.currentLevel === 1, 120000);
-    return { climbed, ok, level: __dbg.currentLevel, state: __dbg.state, fade: document.querySelector(".story-fade").style.opacity };
+    __t.until(() => __dbg.currentLevel === 1 && !__dbg.gravityLift, 1200);
+    const ok = await __t.wait(() => __dbg.currentLevel === 1 && !__dbg.gravityLift, 120000);
+    return { ok, level: __dbg.currentLevel, state: __dbg.state, fade: document.querySelector(".story-fade").style.opacity };
   });
-  check("the lift departs", up.climbed > 6, JSON.stringify(up));
-  check("grief hands over to the Skyline as before", up.ok && up.level === 1, JSON.stringify(up));
+  check("the quiet ride hands over to the Skyline", up.ok && up.level === 1, JSON.stringify(up));
   check("the story layer's black is cleared for the Skyline", up.fade === "0" || up.fade === "", JSON.stringify(up));
 
   // ---- Endless Labs: none of it ------------------------------------------------

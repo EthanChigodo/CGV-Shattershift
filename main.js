@@ -15,6 +15,7 @@ import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCha
 import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
+import { QuietRide } from "./src/elevators/quiet-ride.js";
 import { ShatterFX } from "./src/fx/shatter.js";
 import { StoryLayer } from "./src/story/story-layer.js";
 import { Companion, loadStoryCharacter } from "./src/story/companion.js";
@@ -27,6 +28,7 @@ import { Prologue } from "./src/story/prologue.js";
 import { themeAt as causewayThemeAt } from "./src/levels/causeway/layout.js";
 import { blastScene } from "./src/story/scenes-skyline.js";
 import { SCENES as STORY_LINES } from "./src/story/script.js";
+import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone } from "./src/figure/look.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -306,6 +308,7 @@ avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
  */
 const playerBody = new PlayerAvatar();
 playerBody.hold = 0;
+playerBody.setSkinTone(savedSkinTone());
 let playerBodyReady = false;
 /** The chosen character's model template, for the lift ride to show the same person. */
 let playerBodyTemplate = null;
@@ -336,7 +339,20 @@ async function loadPlayerBody(name = savedCharacter()) {
   }
 }
 
+/**
+ * Where the run is in the story, for the figure's wear (src/figure/look.js):
+ * 0 waking up (the menus), then the sector - 1 the Foundry, 2 the Labs,
+ * 3 the Skyline and the Roof.
+ */
+function storyPosition() {
+  return state === "intro" || state === "preview" ? 0 : sectorNumber();
+}
+
 function updatePlayerBody(dt) {
+  // Damage follows the story: clean waking up, worse with every level.
+  const stage = figureStage(storyPosition());
+  playerBody.setWear(stage.wear);
+  playerBody.setGear(stage.gear);
   if (!playerBodyReady) return;
   const moving = state === "playing" && !paused;
   const speed = !moving ? 0 : currentLevel === 1 ? run.speed : currentLevel === 2 ? foundryPace : 0;
@@ -1238,6 +1254,11 @@ function refreshMenuProgress() {
  * silence Level 3 as well.
  */
 const MELTDOWN_AUDIO = true;
+/**
+ * Level 3 being built early - during the lift ride up to it - so it is
+ * ready when the ride ends instead of loading behind a black screen.
+ */
+let meltdownPrepared = null;
 const MELTDOWN_ASSET_BASE = new URL("./assets/meltdown/", import.meta.url).href;
 let meltdownEntering = false;
 
@@ -1255,6 +1276,8 @@ function getMeltdown() {
   });
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdownQuality();
+  // Level 3's body: the chosen skin tone (its stage is set per stage, below).
+  meltdown.avatar?.setSkinTone(savedSkinTone());
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
   // The story: through the lift at the end of the Labs, up to the Skyline.
@@ -1286,6 +1309,44 @@ function preloadMeltdown() {
   getMeltdown().preload();
 }
 
+/** Balls Level 3 starts with: spheres left over become a few extra. */
+function meltdownBalls() {
+  return MELTDOWN_START_BALLS + Math.min(8, Math.floor(ammo / 4));
+}
+
+/** Level 3's body as the figure is at a point in the story (storyPosition). */
+function dressMeltdownAvatar(position) {
+  const stage = figureStage(position);
+  meltdown?.avatar?.setWear(stage.wear);
+  meltdown?.avatar?.setGear(stage.gear);
+}
+
+/** Level 3's mode, and the story's Labs (it applies to the next load()). */
+function setMeltdownRun(game) {
+  game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
+  // The story's Labs: the breach, Okoro, the bend, the desk (labs-director.js).
+  game.setStory(storyRun && runKind === "story" ? {
+    layer: story,
+    okoroTemplate,
+    valeTemplate: () => valeTemplate,
+    assetBase: MELTDOWN_ASSET_BASE,
+  } : null);
+}
+
+/**
+ * Build Level 3 now, off screen (the lift ride calls this as it starts,
+ * while the screen is still black). enterMeltdown() then only has to show it.
+ */
+function prepareMeltdown() {
+  if (!meltdownPrepared) {
+    const game = getMeltdown();
+    setMeltdownRun(game);
+    dressMeltdownAvatar(2);
+    meltdownPrepared = game.load({ balls: meltdownBalls() });
+  }
+  return meltdownPrepared;
+}
+
 /**
  * Into Level 3: black, build it (models are usually in already - they load
  * during Level 2 - and its shaders compile while the screen is black), then
@@ -1296,15 +1357,10 @@ async function enterMeltdown() {
   meltdownEntering = true;
   if (storyRun && runKind === "story") storyCheckpoint = { stage: "labs", score, ammo, balls: null };
   const game = getMeltdown();
-  game.setMode(runKind === "endless" ? "endless-labs" : "corridor");
-  // The story's Labs: the breach, Okoro, the bend, the desk (labs-director.js).
-  game.setStory(storyRun && runKind === "story" ? {
-    layer: story,
-    okoroTemplate,
-    valeTemplate: () => valeTemplate,
-    assetBase: MELTDOWN_ASSET_BASE,
-  } : null);
+  // Built during the lift ride? Then the mode and story were set for that load.
+  if (!meltdownPrepared) setMeltdownRun(game);
   onRoofStage = false;
+  dressMeltdownAvatar(2);
   ui.fade.style.opacity = "1";
   run.fadeOut = 0;
   setFoundryActive(false);
@@ -1316,12 +1372,15 @@ async function enterMeltdown() {
   currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
   health = 100; shake = 0;
   // Spheres left over from the foundry become a few extra balls.
-  const balls = MELTDOWN_START_BALLS + Math.min(8, Math.floor(ammo / 4));
+  const balls = meltdownBalls();
+  // Built during the lift ride? Then it is ready (or nearly).
+  const prepared = meltdownPrepared;
+  meltdownPrepared = null;
   applyQuality();
   game.show();
   updateUI();
   try {
-    await game.load({ balls });
+    await (prepared ?? game.load({ balls }));
   } finally {
     meltdownEntering = false;
   }
@@ -1334,6 +1393,7 @@ async function enterMeltdown() {
 /** Out of Level 3 (restart, quit, demo jump): free it and give the renderer back. */
 function leaveMeltdown(nextLevel) {
   pendingSkyline = false;
+  meltdownPrepared = null;
   meltdown?.unload();
   meltdownEntering = false;
   currentLevel = nextLevel;
@@ -1346,7 +1406,8 @@ function updateMeltdownFrame(dt, time) {
   meltdown.update(dt, time);
   if (pendingSkyline) {
     pendingSkyline = false;
-    enterSkyline();
+    // The scientist's sacrifice at the lift, then the quiet ride up.
+    startQuietRide();
     return;
   }
   // Mirror Level 3's numbers into the game's own (pause screen, end screen).
@@ -1782,10 +1843,15 @@ function startGravityLift({ boarded = false } = {}) {
   foundryLift?.dispose();
   foundryLift = null;
   preloadMeltdown();
+  // Build Level 3 now, behind the black, so it is ready when the ride ends.
+  prepareMeltdown();
+  rideNext = "labs";
   gravityLift = new GravityFaultRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
-    // The same character as in Levels 1 and 2 (null while it is still loading).
+    // The same character as in the Foundry (null while it is still loading),
+    // as they left it: dusty.
     character: playerBodyTemplate,
+    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone() },
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
     // The story's version: Okoro drops the launcher, the clamps are reaction hits.
@@ -1800,6 +1866,8 @@ function startGravityLift({ boarded = false } = {}) {
 function updateGravityLiftFrame(dt, time) {
   gravityLift.update(dt, time);
   ui.fade.style.opacity = gravityLift.fade.toFixed(3);
+  // A cutscene ride hides the game's HUD while it plays.
+  document.body.classList.toggle("cutscene", !!gravityLift.cutscene);
   // The crosshair is up while there are clamps to shoot.
   document.body.classList.toggle("aiming", gravityLift.wantsAim && !photoActive && !document.querySelector(".screen.active"));
   ui.reticle.classList.toggle("hot", !!gravityLift.aimTarget);
@@ -1807,14 +1875,46 @@ function updateGravityLiftFrame(dt, time) {
   if (gravityLift.result.done) finishGravityLift();
 }
 
-/** The ride is over: its bonus into the score, then into Level 3. */
+/**
+ * The quiet ride (src/elevators/quiet-ride.js) - cutscene 7 of the story: the
+ * Labs' corridor is done and the scientist has given their life at the lift;
+ * alone for the first time, the player rides up to the Skyline. It uses the
+ * same slot as the Gravity Fault (`gravityLift`), and hands over to the
+ * Skyline's lift arrival.
+ */
+function startQuietRide() {
+  if (gravityLift) return;
+  if (currentLevel === 3) leaveMeltdown(1);
+  setFoundryActive(false);
+  state = "lift"; transitionTarget = 0; liftTimer = 0;
+  // Build the Skyline now, behind the fade-in, so it is ready when the ride ends.
+  if (!causeway) buildCauseway("story");
+  if (causeway) setCausewayActive(false);
+  rideNext = "skyline";
+  gravityLift = new QuietRide({
+    renderer, spheres: ammo, reducedMotion: settings.reducedMotion,
+    character: playerBodyTemplate,
+    // Bloodied from the Labs, in the scientist's vest with his radio.
+    figure: { ...figureStage(3), skinTone: savedSkinTone() },
+    // The launcher leans on the lift wall until they pick it up.
+    assetBase: MELTDOWN_ASSET_BASE,
+  });
+  ui.message.classList.remove("show"); messageTimer = 0;
+  updateUI();
+}
+
+/** Where the ride in `gravityLift` goes when it is done: "labs" or "skyline". */
+let rideNext = "labs";
+
+/** The ride is over: its bonus into the score, then into the next stage. */
 function finishGravityLift() {
   const { bonus, spheres } = gravityLift.result;
   score += bonus;
   ammo = spheres;
   leaveGravityLift();
   updateUI();
-  enterMeltdown();
+  if (rideNext === "skyline") enterSkyline();
+  else enterMeltdown();
 }
 
 /** Free the ride (finished, restart, quit or a demo jump). */
@@ -1822,6 +1922,7 @@ function leaveGravityLift() {
   if (!gravityLift) return;
   gravityLift.dispose();
   gravityLift = null;
+  document.body.classList.remove("cutscene");
 }
 
 /** Demo key 5: straight into the lift ride from anywhere in a run. */
@@ -1833,6 +1934,16 @@ function demoGravityLift() {
   startGravityLift();
 }
 
+/** Demo key 6: straight into the quiet ride (cutscene 7), then the Skyline. */
+function demoQuietRide() {
+  if (state !== "playing") return;
+  music.fadeOut();
+  leaveGravityLift();
+  runKind = "story"; endlessEnv = null;
+  if (currentLevel === 1 && causeway) { setCausewayActive(false); level1Audio.cleanupLevel(); }
+  startQuietRide();
+}
+
 /* ==================================================================== */
 /* Game flow                                                            */
 /* ==================================================================== */
@@ -1840,6 +1951,7 @@ function demoGravityLift() {
 function resetStats(mode = causewayMode) {
   endStoryStage();
   leaveGravityLift();
+  meltdownPrepared = null;
   if (currentLevel === 3 || meltdown?.visible) leaveMeltdown(1);
   foundrySpeedScale = 1; endlessRun.laps = 0; endlessRun.distance = 0;
   ammo = START_SPHERES; health = 100; score = 0; lane = 1; playerX = 0; playerY = 0;
@@ -2520,6 +2632,7 @@ async function enterRoof() {
     assetBase: MELTDOWN_ASSET_BASE,
   } : null);
   onRoofStage = true;
+  dressMeltdownAvatar(3);
   ui.fade.style.opacity = "1";
   run.fadeOut = 0;
   if (currentLevel === 1 && causeway) setCausewayActive(false);
@@ -2780,6 +2893,8 @@ function demoJump(stage) {
   // Demo jumps are dev shortcuts: no cutscenes, no Okoro (__dbg.story.jump for those).
   endStoryStage();
   storyRun = false;
+  // Level 3 built ahead for the Labs is only for the Labs.
+  if (stage !== 2) meltdownPrepared = null;
   runKind = "story"; endlessEnv = null;
   if (currentLevel === 1 && causeway) { setCausewayActive(false); level1Audio.cleanupLevel(); }
   if (currentLevel === 3) leaveMeltdown(stage === 2 ? 3 : 2);
@@ -3250,6 +3365,34 @@ const valeReady = loadStoryCharacter(MELTDOWN_ASSET_BASE, "scientistEvil")
   .then((template) => (valeTemplate = template))
   .catch((error) => console.warn("[story] Vale's model failed to load", error));
 
+// Skin tone: one swatch per tone (src/figure/look.js), remembered.
+const skinPick = $("#skinPick");
+function showSkinChoice() {
+  const chosen = savedSkinTone();
+  for (const button of skinPick.querySelectorAll("[data-skin]")) {
+    const on = button.dataset.skin === chosen;
+    button.classList.toggle("picked", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+}
+for (const [key, tone] of Object.entries(SKIN_TONES)) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "skin-button";
+  button.dataset.skin = key;
+  button.title = tone.label;
+  button.setAttribute("aria-label", `${tone.label} skin`);
+  button.style.setProperty("--swatch", tone.swatch);
+  button.addEventListener("click", () => {
+    saveSkinTone(key);
+    playerBody.setSkinTone(key);
+    meltdown?.avatar?.setSkinTone(key);
+    showSkinChoice();
+  });
+  skinPick.appendChild(button);
+}
+showSkinChoice();
+
 // A new story from the menu plays every scene again ("Run again" after a death does not).
 $("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); story.forgetSeen(); startCampaign(); });
 ui.endlessButton.addEventListener("click", () => { ui.start.classList.remove("active"); refreshEndlessMenu(); ui.endless.classList.add("active"); });
@@ -3418,6 +3561,7 @@ addEventListener("keydown", (event) => {
   if (event.code === "Digit3") demoJump(3);
   if (event.code === "Digit4") demoJump(4);
   if (event.code === "Digit5") demoGravityLift();
+  if (event.code === "Digit6") demoQuietRide();
   if (event.code === "KeyA" || event.code === "ArrowLeft") lane = Math.max(0, lane - 1);
   if (event.code === "KeyD" || event.code === "ArrowRight") lane = Math.min(2, lane + 1);
   if (event.code === "KeyW" || event.code === "ArrowUp") {
@@ -3481,7 +3625,9 @@ globalThis.__dbg = {
   enterMeltdown,
   get gravityLift() { return gravityLift; },
   get playerBodyTemplate() { return playerBodyTemplate; },
+  get playerBody() { return playerBody; },
   demoGravityLift,
+  demoQuietRide,
   get run() { return run; },
   causewayPace,
   resolveAim: () => resolveAim(aliveTargets(), currentLevel === 1 && causeway ? causeway.solids : []),

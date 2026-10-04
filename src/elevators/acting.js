@@ -33,6 +33,26 @@ import * as THREE from "../three.js";
 
 const ease = (value, target, rate, dt) => value + (target - value) * (1 - Math.exp(-rate * dt));
 
+/**
+ * Free what a PlayerAvatar made for a cutscene owns: its stand-in, contact
+ * shadow and the rig's cloned material. The model's geometry and textures
+ * are shared with the game's own player body, so they are left alone.
+ */
+export function disposeAvatar(avatar) {
+  if (!avatar) return;
+  avatar.standIn.traverse((o) => {
+    if (!o.isMesh) return;
+    o.geometry.dispose();
+    o.material.dispose();
+  });
+  avatar.shadow.geometry.dispose();
+  avatar.shadowMaterial.map?.dispose();
+  avatar.shadowMaterial.dispose();
+  avatar.model?.traverse((o) => {
+    if (o.isMesh) for (const m of [].concat(o.material)) m.dispose();
+  });
+}
+
 export class Performer {
   /**
    * @param {import("../levels/meltdown/player.js").PlayerAvatar} avatar

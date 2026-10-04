@@ -381,11 +381,15 @@ export class MeltdownGame {
   preload() {
     const names = [...Object.keys(MELTDOWN_ASSETS), this.character];
     this._preload ??= loadMeltdownAssets(this.assetBase, { names }).catch(() => null);
-    this.loadRoofAssets();
     return this._preload;
   }
 
-  /** Roof models load in the background while Phase A is being played. */
+  /**
+   * Roof models load in the background while Phase A is being played - from
+   * begin(), not before: they are heavy (the scan, the brute, the kit), and
+   * parsing them while the Labs are built behind the lift ride's black
+   * screen made that black screen seconds longer.
+   */
   loadRoofAssets() {
     // The models, and the scanned roof's baked height map (tools/assets/heightmap.py).
     const heights = fetch(new URL("roof_scan_heights.json", this.assetBase).href)
@@ -477,12 +481,14 @@ export class MeltdownGame {
     this.hud.setLoading(null);
     this._mountLauncherModel(loaded);
     this._applyShadowFlags();
-    // Compile and upload everything now rather than on first sight mid-run.
-    level.prewarm(this.renderer, this.camera);
+    // Compile and upload everything now rather than on first sight mid-run -
+    // in the background, so this can run while the host shows something
+    // else (the lift ride builds Level 3 on the way up).
+    await level.prewarmAsync(this.renderer, this.camera);
+    if (level !== this.level) return;
     this._logTextureMemory("the Labs");
     this.environment.refresh();
     this.assetsReady = true;
-    this.loadRoofAssets();
     await this.director?.onAssets();
   }
 
@@ -491,6 +497,8 @@ export class MeltdownGame {
     this.audio.start();
     if (this._ownSfx) this.sfx.unlock();
     if (this.phase === "idle" && this.level) this.phase = "arrive";
+    // The Labs are on screen: now fetch the roof in the background.
+    if (this.level) this.loadRoofAssets();
   }
 
   /** Dev: start over (R in the preview). */

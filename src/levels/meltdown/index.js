@@ -1239,6 +1239,47 @@ export class MeltdownLevel {
    * it appeared at running speed. `renderer.compile` only walks visible
    * objects, so everything culled is shown for the duration of the call.
    */
+  /**
+   * prewarm(), without freezing the screen: the shaders compile in the
+   * background (renderer.compileAsync - parallel compilation where the
+   * browser supports it), and the textures upload a few at a time. Lets the
+   * level be built while something else is on screen (the lift ride).
+   */
+  async prewarmAsync(renderer, camera) {
+    const hidden = [];
+    for (const entry of this._culled) {
+      if (!entry.piece.visible) {
+        entry.piece.visible = true;
+        hidden.push(entry.piece);
+      }
+    }
+    const scene = this.root.parent ?? this.root;
+    // compileAsync creates every program now (it has to see the hidden
+    // pieces for that) and then waits for them; the pieces can go straight
+    // back.
+    const compiled = renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera));
+    for (const piece of hidden) piece.visible = false;
+    await compiled;
+    const textures = new Set();
+    this.root.traverse((o) => {
+      const list = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of list) {
+        for (const key of ["map", "normalMap", "emissiveMap", "roughnessMap", "alphaMap", "metalnessMap"]) {
+          if (m[key]) textures.add(m[key]);
+        }
+      }
+    });
+    let n = 0;
+    for (const t of textures) {
+      renderer.initTexture(t);
+      n += 1;
+      // A breath between batches (not a whole frame: on a slow machine that
+      // would crawl), so whatever is on screen keeps running.
+      if (n % 4 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return textures.size;
+  }
+
   prewarm(renderer, camera) {
     const hidden = [];
     for (const entry of this._culled) {

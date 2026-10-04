@@ -81,7 +81,7 @@ import { CameraShake } from "./shake.js";
 import { Sparks } from "./sparks.js";
 import { CabinGlass } from "./glass.js";
 import { CabinDebris } from "./debris.js";
-import { Performer } from "./acting.js";
+import { Performer, disposeAvatar } from "./acting.js";
 import { LauncherProp } from "./launcher.js";
 import { BrakeClamps } from "./clamps.js";
 import { DiagnosticView } from "./diagnostic.js";
@@ -169,8 +169,10 @@ export class GravityFaultRide {
    * @param {object} [o.story]  the story's version (story-ride.js): Dr. Okoro
    *   drops the launcher, and the clamps are reaction hits -
    *   { layer: StoryLayer, okoroTemplate }. Without it the ride is unchanged.
+   * @param {{wear:number, gear:boolean, skinTone?:string}} [o.figure]  the character's state and skin tone (src/figure/look.js)
    */
-  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null, assetBase = null, story = null }) {
+  constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null, assetBase = null, story = null, figure = null }) {
+    this.figureState = figure;
     this.renderer = renderer;
     this.reducedMotion = reducedMotion;
     this.boarded = boarded;
@@ -709,6 +711,11 @@ export class GravityFaultRide {
   _characterFigure(template) {
     const avatar = new PlayerAvatar();
     avatar.hold = 0;
+    if (this.figureState) {
+      avatar.setWear(this.figureState.wear);
+      avatar.setGear(this.figureState.gear);
+      if (this.figureState.skinTone) avatar.setSkinTone(this.figureState.skinTone);
+    }
     avatar.setModel(template);
     this._avatar = avatar;
     return {
@@ -850,32 +857,11 @@ export class GravityFaultRide {
     } else this.hud.monitor(null, false);
   }
 
-  /**
-   * Free what the avatar owns: its stand-in, contact shadow and the rig's
-   * cloned material. The model's geometry and textures are shared with the
-   * game's own player body, so they are left alone.
-   */
-  _disposeAvatar() {
-    const avatar = this._avatar;
-    if (!avatar) return;
-    avatar.standIn.traverse((o) => {
-      if (!o.isMesh) return;
-      o.geometry.dispose();
-      o.material.dispose();
-    });
-    avatar.shadow.geometry.dispose();
-    avatar.shadowMaterial.map?.dispose();
-    avatar.shadowMaterial.dispose();
-    avatar.model?.traverse((o) => {
-      if (o.isMesh) for (const m of [].concat(o.material)) m.dispose();
-    });
-    this._avatar = null;
-  }
-
   dispose() {
     this.visible = false;
     this.director?.dispose();
-    this._disposeAvatar();
+    disposeAvatar(this._avatar);
+    this._avatar = null;
     this.sparks.dispose();
     this.glass.dispose();
     this.debris.dispose();

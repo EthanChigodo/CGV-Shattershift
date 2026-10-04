@@ -176,13 +176,6 @@ export const SCENES = {
     { who: "sfx", text: "[the shouting stops]", hold: 2.4 },
   ],
 
-  /** 7. The lift up. */
-  grief: [
-    { who: "you", text: "[breathing hard]", hold: 2.6, at: 0.8 },
-    { who: "halcyon", text: "Lift to the Skyline Concourse." },
-    { who: "you", text: "...Elias.", hold: 2.4, gap: 1.2 },
-  ],
-
   /* ---- Phase 5: the Skyline and the roof ----------------------------- */
 
   /** 8a. The tower behind you goes up. */

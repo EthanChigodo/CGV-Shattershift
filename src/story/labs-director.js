@@ -13,7 +13,6 @@
  *                       it off until he shoots it
  *   4d  the desk        instead of running into the lift: the crowd, the
  *                       desk, the bag, his sacrifice (heard, not seen)
- *   4e  grief           the lift up, alone
  *
  * The story layer's CutscenePlayer drives the Labs' camera during each
  * scene (the host keeps calling `story.update`); MeltdownGame sits in its
@@ -23,7 +22,7 @@
 import * as THREE from "../three.js";
 import { Companion } from "./companion.js";
 import { FoundryGuide } from "./foundry-guide.js";
-import { breachScene, bendScene, hideScene, griefScene } from "./scenes-labs.js";
+import { breachScene, bendScene, hideScene } from "./scenes-labs.js";
 import { BEATS, LANES } from "../levels/meltdown/index.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
 
@@ -76,7 +75,7 @@ export class LabsDirector {
     game.scene.add(this.root);
     this.owned = [];
     this.log = [];
-    this.stage = "arrive"; // arrive | breach | run | bend | hide | grief | gone
+    this.stage = "arrive"; // arrive | breach | run | bend | hide | gone
     this.bendDone = this.layer.hasSeen("bendAttack");
     this.flash = 0;
     this.shotTimer = 2.5;
@@ -459,7 +458,7 @@ export class LabsDirector {
 
   /** The end of the corridor: this replaces running into the lift. */
   onComplete() {
-    if (this.stage === "hide" || this.stage === "grief") return true;
+    if (this.stage === "hide" || this.stage === "gone") return true;
     this.stage = "hide";
     const game = this.game;
     const level = this.level;
@@ -536,7 +535,11 @@ export class LabsDirector {
       camera: game.camera,
       on: {
         event: (name) => this._hideEvent(name),
-        done: () => this._startGrief(),
+        // The doors are shut on him: the quiet ride up (src/elevators/quiet-ride.js) takes it from here.
+        done: () => {
+          this.stage = "gone";
+          game._corridorDone();
+        },
       },
     });
     return true;
@@ -578,7 +581,7 @@ export class LabsDirector {
       for (const c of this.crowd) c.chasing = true;
       game.audio.groan?.(1);
     } else if (name === "doors") {
-      // The doors close on it (the ride starts with the grief).
+      // The doors close on it.
       this._doors = 0;
       game.audio.clang?.();
     } else if (name === "silence") {
@@ -587,36 +590,6 @@ export class LabsDirector {
       this.okoro.root.visible = false;
       for (const c of this.crowd) c.p.root.visible = false;
     }
-  }
-
-  _startGrief() {
-    this.stage = "grief";
-    const game = this.game;
-    const lift = this.level.endLift;
-    const h = this.hide;
-    // Doors already shut: straight into the climb.
-    lift.setDoorsOpen(0);
-    Object.assign(lift.state, { riding: true, t: 1.0, cabinY: 0, velocity: 0 });
-    this._liftT = 0;
-    const from = game.camera.position.clone();
-    const scene = griefScene({
-      // Sat against the back of the cabin, facing the doors, rising with it.
-      floorEye: () => lift.floorPoint(new THREE.Vector3()).addScaledVector(h.fwd, 0.9).addScaledVector(h.right, 0.8).add(_w.set(0, 0.85, 0)),
-      doors: () => lift.floorPoint(new THREE.Vector3()).addScaledVector(h.fwd, -3.6).add(_w.set(0, 1.1, 0)),
-      ride: (t, pos, look) => {
-        lift.cameraPose(1.3 + t, from, pos, look, game.reducedMotion);
-        return true;
-      },
-    });
-    this.layer.play(scene, {
-      camera: game.camera,
-      on: {
-        done: () => {
-          this.stage = "gone";
-          game._corridorDone();
-        },
-      },
-    });
   }
 
   /** Every frame of the "story" phase: the people in the scene. */
@@ -628,17 +601,12 @@ export class LabsDirector {
       this.bendPatient?.update(dt);
       this.vale.update(dt);
       if (this.stage === "bend") this._pistol(dt);
-    } else if (this.stage === "hide" || this.stage === "grief") {
+    } else if (this.stage === "hide") {
       this._updateHide(dt);
     }
     if (this._doors !== undefined && this._doors < 1) {
       this._doors = Math.min(1, this._doors + dt / 0.9);
       this.level.endLift.setDoorsOpen(1 - this._doors);
-    }
-    // The lift rides during the grief (the level's own update is held).
-    if (this._liftT !== undefined) {
-      this._liftT += dt;
-      this.level.endLift.update(dt, this._liftT, this.game.reducedMotion);
     }
   }
 
@@ -693,7 +661,7 @@ export class LabsDirector {
 
   dispose() {
     this.disposed = true;
-    if (this.layer.sceneId && ["breach", "bendAttack", "hide", "grief"].includes(this.layer.sceneId)) this.layer.stop();
+    if (this.layer.sceneId && ["breach", "bendAttack", "hide"].includes(this.layer.sceneId)) this.layer.stop();
     this.okoro.dispose();
     for (const t of this.tanks) t.patient.dispose();
     for (const c of this.crowd ?? []) c.p.dispose();

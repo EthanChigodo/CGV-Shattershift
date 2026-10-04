@@ -1,6 +1,6 @@
 /**
  * The Labs' cutscenes (Phase 4): the breach, the bend attack, the hiding
- * place and Okoro's sacrifice, and the grief in the lift up. Written against
+ * place and Okoro's sacrifice. Written against
  * anchors the Labs director (labs-director.js) works out from the level's
  * route and lifts - never against fixed coordinates.
  *
@@ -262,51 +262,3 @@ export function hideScene(h) {
   };
 }
 
-/**
- * 4e. The lift up, alone: low on the floor of the cabin, breathing, slow
- * blinks - "...Elias" - then the ride's own camera takes the cabin away up
- * the shaft and it fades to black.
- *
- * @param {object} g
- * @param {() => THREE.Vector3} g.floorEye   sat against the cabin wall (it rises)
- * @param {() => THREE.Vector3} g.doors
- * @param {(t:number, pos:THREE.Vector3, look:THREE.Vector3) => boolean} g.ride
- *   the ride camera from `RIDE_AT` (returns false while it hasn't started)
- */
-export function griefScene(g) {
-  const lines = timeLines(SCENES.grief);
-  const end = Math.max(linesEnd(lines) + 1.5, 9.5);
-  const RIDE_AT = 4.2;
-  return {
-    id: "grief",
-    lines,
-    duration: end,
-    keepFade: true,
-    head: { breath: 2.4, sway: 0.8 },
-    track: {
-      lids: [[0, 0], [1.6, 0], [2.0, 0.85], [2.6, 0.1], [4.2, 0.1], [4.6, 0.9], [5.3, 0]],
-      vignette: [[0, 0.7], [end, 0.5]],
-      fade: [[0, 0], [end - 1.0, 0], [end, 1]],
-    },
-    camera(t, pose) {
-      if (t < RIDE_AT) {
-        // On the floor, head low, eyes on the shut doors.
-        const k = Math.min(1, t / RIDE_AT);
-        pose.position.copy(g.floorEye());
-        pose.look.copy(g.doors());
-        pose.look.y += 0.15 - 0.2 * k;
-        pose.fov = 64;
-        pose.roll = 0.06 - 0.03 * k;
-        return;
-      }
-      if (g.ride(t - RIDE_AT, pose.position, pose.look)) {
-        pose.roll = 0;
-        pose.fov = 66;
-      }
-    },
-    events: [
-      { at: 0, name: "ride" },
-      { at: end - 0.2, name: "black" },
-    ],
-  };
-}
