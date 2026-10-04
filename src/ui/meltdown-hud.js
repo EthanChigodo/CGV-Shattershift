@@ -50,14 +50,14 @@ export class MeltdownHud {
 
     this.vitals = element("div", "mlt-vitals");
     this.ballsStat = element("div", "mlt-stat balls");
-    this.ballsStat.append(element("span", null, "Balls"), element("strong", null, "0"));
+    this.ballsStat.append(element("span", null, "Spheres"), element("strong", null, "0"));
 
     this.vitalityStat = element("div", "mlt-stat vitality");
     this.vitalityFill = element("div", "mlt-fill");
     const vitalityTrack = element("div", "mlt-track");
     vitalityTrack.append(this.vitalityFill);
     this.vitalityValue = element("strong", null, "100");
-    this.vitalityStat.append(element("span", null, "Vitality"), vitalityTrack);
+    this.vitalityStat.append(element("span", null, "Integrity"), vitalityTrack);
     this.vitalityStat.append(this.vitalityValue);
 
     this.vitals.append(this.ballsStat, this.vitalityStat);

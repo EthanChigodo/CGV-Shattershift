@@ -1,7 +1,7 @@
 """
 Headless asset conversion for Shattershift Level 3.
 
-    blender -b --factory-startup --python convert.py -- <src> <out.glb> [maxTex] [maxTris] [--info]
+    blender -b --factory-startup --python convert.py -- <src> <out.glb> [maxTex] [maxTris] [--only=A,B] [--anim] [--no-morph] [--info]
 
 Opens a .blend / imports an .fbx / .obj, downsizes every texture to <= maxTex,
 decimates any mesh over maxTris triangles, and exports one web-ready .glb with
@@ -14,6 +14,8 @@ src, out = argv[0], argv[1]
 max_tex = int(argv[2]) if len(argv) > 2 else 1024
 max_tris = int(argv[3]) if len(argv) > 3 else 20000
 info_only = "--info" in argv
+keep_anim = "--anim" in argv  # keep animation clips (default: stripped)
+keep_morph = "--no-morph" not in argv  # --no-morph drops shape keys (facial blendshapes etc.)
 
 ext = os.path.splitext(src)[1].lower()
 if ext == ".blend":
@@ -100,8 +102,9 @@ bpy.ops.export_scene.gltf(
     export_jpeg_quality=82,
     export_cameras=False,
     export_lights=False,
-    export_animations=False,
+    export_animations=keep_anim,
     export_skins=True,
+    export_morph=keep_morph,
 )
 summary["out_bytes"] = os.path.getsize(out)
 summary["tris_after"] = sum(min(tri_count(o), max_tris) for o in meshes)

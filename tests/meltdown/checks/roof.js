@@ -1,17 +1,19 @@
 /**
  * Phase B (the roof), simulated without the host: the AI, the ledges, and
- * both endings.
+ * both endings. Runs on the built-in roof (no scan heights passed).
  *
- *  - Waves: both spawn (a scientist and two patients each).
+ *  - Waves: they spawn, and the patients come out of the hut's door.
  *  - Ledges: a player who sidesteps every charge near the east ledge sends
  *    patients over it (the "lure them off the edge" rule works at all).
- *  - Endings: clearing the roof early brings the helicopter in and ends in
- *    "victory" (climbing the ladder). The hidden timer running out with
- *    enemies alive brings it to the east ledge: jumping for the ladder from
- *    the edge ends in "survive"; not jumping in time ends "left" behind.
- *    Every cutscene runs to completion.
- *  - Chaos: fire patches, explosions and tremors all happen, and ramp up.
- *  - Scientists' orbs can actually reach a player who stands still.
+ *  - Endings: clearing every wave brings the helicopter in early and ends in
+ *    "victory". The hidden timer running out with enemies alive brings it to
+ *    the east ledge: jumping for the ladder from the edge ends in "survive";
+ *    not jumping in time ends "left" behind. Every cutscene runs to the end.
+ *  - Chaos: explosions and tremors happen and ramp up - and no fire (the
+ *    user's call: the fire is gone).
+ *  - Scientists mix it up: lasers, grenades and orbs all get fired, and they
+ *    reach a player who stands still.
+ *  - The helicopter takes 165-190 s (the user: "way longer").
  */
 
 export const name = "roof";
@@ -40,46 +42,53 @@ export async function run(page) {
     // 1. Lure: stand by the east ledge, sidestep every committed charge.
     {
       const roof = new RoofLevel({ heliSeconds: 999 });
+      const edge = roof.eastEdge;
+      let doors = 0;
+      roof.events.on("door-open", () => (doors += 1));
       let dodged = false;
-      simulate(roof, 30, (r, p) => {
+      simulate(roof, 50, (r, p) => {
         const charging = r.enemies.some((e) => e.kind === "patient" && e.state === "charge");
         if (charging && !dodged) {
-          p.set(12, 0, -5);
+          p.set(edge - 1.5, 0, -9);
           dodged = true;
-        } else if (!charging && dodged) {
-          p.set(14.5, 0, 0);
+        } else if (!charging) {
+          p.set(edge - 1.5, 0, -5);
           dodged = false;
-        } else if (!dodged) p.set(14.5, 0, 0);
+        }
       });
       notes.waves = roof.state.wave;
       notes.falls = roof.state.falls;
-      if (roof.state.wave < 2) failures.push(`only ${roof.state.wave} wave(s) spawned in 30 s`);
+      notes.doorOpenings = doors;
+      if (roof.state.wave < 2) failures.push(`only ${roof.state.wave} wave(s) spawned in 50 s`);
+      if (doors < 2) failures.push(`the hut door opened ${doors} time(s): patients aren't coming out of it`);
       if (roof.state.falls < 1) failures.push("no patient could be lured off the ledge");
       roof.dispose();
     }
 
-    // 2. Standing still in the open gets you shot.
+    // 2. Standing still in the open gets you shot - by every kind of weapon.
     {
-      const roof = new RoofLevel({ heliSeconds: 999 });
-      const { hits } = simulate(roof, 14);
-      notes.hitsStandingStill = hits.length;
+      const roof = new RoofLevel({ heliSeconds: 999, seed: 4242 });
+      const fired = { "laser-fired": 0, "grenade-thrown": 0, "orb-fired": 0 };
+      for (const n of Object.keys(fired)) roof.events.on(n, () => (fired[n] += 1));
+      const { hits } = simulate(roof, 70);
+      notes.weaponsFired = fired;
       notes.hitSources = [...new Set(hits.map((h) => h.source))];
-      if (!hits.some((h) => h.source === "orb")) failures.push("no scientist orb ever reached a stationary player");
+      for (const [n, c] of Object.entries(fired)) if (c < 1) failures.push(`no "${n}" in 70 s`);
+      if (!hits.some((h) => ["laser", "grenade", "orb"].includes(h.source))) failures.push("no scientist weapon ever reached a stationary player");
       roof.dispose();
     }
 
-    // 3. Victory: clear everything (all three waves); the helicopter comes
-    // in early and the player climbs its ladder.
+    // 3. Victory: clear every wave; the helicopter comes in early.
     {
-      const roof = new RoofLevel({ heliSeconds: 57 });
-      const { t } = simulate(roof, 80, (r) => {
-        for (const e of r.enemies) if (e.alive && e.state !== "emerge") r.breakTarget(e.hurt, 9);
+      const roof = new RoofLevel({ heliSeconds: 185 });
+      const { t } = simulate(roof, 220, (r) => {
+        for (const e of r.enemies) if (e.alive && e.state !== "emerge") r.breakTarget(e.hurt, 99);
       });
       notes.victoryAt = Math.round(t);
       notes.wavesToVictory = roof.state.wave;
       if (roof.state.ending !== "victory") failures.push(`clearing the roof ended in "${roof.state.ending}", not victory`);
       if (!roof.cutscene?.done) failures.push("the victory cutscene never finished");
-      if (roof.state.heliAt >= 57) failures.push("the helicopter did not come early for a cleared roof");
+      if (roof.state.heliAt >= 185) failures.push("the helicopter did not come early for a cleared roof");
       roof.dispose();
     }
 
@@ -88,9 +97,11 @@ export async function run(page) {
     {
       const roof = new RoofLevel({ heliSeconds: 12 });
       let prompted = false;
+      const b = new THREE.Vector3();
       simulate(roof, 40, (r, p) => {
         if (r.state.ending !== "extraction") return;
-        p.set(14.8, 0, -1.3);
+        r.ladderBottom(b);
+        p.set(Math.min(b.x, r.eastEdge - 0.8), 0, b.z);
         if (r.extractionHint(p) === "jump") {
           prompted = true;
           r.grab(p);
@@ -116,22 +127,21 @@ export async function run(page) {
       roof.dispose();
     }
 
-    // 4c. Chaos ramps up.
+    // 4c. Chaos ramps up - explosions and tremors, no fire.
     {
       const roof = new RoofLevel({ heliSeconds: 58 });
       const counts = { explosion: 0, tremor: 0, "roof-fire": 0 };
-      for (const name of Object.keys(counts)) roof.events.on(name, () => (counts[name] += 1));
+      for (const n of Object.keys(counts)) roof.events.on(n, () => (counts[n] += 1));
       const { hits } = simulate(roof, 55, (r, p) => p.set(0, 0, 8));
       notes.chaos = counts;
-      notes.fireHits = hits.filter((h) => h.source === "fire").length;
       if (counts.explosion < 4) failures.push(`only ${counts.explosion} explosions in 55 s`);
-      if (counts["roof-fire"] < 3) failures.push(`only ${counts["roof-fire"]} roof fires in 55 s`);
       if (counts.tremor < 2) failures.push(`only ${counts.tremor} tremors in 55 s`);
+      if (counts["roof-fire"] > 0 || hits.some((h) => h.source === "fire")) failures.push("there is still fire on the roof");
       if (roof.state.chaos < 0.9) failures.push("chaos never ramped up");
       roof.dispose();
     }
 
-    // 5. The hidden timer really is random, within 40-58 s.
+    // 5. The hidden timer is random, within 165-190 s.
     const times = [1, 2, 3, 4, 5, 6].map((seed) => {
       const r = new RoofLevel({ seed: seed * 7919 });
       const at = r.state.heliAt;
@@ -139,7 +149,7 @@ export async function run(page) {
       return at;
     });
     notes.heliTimes = times.map((x) => Math.round(x));
-    if (times.some((x) => x < 40 || x > 58)) failures.push("helicopter timer outside 40-58 s");
+    if (times.some((x) => x < 165 || x > 190)) failures.push("helicopter timer outside 165-190 s");
     if (new Set(times.map((x) => Math.round(x))).size < 3) failures.push("helicopter timer is not varying between attempts");
 
     return { failures, notes };

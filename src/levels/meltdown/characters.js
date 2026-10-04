@@ -41,6 +41,9 @@ export const CHARACTER_PROFILES = {
   patient: { rotateX: Math.PI / 2, height: 1.74, repairBones: true },
   scientistRadioman: { rotateX: Math.PI / 2, height: 1.82 },
   scientistRust: { rotateX: 0, height: 1.84 },
+  // The story's two scientists (src/story/): Dr. Okoro (ally) and Dr. Vale.
+  scientistGood: { rotateX: Math.PI / 2, height: 1.8 },
+  scientistEvil: { rotateX: 0, height: 1.83 },
   // The player: a lab subject in patient scrubs. The wristband, the IV
   // port and all the damage are drawn by the figure's wear shader
   // (src/figure/look.js).
@@ -686,6 +689,15 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uShoulderY;
   uniform float uElbowX;
   uniform float uArmDrop;
+  // The planted-foot gait (gait.js): per-leg (hip, knee) angles, and the
+  // hips' twist against the shoulders. uGait 0 keeps the old sine legs
+  // (the lift's Performer drives uPhase/uStride itself).
+  uniform float uGait;
+  uniform vec2 uLegR;
+  uniform vec2 uLegL;
+  uniform float uTwist;
+  // The right arm's throw: (pitch, elbow fold, inward, weight).
+  uniform vec4 uThrow;
 
   mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
   mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
@@ -716,11 +728,20 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     bool right = side < 0.0;
     float free = (1.0 - uHold) * (1.0 - uReachUp);
     float swing = -sin(uPhase) * side * uArmSwing * free;
-    float fold = right ? 0.35 + uHold * 1.5 : 0.35 + uHold * 0.2;
+    // Running with free hands: elbows bent, as a runner's are.
+    float fold = (right ? 0.35 + uHold * 1.5 : 0.35 + uHold * 0.2) + uGait * free * min(1.0, uArmSwing * 2.0) * 0.75;
     float pitch = right ? uHold * 0.95 : uHold * 1.5;
     float inward = right ? uHold * 0.12 : uHold * 0.42;
     fold = fold * (1.0 - uReachUp * 0.85) + max(0.0, swing) * 0.5;
     pitch += uReachUp * 2.75;
+    // An overhand throw with the right arm (player.js throw()): the pose
+    // (pitch, fold, inward) it calls for, blended in by uThrow.w.
+    if (right && uThrow.w > 0.0) {
+      swing *= 1.0 - uThrow.w;
+      pitch = mix(pitch, uThrow.x, uThrow.w);
+      fold = mix(fold, uThrow.y, uThrow.w);
+      inward = mix(inward, uThrow.z, uThrow.w);
+    }
     float elbowW = smoothstep(uElbowX - 0.05, uElbowX + 0.05, ax);
     vec3 elbow = vec3(side * uElbowX, uShoulderY, 0.0);
     // Forearm folds forward (about Y in the T-pose frame).
@@ -742,11 +763,21 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     float swing = sin(uPhase) * legSide;
     float kneeW = 1.0 - smoothstep(uKneeY - 0.04, uKneeY + 0.04, rigP.y);
     float back = max(0.0, -sin(uPhase + (legSide >= 0.0 ? 0.0 : 3.14159) + 0.9));
-    float kneeBend = (back * 1.25 * uStride + uCrouch * 1.5 + uTuck * 1.6) * kneeW * abs(legSide);
+    float sineKnee = back * 1.25 * uStride;
+    float sineHip = -swing * uStride * 0.75;
+    // The gait's own angles for this leg (left is model +X).
+    vec2 leg = legSide >= 0.0 ? uLegL : uLegR;
+    float gaitKnee = leg.y * abs(legSide);
+    float gaitHip = leg.x * abs(legSide);
+    float kneeBend = (mix(sineKnee, gaitKnee, uGait) + uCrouch * 1.5 + uTuck * 1.6) * kneeW * abs(legSide);
     turn(rigP, rigN, vec3(rigP.x, uKneeY, 0.0), rotX(kneeBend));
-    float hip = (-swing * uStride * 0.75 - uCrouch * 0.8 - uTuck * 1.1) * legW;
+    float hip = (mix(sineHip, gaitHip, uGait) - uCrouch * 0.8 - uTuck * 1.1) * legW;
     turn(rigP, rigN, vec3(rigP.x, uHipY, 0.0), rotX(hip));
   }
+
+  // ---- Hips twist with the stride; the shoulders turn against them. ----
+  float upper = smoothstep(uHipY - 0.05, uHipY + 0.3, rigP.y);
+  turn(rigP, rigN, vec3(0.0, uHipY, 0.0), rotY(uTwist * (1.0 - 1.8 * upper)));
 
   // ---- Torso lean from the hips, and the whole body dropping into a slide. ----
   float torsoW = smoothstep(uHipY - 0.05, uHipY + 0.1, rigP.y);
@@ -781,6 +812,11 @@ export function rigPlayerMesh(mesh) {
     uShoulderY: { value: body.shoulderY },
     uElbowX: { value: body.elbowX },
     uArmDrop: { value: 1.32 },
+    uGait: { value: 0 },
+    uLegR: { value: new THREE.Vector2() },
+    uLegL: { value: new THREE.Vector2() },
+    uTwist: { value: 0 },
+    uThrow: { value: new THREE.Vector4() },
   };
   const material = mesh.material.clone();
   material.onBeforeCompile = (shader) => {
@@ -802,7 +838,7 @@ export function rigPlayerMesh(mesh) {
     );
     shader.vertexShader = shader.vertexShader.replace(/(#include <defaultnormal_vertex>[\s\S]*?)#include <begin_vertex>/, "$1");
   };
-  material.customProgramCacheKey = () => "meltdown-player-rig";
+  material.customProgramCacheKey = () => "meltdown-player-rig-gait-throw";
   mesh.material = material;
   // The rig moves vertices outside the rest-pose bounds.
   mesh.frustumCulled = false;

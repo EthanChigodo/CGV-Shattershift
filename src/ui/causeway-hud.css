@@ -26,6 +26,22 @@
 body.cw-active .hud { display: none; }
 body.cw-active .brand small::after { content: " // CAUSEWAY"; }
 
+/*
+ * One HUD for every level (the Skyline's): in the Foundry, the Labs and on
+ * the Roof this panel set shows the same stats - spheres, score, combo,
+ * integrity, sphere type, focus, serums - and each level's own stat panels
+ * step aside. Their level-specific widgets (the Foundry's systems and escape
+ * clock, the Labs' banners and prompts) stay.
+ */
+body.hud-unified .hud,
+body.hud-unified .fdy-run,
+body.hud-unified .fdy-integrity,
+body.hud-unified .mlt-vitals { display: none !important; }
+/* The Skyline-only panels: its minimap, missions, intercom and case files. */
+body.hud-unified .cw-map,
+body.hud-unified .cw-missions,
+body.hud-unified .cw-file { display: none !important; }
+
 .cw-ui kbd {
   min-width: 20px; padding: 2px 5px; border: 1px solid var(--cw-line); border-radius: 3px;
   background: rgba(4, 16, 22, 0.8); color: var(--cw-white); font-size: 9px;

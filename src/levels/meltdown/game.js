@@ -56,6 +56,13 @@ import { MeltdownHud } from "../../ui/meltdown-hud.js";
 import { MeltdownAudio } from "../../audio/meltdown-audio.js";
 import { Level1Audio } from "../../audio/level1-audio.js";
 import { ShatterFX } from "../../fx/shatter.js";
+import { LabsDirector } from "../../story/labs-director.js";
+import { AOPass } from "./ao.js";
+import { latchReaction } from "../../story/reaction.js";
+import { EndingDirector } from "../../story/ending-director.js";
+import { SCENES as STORY_LINES } from "../../story/script.js";
+import { Arsenal, BALLS, SERUMS } from "../../systems/arsenal.js";
+import { PoliceHelicopters } from "../../fx/police-helicopters.js";
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                               */
@@ -67,12 +74,12 @@ const MAX_BALLS = 45;
 const HIT_VITALITY = 14;
 const HIT_FIRE_BURST = 6;
 const HIT_BALL_DROP_RATIO = 0.25;
-const HEAT_PER_SHOT = 9;
-const HEAT_COOL_RATE = 16;
-const HEAT_LOCKOUT_SECONDS = 3;
-const WEAKENED_SECONDS = 6;
-const FIRE_INTERVAL = 0.13; // held trigger: ~7.5 shots a second
-const BALL_SPEED = 72;
+const FIRE_INTERVAL = 0.2; // held trigger: five shots a second
+/**
+ * The level's old power-up vials hold the Skyline's serums now (one rule set
+ * for every level): which serum each kind of vial gives.
+ */
+const VIAL_SERUM = { coolant: "thermal", adrenaline: "overdrive", overcharge: "prism", barrier: "shield" };
 
 /*
  * Movement feel. Lane changes are a critically damped spring rather than a
@@ -101,7 +108,17 @@ const SLIDE_SECONDS = 0.7;
 const ROOF_SPEED = 6.4;
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
-const ROOF_NAMES = ["scientistRadioman", "scientistRust", "patient", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight"];
+const ROOF_NAMES = [
+  "scientistRadioman", "scientistRust", "patient", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight",
+  // The bigger roof: its plant (the rooftop kit) and the brute.
+  "brute", "duffelBag", "roofHvac", "roofHvac2", "roofHvac3", "roofTank", "roofDish2", "roofMast", "roofMast2", "roofScan",
+];
+/** Endless roof: a supply drop of spheres every this many seconds survived. */
+const SUPPLY_SECONDS = 30;
+const SUPPLY_SPHERES = 5;
+/** The roof player's fall: gravity, and how far down before it's over. */
+const ROOF_GRAVITY = 24;
+const ROOF_FALL_LIMIT = -8;
 
 /** The playable characters: asset key -> label. The first is the default. */
 export const CHARACTERS = { playerFemale: "Female", playerMale: "Male" };
@@ -129,7 +146,6 @@ export function saveCharacter(name) {
 }
 
 const CAMERA_MODES = ["CHASE", "FIRST PERSON", "CINEMATIC", "ORBIT"];
-const POWERUP_LABELS = { coolant: "COOLANT", adrenaline: "ADRENALINE", overcharge: "OVERCHARGE", barrier: "BARRIER" };
 const FOG_CALM = new THREE.Color(0x1a120d);
 const FOG_DANGER = new THREE.Color(0x2a0804);
 // In the dark beat the fog is smoke with nothing lighting it.
@@ -183,7 +199,14 @@ export class MeltdownGame {
    * @param {boolean} [o.devKeys]    R restarts, P skips to the roof, F dev stats
    * @param {boolean} [o.summary]    show the level's own end-of-run card
    */
-  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body }) {
+  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null }) {
+    /**
+     * The sphere types and serums (src/systems/arsenal.js) - the host's, so
+     * the type you picked and the serums running carry between levels; the
+     * preview makes its own (and ticks it itself).
+     */
+    this.arsenal = arsenal ?? new Arsenal();
+    this._ownArsenal = !arsenal;
     /** "full" | "corridor" | "endless-labs" | "endless-roof" - see the header. */
     this.mode = mode;
     this.endless = { laps: 0, distance: 0 };
@@ -218,8 +241,18 @@ export class MeltdownGame {
     // Bloom sells fire, lasers and emissive glass; at half resolution,
     // because a full-res bloom chain would double the fill-rate cost. The
     // grading pass (heat haze, hit split, vignette, grain) runs last.
-    this.composer = new EffectComposer(renderer);
+    // The first target carries a depth texture, for the ambient occlusion
+    // pass at High quality (ao.js); otherwise it costs nothing extra.
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(size.x, size.y) });
+    this.composer = new EffectComposer(renderer, target);
+    // The composer's second target is a clone, and a cloned depth texture
+    // shares the first one's GPU texture - sampling it while drawing into the
+    // other would be a feedback loop. Each gets its own.
+    this.composer.renderTarget2.depthTexture = new THREE.DepthTexture(size.x, size.y);
     this.composer.addPass(new RenderPass(scene, this.camera));
+    this.ao = new AOPass(this.camera);
+    this.ao.enabled = false;
+    this.composer.addPass(this.ao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.6, 0.45, 0.92);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -241,6 +274,18 @@ export class MeltdownGame {
     this.sfx = sfx ?? (audio ? new Level1Audio(() => this.audio.ctx) : null);
     this.beam = new LauncherLight(scene);
     this.environment = createEnvironmentDimmer(scene);
+    // A key light over the player that casts real shadows - High quality
+    // only (setQuality). Off (invisible) otherwise, so it costs nothing
+    // below High; switching it recompiles the materials once.
+    this.keyLight = new THREE.DirectionalLight(0xffe2c4, 0.85);
+    this.keyLight.visible = false;
+    this.keyLight.shadow.mapSize.set(1024, 1024);
+    this.keyLight.shadow.bias = -0.0004;
+    this.keyLight.shadow.normalBias = 0.03;
+    const sc = this.keyLight.shadow.camera;
+    sc.left = -14; sc.right = 14; sc.top = 14; sc.bottom = -14; sc.near = 1; sc.far = 50;
+    scene.add(this.keyLight, this.keyLight.target);
+    this.quality = { shadows: false, ao: false };
     this.credits = createCreditsPanel(container);
 
     const el = (className) => {
@@ -297,6 +342,13 @@ export class MeltdownGame {
     this.roofClock = 0;
     this._timers = [];
     this.cut = null;
+    /**
+     * The story (src/story/labs-director.js), when the host runs the Labs as
+     * part of a story run: { layer, okoroTemplate, valeTemplate, assetBase }.
+     * Null everywhere else - the preview, Endless - and the Labs play as before.
+     */
+    this.story = null;
+    this.director = null;
 
     this._v = {
       desired: new THREE.Vector3(), look: new THREE.Vector3(), smoothedLook: new THREE.Vector3(),
@@ -329,13 +381,24 @@ export class MeltdownGame {
   preload() {
     const names = [...Object.keys(MELTDOWN_ASSETS), this.character];
     this._preload ??= loadMeltdownAssets(this.assetBase, { names }).catch(() => null);
-    this.loadRoofAssets();
     return this._preload;
   }
 
-  /** Roof models load in the background while Phase A is being played. */
+  /**
+   * Roof models load in the background while Phase A is being played - from
+   * begin(), not before: they are heavy (the scan, the brute, the kit), and
+   * parsing them while the Labs are built behind the lift ride's black
+   * screen made that black screen seconds longer.
+   */
   loadRoofAssets() {
-    this.roofAssetsPromise ??= loadMeltdownAssets(this.assetBase, { names: ROOF_NAMES }).then((map) => (this.roofAssets = map));
+    // The models, and the scanned roof's baked height map (tools/assets/heightmap.py).
+    const heights = fetch(new URL("roof_scan_heights.json", this.assetBase).href)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    this.roofAssetsPromise ??= Promise.all([loadMeltdownAssets(this.assetBase, { names: ROOF_NAMES }), heights]).then(([map, grid]) => {
+      this.roofHeights = grid;
+      return (this.roofAssets = map);
+    });
     return this.roofAssetsPromise;
   }
 
@@ -352,9 +415,15 @@ export class MeltdownGame {
     this.speedScale = 1;
   }
 
+  /** The story's cutscenes for the next load() (mode "corridor" only), or null. */
+  setStory(story) {
+    this.story = story;
+  }
+
   async load({ balls = START_BALLS, vitality = START_VITALITY, seed = 0, carry = false } = {}) {
     this.shatter.clear();
     this.sfx?.startLevel();
+    if (this.police) this.police.root.visible = false;
     if (this.level) {
       this.hud.unbind();
       this.level.dispose();
@@ -387,6 +456,9 @@ export class MeltdownGame {
     this.hud.bind(level);
     this.hud.hideSummary();
     this._bindLevelEvents(level);
+    this.director?.dispose();
+    this.director = this.story && this.mode === "corridor" ? new LabsDirector(this, this.story) : null;
+    this.storyBag = false;
 
     // An endless lap carries the run's counters on.
     const kept = carry ? (({ shots, breaks, downs, hits }) => ({ shots, breaks, downs, hits }))(this.runner) : {};
@@ -408,14 +480,16 @@ export class MeltdownGame {
     if (level !== this.level) return;
     this.hud.setLoading(null);
     this._mountLauncherModel(loaded);
+    this._applyShadowFlags();
     // Compile and upload everything now rather than on first sight mid-run -
     // in the background, so this can run while the host shows something
     // else (the lift ride builds Level 3 on the way up).
     await level.prewarmAsync(this.renderer, this.camera);
     if (level !== this.level) return;
+    this._logTextureMemory("the Labs");
     this.environment.refresh();
     this.assetsReady = true;
-    this.loadRoofAssets();
+    await this.director?.onAssets();
   }
 
   /** The lift doors open and the run begins. */
@@ -423,6 +497,8 @@ export class MeltdownGame {
     this.audio.start();
     if (this._ownSfx) this.sfx.unlock();
     if (this.phase === "idle" && this.level) this.phase = "arrive";
+    // The Labs are on screen: now fetch the roof in the background.
+    if (this.level) this.loadRoofAssets();
   }
 
   /** Dev: start over (R in the preview). */
@@ -474,6 +550,10 @@ export class MeltdownGame {
     }
     this.roof?.dispose();
     this.roof = null;
+    this.director?.dispose();
+    this.director = null;
+    this.finale?.dispose();
+    this.finale = null;
     this.projectiles.clear();
     this.debris.clear();
     this.shatter.clear();
@@ -526,6 +606,57 @@ export class MeltdownGame {
     this.bloom.enabled = on;
   }
 
+  /**
+   * The graphics budget (main.js, from the quality setting): `shadows` - the
+   * key light's shadow map; `ao` - screen-space ambient occlusion. Both only
+   * at High: they are the most expensive things on screen.
+   */
+  setQuality({ shadows = false, ao = false } = {}) {
+    this.quality = { shadows, ao };
+    this.ao.enabled = ao;
+    this.keyLight.visible = shadows;
+    this.keyLight.castShadow = shadows;
+    // Borrow the renderer's shadow map while High is on; give it back as it was.
+    const sm = this.renderer.shadowMap;
+    if (shadows && !this._hostShadowMap) {
+      this._hostShadowMap = { enabled: sm.enabled, type: sm.type };
+      sm.enabled = true;
+      sm.type = THREE.PCFSoftShadowMap;
+    } else if (!shadows && this._hostShadowMap) {
+      sm.enabled = this._hostShadowMap.enabled;
+      sm.type = this._hostShadowMap.type;
+      this._hostShadowMap = null;
+    }
+    this._applyShadowFlags();
+  }
+
+  /** Who casts and who receives, for the current setting. */
+  _applyShadowFlags() {
+    const on = this.quality.shadows;
+    const roots = [this.level?.groups.hazards, this.level?.groups.pickups, this.roof?.root].filter(Boolean);
+    for (const root of roots) {
+      root.traverse((o) => {
+        if (o.isMesh && o.material?.isMeshStandardMaterial) o.castShadow = on;
+      });
+    }
+    const receivers = [this.level?.root, this.roof?.root].filter(Boolean);
+    for (const root of receivers) {
+      root.traverse((o) => {
+        if (o.isMesh && o.material?.isMeshStandardMaterial) o.receiveShadow = on;
+      });
+    }
+    this.avatar.root.traverse((o) => {
+      if (o.isMesh && o !== this.avatar.shadow) o.castShadow = on;
+    });
+  }
+
+  /** Keep the key light (and its shadow box) over the player. */
+  _placeKeyLight(at) {
+    if (!this.quality.shadows) return;
+    this.keyLight.position.set(at.x + 5, at.y + 13, at.z + 3);
+    this.keyLight.target.position.copy(at);
+  }
+
   get cameraModeName() {
     return CAMERA_MODES[this.cameraMode];
   }
@@ -568,7 +699,33 @@ export class MeltdownGame {
   async _loadCharacter(name) {
     const loaded = await loadMeltdownAssets(this.assetBase, { names: [name] });
     const asset = loaded.get(name);
-    if (asset && name === this.character) this.avatar.setModel(asset.template);
+    if (asset && name === this.character) {
+      this.avatar.setModel(asset.template);
+      this._applyShadowFlags();
+    }
+  }
+
+  /**
+   * The textures a stage holds on the GPU, logged once it has loaded (the
+   * graphics pass keeps an eye on the budget). Mipmapped RGBA, estimated.
+   */
+  _logTextureMemory(where) {
+    const seen = new Set();
+    let bytes = 0;
+    this.scene.traverse((o) => {
+      for (const m of [].concat(o.material ?? [])) {
+        for (const value of Object.values(m)) {
+          if (!value?.isTexture || seen.has(value)) continue;
+          seen.add(value);
+          const img = value.image;
+          const w = img?.width ?? 0;
+          const h = img?.height ?? 0;
+          bytes += w * h * 4 * (value.generateMipmaps ? 1.33 : 1);
+        }
+      }
+    });
+    this.textureMemory = { where, textures: seen.size, megabytes: +(bytes / 1048576).toFixed(1) };
+    console.info(`[meltdown] ${where}: ~${this.textureMemory.megabytes} MB of textures (${seen.size})`);
   }
 
   _mountLauncherModel(assets) {
@@ -600,7 +757,12 @@ export class MeltdownGame {
   _bindLevelEvents(level) {
     const { hud, audio, debris } = this;
     const on = (name, fn) => level.events.on(name, (p) => level === this.level && fn(p));
-    on("complete", () => (this.mode === "endless-labs" ? this._nextLap() : this._startDeparture()));
+    on("complete", () => {
+      if (this.mode === "endless-labs") this._nextLap();
+      // The story: the blocked lift, the desk, the sacrifice - not a run in.
+      else if (this.phase === "run" && this.director?.onComplete()) this.events.emit("phase", { phase: "story" });
+      else this._startDeparture();
+    });
     on("timer-expired", () => {
       if (this.phase !== "run" || this.mode === "endless-labs") return;
       this.runner.vitality = 0;
@@ -709,7 +871,12 @@ export class MeltdownGame {
       if (code === "Space" && this.phase === "roof") {
         event.preventDefault?.();
         const hero = this.hero;
-        // At the ledge with the ladder in reach, Space is the jump for it.
+        // At the ledge with the ladder in reach, Space is the jump for it -
+        // in the story, a latch reaction (two keys, fast) decides the catch.
+        if (this.story && this.roof?.canGrab(hero.position)) {
+          this._startLadderLatch();
+          return true;
+        }
         if (this.roof?.grab(hero.position)) return true;
         if (hero.dodgeCooldown <= 0) {
           const dir = hero.velocity.lengthSq() > 0.5 ? hero.velocity.clone() : hero.aim.clone().sub(hero.position).setY(0);
@@ -740,13 +907,6 @@ export class MeltdownGame {
   }
 
   _jump() {
-    const push = this.level?.pushNearby(this.runner.distance);
-    if (push) {
-      this.audio.ductPush(push.progress);
-      this.trauma = Math.min(1, this.trauma + 0.12);
-      this.debris.sparks(this.avatar.root.position.clone().setY(1.4), { count: 6, speed: 3 });
-      return;
-    }
     this.runner.jumpBuffer = INPUT_BUFFER;
   }
 
@@ -755,6 +915,9 @@ export class MeltdownGame {
   /* ================================================================ */
 
   render() {
+    this.director?.beforeRender(this.renderer);
+    // The host renders shadows on demand (autoUpdate is off in the game).
+    if (this.quality.shadows) this.renderer.shadowMap.needsUpdate = true;
     this.composer.render();
   }
 
@@ -767,7 +930,7 @@ export class MeltdownGame {
     }
     this._updateFade(dt);
     const phase = this.phase;
-    const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
+    const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
     const playing = onRoof ? phase === "roof" && this.runner.alive : phase === "run" && this.runner.alive && !this.runner.finished;
     this._updateLauncher(dt, playing);
 
@@ -793,26 +956,15 @@ export class MeltdownGame {
 
   _updateLauncher(dt, playing) {
     const r = this.runner;
-    // Held trigger, heat, lockout, weakened window.
+    // Held trigger. (No heat: the Skyline's rules - the spheres are the limit.)
     this.launcher.recoil = Math.max(0, this.launcher.recoil - dt * 7);
     r.fireCooldown -= dt;
     if (playing && r.firing && r.fireCooldown <= 0) {
       this._shoot();
       r.fireCooldown = FIRE_INTERVAL;
     }
-    const wasLocked = r.lockout > 0;
-    r.lockout = Math.max(0, r.lockout - dt);
-    if (wasLocked && r.lockout <= 0) {
-      r.heat = 0;
-      r.weakened = WEAKENED_SECONDS;
-      this.hud.toast("LAUNCHER WEAKENED", "", "warn", 1600);
-    }
-    if (r.lockout <= 0 && !(r.firing && playing)) r.heat = Math.max(0, r.heat - HEAT_COOL_RATE * dt);
-    else if (r.lockout <= 0) r.heat = Math.max(0, r.heat - HEAT_COOL_RATE * 0.3 * dt);
-    r.weakened = Math.max(0, r.weakened - dt);
-    r.coolant = Math.max(0, r.coolant - dt);
-    r.adrenaline = Math.max(0, r.adrenaline - dt);
-    r.barrierShield = Math.max(0, r.barrierShield - dt);
+    // On its own (the preview) the level runs its own serums' clocks.
+    if (this._ownArsenal && playing) this.arsenal.update(dt);
     r.lookBack = Math.max(0, r.lookBack - dt);
   }
 
@@ -821,16 +973,33 @@ export class MeltdownGame {
   _updateRunFrame(dt, time, playing) {
     const { level, runner: r, avatar, camera } = this;
     const V = this._v;
-    const cutscene = this.phase === "idle" || this.phase === "arrive" || this.phase === "depart";
+    // "story": one of the story's cutscenes (labs-director.js) has the
+    // camera; the run is held - no movement, no clock, no fire.
+    const story = this.phase === "story";
+    const cutscene = this.phase === "idle" || this.phase === "arrive" || this.phase === "depart" || story;
 
     if (this.phase === "arrive") {
       this.cut = level.updateArrival(dt);
+      this.director?.updateArrival(this.cut, dt);
       if (this.cut?.done) {
-        this.phase = "run";
         this.cut = null;
         r.baseSpeed = level.speedAt(0);
-        this.hud.toast("A / D LANES", "SPACE JUMP // SHIFT SLIDE", "", 3600);
-        this._after(2.2, () => this.hud.toast("HOLD CLICK", "TO FIRE", "", 3000));
+        if (this.director?.afterArrival()) {
+          this.phase = "story";
+          this.events.emit("phase", { phase: "story" });
+        } else {
+          this.phase = "run";
+          this.hud.toast("A / D LANES", "SPACE JUMP // SHIFT SLIDE", "", 3600);
+          this._after(2.2, () => this.hud.toast("HOLD CLICK", "TO FIRE", "", 3000));
+          this.events.emit("phase", { phase: "run" });
+        }
+      }
+    } else if (story) {
+      this.director?.updateScene(dt, time);
+      // The scene handed back (the breach or the bend is over).
+      if (this.director?.stage === "run") {
+        this.phase = "run";
+        this.snapCamera = true;
         this.events.emit("phase", { phase: "run" });
       }
     } else if (this.phase === "depart") {
@@ -843,10 +1012,16 @@ export class MeltdownGame {
     }
 
     if (!cutscene) this._updateMovement(dt, playing);
+    // The story during the run: Okoro alongside; the bend attack.
+    if (this.phase === "run" && this.director?.updateRun(dt, time)) {
+      this.phase = "story";
+      this.events.emit("phase", { phase: "story" });
+    }
 
     // The fire: vitality drains steadily, and the fire front's distance
     // behind you is that vitality made visible.
-    if (playing && r.adrenaline <= 0) {
+    // Overdrive (a serum) holds the fire off, as adrenaline used to.
+    if (playing && !this.arsenal.isActive("overdrive")) {
       r.vitality = Math.max(0, r.vitality - level.drainRateAt(r.distance) * dt);
       if (r.vitality <= 0) {
         r.alive = false;
@@ -861,7 +1036,11 @@ export class MeltdownGame {
     level.setFireFront(r.fireDistance);
 
     const firstPerson = !cutscene && CAMERA_MODES[this.cameraMode] === "FIRST PERSON";
-    if (cutscene && this.cut) {
+    if (this.phase === "story") {
+      // The story's cutscenes are first person: the body stays out of the shot.
+      avatar.setVisible(false);
+      avatar.shadow.visible = false;
+    } else if (cutscene && this.cut) {
       this._applyCutscene(this.cut, dt);
     } else {
       // The body.
@@ -869,7 +1048,8 @@ export class MeltdownGame {
       avatar.root.position.copy(placement.position);
       avatar.root.rotation.y = placement.heading;
       avatar.update(dt, {
-        speed: r.speed, lateralVel: r.lateralVel, height: r.height, sliding: r.sliding > 0,
+        // Height above what's underfoot (a fallen duct's top is ground too).
+        speed: r.speed, lateralVel: r.lateralVel, height: r.height - (r.ground ?? 0), sliding: r.sliding > 0,
         pushing: r.pushing, stumble: r.lookBack > 0.5 ? 1 : 0, aiming: r.firing,
       });
       // Blink through the mercy window after a hit (not the long
@@ -880,10 +1060,11 @@ export class MeltdownGame {
     }
 
     level.update({ dt, time, distance: r.distance, playerPosition: avatar.root.position, clock: this.phase === "run" && this.mode !== "endless-labs" });
+    this._placeKeyLight(avatar.root.position);
     if (playing) this._checkHazards(dt);
     if (!cutscene) this._updateCamera(dt, time);
     this._placeLauncher(firstPerson);
-    this.projectiles.update(dt, { breakables: level.breakables, solids: level.obstacles, onBreakable: (o, p, b) => this._onBallBreakable(o, p, b), onSolid: (o, p) => this._onBallSolid(o, p) });
+    this.projectiles.update(dt, { breakables: level.breakables, solids: level.obstacles, onBreakable: (o, p, b) => this._onBallHit(o, p, b), onSolid: (o, p, b) => this._onBallSolid(o, p, b), onFloor: (p, b) => this._onBallFloor(p, b) });
     this.debris.update(dt);
     this.shatter.update(dt);
     if (this.sfx) {
@@ -896,7 +1077,8 @@ export class MeltdownGame {
     // The launcher's light: from the muzzle toward what the reticle is on -
     // held like a weapon light, a little low, so aiming at the corridor
     // ahead also lights the floor you are about to run on.
-    const darkness = level.state.darkness;
+    // Thermal sight (a serum) sees through the dark and the smoke.
+    const darkness = level.state.darkness * (1 - this.arsenal.level("thermal") * 0.75);
     this.raycaster.setFromCamera(this.pointer, camera);
     V.beamTarget.copy(this.raycaster.ray.origin).addScaledVector(this.raycaster.ray.direction, 24);
     V.beamTarget.y -= 1.3;
@@ -936,7 +1118,7 @@ export class MeltdownGame {
 
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
-    this.hud.setPrompt(this.phase !== "run" ? null : r.pushing || level.ductAhead(r.distance, 3.5) ? "MASH SPACE TO PUSH" : r.balls <= 0 && playing ? "NO BALLS" : null);
+    this.hud.setPrompt(this.phase !== "run" ? null : level.ductAhead(r.distance, 7) && r.height < 0.5 ? "SPACE - JUMP THE DUCT" : r.balls <= 0 && playing ? "NO SPHERES" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 
@@ -960,24 +1142,23 @@ export class MeltdownGame {
     r.speed = 0;
     r.pushing = false;
     if (playing) {
-      r.speed = r.baseSpeed * this.speedScale * (r.slow > 0 ? 0.45 : 1);
-      let next = Math.min(r.distance + r.speed * dt, level.route.totalLength - 1);
-      const duct = level.blockingDuctAhead(r.distance, 4);
-      if (duct !== null && next > duct - 1.7) {
-        next = Math.max(r.distance, duct - 1.7);
-        r.pushing = true;
-        r.speed = 0;
-      }
-      r.distance = next;
+      r.speed = r.baseSpeed * this.speedScale * (r.slow > 0 ? 0.45 : 1) * (this.arsenal.isActive("overdrive") ? 1.15 : 1);
+      r.distance = Math.min(r.distance + r.speed * dt, level.route.totalLength - 1);
     }
 
     // Lanes: critically damped spring toward the chosen lane.
     [r.lateral, r.lateralVel] = spring(r.lateral, r.lateralVel, LANES[r.lane], LANE_OMEGA, dt);
 
+    // The floor: a fallen duct is something to stand on - from above. (From
+    // the side it's a wall: _checkHazards.)
+    const top = level.groundAt?.(r.distance) ?? 0;
+    const ground = r.height >= top - 0.12 ? top : 0;
+    r.ground = ground;
+
     // Buffered jump and slide.
     r.jumpBuffer = Math.max(0, r.jumpBuffer - dt);
     r.slideBuffer = Math.max(0, r.slideBuffer - dt);
-    const grounded = r.height <= 0.001;
+    const grounded = r.height <= ground + 0.001;
     if (r.jumpBuffer > 0 && grounded && playing) {
       r.verticalVelocity = JUMP_VELOCITY;
       r.jumpBuffer = 0;
@@ -992,10 +1173,10 @@ export class MeltdownGame {
         r.verticalVelocity = SLAM_VELOCITY;
       }
     }
-    const wasAirborne = r.height > 0.001;
+    const wasAirborne = r.height > ground + 0.001;
     r.verticalVelocity -= (r.verticalVelocity > 0 ? RISE_GRAVITY : FALL_GRAVITY) * dt;
-    r.height = Math.max(0, r.height + r.verticalVelocity * dt);
-    if (r.height <= 0) {
+    r.height = Math.max(ground, r.height + r.verticalVelocity * dt);
+    if (r.height <= ground) {
       if (wasAirborne) {
         this.landingDip = Math.min(1, -r.verticalVelocity / 14);
         if (r.slideBuffer > 0) {
@@ -1164,39 +1345,44 @@ export class MeltdownGame {
         launcher.rig.rotation.set(0, Math.PI / 2, 0.85);
       }
     }
-    const glow = r.lockout > 0 ? 1.2 : r.heat / 100;
+    // The tube glows hot under overdrive.
+    const glow = this.arsenal.level("overdrive") * 0.8;
     for (const m of launcher.heatMaterials) m.emissiveIntensity = glow * 1.4;
   }
 
   /* ---------------- Shooting ---------------- */
 
+  /** Overdrive (a serum) hits harder - as in the Skyline. */
   _currentPower() {
-    if (this.runner.overchargeShots > 0) return 99;
-    return this.runner.weakened > 0 ? 0.5 : 1;
+    return this.arsenal.isActive("overdrive") ? 2 : 1;
   }
 
+  /** The focus (bullet time) a host may run: only while there's play. */
+  get acceptsFocus() {
+    return (this.phase === "run" || this.phase === "roof") && this.runner.alive;
+  }
+
+  /**
+   * One trigger pull: the Skyline's spheres out of the launcher - the type
+   * chosen (Q/E), at its cost and speed, on its gravity arc (aimed high by
+   * the drop, so it lands on the reticle), three at once under prism.
+   */
   _shoot() {
-    const { runner: r, level, audio, hud } = this;
+    const { runner: r, level, audio } = this;
     const V = this._v;
     if (!r.alive || (!level && !this.roof)) return;
     if (this.phase === "run" && r.finished) return;
-    if (r.lockout > 0) return;
-    if (r.balls <= 0) {
+    if (this.hero.climbing) return; // both hands on the ladder
+    const def = this.arsenal.current;
+    const cost = this.arsenal.cost();
+    if (r.balls <= 0 || r.balls < cost) {
       audio.dry();
+      if (r.balls > 0) this.hud.toast(`${def.name.toUpperCase()} NEEDS ${cost}`, "", "warn", 1000);
       return;
     }
-    r.balls -= 1;
-    r.shots += 1;
-
-    if (r.coolant <= 0) {
-      r.heat = Math.min(100, r.heat + HEAT_PER_SHOT);
-      if (r.heat >= 100) {
-        r.lockout = HEAT_LOCKOUT_SECONDS;
-        hud.toast("LAUNCHER OVERHEATED", "", "warn");
-        audio.overheat();
-        this.debris.sparks(this.launcher.muzzle.getWorldPosition(V.muzzle), { count: 30, speed: 4 });
-      }
-    }
+    r.balls -= cost;
+    const count = this.arsenal.isActive("prism") ? 3 : 1;
+    r.shots += count;
 
     // Aim where the reticle points: the first breakable or hazard under it,
     // or 60 m out. The ball then flies from the muzzle toward that point.
@@ -1218,23 +1404,51 @@ export class MeltdownGame {
       V.forwardVel.copy(this.hero.velocity).multiplyScalar(0.5);
       this.hero.lastShot = 0;
     }
-    this.projectiles.fire(V.muzzle, V.fireDir, BALL_SPEED, { power: this._currentPower(), inherit: V.forwardVel });
-    if (r.overchargeShots > 0) r.overchargeShots -= 1;
+    // Ballistic compensation: up by the drop over the flight time.
+    const flight = V.aim.distanceTo(V.muzzle) / def.speed;
+    for (let i = 0; i < count; i += 1) {
+      const dir = V.fireDir.clone();
+      if (count > 1) dir.applyAxisAngle(UP, (i - 1) * 0.07);
+      dir.multiplyScalar(def.speed).addScaledVector(UP, 0.5 * def.gravity * flight);
+      this.projectiles.fire(V.muzzle, dir, dir.length(), {
+        power: this._currentPower(), inherit: V.forwardVel, gravity: def.gravity, kind: def.key, radius: def.radius,
+      });
+    }
     this.launcher.recoil = 1;
-    audio.shot(r.weakened > 0);
+    audio.shot(false);
     this.sfx?.throwBall();
   }
 
+  /** A vial: the serum it holds goes in (the Skyline's power-ups). */
   _applyPowerup(kind) {
-    const r = this.runner;
-    if (kind === "coolant") {
-      r.heat = 0;
-      r.lockout = 0;
-      r.weakened = 0;
-      r.coolant = 4;
-    } else if (kind === "adrenaline") r.adrenaline = 6;
-    else if (kind === "overcharge") r.overchargeShots = 6;
-    else if (kind === "barrier") r.barrierShield = 5;
+    const serum = VIAL_SERUM[kind] ?? kind;
+    this.arsenal.activate(serum);
+    return SERUMS[serum];
+  }
+
+  /**
+   * A cryo or shock sphere going off (the Skyline's rules): shock breaks
+   * everything breakable within reach; cryo knocks down the people around it
+   * (and in the Labs pushes the fire back).
+   */
+  _detonate(ball, point) {
+    const def = BALLS[ball.kind];
+    if (!def?.splash) return;
+    const targets = this.roof ? this.roof.breakables : this.level?.breakables ?? [];
+    this.debris.sparks(point, { count: 26, speed: 6 });
+    this._chunks(point, 22, { tint: ball.kind === "cryo" ? 0xbff4ff : 0xd9a6ff, speed: 5, radius: def.splash * 0.3, size: 0.08 });
+    const at = new THREE.Vector3();
+    for (const target of targets.slice()) {
+      if (!target.parent) continue;
+      target.getWorldPosition(at);
+      if (at.distanceTo(point) > def.splash) continue;
+      const person = target.userData.kind === "patient" || target.userData.kind === "enemy" || !!target.userData.enemy;
+      if (ball.kind === "cryo" && !person) continue;
+      this._onBallBreakable(target, at.clone(), { power: ball.kind === "shock" ? 99 : 2, velocity: ball.velocity.clone(), kind: "glass" });
+    }
+    if (ball.kind === "cryo" && this.level && !this.roof) this.runner.fireDistance -= 6;
+    this.trauma = Math.min(1, this.trauma + 0.2);
+    this.sfx?.glassBreak();
   }
 
   _onBallBreakable(object, point, ball) {
@@ -1273,7 +1487,7 @@ export class MeltdownGame {
       this._chunks(result.position, 14, { tint: 0xd8f6ff, speed: 3.5 });
       this.sfx?.glassBreak();
       this.sfx?.sphereCollected();
-      hud.toast("BALLS", `+${result.spheres}`);
+      hud.toast("SPHERES", `+${result.spheres}`);
       audio.glassShatter(false);
       audio.pickup();
     } else if (result.kind === "patient") {
@@ -1284,22 +1498,40 @@ export class MeltdownGame {
       audio.thud();
       audio.bodyFall();
     } else if (result.kind === "powerup") {
-      this._applyPowerup(result.powerupKind);
+      const serum = this._applyPowerup(result.powerupKind);
       debris.burst(result.position, { kind: "power", count: 30, speed: 5 });
       debris.sparks(result.position, { count: 30 });
       this._chunks(result.position, 18, { tint: 0xfff0a8, speed: 4.5 });
       this.sfx?.glassBreak();
       this.sfx?.serumCollected();
-      hud.toast(POWERUP_LABELS[result.powerupKind] ?? "POWER-UP", "", "power");
+      hud.toast(serum ? `SERUM // ${serum.name.toUpperCase()}` : "SERUM", serum?.text ?? "", "power", 2600);
       audio.powerup();
     }
     return true;
   }
 
-  _onBallSolid(object, point) {
+  /** A sphere hit something breakable: break it, and a special one goes off. */
+  _onBallHit(object, point, ball) {
+    const consumed = this._onBallBreakable(object, point, ball);
+    if (ball.kind && ball.kind !== "glass") this._detonate(ball, point);
+    return consumed;
+  }
+
+  _onBallSolid(object, point, ball) {
     this.debris.sparks(point, { count: 14, speed: 5 });
     this.audio.clang();
     this.sfx?.surfaceRicochet();
+    if (ball?.kind && ball.kind !== "glass") {
+      this._detonate(ball, point);
+      ball.life = 99; // spent
+    }
+  }
+
+  /** A cryo or shock sphere goes off where it lands; glass just bounces. */
+  _onBallFloor(point, ball) {
+    if (!ball.kind || ball.kind === "glass") return;
+    this._detonate(ball, point.clone());
+    ball.life = 99;
   }
 
   /** Level 1's radial fracture of a pane, around the point it was hit. */
@@ -1344,9 +1576,16 @@ export class MeltdownGame {
     centre.y += 0.18 + height / 2;
     this.playerBox.setFromCenterAndSize(centre, this._v.boxSize.set(0.9, height, 0.9));
     const hits = level.collide(this.playerBox, r.distance);
+    // A fallen duct is solid even through the mercy window: up and over.
+    const duct = hits.find((h) => h.userData.duct);
+    if (duct && r.invulnerable > 0) {
+      r.height = Math.max(r.height, duct.userData.top ?? 1);
+      r.verticalVelocity = Math.max(r.verticalVelocity, 2.2);
+      return;
+    }
     if (!hits.length || r.invulnerable > 0) return;
 
-    const hazard = hits[0];
+    const hazard = duct ?? hits[0];
     // Crashing through an intact pane shatters it - you get through, but it
     // costs you like any other hit.
     if (hazard.userData.glass) {
@@ -1361,8 +1600,19 @@ export class MeltdownGame {
         audio.glassShatter(true);
       }
     }
-    if (r.barrierShield > 0) {
+    // Ran into a fallen duct instead of jumping it: it hurts, and you
+    // scramble up and over it (rather than passing through).
+    if (hazard.userData.duct) {
+      r.height = Math.max(r.height, hazard.userData.top ?? 1);
+      r.verticalVelocity = Math.max(r.verticalVelocity, 2.2);
+      debris.sparks(centre, { count: 12, speed: 3 });
+      audio.clang();
+    }
+    // A kinetic shield (serum) takes the hit.
+    if (this.arsenal.absorb()) {
       debris.sparks(centre, { count: 20 });
+      hud.toast(this.arsenal.shieldCharges > 0 ? "SHIELD ABSORBED" : "SHIELD BROKEN", this.arsenal.shieldCharges > 0 ? "1 LEFT" : "", "power", 1400);
+      r.invulnerable = 1.1;
       return;
     }
 
@@ -1377,7 +1627,7 @@ export class MeltdownGame {
     this.hitFlash = 1;
     level.impact(1);
     hud.flashDamage();
-    hud.toast("HIT", dropped ? `-${dropped} BALLS` : "", "warn");
+    hud.toast("HIT", dropped ? `-${dropped} SPHERES` : "", "warn");
     audio.stumble();
     this.sfx?.impact(1);
     // The dropped balls physically spill out behind you.
@@ -1433,6 +1683,10 @@ export class MeltdownGame {
       this.level.dispose();
       this.level = null;
     }
+    this.director?.dispose();
+    this.director = null;
+    this.finale?.dispose();
+    this.finale = null;
     this.roof?.dispose();
     this.roof = null;
     this._timers.length = 0;
@@ -1483,7 +1737,7 @@ export class MeltdownGame {
       ["Hits taken", r.hits],
       ["Shots / breaks", `${r.shots} / ${r.breaks}`],
       ["Patients downed", r.downs],
-      ["Balls left", r.balls, true],
+      ["Spheres left", r.balls, true],
     ]);
   }
 
@@ -1526,15 +1780,25 @@ export class MeltdownGame {
     this.projectiles.clear();
     this.debris.clear();
     this.roof?.dispose();
-    const roof = new RoofLevel({ assets: this.roofAssets, endless: this.mode === "endless-roof", ...this.roofOptions });
+    const roof = new RoofLevel({ assets: this.roofAssets, heights: this.roofHeights, endless: this.mode === "endless-roof", ...this.roofOptions });
     this.roof = roof;
     roof.addTo(this.scene);
     this._bindRoofEvents(roof);
+    this._supply = 0;
+    // Police helicopters circling the tower, searchlights on the roof.
+    if (!this.police) {
+      this.police = new PoliceHelicopters({ count: 2, seed: 4 });
+      this.police.load(this.assetBase);
+    }
+    this.scene.add(this.police.root);
+    this.police.root.visible = true;
 
     const { hero, runner: r, avatar } = this;
     hero.position.copy(ROOF_SPAWN);
     hero.velocity.set(0, 0, 0);
     hero.knock.set(0, 0, 0);
+    hero.vy = 0;
+    hero.climbing = false;
     hero.yaw = 0;
     hero.aim.copy(ROOF_SPAWN).add(new THREE.Vector3(0, 1.15, -10));
     this.roofClock = 0;
@@ -1559,7 +1823,9 @@ export class MeltdownGame {
     this.cut = roof.beginArrival();
     this.snapCamera = true;
     this._applyCutscene(this.cut, 0.016);
+    this._applyShadowFlags();
     roof.prewarm(this.renderer, this.camera);
+    this._logTextureMemory("the Roof");
 
     this.phase = "roofArrive";
     this.fade.override = null;
@@ -1577,10 +1843,17 @@ export class MeltdownGame {
       hud.toast("WASD MOVE", "SPACE DODGE", "", 4200);
       this._after(1.8, () => hud.toast("LURE THEM", "OFF THE EDGE", "", 4200));
     });
-    on("wave", ({ index }) => {
-      hud.showBanner(index === 1 ? "THEY WERE WAITING" : "MORE OF THEM", index === 1 ? "THEY'RE LETTING THEM OUT" : "THE MACHINE ROOM", 2600);
+    on("wave", ({ index, brute }) => {
+      if (brute) hud.showBanner("SOMETHING BIGGER", "OUT OF THE STAIR HUT", 2800);
+      else hud.showBanner(index === 1 ? "THEY WERE WAITING" : "MORE OF THEM", index === 1 ? "THEY'RE LETTING THEM OUT" : "THE STAIR HUT", 2600);
       audio.groan(1);
     });
+    on("door-open", () => audio.clang());
+    on("laser-fired", () => {
+      audio.zap();
+      this.sfx?.surfaceRicochet();
+    });
+    on("grenade-thrown", () => audio.whoosh());
     on("patient-windup", () => audio.growl());
     on("patient-stunned", ({ position }) => {
       debris.dust(position.clone().setY(1), { size: 2 });
@@ -1640,6 +1913,74 @@ export class MeltdownGame {
     });
   }
 
+  /**
+   * The story's jump for the ladder: the leap starts, time slows, and the
+   * latch reaction decides it. Caught: the existing leap-and-hang ending.
+   * Missed: you fall (the story layer's death), then you're back on the
+   * roof just before the jump - and the helicopter is still there, its
+   * window held open for the retry.
+   */
+  _startLadderLatch() {
+    const layer = this.story.layer;
+    if (this.phase !== "roof" || layer.active) return;
+    this.phase = "latch";
+    this.runner.firing = false;
+    const hero = this.hero;
+    this._latch = { from: hero.position.clone(), fall: 0 };
+    this.hud.setPrompt(null);
+    this.audio.whoosh();
+    layer.play(
+      {
+        id: "ladderLatch",
+        letterbox: false,
+        skippable: false,
+        duration: 0.7,
+        reactions: [{ at: 0.3, id: "latch", spec: latchReaction(), lead: 0.3, slow: 0.15 }],
+      },
+      {
+        camera: null,
+        deathSeconds: 1.7,
+        deathLine: STORY_LINES.fallen[0],
+        on: {
+          fail: () => {
+            this._latch.falling = true;
+            this.audio.scream?.();
+          },
+          retry: () => {
+            // Back on the roof just before the jump; it waits for you.
+            layer.stop();
+            hero.position.copy(this._latch.from);
+            hero.velocity.set(0, 0, 0);
+            this.roof.holdExtraction?.();
+            this.phase = "roof";
+            this.snapCamera = true;
+            this._latch = null;
+          },
+          done: () => {
+            this._latch = null;
+            this.phase = "roof";
+            if (!this.roof.grab(hero.position)) this.hud.toast("TOO LATE", "", "warn");
+          },
+        },
+      }
+    );
+  }
+
+  /** The story's ending (ending-director.js), then the usual summary. */
+  _startFinale(title) {
+    this.phase = "finale";
+    this.runner.firing = false;
+    this.ui.letterbox.classList.remove("on");
+    this.finale?.dispose();
+    this.finale = new EndingDirector(this, this.story, () => {
+      this.finale?.dispose();
+      this.finale = null;
+      this.phase = "ending";
+      this._roofSummary(true, title);
+    });
+    this.events.emit("phase", { phase: "finale" });
+  }
+
   _startCutscene() {
     this.phase = "ending";
     this.runner.firing = false;
@@ -1659,7 +2000,7 @@ export class MeltdownGame {
       this._chunks(result.position, 14, { tint: 0xd8f6ff, speed: 3.5 });
       this.sfx?.glassBreak();
       this.sfx?.sphereCollected();
-      hud.toast("BALLS", `+${result.spheres}`);
+      hud.toast("SPHERES", `+${result.spheres}`);
       audio.glassShatter(false);
       audio.pickup();
       return true;
@@ -1698,6 +2039,12 @@ export class MeltdownGame {
   _roofHit(hit) {
     const { runner: r, hero } = this;
     if (r.invulnerable > 0 || this.phase !== "roof") return;
+    if (this.arsenal.absorb()) {
+      r.invulnerable = 0.8;
+      this.debris.sparks(this.avatar.root.position.clone().setY(1.2), { count: 20 });
+      this.hud.toast(this.arsenal.shieldCharges > 0 ? "SHIELD ABSORBED" : "SHIELD BROKEN", "", "power", 1400);
+      return;
+    }
     r.vitality = Math.max(0, r.vitality - hit.damage);
     r.hits += 1;
     r.invulnerable = 1.0;
@@ -1715,6 +2062,18 @@ export class MeltdownGame {
     }
   }
 
+  /** Off the edge of the roof: down past the facade, and that's the run. */
+  _roofFell() {
+    const r = this.runner;
+    r.alive = false;
+    r.vitality = 0;
+    r.firing = false;
+    this.trauma = 1;
+    this.audio.scream?.();
+    this.hud.toast("YOU FELL", "", "warn", 2400);
+    this._roofSummary(false, "YOU FELL");
+  }
+
   _roofSummary(escaped, title) {
     const r = this.runner;
     this._end(escaped, title, [
@@ -1723,7 +2082,7 @@ export class MeltdownGame {
       ["Shot down (both phases)", r.downs],
       ["Sent over the edge", this.roof ? this.roof.state.falls : 0],
       ["Hits taken", r.hits],
-      ["Balls left", r.balls, true],
+      ["Spheres left", r.balls, true],
     ], escaped ? "YOU GOT OUT" : "THE ROOF");
   }
 
@@ -1750,14 +2109,57 @@ export class MeltdownGame {
       const iz = (held.has("KeyS") || held.has("ArrowDown") ? 1 : 0) - (held.has("KeyW") || held.has("ArrowUp") ? 1 : 0);
       const input = _input.set(ix, 0, iz);
       if (input.lengthSq() > 1) input.normalize();
-      hero.velocity.lerp(input.multiplyScalar(ROOF_SPEED), 1 - Math.exp(-dt * 12));
+      hero.velocity.lerp(input.multiplyScalar(ROOF_SPEED * (this.arsenal.isActive("overdrive") ? 1.25 : 1)), 1 - Math.exp(-dt * 12));
       hero.dodge = Math.max(0, hero.dodge - dt);
       hero.dodgeCooldown = Math.max(0, hero.dodgeCooldown - dt);
       hero.knock.multiplyScalar(Math.max(0, 1 - dt * 6));
-      hero.position.addScaledVector(hero.velocity, dt).addScaledVector(hero.knock, dt);
-      if (hero.dodge > 0) hero.position.addScaledVector(hero.dodgeDir, DODGE_SPEED * dt);
-      roof.clampPlayer(hero.position);
-      hero.position.y = 0;
+      // The ladder up the building (the scanned roof): walk into it and keep
+      // going (W) to climb; S climbs back down. Over the top onto the roof.
+      const ladder = roof.scan?.ladder;
+      if (ladder && !hero.climbing && hero.vy === 0 && iz < 0 && hero.position.y < ladder.top - 0.5
+        && Math.abs(hero.position.x - ladder.x) < 0.7 && Math.abs(hero.position.z - ladder.z) < 0.9) {
+        hero.climbing = true;
+      }
+      if (hero.climbing) {
+        hero.velocity.set(0, 0, 0);
+        hero.knock.set(0, 0, 0);
+        hero.position.x = ladder.x;
+        hero.position.z = ladder.z;
+        hero.position.y += (iz < 0 ? 2.6 : iz > 0 ? -2.6 : 0) * dt;
+        if (hero.position.y >= ladder.top) {
+          hero.position.set(ladder.x - ladder.nx * 0.9, ladder.top, ladder.z - ladder.nz * 0.9);
+          hero.climbing = false;
+        } else if (hero.position.y <= 0) {
+          hero.position.y = 0;
+          hero.climbing = false;
+        }
+      } else {
+        hero.position.addScaledVector(hero.velocity, dt).addScaledVector(hero.knock, dt);
+        if (hero.dodge > 0) hero.position.addScaledVector(hero.dodgeDir, DODGE_SPEED * dt);
+        roof.clampPlayer(hero.position);
+      }
+      // Underfoot: the roof, the deck, the stair - or, off an edge, nothing.
+      const ground = hero.climbing ? hero.position.y : roof.groundAt(hero.position, hero.position.y);
+      hero.vy = hero.vy ?? 0;
+      if (ground !== null && hero.position.y <= ground + 0.3 && hero.vy <= 0) {
+        hero.position.y = ground;
+        hero.vy = 0;
+      } else {
+        hero.vy -= ROOF_GRAVITY * dt;
+        hero.position.y += hero.vy * dt;
+        if (ground !== null && hero.position.y <= ground) {
+          // Down off the deck: a hard landing.
+          if (hero.vy < -6) {
+            this.trauma = Math.min(1, this.trauma + 0.35);
+            this.landingDip = 1;
+            this.sfx?.impact(0.5);
+          }
+          hero.position.y = ground;
+          hero.vy = 0;
+        }
+      }
+      if (hero.position.y < ROOF_FALL_LIMIT && r.alive) this._roofFell();
+      this.aimPlane.constant = -(hero.position.y + 1.15);
 
       // Aim: an enemy or sack under the cursor, else a point at chest height.
       this.raycaster.setFromCamera(this.pointer, this.camera);
@@ -1778,10 +2180,46 @@ export class MeltdownGame {
       avatar.root.position.copy(hero.position);
       avatar.root.rotation.y = hero.yaw;
       const speed = hero.velocity.length() + (hero.dodge > 0 ? DODGE_SPEED : 0);
-      avatar.update(dt, { speed, lateralVel: 0, height: 0, sliding: hero.dodge > 0, aiming: r.firing });
+      // On the ladder: hands up the rungs, the launcher slung.
+      avatar.reachUp = hero.climbing ? 1 : 0;
+      avatar.hold = hero.climbing ? 0 : 1;
+      avatar.update(dt, { speed: hero.climbing ? 2.5 : speed, lateralVel: 0, height: hero.vy < -1 ? 1 : 0, sliding: hero.dodge > 0, aiming: r.firing && !hero.climbing });
 
       const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
       for (const h of hits) this._roofHit(h);
+      this._updateRoofCamera(dt);
+      // Endless: a supply drop every so often you hold out.
+      if (this.mode === "endless-roof" && r.alive) {
+        this._supply = (this._supply ?? 0) + dt;
+        if (this._supply >= SUPPLY_SECONDS) {
+          this._supply -= SUPPLY_SECONDS;
+          r.balls = Math.min(MAX_BALLS + SUPPLY_SPHERES, r.balls + SUPPLY_SPHERES);
+          this.hud.toast("SUPPLY DROP", `+${SUPPLY_SPHERES} SPHERES`, "power", 2400);
+          this.sfx?.sphereCollected();
+          this.audio.pickup();
+          this.debris.burst(hero.position.clone().setY(hero.position.y + 1.2), { kind: "ball", count: 5, speed: 2.5, up: 3 });
+        }
+      }
+    } else if (this.phase === "finale") {
+      // The story's ending: the roof burns on under the departing cabin.
+      roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
+      this.finale?.update(dt, time);
+    } else if (this.phase === "latch") {
+      // The story's latch: the world holds (the helicopter's window too)
+      // while the keys are up. A miss: over the edge and down.
+      const l = this._latch;
+      if (l?.falling) {
+        l.fall += dt;
+        hero.position.x += dt * 2.2;
+        hero.position.y = -4.9 * l.fall * l.fall;
+      } else {
+        // The leap toward the ladder, slowed right down.
+        hero.position.x += dt * 0.4;
+        hero.position.y = Math.min(0.9, hero.position.y + dt * 1.5);
+      }
+      avatar.root.position.copy(hero.position);
+      avatar.update(dt * 0.3, { speed: 0, height: 1, aiming: false });
+      avatar.reachUp = l?.falling ? 0.3 : 0.8;
       this._updateRoofCamera(dt);
     } else {
       roof.update({ dt: sdt, time, player: hero.position, playerVelocity: hero.velocity });
@@ -1790,7 +2228,10 @@ export class MeltdownGame {
         if (cut.done && this.phase === "ending") {
           this.avatar.hold = 1;
           this.avatar.reachUp = 0;
-          this._roofSummary(true, roof.state.ending === "victory" ? "EXTRACTED" : "BARELY OUT");
+          const title = roof.state.ending === "victory" ? "EXTRACTED" : "BARELY OUT";
+          // The story: the pilot, the reveal, the title and the credits first.
+          if (this.story) this._startFinale(title);
+          else this._roofSummary(true, title);
         }
       } else {
         this._updateRoofCamera(dt);
@@ -1798,8 +2239,10 @@ export class MeltdownGame {
     }
 
     this._placeLauncher(false);
+    this._placeKeyLight(hero.position);
+    this.police?.update(dt, time, { worldZ: (d) => 70 - d, distance: 0, deckY: 0, overDeck: true, cityY: -60, spotZ: 0, spotSpread: 14 });
     // Balls fly through the cutscene's slow motion too.
-    this.projectiles.update(sdt, { breakables: roof.breakables, solids: roof.solids, onBreakable: (o, p, b) => this._onBallBreakable(o, p, b), onSolid: (o, p) => this._onBallSolid(o, p) });
+    this.projectiles.update(sdt, { breakables: roof.breakables, solids: roof.solids, onBreakable: (o, p, b) => this._onBallHit(o, p, b), onSolid: (o, p, b) => this._onBallSolid(o, p, b), onFloor: (p, b) => this._onBallFloor(p, b) });
     this.debris.update(sdt);
     this.shatter.update(sdt);
     this.launcher.muzzle.getWorldPosition(this._v.muzzle);
@@ -1831,7 +2274,7 @@ export class MeltdownGame {
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
     const hint = this.phase === "roof" ? roof?.extractionHint(this.hero.position) : null;
-    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO BALLS" : null);
+    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO SPHERES" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 

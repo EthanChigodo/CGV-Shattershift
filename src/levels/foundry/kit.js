@@ -382,28 +382,37 @@ export function createFoundryKit({ shadows = false } = {}) {
     tracked.materials.push(beltMaterial);
     tracked.textures.push(beltMaterial.map);
 
+    // Against the wall, clear of the outer lane (lanes sit at +-3.2 and the
+    // runner is 0.9 m wide): the belt used to reach into the lane, and the
+    // runner ran straight through its crates.
+    const beltX = side * (halfWidth - 1.0);
     const belt = mesh(geometries.beltSurface, beltMaterial, { cast: false });
-    belt.position.set(side * (halfWidth - 1.5), 1.05, 0);
+    belt.scale.x = 0.62;
+    belt.position.set(beltX, 1.05, 0);
     group.add(belt);
 
     const rollers = [];
     for (const z of [-4.2, 0, 4.2]) {
       const roller = mesh(geometries.roller, materials.trim);
       roller.rotation.z = Math.PI / 2;
-      roller.position.set(side * (halfWidth - 1.5), 1.05, z);
+      roller.scale.y = 0.62;
+      roller.position.set(beltX, 1.05, z);
       group.add(roller);
       rollers.push(roller);
     }
 
-    // Crates riding the belt give the machinery something to carry.
+    // Crates riding the belt give the machinery something to carry. They
+    // are solid (the level registers them as hazards), so nothing passes
+    // through one.
     const crates = [];
     for (let i = 0; i < 3; i += 1) {
       const crate = mesh(geometries.switchHousing, materials.plating);
-      crate.scale.set(1.1, 2.4, 2.2);
-      crate.position.set(side * (halfWidth - 1.5), 1.55, -4 + i * 4);
+      crate.scale.set(0.72, 2.4, 2.2);
+      crate.position.set(beltX, 1.55, -4 + i * 4);
       group.add(crate);
       crates.push(crate);
     }
+    group.userData.solids = crates;
 
     group.userData.tick = (dt) => {
       beltMaterial.map.offset.y = (beltMaterial.map.offset.y + dt * speed * 0.4) % 1;
@@ -621,9 +630,13 @@ export function createFoundryKit({ shadows = false } = {}) {
    * crowd the pooled lights out of the vents and strobes that actually shape
    * the corridor. Emissive material self-lights them for free.
    */
-  function pressureCell({ points = 60, spheres = 1 } = {}) {
+  /**
+   * `serum` makes it a serum vial instead (the Skyline's power-ups, in every
+   * level): tinted `colour`, worth no spheres, and breaking it injects it.
+   */
+  function pressureCell({ points = 60, spheres = 1, serum = null, colour = null } = {}) {
     const group = new THREE.Group();
-    group.name = "PressureCell";
+    group.name = serum ? "SerumVial" : "PressureCell";
 
     const mount = mesh(geometries.cellMount, materials.switchHousing);
     mount.position.y = 0.5;
@@ -631,10 +644,14 @@ export function createFoundryKit({ shadows = false } = {}) {
 
     const glassMaterial = materials.switchGlass.clone();
     glassMaterial.emissiveIntensity = 1.5;
+    if (colour) {
+      glassMaterial.color.set(colour);
+      glassMaterial.emissive.set(colour);
+    }
     tracked.materials.push(glassMaterial);
 
     const glass = mesh(geometries.cellGlass, glassMaterial);
-    glass.userData = { kind: "cell", breakable: true, alive: true, points, spheres, label: "CELL", node: group };
+    glass.userData = { kind: "cell", breakable: true, alive: true, points, spheres: serum ? 0 : spheres, serum, label: serum ? "SERUM" : "CELL", node: group };
     group.add(glass);
 
     const cage = mesh(geometries.cellCage, materials.switchHousing);

@@ -1,0 +1,103 @@
+/*
+ * The story layer (src/story/story-ui.js): letterbox, eyelids, blur, fade,
+ * subtitles, the hold-to-skip ring, reaction prompts and the title card.
+ * Below the menu screens (z-index 8), above every level HUD (6-7).
+ */
+
+.story-layer { position: fixed; inset: 0; z-index: 7; pointer-events: none; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+.story-layer[hidden] { display: none; }
+
+/* While a cutscene runs, the level HUDs step aside. */
+body.story-cutscene .hud,
+body.story-cutscene .meltdown-ui,
+body.story-cutscene .foundry-ui,
+body.story-cutscene .cw-ui,
+body.story-cutscene .elevator-ui,
+body.story-cutscene .reticle,
+body.story-cutscene .message { opacity: 0 !important; transition: opacity .4s; }
+
+/* Blur and darkness over the whole frame (the anaesthetic, a hit). */
+.story-blur { position: absolute; inset: 0; backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
+.story-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,.92) 100%); }
+.story-tint { position: absolute; inset: 0; opacity: 0; background: #7a0d08; mix-blend-mode: multiply; }
+
+/* Eyelids: two soft black shapes that meet in the middle. */
+.story-lid { position: absolute; left: -10%; right: -10%; height: 0; background: #000; }
+.story-lid.top { top: 0; border-radius: 0 0 50% 50% / 0 0 30% 30%; box-shadow: 0 18px 40px 20px #000; }
+.story-lid.bottom { bottom: 0; border-radius: 50% 50% 0 0 / 30% 30% 0 0; box-shadow: 0 -18px 40px 20px #000; }
+
+/* Letterbox bars. */
+.story-bar { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height .7s cubic-bezier(.2,.7,.2,1); }
+.story-bar.top { top: 0; }
+.story-bar.bottom { bottom: 0; }
+.story-layer.letterbox .story-bar { height: 11vh; }
+
+.story-fade { position: absolute; inset: 0; background: #000; opacity: 0; }
+
+/* Subtitles: speaker name in their colour, line in white, on the lower bar. */
+.story-sub { position: absolute; left: 50%; bottom: 4.2vh; transform: translateX(-50%); width: min(88vw, 900px); text-align: center; opacity: 0; transition: opacity .18s; }
+.story-sub.show { opacity: 1; }
+/* During play (Okoro talking while you run): bottom left, like a radio,
+   clear of the centred combo/prompts and above every level's bottom bar. */
+.story-layer.gameplay .story-sub { left: 3vw; bottom: calc(15vh + 34px); transform: none; width: min(44vw, 560px); text-align: left; }
+.story-sub .who { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; letter-spacing: .24em; }
+.story-sub .line { display: inline; padding: 3px 10px; font-size: clamp(16px, 2.1vw, 23px); line-height: 1.5; font-weight: 600; color: #f4f7f8; background: rgba(0,0,0,.55); box-decoration-break: clone; -webkit-box-decoration-break: clone; text-shadow: 0 1px 2px #000; }
+.story-sub.direction .line { font-style: italic; font-weight: 500; color: #b9c4c9; background: rgba(0,0,0,.35); }
+
+/* Hold-to-skip ring, bottom right. */
+.story-skip { position: absolute; right: 26px; bottom: calc(11vh + 14px); display: flex; align-items: center; gap: 10px; opacity: 0; transition: opacity .3s; color: #cfd8dc; font-size: 10px; font-weight: 800; letter-spacing: .2em; }
+.story-skip.show { opacity: .85; }
+.story-skip svg { width: 28px; height: 28px; transform: rotate(-90deg); }
+.story-skip circle { fill: none; stroke-width: 3; }
+.story-skip .track { stroke: rgba(255,255,255,.18); }
+.story-skip .fill { stroke: #fff; stroke-dasharray: 69.1; stroke-dashoffset: 69.1; }
+.story-skip kbd { padding: 2px 6px; border: 1px solid rgba(255,255,255,.4); border-radius: 3px; font: inherit; }
+
+/* Reaction prompts, centre screen. */
+.story-react { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 14px; opacity: 0; transition: opacity .12s; }
+.story-react.show { opacity: 1; }
+.story-react .label { color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .3em; text-shadow: 0 0 12px rgba(0,0,0,.9); }
+.story-react .keys { display: flex; gap: 14px; align-items: center; }
+.story-react .plus { color: #fff; font-size: 22px; font-weight: 800; text-shadow: 0 0 10px #000; }
+.story-key { position: relative; width: 74px; height: 74px; display: grid; place-items: center; }
+.story-key svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.story-key circle { fill: rgba(8,12,14,.72); stroke-width: 5; }
+.story-key .track { stroke: rgba(255,255,255,.18); }
+.story-key .timer { fill: none; stroke: #fff; stroke-dasharray: 201; stroke-dashoffset: 0; stroke-linecap: round; }
+.story-key b { position: relative; color: #fff; font-size: 26px; font-weight: 800; }
+.story-key.wide b { font-size: 13px; letter-spacing: .12em; }
+.story-key.done circle.track { stroke: #6fe3d6; }
+.story-key.done b { color: #6fe3d6; }
+.story-key.done .timer { opacity: 0; }
+.story-key.next { animation: story-pulse .5s ease-in-out infinite alternate; }
+.story-key.later { opacity: .45; transform: scale(.82); }
+.story-key.later .timer { opacity: 0; }
+.story-key.held circle.track { stroke: #ffe14d; }
+@keyframes story-pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
+.story-react .bar { width: 260px; height: 10px; border: 1px solid rgba(255,255,255,.5); background: rgba(0,0,0,.6); }
+.story-react .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6fe3d6, #fff); }
+.story-react .bar[hidden] { display: none; }
+.story-react.success .label { color: #6fe3d6; }
+.story-react.fail .label { color: #ff5a4e; }
+.story-react.fail .keys { animation: story-shake .3s; }
+@keyframes story-shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+
+/* Title card (the end), and chapter cards. */
+.story-title { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; opacity: 0; transition: opacity 1.2s; }
+.story-title.show { opacity: 1; }
+.story-title h1 { margin: 0; color: #fff; font-size: clamp(42px, 8vw, 104px); font-weight: 900; letter-spacing: .14em; }
+.story-title p { margin: 14px 0 0; color: #b9c4c9; font-size: 13px; font-weight: 700; letter-spacing: .4em; }
+
+/* End credits: a centred column scrolling up over black. */
+.story-credits { position: absolute; inset: 0; overflow: hidden; opacity: 0; transition: opacity .8s; }
+.story-credits.show { opacity: 1; }
+.story-credits .roll { position: absolute; left: 50%; top: 0; width: min(86vw, 760px); margin-left: calc(min(86vw, 760px) / -2); text-align: center; color: #e8eef2; will-change: transform; }
+.story-credits h2 { margin: 2.4em 0 .4em; color: #ffb547; font-size: 13px; font-weight: 800; letter-spacing: .32em; }
+.story-credits h1 { margin: 0 0 .2em; font-size: clamp(32px, 5vw, 60px); font-weight: 900; letter-spacing: .14em; }
+.story-credits p { margin: .25em 0; font-size: 15px; line-height: 1.5; }
+.story-credits p small { display: block; color: #9aa7ad; font-size: 11px; letter-spacing: .04em; }
+.story-credits .gap { height: 40vh; }
+
+@media (prefers-reduced-motion: reduce) {
+  .story-key.next, .story-react.fail .keys { animation: none; }
+}

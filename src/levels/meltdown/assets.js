@@ -77,6 +77,8 @@ export const MELTDOWN_ASSETS = {
   industrialPipes: "industrial_pipes.glb",
   experimentRing: "experiment_ring.glb",
   launcher: "launcher.glb",
+  // The duffel beside each sphere sack.
+  duffelBag: "duffel_bag.glb",
   // People (see characters.js): normalised, atlas-merged, and rigged.
   patient: "patient.glb",
 };
@@ -88,6 +90,8 @@ export const CHARACTER_ASSETS = {
   playerMale: { file: "player_male.glb", profile: "playerMale" },
   scientistRadioman: { file: "scientist_radioman.glb", profile: "scientistRadioman" },
   scientistRust: { file: "scientist_rust.glb", profile: "scientistRust" },
+  scientistGood: { file: "scientist_good.glb", profile: "scientistGood" },
+  scientistEvil: { file: "scientist_evil.glb", profile: "scientistEvil" },
 };
 
 /**
@@ -100,8 +104,42 @@ export const ROOF_ASSETS = {
   gadgetCoil: "weapon.glb",
 };
 
+/**
+ * The second batch of supplied models (tools/assets/README.md): props and
+ * sets for the story and the later levels, loaded by name where they're used.
+ */
+export const EXTRA_ASSETS = {
+  // The sphere bag Dr. Okoro hands over in the Foundry; worn from then on.
+  backpack: "backpack.glb",
+  // Police helicopters over the Skyline, and the prologue.
+  policeHelicopter: "police_helicopter.glb",
+  // The city skyline at night (the prologue, the Skyline's backdrop).
+  cityNight: "city_night.glb",
+  // The roof's plant, from the sci-fi rooftop kit (tools/assets/extract_kit.py).
+  roofHvac: "roof_hvac.glb",
+  roofHvac2: "roof_hvac2.glb",
+  roofHvac3: "roof_hvac3.glb",
+  roofTank: "roof_tank.glb",
+  roofDish2: "roof_dish2.glb",
+  roofMast: "roof_mast.glb",
+  roofMast2: "roof_mast2.glb",
+  // The roof's heavy: the two-headed brute.
+  brute: "brute.glb",
+  // The operating theatre (the wake-up, the prologue).
+  operatingRoom: "operating_room.glb",
+  // The helicopter's instrument panel (the ending).
+  // The roof itself: a photogrammetry scan of a rooftop ("Le Radeau de la
+  // Meduse 2019" - the painting is a mural on its tower), two levels.
+  roofScan: "roof_scan.glb",
+};
+
 /** Loaded once per page and shared by every level instance (and a restart). */
 const cache = new Map();
+
+/** Every asset key requested so far this page (for the credits check). */
+export function loadedAssetNames() {
+  return [...cache.keys()];
+}
 
 /**
  * Load every asset. Each result is a template Group whose origin sits at the
@@ -112,7 +150,7 @@ const cache = new Map();
 export async function loadMeltdownAssets(baseUrl, { onProgress, names } = {}) {
   const loader = new GLTFLoader();
   const wanted = names ?? Object.keys(MELTDOWN_ASSETS);
-  const entries = wanted.map((name) => [name, CHARACTER_ASSETS[name]?.file ?? MELTDOWN_ASSETS[name] ?? ROOF_ASSETS[name]]).filter(([, file]) => file);
+  const entries = wanted.map((name) => [name, CHARACTER_ASSETS[name]?.file ?? MELTDOWN_ASSETS[name] ?? ROOF_ASSETS[name] ?? EXTRA_ASSETS[name]]).filter(([, file]) => file);
   const assets = new Map();
   let done = 0;
 

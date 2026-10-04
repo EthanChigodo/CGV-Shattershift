@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Story systems // Preview</title>
+    <!-- Same import map as the game: "three" must resolve to src/three.js's copy. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../lib/three/build/three.module.js",
+          "three/addons/": "../lib/three/examples/jsm/"
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="../styles.css" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #050404; }
+      canvas { display: block; }
+      /* Preview-only chrome. None of this ships with the game. */
+      .story-bar-ui {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 9; display: flex; gap: 18px; align-items: center;
+        padding: 10px 18px; background: linear-gradient(180deg, rgba(5, 8, 9, 0.92), rgba(5, 8, 9, 0));
+        font: 700 10px/1.4 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: 0.18em; text-transform: uppercase; color: #8fa3a8; pointer-events: none;
+      }
+      .story-bar-ui strong { color: #6fe3d6; }
+      .story-bar-ui em { font-style: normal; color: #eef6f7; }
+      .story-bar-ui label { pointer-events: auto; cursor: pointer; text-transform: none; letter-spacing: 0.04em; font-weight: 600; }
+      .story-status { margin-left: auto; color: #eef6f7; }
+    </style>
+  </head>
+  <body>
+    <div class="story-bar-ui">
+      <strong>Story systems</strong>
+      <span><em>1</em> wake-up</span>
+      <span><em>2</em> reaction ladder</span>
+      <span><em>3</em> walk &amp; talk</span>
+      <span><em>4</em> mash / sprint / latch</span>
+      <span>hold <em>Esc</em> skip</span>
+      <label><input type="checkbox" id="optLong" /> longer windows</label>
+      <label><input type="checkbox" id="optHold" /> hold instead of mash</label>
+      <span class="story-status" id="status"></span>
+    </div>
+    <script type="module" src="./story-preview.js"></script>
+  </body>
+</html>
