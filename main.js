@@ -1411,7 +1411,7 @@ function updateMeltdownFrame(dt, time) {
     return;
   }
   // Mirror Level 3's numbers into the game's own (pause screen, end screen).
-  if (meltdown.level && state === "playing") {
+  if ((meltdown.level || meltdown.roof) && state === "playing") {
     health = meltdown.runner.vitality;
     ammo = meltdown.runner.balls;
   }
@@ -2883,8 +2883,29 @@ function endRun(won, reason = null, detail = null) {
 }
 
 /**
- * Demo keys 1-4 jump to a stage of the story: 1 Foundry, 2 Labs, 3 Skyline,
- * 4 Roof. (Endless is on the menu.)
+ * Demo keys 1-4 jump to a stage of the story, with its cutscenes:
+ * 1 Foundry, 2 Labs, 3 Skyline (from its start; the blast is at 500 m),
+ * 4 Roof (and the ending after it). (Endless is on the menu.)
+ */
+function demoStoryJump(stage) {
+  if (state !== "playing") return;
+  music.fadeOut();
+  showMessage(`DEMO JUMP // ${["", "SECTOR 01", "SECTOR 02", "SECTOR 03", "THE ROOF"][stage]}`);
+  if (stage === 1) { story.markSeen("wake"); startCampaign(); }
+  else if (stage === 2) storyJumps.labs();
+  else if (stage === 3) {
+    story.markSeen("wake");
+    startCampaign();
+    endStoryStage();
+    setFoundryActive(false);
+    if (!causeway) buildCauseway("story");
+    enterSkyline();
+  } else if (stage === 4) storyJumps.roof();
+}
+
+/**
+ * The checks' jump to a stage without the story (no cutscenes, no Okoro):
+ * 1 Foundry, 2 Labs, 3 Skyline, 4 Roof.
  */
 function demoJump(stage) {
   if (state !== "playing") return;
@@ -3556,10 +3577,10 @@ addEventListener("keydown", (event) => {
     if (jumpHeight <= 0.01) jumpVelocity = 7.4;
   }
   if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && state === "playing" && !paused) sliding = 0.65;
-  if (event.code === "Digit1") demoJump(1);
-  if (event.code === "Digit2") demoJump(2);
-  if (event.code === "Digit3") demoJump(3);
-  if (event.code === "Digit4") demoJump(4);
+  if (event.code === "Digit1") demoStoryJump(1);
+  if (event.code === "Digit2") demoStoryJump(2);
+  if (event.code === "Digit3") demoStoryJump(3);
+  if (event.code === "Digit4") demoStoryJump(4);
   if (event.code === "Digit5") demoGravityLift();
   if (event.code === "Digit6") demoQuietRide();
   if (event.code === "KeyA" || event.code === "ArrowLeft") lane = Math.max(0, lane - 1);

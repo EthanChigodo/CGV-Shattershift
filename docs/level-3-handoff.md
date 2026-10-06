@@ -235,13 +235,22 @@ as the user asked.
   off the tip. The launcher replaces throwing. Police helicopters
   (`src/fx/police-helicopters.js`) circle with red/blue strobes and white
   searchlights.
-- **Roof** (`roof.js` rewrite): the floor is the supplied rooftop scan
-  (`roof_scan.glb`) with a baked height map; walk off an edge and you fall
-  ("YOU FELL"). Climb the ladder to the upper level (W). Fire is gone
-  (police-light strobes instead). Patients come out of a hut **door**; a
-  brute joins later waves; scientists fire **lasers** (aimed line, lock,
-  beam) and **grenades** (hurt enemies too). The helicopter takes
-  **165-190 s**; Endless drops **5 spheres every 30 s**.
+- **Roof**: after trying a bigger roof built on a supplied rooftop scan
+  (two levels, lasers, grenades, a brute, a 165-190 s wait), the team went
+  back to the original roof - it played better and the scan version was far
+  too long. What's new on it: **no fire** (the ledges smoke, the facade
+  still blows), and **real falling**: the east and west ledges are open, so
+  walk off one and you drop ("YOU FELL") - `roof.groundAt()` is the roof
+  under you, `game.js` applies gravity. The helicopter is back to 40-58 s.
+  Endless drops **5 spheres every 30 s**.
+- **Demo keys 1-4** now jump to a stage *with* its story (cutscenes, the
+  Skyline's blast at 500 m, the roof's ending); `__dbg.demoJump(n)` - what
+  the checks use - is still the plain, story-free jump.
+- **The Skyline's blast** was firing its bursts ~75 m off the tower (a world
+  position given to a child of the tower) - fixed; the camera now holds on
+  the tower 1.6 s after the whole of it goes.
+- **Ending**: Dr. Vale has no helmet (it used to float off his head at the
+  reveal); you see the back of his head from the cabin, then his face.
 - **Briefing** (`src/story/prologue.js`, replaces the old voiced beats): nine
   chapters, ~97 s plus the title, captions only, Esc skips. The tower, Vale's
   pitch, the subjects (the operating-room scan), trials one to six, Subject

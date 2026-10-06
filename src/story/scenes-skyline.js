@@ -39,7 +39,8 @@ const RAMP_ANGLE_RUN = 0.3;
  */
 export function blastScene(a) {
   const WHOLE = DETONATE_AT + a.wholeAt;
-  const TILT_AT = WHOLE + 0.35;
+  // Watch the whole tower go up and start to come down before the deck goes.
+  const TILT_AT = WHOLE + 1.6;
   const SPRINT_AT = TILT_AT + 1.15;
   const LATCH_AT = SPRINT_AT + 0.65;
   const UP_AT = LATCH_AT + 2.35;
