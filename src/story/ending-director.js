@@ -29,7 +29,6 @@ const OUT_START = new THREE.Vector3(EDGE + 8, 9, -4);
 const OUT_VELOCITY = new THREE.Vector3(3, 2.4, -6);
 const OUT_ACCEL = new THREE.Vector3(1.5, 1.2, -5);
 
-const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
 export class EndingDirector {
@@ -51,7 +50,7 @@ export class EndingDirector {
     cabin.root.position.copy(START);
     game.scene.add(cabin.root);
 
-    // The pilot: Dr. Vale, sat facing the nose, helmet on.
+    // The pilot: Dr. Vale, sat facing the nose (no helmet - his head over the seat back).
     const vale = new Companion();
     vale.setModel(story.valeTemplate?.());
     vale.root.position.copy(cabin.anchors.pilot);
@@ -155,13 +154,6 @@ export class EndingDirector {
     vale.adjust.twist = this.turn > 0.95 ? Math.sin(time * 1.7) * 0.08 : 0;
     vale.adjust.headNod = this.turn > 0.95 ? Math.sin(time * 2.3) * 0.05 - 0.12 : 0;
     vale.update(dt);
-    // His helmet stays on his head the whole way (open-faced: the reveal is
-    // him turning round).
-    const helmet = cabin.helmet;
-    vale.headPosition(_v);
-    cabin.root.worldToLocal(_v);
-    helmet.position.copy(_v).add(new THREE.Vector3(0, -0.015, 0));
-    helmet.rotation.set(0, vale.root.rotation.y + Math.PI, 0);
     // Outside: the helicopter model, off the roof's edge and away.
     const heli = this.game.roof?.heli;
     if (heli && this.outsideT !== undefined) {

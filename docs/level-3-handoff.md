@@ -249,8 +249,8 @@ as the user asked.
 - **The Skyline's blast** was firing its bursts ~75 m off the tower (a world
   position given to a child of the tower) - fixed; the camera now holds on
   the tower 1.6 s after the whole of it goes.
-- **Ending**: Dr. Vale keeps his (open-faced) helmet on; it no longer
-  floats off his head at the reveal.
+- **Ending**: Dr. Vale has no helmet (it used to float off his head at the
+  reveal); you see the back of his head from the cabin, then his face.
 - **Briefing** (`src/story/prologue.js`, replaces the old voiced beats): nine
   chapters, ~97 s plus the title, captions only, Esc skips. The tower, Vale's
   pitch, the subjects (the operating-room scan), trials one to six, Subject

@@ -62,7 +62,6 @@ export class CabinStage {
       panel: own(new THREE.MeshBasicMaterial({ map: own(panelTexture()) })),
     };
     const box = own(new THREE.BoxGeometry(1, 1, 1));
-    const cyl = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 10));
     const part = (m, sx, sy, sz, x, y, z, parent = this.root) => {
       const mesh = new THREE.Mesh(box, m);
       mesh.scale.set(sx, sy, sz);
@@ -115,7 +114,7 @@ export class CabinStage {
     const seat = new THREE.Group();
     seat.position.set(0, 0, -2.45);
     this.root.add(seat);
-    // A low back, so the pilot's head and helmet show over it.
+    // A low back, so the pilot's head shows over it.
     part(mat.seat, 0.6, 0.12, 0.55, 0, 0.5, 0, seat);
     part(mat.seat, 0.6, 0.42, 0.12, 0, 0.74, 0.3, seat);
     part(mat.steel, 0.08, 0.5, 0.08, 0, 0.25, 0, seat);
@@ -135,19 +134,6 @@ export class CabinStage {
     glass.rotation.x = 0.25;
     this.root.add(glass);
     part(mat.olive, 2.0, 0.08, 1.8, 0, 2.1, -2.5);
-
-    // The pilot's helmet (Dr. Vale keeps it on): open-faced, so when he turns
-    // round you see who it is.
-    const helmet = new THREE.Group();
-    const shell = new THREE.Mesh(own(new THREE.SphereGeometry(0.155, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62)), mat.olive);
-    shell.scale.set(1, 1.05, 1.12);
-    const boom = new THREE.Mesh(cyl, mat.steel);
-    boom.scale.set(0.012, 0.16, 0.012);
-    boom.rotation.x = Math.PI / 2;
-    boom.position.set(0.11, -0.12, -0.08);
-    helmet.add(shell, boom);
-    this.root.add(helmet);
-    this.helmet = helmet;
 
     this.anchors = {
       /** You, on the bench by the open door. */

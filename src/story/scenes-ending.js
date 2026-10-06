@@ -1,6 +1,6 @@
 /**
  * The ending (Phase 6): in the helicopter, the city burning below; the
- * pilot's back and helmet, the small talk; "I'm only here to collect"; the
+ * pilot's back, the small talk; "I'm only here to collect"; the
  * pilot turns - it's Dr. Vale; his lines, the joke, the laugh; outside as the
  * helicopter flies away from the burning tower; black. Then the title card
  * and the credits (title and credits are their own short scenes, so the
@@ -15,7 +15,7 @@ import { cue } from "./scenes.js";
  * @param {object} e  world-space anchors (functions: the cabin is flying)
  * @param {() => THREE.Vector3} e.seatEye    you, on the bench by the open door
  * @param {() => THREE.Vector3} e.doorLook   out of the door, down at the city
- * @param {() => THREE.Vector3} e.pilotBack  the back of the pilot's helmet
+ * @param {() => THREE.Vector3} e.pilotBack  the back of the pilot's head
  * @param {() => THREE.Vector3} e.pilotFace  his face (after he turns)
  * @param {() => {pos:THREE.Vector3, look:THREE.Vector3}} e.outside  the shot of it flying away
  * @param {(k:number) => void} e.turn         the pilot turning round, 0..1
@@ -47,7 +47,7 @@ export function endingScene(e) {
     shots: [
       // The city burning below, through the open door.
       { at: 0, dur: tPilot, from: { pos: e.seatEye, look: e.doorLook, fov: 64 }, to: { look: () => v().copy(e.doorLook()).add(v().set(0, 1.4, -1.5)) } },
-      // The cockpit: his back and his helmet.
+      // The cockpit: his back and the back of his head.
       { at: tPilot - 0.2, dur: 1.4, ease: "inOut", from: { pos: e.seatEye, look: () => v().copy(e.doorLook()).add(v().set(0, 1.4, -1.5)), fov: 64 }, to: { look: e.pilotBack, fov: 58 } },
       { at: tPilot + 1.2, dur: tHello - tPilot - 1.4, from: { pos: e.seatEye, look: e.pilotBack, fov: 58 }, to: { fov: 54 } },
       // The turn: he swings round; you're facing him.
