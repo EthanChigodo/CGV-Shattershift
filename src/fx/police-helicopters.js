@@ -49,7 +49,8 @@ function glowTexture() {
  * through the most of it), soft at the edges, strong at the lamp and thinning
  * toward where it lands.
  */
-function beamMaterial() {
+/** A searchlight's cone of light (soft-edged, brightest at the lamp). Shared with the story's skies. */
+export function beamMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { uColor: { value: new THREE.Color(0.85, 0.9, 1) }, uOpacity: { value: 0.16 } },
     vertexShader: /* glsl */ `

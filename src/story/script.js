@@ -20,17 +20,19 @@ export const GAME_TITLE = "FRACTURE RUN";
 
 /**
  * The end credits' own lines (the asset credits come from the credits data).
- * Fill in `names` for each role; a role with none shows the team's name.
+ * A role with no `names` shows the team's name.
  */
 export const STORY_CREDITS = {
-  team: "The Shattershift team",
+  team: "Driven by Design",
   roles: [
-    { role: "Sector 01 - The Shifting Foundry", names: [] },
-    { role: "Sector 02 - The Labs, and the Roof", names: [] },
-    { role: "Sector 03 - The Skyline", names: [] },
-    { role: "The Gravity Fault lift", names: [] },
-    { role: "Story and cutscenes", names: [] },
-    { role: "Music and sound", names: [] },
+    { role: "Sector 01 - The Shifting Foundry", names: ["Nkosilathi Dube"] },
+    { role: "Sector 02 - The Labs, and the Roof", names: ["Victor Hyginus"] },
+    { role: "Sector 03 - The Skyline", names: ["Athalia Mamba"] },
+    { role: "The briefing", names: ["Ethan Chigodo", "Victor Hyginus"] },
+    { role: "Cutscenes", names: ["Victor Hyginus", "Tebogo Sebopela"] },
+    { role: "Sound and effects", names: ["Hlakulo Hlungwani"] },
+    { role: "In-game settings", names: ["Ethan Chigodo", "Tebogo Sebopela"] },
+    { role: "Storyline", names: ["The whole team"] },
   ],
   cast: [
     ["Subject 07", "You"],

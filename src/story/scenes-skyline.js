@@ -115,16 +115,18 @@ export function blastScene(a) {
         look = v().copy(a.at(lip + 1, 0, 0.3)).lerp(ahead(d), 0.3);
         pose.fov = 80;
       } else if (t < LATCH_AT + 0.9) {
-        // Hands on the ledge: chin at the lip, your hands on it, the floor beyond.
+        // Hands on the ledge: chin just over the lip, looking down at your
+        // hands on it, the floor beyond.
         d = lip - 0.32;
-        y = 0.06;
-        look = a.at(lip + 1.4, 0, 0.0);
+        y = 0.17;
+        look = a.at(lip + 1.1, 0, -0.25);
+        pose.fov = 56; // close on your hands
         pose.shake = 0.3;
       } else if (t < UP_AT) {
         // Pull up over the lip.
         const k = THREE.MathUtils.smoothstep(t, LATCH_AT + 0.9, UP_AT);
         d = lip - 0.32 + k * 1.77;
-        y = 0.06 + k * 0.39;
+        y = 0.17 + k * 0.28;
         look = a.at(lip + 6, 0, 0.4 - k * 0.1);
       } else if (t < end - 1.9) {
         // Roll onto your back, head toward the drop: up into the open sky

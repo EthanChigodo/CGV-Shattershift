@@ -1,4 +1,49 @@
-# CGV Group Project - Sprint 1 Project Brief
+# CGV Group Project - Project Brief
+
+> **Read this first: what was built.** This brief was written in Sprint 1, and
+> the game changed as it was built. The section below describes the finished
+> game; everything after it is the **original Sprint 1 plan**, kept as the
+> record of how the project started (with "as built" notes where a level
+> turned out differently).
+
+## What was built
+
+**Fracture Run** is a story-driven, three-sector escape up Ascension Tower,
+told with cutscenes, reaction prompts and a silent briefing film:
+
+- **The briefing** (`src/story/prologue.js`): a short captioned film of
+  everything before the game - Project Ascension, Dr. Vale, the subjects,
+  Subject 07, Dr. Okoro's leak, the police, the demolition order.
+- **Sector 01 - The Shifting Foundry** (the basement, `src/levels/foundry/`):
+  the opening in the ward, Dr. Okoro guiding you and handing you his bag of
+  spheres; a third-person run of lane changes, jumps and slides, throwing
+  spheres by hand at switches and glass cells.
+- **The Gravity Fault lift** (`src/elevators/`): the brakes fail; Okoro drops
+  you the launcher; the brake clamps are reaction prompts.
+- **Sector 02 - The Labs** (`src/levels/meltdown/`, the "Meltdown" module):
+  the breach, Okoro running ahead, the bend attack, the hiding place and his
+  sacrifice; then the quiet ride up.
+- **Sector 03 - The Skyline** (`src/levels/causeway/`, the "Glass Causeway"
+  module): the skybridge run; the tower demolished floor by floor, the bridge
+  tilting into a ramp, the sprint, the jump and the latch.
+- **The Roof**: waves of patients and scientists, the helicopter's hidden
+  timer, the ladder; the ending in the helicopter (the pilot is Dr. Vale),
+  the title and the credits.
+
+One rule set runs through all of it (the Skyline's): glass, cryo and shock
+spheres, four serums (prism, thermal, shield, overdrive), focus (bullet
+time), one HUD. Endless modes exist for each environment. The player is
+**Subject 07** throughout.
+
+Where the details are: `README.md` (controls, running it),
+`docs/level-1-causeway.md` (the Skyline module), `docs/level-3-meltdown.md`
+and `docs/level-3-handoff.md` (the Labs, the Roof and the story),
+`docs/elevators.md` (the lifts), `docs/credits.md` (every asset and its
+licence).
+
+---
+
+# The original Sprint 1 plan
 
 ## Working title
 
@@ -79,6 +124,9 @@ Difficulty comes from combining already-learned mechanics, not simply increasing
 
 ### Level 1 - The Glass Causeway
 
+> **As built:** this became **Sector 03 - the Skyline**, the last of the
+> three sectors in the story order (the Foundry comes first, then the Labs).
+>
 > **Concept update (Level 1 sprint).** The story is now a failed resonance experiment: the player is Subject 07, escaping the lab after Dr. Vale arms the tower's demolition charges; spheres are the subject's resonance ability. Level 1 keeps its identity and one-sentence test (aiming and limited ammunition) and adds fire, sprinklers, smoke and vents, ceiling and bridge collapses, three sphere types, serum power-ups, missions, case files, and an endless mode. The plan below is the original; the built level is documented in [`level-1-causeway.md`](./level-1-causeway.md).
 
 
@@ -100,6 +148,10 @@ The camera pulls out from first-person to a third-person orbit, briefly revealin
 
 ### Level 2 - The Shifting Foundry
 
+> **As built:** this became **Sector 01**, the first sector - the basement,
+> where the story starts. In the story, spheres are thrown by hand here
+> (Dr. Okoro's bag); the launcher comes later.
+
 **Identity:** a darker mechanical sector with moving walls, pistons, rails, heat vents, and glowing industrial glass.
 
 **Camera:** third-person chase camera inspired by Temple Run, with cinematic side and corner cameras at selected set pieces.
@@ -114,9 +166,18 @@ The player dodges solid hazards that cannot all be destroyed. Glass switches alt
 
 ### Elevator 2 - Gravity Fault
 
+> **As built:** the ride from Sector 01 up to the Labs, with the brakes'
+> clamps as reaction prompts in the story.
+
 The second lift is damaged. Gravity weakens and spheres, shards, and the avatar float inside the cabin. The player shoots three stabilisers while the camera transitions between an interior first-person view, an exterior tower view, and a top-down orthographic diagnostic view. This previews Level 3's gravity mechanic.
 
 ### Level 3 - The Inverted Core
+
+> **As built:** the gravity-switching core was not made. Level 3 became
+> **Sector 02 - the Labs** (a burning, collapsing lab corridor with a
+> launcher, fallen ducts, patients and a power failure) **and the Roof**
+> (a top-down fight against waves, ending with the helicopter). The control
+> core and "stabilise the core" win condition became the escape to the roof.
 
 **Identity:** the tower's fractured control core, suspended in a storm above the world. Platforms, glass rings, and debris rotate around a central energy reactor.
 
