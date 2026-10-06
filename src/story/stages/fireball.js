@@ -50,13 +50,16 @@ export class Fireball {
     this.active = false;
   }
 
-  /** Go off at `at` (world). */
-  burst(at, { size = 26 } = {}) {
+  /**
+   * Go off at `at` (in this.root's parent's frame - world, if the fireball
+   * is added to the scene). `spread` scales how far the puffs fly out.
+   */
+  burst(at, { size = 26, spread = 1 } = {}) {
     this.active = true;
     this.puffs.forEach((p, i) => {
       const a = (i / COUNT) * Math.PI * 2 * 3.1;
       const up = 0.3 + ((i * 7) % 11) / 11;
-      p.velocity.set(Math.cos(a) * (1 - up) * size * 0.45, up * size * 0.55, Math.sin(a) * (1 - up) * size * 0.45);
+      p.velocity.set(Math.cos(a) * (1 - up) * size * 0.45, up * size * 0.55, Math.sin(a) * (1 - up) * size * 0.45).multiplyScalar(spread);
       p.sprite.position.copy(at);
       p.age = -i * 0.025; // a quick ripple out, not all at once
       p.life = 3.2 + ((i * 13) % 7) * 0.25;

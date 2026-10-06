@@ -75,7 +75,10 @@ game's credits screen, not only here. All were converted with
 
 Supplied by the team; author, source and licence read from each file's glTF
 metadata. Converted with `tools/assets/convert_heavy.py`,
-`extract_kit.py` and `heightmap.py` (see `tools/assets/README.md`).
+`extract_kit.py` and `heightmap.py` (see `tools/assets/README.md`). The rooftop
+kit, the brute and the rooftop scan were tried for a bigger roof and then
+dropped with it (the team went back to the original roof); they are not in
+the repository.
 
 | File | Title / author / source | Licence | Modifications | Used in |
 | --- | --- | --- | --- | --- |
@@ -83,10 +86,7 @@ metadata. Converted with `tools/assets/convert_heavy.py`,
 | `duffel_bag.glb` | "Military Duffel bag" by Sousinho - sketchfab.com/3d-models/military-duffel-bag-d69478f0c5334e189e98f99e84bbe3e6 | CC BY 4.0 | Textures resized | Sphere sacks (the Labs) |
 | `police_helicopter.glb` | "Dolphin Helicopter (AS-365/Harbin Z-9)" by Martini-SF - sketchfab.com/3d-models/dolphin-helicopter-as-365harbin-z-9-d27aaf297dc94a3abb31571217179612 | **CC BY-NC 4.0** | Skin baked to static parts, police livery, rotor blades rebuilt in code, textures resized | Police helicopters (Skyline, roof, briefing) |
 | `city_night.glb` | "city at night low poly skyscrapers" by dasy444 - sketchfab.com/3d-models/city-at-night-low-poly-skyscrapers-dc1294de66194054961c16aa74fda2cb | **Sketchfab Standard** | Textures resized; its sky dome hidden | The city (briefing) |
-| `roof_hvac.glb`, `roof_hvac2.glb`, `roof_hvac3.glb`, `roof_tank.glb`, `roof_dish2.glb`, `roof_mast.glb`, `roof_mast2.glb` | "SCI-FI Rooftops" by Quadra3D - sketchfab.com/3d-models/sci-fi-rooftops-8f8a0ba6325a43afbdadd3c7687c953a | CC BY 4.0 | Kit split into pieces, decimated, repainted at load; the pipe walkways dropped (too heavy) | Roof plant: air handlers, a tank, a dish, masts |
-| `brute.glb` | "Two-Headed Chained Brute - Dungeon Horror" by Pigcraft - sketchfab.com/3d-models/two-headed-chained-brute-dungeon-horror-d6abe131426b4dab9c126481030ebf8b | CC BY 4.0 | Decimated to 140k tris, re-shaded, textures resized, animated in code | The brute (roof waves) |
 | `operating_room.glb` | "Charité University Hospital - Operating Room" by ChrisRE - sketchfab.com/3d-models/charite-university-hospital-operating-room-9ec46c4d615a4581a235eebfb162f574 | **CC BY-NC 4.0** | Decimated, textures resized | The operating theatre (briefing) |
-| `roof_scan.glb` + `roof_scan_heights.json` | "Le Radeau de la Méduse 2019" by 234D - sketchfab.com/3d-models/le-radeau-de-la-meduse-2019-60039ce2f5ac4225880bfd837e3e3932 (a photogrammetry scan of a rooftop) | CC BY 4.0 | Joined, welded, decimated to 100k tris, 512 px textures, scaled x1.4 in game; walkable height map baked from it | The roof (the finale) |
 
 > **Licences worth a team decision:** CC BY-NC 4.0 (the police helicopter,
 > the operating room) allows a non-commercial university project but not a

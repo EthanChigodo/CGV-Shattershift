@@ -109,9 +109,7 @@ const ROOF_SPEED = 6.4;
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
 const ROOF_NAMES = [
-  "scientistRadioman", "scientistRust", "patient", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight",
-  // The bigger roof: its plant (the rooftop kit) and the brute.
-  "brute", "duffelBag", "roofHvac", "roofHvac2", "roofHvac3", "roofTank", "roofDish2", "roofMast", "roofMast2", "roofScan",
+  "scientistRadioman", "scientistRust", "patient", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight", "duffelBag",
 ];
 /** Endless roof: a supply drop of spheres every this many seconds survived. */
 const SUPPLY_SECONDS = 30;
@@ -386,19 +384,11 @@ export class MeltdownGame {
 
   /**
    * Roof models load in the background while Phase A is being played - from
-   * begin(), not before: they are heavy (the scan, the brute, the kit), and
-   * parsing them while the Labs are built behind the lift ride's black
-   * screen made that black screen seconds longer.
+   * begin(), not before, so they never compete with the Labs being built
+   * behind the lift ride's black screen.
    */
   loadRoofAssets() {
-    // The models, and the scanned roof's baked height map (tools/assets/heightmap.py).
-    const heights = fetch(new URL("roof_scan_heights.json", this.assetBase).href)
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null);
-    this.roofAssetsPromise ??= Promise.all([loadMeltdownAssets(this.assetBase, { names: ROOF_NAMES }), heights]).then(([map, grid]) => {
-      this.roofHeights = grid;
-      return (this.roofAssets = map);
-    });
+    this.roofAssetsPromise ??= loadMeltdownAssets(this.assetBase, { names: ROOF_NAMES }).then((map) => (this.roofAssets = map));
     return this.roofAssetsPromise;
   }
 
@@ -1372,7 +1362,6 @@ export class MeltdownGame {
     const V = this._v;
     if (!r.alive || (!level && !this.roof)) return;
     if (this.phase === "run" && r.finished) return;
-    if (this.hero.climbing) return; // both hands on the ladder
     const def = this.arsenal.current;
     const cost = this.arsenal.cost();
     if (r.balls <= 0 || r.balls < cost) {
@@ -1780,7 +1769,7 @@ export class MeltdownGame {
     this.projectiles.clear();
     this.debris.clear();
     this.roof?.dispose();
-    const roof = new RoofLevel({ assets: this.roofAssets, heights: this.roofHeights, endless: this.mode === "endless-roof", ...this.roofOptions });
+    const roof = new RoofLevel({ assets: this.roofAssets, endless: this.mode === "endless-roof", ...this.roofOptions });
     this.roof = roof;
     roof.addTo(this.scene);
     this._bindRoofEvents(roof);
@@ -1798,7 +1787,6 @@ export class MeltdownGame {
     hero.velocity.set(0, 0, 0);
     hero.knock.set(0, 0, 0);
     hero.vy = 0;
-    hero.climbing = false;
     hero.yaw = 0;
     hero.aim.copy(ROOF_SPAWN).add(new THREE.Vector3(0, 1.15, -10));
     this.roofClock = 0;
@@ -1843,17 +1831,10 @@ export class MeltdownGame {
       hud.toast("WASD MOVE", "SPACE DODGE", "", 4200);
       this._after(1.8, () => hud.toast("LURE THEM", "OFF THE EDGE", "", 4200));
     });
-    on("wave", ({ index, brute }) => {
-      if (brute) hud.showBanner("SOMETHING BIGGER", "OUT OF THE STAIR HUT", 2800);
-      else hud.showBanner(index === 1 ? "THEY WERE WAITING" : "MORE OF THEM", index === 1 ? "THEY'RE LETTING THEM OUT" : "THE STAIR HUT", 2600);
+    on("wave", ({ index }) => {
+      hud.showBanner(index === 1 ? "THEY WERE WAITING" : "MORE OF THEM", index === 1 ? "THEY'RE LETTING THEM OUT" : "THE MACHINE ROOM", 2600);
       audio.groan(1);
     });
-    on("door-open", () => audio.clang());
-    on("laser-fired", () => {
-      audio.zap();
-      this.sfx?.surfaceRicochet();
-    });
-    on("grenade-thrown", () => audio.whoosh());
     on("patient-windup", () => audio.growl());
     on("patient-stunned", ({ position }) => {
       debris.dust(position.clone().setY(1), { size: 2 });
@@ -2113,50 +2094,18 @@ export class MeltdownGame {
       hero.dodge = Math.max(0, hero.dodge - dt);
       hero.dodgeCooldown = Math.max(0, hero.dodgeCooldown - dt);
       hero.knock.multiplyScalar(Math.max(0, 1 - dt * 6));
-      // The ladder up the building (the scanned roof): walk into it and keep
-      // going (W) to climb; S climbs back down. Over the top onto the roof.
-      const ladder = roof.scan?.ladder;
-      if (ladder && !hero.climbing && hero.vy === 0 && iz < 0 && hero.position.y < ladder.top - 0.5
-        && Math.abs(hero.position.x - ladder.x) < 0.7 && Math.abs(hero.position.z - ladder.z) < 0.9) {
-        hero.climbing = true;
-      }
-      if (hero.climbing) {
-        hero.velocity.set(0, 0, 0);
-        hero.knock.set(0, 0, 0);
-        hero.position.x = ladder.x;
-        hero.position.z = ladder.z;
-        hero.position.y += (iz < 0 ? 2.6 : iz > 0 ? -2.6 : 0) * dt;
-        if (hero.position.y >= ladder.top) {
-          hero.position.set(ladder.x - ladder.nx * 0.9, ladder.top, ladder.z - ladder.nz * 0.9);
-          hero.climbing = false;
-        } else if (hero.position.y <= 0) {
-          hero.position.y = 0;
-          hero.climbing = false;
-        }
-      } else {
-        hero.position.addScaledVector(hero.velocity, dt).addScaledVector(hero.knock, dt);
-        if (hero.dodge > 0) hero.position.addScaledVector(hero.dodgeDir, DODGE_SPEED * dt);
-        roof.clampPlayer(hero.position);
-      }
-      // Underfoot: the roof, the deck, the stair - or, off an edge, nothing.
-      const ground = hero.climbing ? hero.position.y : roof.groundAt(hero.position, hero.position.y);
+      hero.position.addScaledVector(hero.velocity, dt).addScaledVector(hero.knock, dt);
+      if (hero.dodge > 0) hero.position.addScaledVector(hero.dodgeDir, DODGE_SPEED * dt);
+      roof.clampPlayer(hero.position);
+      // Underfoot: the roof - or, past an open ledge, nothing: you fall.
+      const ground = roof.groundAt(hero.position);
       hero.vy = hero.vy ?? 0;
-      if (ground !== null && hero.position.y <= ground + 0.3 && hero.vy <= 0) {
+      if (ground !== null && hero.position.y >= ground - 0.3 && hero.vy <= 0) {
         hero.position.y = ground;
         hero.vy = 0;
       } else {
         hero.vy -= ROOF_GRAVITY * dt;
         hero.position.y += hero.vy * dt;
-        if (ground !== null && hero.position.y <= ground) {
-          // Down off the deck: a hard landing.
-          if (hero.vy < -6) {
-            this.trauma = Math.min(1, this.trauma + 0.35);
-            this.landingDip = 1;
-            this.sfx?.impact(0.5);
-          }
-          hero.position.y = ground;
-          hero.vy = 0;
-        }
       }
       if (hero.position.y < ROOF_FALL_LIMIT && r.alive) this._roofFell();
       this.aimPlane.constant = -(hero.position.y + 1.15);
@@ -2180,10 +2129,7 @@ export class MeltdownGame {
       avatar.root.position.copy(hero.position);
       avatar.root.rotation.y = hero.yaw;
       const speed = hero.velocity.length() + (hero.dodge > 0 ? DODGE_SPEED : 0);
-      // On the ladder: hands up the rungs, the launcher slung.
-      avatar.reachUp = hero.climbing ? 1 : 0;
-      avatar.hold = hero.climbing ? 0 : 1;
-      avatar.update(dt, { speed: hero.climbing ? 2.5 : speed, lateralVel: 0, height: hero.vy < -1 ? 1 : 0, sliding: hero.dodge > 0, aiming: r.firing && !hero.climbing });
+      avatar.update(dt, { speed, lateralVel: 0, height: hero.vy < -1 ? 1 : 0, sliding: hero.dodge > 0, aiming: r.firing });
 
       const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
       for (const h of hits) this._roofHit(h);

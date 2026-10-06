@@ -115,22 +115,8 @@ export const EXTRA_ASSETS = {
   policeHelicopter: "police_helicopter.glb",
   // The city skyline at night (the prologue, the Skyline's backdrop).
   cityNight: "city_night.glb",
-  // The roof's plant, from the sci-fi rooftop kit (tools/assets/extract_kit.py).
-  roofHvac: "roof_hvac.glb",
-  roofHvac2: "roof_hvac2.glb",
-  roofHvac3: "roof_hvac3.glb",
-  roofTank: "roof_tank.glb",
-  roofDish2: "roof_dish2.glb",
-  roofMast: "roof_mast.glb",
-  roofMast2: "roof_mast2.glb",
-  // The roof's heavy: the two-headed brute.
-  brute: "brute.glb",
-  // The operating theatre (the wake-up, the prologue).
+  // The operating theatre (the prologue).
   operatingRoom: "operating_room.glb",
-  // The helicopter's instrument panel (the ending).
-  // The roof itself: a photogrammetry scan of a rooftop ("Le Radeau de la
-  // Meduse 2019" - the painting is a mural on its tower), two levels.
-  roofScan: "roof_scan.glb",
 };
 
 /** Loaded once per page and shared by every level instance (and a restart). */

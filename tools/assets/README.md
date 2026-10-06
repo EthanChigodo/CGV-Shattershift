@@ -100,16 +100,15 @@ scan), so three more scripts:
 | `duffel_bag.glb` | military_duffel_bag.glb | `convert.py`, 1024 px |
 | `police_helicopter.glb` | dolphin_helicopter_as-365harbin_z-9.glb | `convert.py`, 1024 px, rig kept (baked to static parts at load in `src/fx/police-helicopters.js`) |
 | `city_night.glb` | city_at_night_low_poly_skyscrapers.glb | `convert.py`, 1024 px |
-| `roof_hvac*.glb`, `roof_tank.glb`, `roof_dish2.glb`, `roof_mast*.glb` | sci-fi_rooftops.glb | `extract_kit.py`; the pipe walkways were dropped (5 MB) |
-| `brute.glb` | two-headed_chained_brute_-_dungeon_horror.glb | `convert_heavy.py --tris=140000 --smooth` (34k still looked torn) |
 | `operating_room.glb` | charite_university_hospital_-_operating_room.glb | `convert_heavy.py`, 4.5 MB |
-| `roof_scan.glb` | le_radeau_de_la_meduse_2019.glb | `convert_heavy.py --join --weld --tris=100000 --tex=512`, 7.1 MB |
-| `roof_scan_heights.json` | roof_scan.glb | `heightmap.py` |
 
 Draco compression would shrink the big four a lot, but Three.js' Draco decoder
 isn't vendored in `lib/three` and adding it means a download - not done.
 
-Not used: `boeing_737-800_cockpit.glb` (converted, then dropped - a whole
+Not used any more: the rooftop kit pieces, the brute and the rooftop scan
+(and its height map) - made with `extract_kit.py`, `convert_heavy.py` and
+`heightmap.py` for a bigger roof the team then dropped; the scripts still
+work for the next model like them. Not used: `boeing_737-800_cockpit.glb` (converted, then dropped - a whole
 airliner flight deck doesn't fit the helicopter's cabin; see the handoff
 notes); the supplied smoke `.glb` (3,459 separately animated planes - about
 3,500 draw calls a frame; the level's fire/smoke are a custom shader instead).

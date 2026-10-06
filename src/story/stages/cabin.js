@@ -136,16 +136,16 @@ export class CabinStage {
     this.root.add(glass);
     part(mat.olive, 2.0, 0.08, 1.8, 0, 2.1, -2.5);
 
-    // The pilot's helmet (Dr. Vale wears it until the reveal).
+    // The pilot's helmet (Dr. Vale keeps it on): open-faced, so when he turns
+    // round you see who it is.
     const helmet = new THREE.Group();
     const shell = new THREE.Mesh(own(new THREE.SphereGeometry(0.155, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62)), mat.olive);
     shell.scale.set(1, 1.05, 1.12);
-    const visor = new THREE.Mesh(own(new THREE.SphereGeometry(0.16, 14, 8, Math.PI * 0.62, Math.PI * 0.76, Math.PI * 0.32, Math.PI * 0.26)), own(new THREE.MeshStandardMaterial({ color: 0x101418, metalness: 0.9, roughness: 0.15 })));
     const boom = new THREE.Mesh(cyl, mat.steel);
     boom.scale.set(0.012, 0.16, 0.012);
     boom.rotation.x = Math.PI / 2;
     boom.position.set(0.11, -0.12, -0.08);
-    helmet.add(shell, visor, boom);
+    helmet.add(shell, boom);
     this.root.add(helmet);
     this.helmet = helmet;
 

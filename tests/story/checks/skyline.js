@@ -127,9 +127,9 @@ export async function run(page, { shots }) {
     __t.until(() => __t.R.running && __t.R._s.spec.label === "GRAB", 200);
   });
   await shot("03-mid-air-latch-prompt");
-  await page.evaluate(() => { __t.play(); __t.until(() => __t.L.player.t > 6.0, 200); });
+  await page.evaluate(() => { __t.play(); __t.until(() => __t.L.player.t > 7.25, 200); });
   await shot("04-hands-on-the-ledge");
-  await page.evaluate(() => __t.until(() => __t.L.player.t > 9.2, 300));
+  await page.evaluate(() => __t.until(() => __t.L.player.t > 10.45, 300));
   await shot("05-on-your-back-the-sky");
   const after = await page.evaluate(() => {
     __t.until(() => __dbg.state === "playing", 600);
@@ -165,14 +165,10 @@ export async function run(page, { shots }) {
     // Step to the hover without waiting on the wall clock (each software-GL frame is slow).
     __t.until(() => r.state.ending === "extraction" && r.state.extractT > 2.8, 900);
     await __t.wait(() => r.state.ending === "extraction" && r.state.extractT > 2.8, 60000);
-    // Stand at the ledge, by the ladder: on real floor (the scan's edge is ragged).
+    // Stand at the ledge, by the ladder - on the roof (past the ledge you'd fall).
     const THREE = __dbg.THREE;
     const bottom = r.ladderBottom(new THREE.Vector3());
-    const spot = new THREE.Vector3();
-    for (let x = bottom.x - 1; x > r.eastEdge - 4.4; x -= 0.2) {
-      const h = r.groundAt(spot.set(x, 0, bottom.z), 99);
-      if (h !== null && Number.isFinite(h)) { spot.y = h; break; }
-    }
+    const spot = new THREE.Vector3(Math.min(bottom.x - 2.2, 15.4), 0, bottom.z);
     m.hero.position.copy(spot);
     if (m.hero.vy !== undefined) m.hero.vy = 0;
     m.runner.invulnerable = 999;

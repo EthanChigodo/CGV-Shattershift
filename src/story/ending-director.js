@@ -61,7 +61,6 @@ export class EndingDirector {
     cabin.root.add(vale.root);
     this.vale = vale;
     this.turn = 0;
-    this.helmetOff = 0;
 
     game.avatar.setVisible(false);
     game.avatar.shadow.visible = false;
@@ -90,8 +89,7 @@ export class EndingDirector {
   _event(name) {
     const game = this.game;
     this.log.push(["event", name]);
-    if (name === "reveal") this.helmetOff = 0.001;
-    else if (name === "laugh") game.audio.growl?.();
+    if (name === "laugh") game.audio.growl?.();
     else if (name === "outside") {
       // Outside: the real helicopter where the cabin is, flying on.
       this.cabin.root.visible = false;
@@ -157,17 +155,12 @@ export class EndingDirector {
     vale.adjust.twist = this.turn > 0.95 ? Math.sin(time * 1.7) * 0.08 : 0;
     vale.adjust.headNod = this.turn > 0.95 ? Math.sin(time * 2.3) * 0.05 - 0.12 : 0;
     vale.update(dt);
-    // His helmet: on his head, then lifted off and set down beside him.
+    // His helmet stays on his head the whole way (open-faced: the reveal is
+    // him turning round).
     const helmet = cabin.helmet;
     vale.headPosition(_v);
     cabin.root.worldToLocal(_v);
-    if (this.helmetOff > 0) {
-      this.helmetOff = Math.min(1, this.helmetOff + dt * 1.6);
-      const k = this.helmetOff;
-      _v.lerp(new THREE.Vector3(0.55, 0.62, -2.2), k);
-      _v.y += Math.sin(k * Math.PI) * 0.35;
-    }
-    helmet.position.copy(_v).add(new THREE.Vector3(0, 0.04 * (1 - this.helmetOff), 0));
+    helmet.position.copy(_v).add(new THREE.Vector3(0, -0.015, 0));
     helmet.rotation.set(0, vale.root.rotation.y + Math.PI, 0);
     // Outside: the helicopter model, off the roof's edge and away.
     const heli = this.game.roof?.heli;

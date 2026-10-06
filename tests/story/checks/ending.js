@@ -73,11 +73,11 @@ export async function run(page, { shots }) {
     return {
       t: __t.L.player.t, sub: document.querySelector(".story-sub .line").textContent,
       facing: +dir.dot(to).toFixed(3), valeFacing: +valeFacing.setY(0).normalize().dot(toCam).toFixed(3),
-      helmet: __t.f.helmetOff,
+      helmetOn: __t.f.cabin.helmet.position.distanceTo(__t.f.cabin.root.worldToLocal(__t.f.vale.headPosition(new THREE.Vector3()))) < 0.1,
     };
   }, meta);
   check("the reveal lands within 'Hello, Seven' (camera on Vale)", /Hello, Seven/.test(reveal.sub) && reveal.facing > 0.9, JSON.stringify(reveal));
-  check("...and he has turned to face you, helmet coming off", reveal.valeFacing > 0.5 && reveal.helmet > 0, JSON.stringify(reveal));
+  check("...and he has turned to face you, helmet still on", reveal.valeFacing > 0.5 && reveal.helmetOn, JSON.stringify(reveal));
   await shot("03-the-reveal");
   await page.evaluate((m) => __t.until(() => __t.L.player.t > m.tLaugh + 0.6, 1500), meta);
   await shot("04-the-laugh");

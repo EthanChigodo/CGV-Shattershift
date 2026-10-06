@@ -133,7 +133,7 @@ export class DemolitionTower {
    * A burst against one face of the building (a burst at its centre would
    * be hidden inside it). `face` 0..3 = +x, +z, -x, -z; default cycles.
    */
-  _burst(y, size, big = false, face = null) {
+  _burst(y, size, big = false, face = null, spread = 1) {
     const pool = big ? this.big : this.pool;
     const f = pool[this._next++ % pool.length];
     const side = face ?? this.towardFaces[this._next % 2];
@@ -141,9 +141,9 @@ export class DemolitionTower {
     const along = big ? 0 : ((this._next % 5) - 2) * this.width * 0.2;
     const x = side === 0 ? half : side === 2 ? -half : along;
     const z = side === 1 ? half : side === 3 ? -half : along;
-    this.root.updateMatrixWorld(true);
-    const at = this.root.localToWorld(new THREE.Vector3(x, y + this.body.position.y, z));
-    f.burst(at, { size });
+    // The bursts live under this.root, so this is in the tower's own frame
+    // (a world position here would be offset by the tower's twice).
+    f.burst(new THREE.Vector3(x, y + this.body.position.y, z), { size, spread });
   }
 
   update(dt) {
@@ -157,7 +157,7 @@ export class DemolitionTower {
         b.mesh.visible = true;
         b.glow = 1;
         this.state.floorsGone = i + 1;
-        this._burst((i + 0.5) * FLOOR_HEIGHT, 9 + (i % 3) * 3);
+        this._burst((i + 0.5) * FLOOR_HEIGHT, 15 + (i % 3) * 4);
         this.onFloor?.(i);
       }
       // A flash that settles into a lasting glow (the floor's on fire now).
@@ -169,9 +169,10 @@ export class DemolitionTower {
         // All of it at once, out of the faces toward the bridge (the host
         // says which: `towardFaces`).
         const [a, b] = this.towardFaces;
-        this._burst(this.height * 0.35, 70, true, a);
-        this._burst(this.height * 0.65, 60, true, b);
-        this._burst(this.height * 0.9, 52, true, a);
+        // (Held close to the building: big bursts at full spread reach the bridge.)
+        this._burst(this.height * 0.35, 70, true, a, 0.4);
+        this._burst(this.height * 0.65, 60, true, b, 0.4);
+        this._burst(this.height * 0.9, 52, true, a, 0.4);
         this.onWhole?.();
       }
       this.state.whole = Math.min(1, (t - this.wholeAt) / 0.4);
