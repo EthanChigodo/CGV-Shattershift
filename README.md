@@ -13,14 +13,16 @@ The story climbs the building, riding a lift up between each stage:
 
 1. **Sector 01 - The Shifting Foundry** (the basement) - third-person chase camera and moving machinery. *Playable.*
 2. **Sector 02 - The Meltdown** (the labs) - out of a lift into labs being torched to destroy the evidence, a failed ball launcher as your only tool, a stretch where the power dies, and a glass lift up. *Playable.*
-3. **Sector 03 - The Glass Causeway** (the skyline) - out of the glass lift, first-person aiming and resource management across the skybridge, and the Calibration Lift to the roof. *Playable.*
-4. **The Roof** - the finale: hold out against the scientists and their test subjects until the rescue helicopter comes. *Playable.*
+3. **Sector 03 - The Skyline** (the Glass Causeway module) - out of the glass lift, first-person aiming and resource management across the skybridge, until the tower behind you is demolished and the bridge tips into a ramp: sprint, jump, grab the ledge. *Playable.*
+4. **The Roof** - the finale: hold out against the scientists and their test subjects until the helicopter comes; then the ride out, the pilot's reveal, and the credits. *Playable.*
+
+Before it all, **the briefing** (from the menu) is a short silent film of how it came to this.
 
 **Endless** (from the menu, separate from the story) runs any one of the four until you go down: the Foundry and the Labs come back as new, faster layouts every lap, the Skyline is randomised chunks, and the Roof is wave after wave with no helicopter. Best results are kept per environment.
 
 ## Story
 
-Ascension Tower, level 212. A resonance experiment failed at dawn and its subject did not die. You are **Subject 07**: glass shatters at your touch, and you can throw that resonance as spheres of energy. Dr. Vale has armed the tower's demolition charges to bury what she made. Climb out: the basement foundry, the burning labs, the glass causeway across the skyline, and the helicopter on the roof, before the tower comes down. (Cutscenes with the scientist who helps you escape are planned.)
+Ascension Tower, level 212. A resonance experiment failed at dawn and its subject did not die. You are **Subject 07**: glass shatters at your touch, and you can throw that resonance as spheres of energy. Dr. Adrian Vale has armed the tower's demolition charges to bury what he made. Climb out with Dr. Elias Okoro, the anaesthetist who leaked it all: the basement foundry, the burning labs, the glass causeway across the skyline, and the helicopter on the roof, before the tower comes down. The story is told in cutscenes with reaction prompts (`src/story/`).
 
 ## Controls
 
@@ -28,10 +30,10 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | --- | --- |
 | Mouse | Aim - the crosshair follows the mouse; aim assist (Settings) helps with small targets |
 | Left mouse | Throw a sphere |
-| Right mouse (hold) | Focus - slow time to aim (Level 1) |
+| Right mouse (hold) | Focus - slow time to aim |
 | `A` / `D` or left / right | Change lane |
-| `W` / `S` or up / down | Sprint / brake (Level 1); jump / slide (Level 3) |
-| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock (Level 1) |
+| `W` / `S` or up / down | Sprint / brake (the Skyline); jump / slide (the Foundry, the Labs) |
+| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock |
 | `Space` / `Shift` | Jump / slide |
 | `C` | First-person / chase camera |
 | `M` | Minimap |
@@ -41,13 +43,15 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | `F` | Performance overlay |
 | `Esc` | Pause and settings |
 | `R` | Run again from the end screen |
-| `1` `2` `3` `4` | Demo: jump to Sector 01 (Foundry), 02 (Labs), 03 (Skyline), the Roof |
+| `1` `2` `3` `4` | Demo: jump to Sector 01 (Foundry), 02 (Labs), 03 (Skyline), the Roof - with that stage's story and cutscenes |
 | `5` | Demo: ride the Gravity Fault lift (Sector 01 to 02); left mouse fires at the brake clamps |
-| Level 3 | Hold left mouse to fire (it overheats); mash `Space` at a fallen duct; on the roof `WASD` moves and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available in Level 3 |
+| `6` | Demo: the quiet ride from the Labs up to the Skyline |
+| The Labs and the Roof | Hold left mouse to fire; jump onto fallen ducts (running into one hurts); on the roof `WASD` moves (the open ledges are a long drop) and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available there |
+| Cutscenes | Hold `Esc` to skip the talking; reaction prompts show the keys to press |
 
-## Level 1 - The Glass Causeway
+## Sector 03 - The Skyline (the Glass Causeway module)
 
-A research wing 212 floors up, burning at 03:47 in the morning, in three beats: the **containment ward**, the **skybridge** (which collapses behind you), and the mirrored **resonance atrium**, ending with a three-lock gate and the Calibration Lift that goes down to Level 2.
+A research wing 212 floors up, burning at 03:47 in the morning, in three beats: the **containment ward**, the **skybridge** (which collapses behind you), and the mirrored **resonance atrium**, ending with a three-lock gate and the Calibration Lift. It was built as the game's first level, before the story order was settled; in the story it is the last sector, and its lift goes up to the Roof.
 
 - **Glass everywhere, and all of it real:** ray-traced glass with Fresnel reflection, dispersion and Beer-Lambert absorption; cracks form around the exact point you hit; panes fracture into GPU-simulated shards.
 - **Fire, water, smoke:** ray-marched volumetric fire; shoot the glass bulb of a sprinkler to flood it; smoke veils the screen and burns your lungs until you break a smoke vent (the round covers with a glowing cyan ring on the walls).
@@ -63,7 +67,7 @@ See [`docs/level-1-causeway.md`](./docs/level-1-causeway.md) and [`docs/shaders-
 
 ## Menus and settings
 
-The title screen idles on a slow drift through the Skyline's ward. From it you can start the story, pick an Endless environment, preview the Skyline, read its field manual, open settings, or replay the briefing. **Start Story** starts in the Foundry. (Level 1's pod wake-up is no longer used: the wake-up will be the new opening cutscene.)
+The title screen idles on a slow drift through the Skyline's ward. From it you can start the story, pick an Endless environment, preview the Skyline, read its field manual, open settings, or replay the briefing. **Start Story** starts with the wake-up in the ward, then the Foundry.
 
 The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play, and **Play as** chooses your character (female or male patient; Level 3 shows them, and the choice is remembered).
 
@@ -145,7 +149,7 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-Levels 1, 2 and 3 are playable and connected: the Calibration Lift (Level 1's glass elevator) ends Level 1, Level 2 and Level 3's corridor phase, and the character picked on the start screen is the player in every level. From Level 2, the Calibration Lift hands over to the Gravity Fault: the tower collapsing around the lift, a snapped cable and free fall, Level 3's launcher crashing in through the roof, and three brake clamps to shoot, with a top-down diagnostic camera (see [`docs/elevators.md`](./docs/elevators.md)). Level 3 opens with the player stepping out of a lift (that lift and the roof's are placeholders - see [`docs/level-3-meltdown.md`](./docs/level-3-meltdown.md)). Menu and Level 1 music is managed by `src/audio/music-manager.js`; gameplay effects remain event hooks for the audio workstream, except for Level 3's generated Web Audio effects. Frame rates still need to be measured on lab hardware with the `F` overlay.
+The whole story is playable from start to finish: the briefing film, the wake-up and the Foundry with Dr. Okoro, the Gravity Fault lift (its brake clamps as reaction prompts), the Labs with the breach, the bend attack and Okoro's sacrifice, the quiet ride up, the Skyline's demolition and bridge jump, the Roof, and the ending in the helicopter with the credits. A death restarts the sector you were in. The character and skin tone picked on the start screen are the player in every level. Endless runs each environment on its own. Menu and Skyline music is managed by `src/audio/music-manager.js`; the Labs and the Roof use generated Web Audio effects. Each module has its own checks (`node tests/<story|meltdown|causeway|foundry|elevators>/run.js`). Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 

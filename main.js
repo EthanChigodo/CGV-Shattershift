@@ -23,6 +23,8 @@ import { wakeScene, walkOutScene } from "./src/story/scenes.js";
 import { WardStage } from "./src/story/stages/ward.js";
 import { FoundryGuide } from "./src/story/foundry-guide.js";
 import { DemolitionTower } from "./src/story/stages/demolition-tower.js";
+import { LedgeHands } from "./src/story/stages/ledge-hands.js";
+import { SmokeSky } from "./src/story/stages/night-sky.js";
 import { PoliceHelicopters } from "./src/fx/police-helicopters.js";
 import { Prologue } from "./src/story/prologue.js";
 import { themeAt as causewayThemeAt } from "./src/levels/causeway/layout.js";
@@ -800,6 +802,7 @@ function updateCauseway(dt, time) {
     return;
   }
   skylineStory?.tower.update(dt);
+  skylineStory?.sky.update(dt, time);
   hideRampProps();
   run.time += dt;
 
@@ -2298,8 +2301,6 @@ function buildSkylineStory() {
   // would recompile the level's materials).
   const concrete = new THREE.MeshStandardMaterial({ color: 0x6d6a64, roughness: 0.92, metalness: 0.05, emissive: 0x3a1a0a, emissiveIntensity: 0.9 });
   const steel = new THREE.MeshStandardMaterial({ color: 0x3a3c3e, roughness: 0.6, metalness: 0.7, emissive: 0x1a0c06 });
-  const skin = new THREE.MeshStandardMaterial({ color: 0xb98a6c, roughness: 0.7, emissive: 0x8a4a2c });
-  const sleeve = new THREE.MeshStandardMaterial({ color: 0x5f9aa4, roughness: 0.85, emissive: 0x2a4a4e });
   const lip = new THREE.Mesh(new THREE.BoxGeometry(12.4, 0.9, 0.8), concrete);
   lip.position.set(0, -0.43, CAUSEWAY_ORIGIN_Z - (SKYLINE_LEDGE + 0.4));
   group.add(lip);
@@ -2310,26 +2311,10 @@ function buildSkylineStory() {
     bar.position.set(-5.2 + i * 1.3, -0.35 + (i % 2) * 0.2, CAUSEWAY_ORIGIN_Z - SKYLINE_LEDGE + 0.35);
     group.add(bar);
   }
-  // Your hands on the lip, while you hang from it.
-  const hands = new THREE.Group();
-  for (const side of [-1, 1]) {
-    // Forearm from below the edge up over it, the hand gripping the top:
-    // a palm and four knuckles curled over the far side.
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, 0.3, 4, 8), sleeve);
-    arm.rotation.x = 0.7;
-    arm.position.set(side * 0.3, -0.05, 0.1);
-    const hand = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.06, 4, 8), skin);
-    hand.rotation.x = Math.PI / 2;
-    hand.position.set(side * 0.3, 0.04, -0.05);
-    hands.add(hand);
-    for (let f = 0; f < 4; f += 1) {
-      const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.045, 3, 6), skin);
-      finger.rotation.x = Math.PI / 2 + 0.6;
-      finger.position.set(side * 0.3 + (f - 1.5) * 0.024, 0.03, -0.11);
-      hands.add(finger);
-    }
-    hands.add(arm);
-  }
+  // Your hands on the lip, while you hang from it (in your skin tone).
+  const tone = SKIN_TONES[savedSkinTone()] ?? SKIN_TONES.medium;
+  const ledgeHands = new LedgeHands({ skin: tone.color ?? tone.swatch });
+  const hands = ledgeHands.root;
   hands.position.set(0, 0.02, CAUSEWAY_ORIGIN_Z - SKYLINE_LEDGE - 0.12);
   hands.visible = false;
   group.add(hands);
@@ -2337,13 +2322,20 @@ function buildSkylineStory() {
   const tower = new DemolitionTower({ floors: 24, width: 22 });
   tower.root.position.set(SKYLINE_TOWER.x, SKYLINE_TOWER.base, CAUSEWAY_ORIGIN_Z - SKYLINE_TOWER.d);
   group.add(tower.root);
+  // The sky over it all once the tower goes: smoke lit from below, embers,
+  // searchlights, stars (what you look up at, on your back).
+  const sky = new SmokeSky({ fire: new THREE.Vector3(SKYLINE_TOWER.x, SKYLINE_TOWER.base + 12, CAUSEWAY_ORIGIN_Z - SKYLINE_TOWER.d) });
+  sky.root.position.set(0, 0, CAUSEWAY_ORIGIN_Z - SKYLINE_LEDGE);
+  group.add(sky.root);
   scene.add(group);
-  skylineStory = { group, tower, hands, done: false, flash: 0, materials: [concrete, steel, skin, sleeve] };
+  skylineStory = { group, tower, hands, ledgeHands, sky, done: false, flash: 0, materials: [concrete, steel] };
 }
 
 function disposeSkylineStory() {
   if (!skylineStory) return;
   skylineStory.tower.dispose();
+  skylineStory.ledgeHands.dispose();
+  skylineStory.sky.dispose();
   skylineStory.group.traverse((o) => o.isMesh && o.geometry.dispose());
   for (const m of skylineStory.materials) m.dispose();
   skylineStory.group.removeFromParent();
@@ -2371,6 +2363,7 @@ function beginSkylineBlast() {
   };
   tower.onWhole = () => {
     s.flash = 1;
+    s.sky.setVisible(true);
     level1Audio.impact(1);
     level1Audio.glassBreak();
     level1Audio.podBreak?.();
@@ -2536,6 +2529,7 @@ function updateMainCutscene(dt, time, frame) {
     if (skylineStory) {
       hideRampProps();
       skylineStory.tower.update(dt);
+      skylineStory.sky.update(dt, time);
       skylineStory.flash = Math.max(0, skylineStory.flash - dt * 1.2);
       postfx.uniforms.uFlash.value = skylineStory.flash * 0.35;
     }
@@ -2825,12 +2819,8 @@ function shatter(target, hit = {}) {
   return result;
 }
 
-const sectorNames = { 1: "GLASS CAUSEWAY", 2: "SHIFTING FOUNDRY", 3: "MELTDOWN" };
-const sectorBriefings = {
-  1: "Sector one. The Glass Causeway. Break the glass before it breaks you.",
-  2: "Sector two. The Shifting Foundry. The machinery will not stop for you.",
-  3: "Sector three. The Meltdown. They are burning the evidence. Get to the roof.",
-};
+/** The death screen's name for each level (`currentLevel`), as the story calls it. */
+const sectorNames = { 1: "SKYLINE", 2: "SHIFTING FOUNDRY", 3: "LABS" };
 const failReasons = {
   fell: "The skybridge gave way beneath you. Sprint with W when the collapse closes in.",
   crushed: "The atrium came down before the gate opened. Break locks I, II, III in order.",
@@ -2855,9 +2845,9 @@ function endRun(won, reason = null, detail = null) {
   causewayHud.warning(null);
   if (runKind === "endless" && endlessEnv && !detail && endlessEnv !== "skyline") detail = endlessResult();
   ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${sectorNumber()}`;
-  ui.endTitle.textContent = won ? "CONTROL CORE STABILISED" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
+  ui.endTitle.textContent = won ? "YOU GOT OUT" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
   ui.endText.textContent = won
-    ? "The Causeway, Foundry, and Inverted Core are stable. The tower holds."
+    ? "The Foundry, the Labs, the Skyline, the roof. Ascension Tower came down behind you."
     : failReasons[reason] ?? `Integrity failed in the ${sectorNames[currentLevel].toLowerCase()}. Shift lanes earlier and preserve your spheres.`;
   ui.endStats.textContent = "";
   if (detail) {

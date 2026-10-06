@@ -487,7 +487,9 @@ export class MeltdownGame {
     this.audio.start();
     if (this._ownSfx) this.sfx.unlock();
     if (this.phase === "idle" && this.level) this.phase = "arrive";
-    // The Labs are on screen: now fetch the roof in the background.
+    // The Labs are on screen: now the photographed textures, and the roof's
+    // models in the background.
+    this.level?.kit.applyPhotos();
     if (this.level) this.loadRoofAssets();
   }
 
@@ -1909,11 +1911,14 @@ export class MeltdownGame {
     const hero = this.hero;
     this._latch = { from: hero.position.clone(), fall: 0 };
     this.hud.setPrompt(null);
+    // The reaction keys have the screen: no banner over them, no HUD behind.
+    this.hud.hideBanner();
     this.audio.whoosh();
     layer.play(
       {
         id: "ladderLatch",
         letterbox: false,
+        hideHud: true,
         skippable: false,
         duration: 0.7,
         reactions: [{ at: 0.3, id: "latch", spec: latchReaction(), lead: 0.3, slow: 0.15 }],

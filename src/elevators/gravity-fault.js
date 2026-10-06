@@ -272,6 +272,16 @@ export class GravityFaultRide {
     this.director = story ? new StoryRideDirector(this, story) : null;
   }
 
+  /**
+   * The story's version plays as a cutscene throughout (Okoro's scenes, and
+   * the clamps as reaction prompts, not aiming): the host hides the game's
+   * HUD for it, so the subtitles and prompts have the screen. The plain ride
+   * keeps its HUD.
+   */
+  get cutscene() {
+    return !!this.director;
+  }
+
   /** Name of the current phase. */
   get phase() {
     return this.phases[this.state.phaseIndex]?.[0] ?? "done";

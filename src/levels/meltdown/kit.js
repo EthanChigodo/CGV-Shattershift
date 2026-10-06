@@ -34,6 +34,7 @@
 
 import * as THREE from "../../three.js";
 import { createMeltdownTextures, createSignTexture } from "./textures.js";
+import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { createFire } from "./fire.js";
 import { assetSlot } from "./assets.js";
 import { HumanoidRig } from "./characters.js";
@@ -56,9 +57,10 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   const materials = {
     tile: std({ map: textures.tileColour, normalMap: textures.tileNormal, metalness: 0.12, roughness: 0.82 }),
     floor: std({ map: textures.labFloor, normalMap: textures.labFloorNormal, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: textures.floorRoughness, metalness: 0.2, roughness: 0.95 }),
-    wardWall: std({ map: textures.wardWall, normalMap: textures.wardWallNormal, metalness: 0.05, roughness: 0.55 }),
-    steelWall: std({ map: textures.steelWall, normalMap: textures.steelWallNormal, metalness: 0.7, roughness: 0.42 }),
-    concreteWall: std({ map: textures.concreteWall, normalMap: textures.concreteWallNormal, metalness: 0.02, roughness: 0.92 }),
+    // The walls take photographed textures when they arrive (photo-textures.js).
+    wardWall: std(photoReady({ map: textures.wardWall, normalMap: textures.wardWallNormal, metalness: 0.05, roughness: 0.55 })),
+    steelWall: std(photoReady({ map: textures.steelWall, normalMap: textures.steelWallNormal, metalness: 0.7, roughness: 0.42 })),
+    concreteWall: std(photoReady({ map: textures.concreteWall, normalMap: textures.concreteWallNormal, metalness: 0.02, roughness: 0.92 })),
     trim: std({ color: 0x23211d, metalness: 0.72, roughness: 0.4 }),
     darkMetal: std({ color: 0x15171a, metalness: 0.8, roughness: 0.45 }),
     paintedMetal: std({ color: 0x5b6863, metalness: 0.55, roughness: 0.5 }),
@@ -110,6 +112,21 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     spark: new THREE.PointsMaterial({ map: textures.ember, color: 0xffe0a0, size: 0.18, transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true }),
     smoke: new THREE.PointsMaterial({ map: textures.smoke, color: 0x6f665e, size: 2.2, transparent: true, opacity: 0.18, depthWrite: false, sizeAttenuation: true }),
   };
+
+  // Photographed textures (Poly Haven, CC0): the host calls this once the
+  // level is on screen (game.js begin) - loading and uploading them while the
+  // lift ride builds the level behind its black screen made that wait
+  // seconds longer. The floor keeps its drawn roughness (the puddles).
+  // Tiling from each set's real size over a typical wall (8 m long, 8.4 m
+  // tall, one UV square) and floor: tiles 1.27 m, plates ~0.8 m (the set's
+  // 0.5 m reads as noise at this distance), concrete 2 m.
+  let photos = null;
+  const applyPhotos = () => (photos ??= Promise.all([
+    applyPhotoSet(materials.wardWall, PHOTO_SETS.wardWall, { repeat: [6.3, 6.6] }),
+    applyPhotoSet(materials.steelWall, PHOTO_SETS.steelWall, { repeat: [10, 10.5] }),
+    applyPhotoSet(materials.concreteWall, PHOTO_SETS.concreteWall, { repeat: [4, 4.2] }),
+    applyPhotoSet(materials.floor, PHOTO_SETS.floor, { repeat: [8, 4], roughness: false, normalScale: 0.8 }),
+  ]));
 
   // The vials hold the Skyline's serums now (game.js VIAL_SERUM), in the
   // serums' own colours: thermal, overdrive, prism, shield.
@@ -1760,6 +1777,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     materials,
     geometries,
     textures,
+    applyPhotos,
     box,
     // hazards
     barrier,

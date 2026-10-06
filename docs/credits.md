@@ -10,12 +10,25 @@ and all textures are drawn at runtime. Level 3 is the exception: it uses
 external models, converted and listed below (`assets/meltdown/`; conversion
 steps in `tools/assets/README.md`).
 
-> **Action needed before submission:** the four rows marked **TODO** in the
-> Level 3 models table came from downloads whose source site and licence
-> can't be read from the files. Whoever downloaded them must fill in the
-> source URL and licence, and confirm the licence allows use in a university
-> project. The Poly Haven rows should also be confirmed against the actual
-> download pages.
+> **Sources found by the team:** the four Level 3 downloads that carried no
+> source (the ventilation kit, the launcher, the alarm light, the geothermal
+> plant) are credited below from their pages. The Poly Haven rows
+> should also be confirmed against the actual download pages.
+>
+> **Free3D's Personal Use License** (the ventilation kit, the launcher and
+> the geothermal plant) allows free personal,
+> non-commercial use, which covers a university project. It is not a
+> Creative Commons licence: it generally does not allow passing the model
+> files on, which a public repository does. Keep the repository private,
+> or check the licence text on each model's page.
+>
+> **How the game is shared:** the repository is private, and the game is
+> uploaded to the department's LAMP server where only the lecturer can open
+> it (through the lecturer's own link) - no public access to the game or its
+> files. The team is confirming with the PO and the lecturer that these
+> licences are acceptable for the submission; if not, the four models under
+> Free3D Personal Use and Sketchfab Standard get replaced with CC0 / CC BY
+> ones.
 
 ---
 
@@ -42,10 +55,10 @@ source, licence, modifications, and where it is used. Lives in
 | Modular chain-link fence (`chainlink_fence.glb`) | Poly Haven - polyhaven.com/a/modular_chainlink_fence (confirm) | CC0 | Double panel only, .glb, 1024 px | Containment pens, boiler hall cages |
 | Ceiling fan (`ceiling_fan.glb`) | Poly Haven - polyhaven.com/a/ceiling_fan (confirm) | CC0 | .glb, 512 px | Ward and archive hall ceilings |
 | Industrial microscope (`microscope.glb`) | Poly Haven - polyhaven.com/a/industrial_microscope (confirm) | CC0 | .glb, 512 px | Lab benches, sliding desk |
-| Ventilation system - straight duct, grille (`duct_straight.glb`, `vent_grille.glb`) and fan (`vent_fan.glb`) | **TODO** - downloaded as `4n9j8dkxxi0w-VentilationSystem.rar` | **TODO** | Individual kit pieces exported separately, .glb | Falling/bridge ducts, ceiling duct runs, boiler hall fans |
-| Javelin launcher (`launcher.glb`) | **TODO** - downloaded as `6ygizg34zqps-JavelineFinal.rar` | **TODO** | FBX -> .glb, materials rewired to supplied textures, decimated | The player's ball launcher |
-| Alarm light (`alarm_light.glb`) | **TODO** - downloaded as `alarm-light.zip` (`Bec-Alarma-Rosu-High-Poly.fbx`) | **TODO** | FBX -> .glb, decimated to 3k tris | Rotating alarm beacons |
-| Geothermal steam factory - pipes and ring (`industrial_pipes.glb`, `experiment_ring.glb`) | **TODO** - downloaded as `46-geothermal-steam-factory_blender.zip` | **TODO** | Two objects extracted from the scene; pipe emission disabled at load | Hall pipe walls; the experiment ring |
+| Ventilation system - straight duct, grille (`duct_straight.glb`, `vent_grille.glb`) and fan (`vent_fan.glb`) | "Ventilation System V 1.0" by **tinchoz77** (free3d.com/user/tinchoz77) - https://free3d.com/3d-model/ventilation-system-v10-61631.html (`4n9j8dkxxi0w-VentilationSystem.rar`) | **Free3D Personal Use License** | Individual kit pieces exported separately, .glb | Falling/bridge ducts, ceiling duct runs, boiler hall fans |
+| Javelin launcher (`launcher.glb`) | "Javeline Rocket Launcher" by **bushra_khalid** (free3d.com/user/bushra_khalid) - https://free3d.com/3d-model/javeline-rocket-launcher-85065.html (`6ygizg34zqps-JavelineFinal.rar`) | **Free3D Personal Use License** - not CC; see the note above | FBX -> .glb, materials rewired to supplied textures, decimated | The player's ball launcher |
+| Alarm light (`alarm_light.glb`) | "Alarm Light" by **5CNG5** - Sketchfab, https://skfb.ly/oE9CF (`alarm-light.zip`, `Bec-Alarma-Rosu-High-Poly.fbx`) | **CC BY 4.0** (creativecommons.org/licenses/by/4.0/) | FBX -> .glb, decimated to 3k tris | Rotating alarm beacons |
+| Geothermal steam factory - pipes and ring (`industrial_pipes.glb`, `experiment_ring.glb`) | "Geothermal Steam Factory (Blender 2.8 Eevee)" by **3dhaupt** (free3d.com/user/3dhaupt) - https://free3d.com/3d-model/geothermal-steam-factory-blender-28-eevee-882230.html (`46-geothermal-steam-factory_blender.zip`) | **Free3D Personal Use License** | Two objects extracted from the scene; pipe emission disabled at load | Hall pipe walls; the experiment ring |
 
 ### Characters, weapons, and vehicles (Sketchfab, CC-BY-4.0)
 
@@ -62,7 +75,7 @@ game's credits screen, not only here. All were converted with
 | `scientist_radioman.glb` (scientist_radiomanskibidi_toilet) | "Scientist_radioman(skibidi_toilet)" by SwRasKyy - sketchfab.com/3d-models/scientist-radiomanskibidi-toilet-5aa19de185a0423c9f453b3fc7fb607b | Textures 1024 px, rig kept; at load: atlased into one mesh, procedurally animated | Phase B scientist (wave 1) |
 | `scientist_rust.glb` (rust_scientist_blue) | "Rust Scientist (Blue)" by Homless_Models - sketchfab.com/3d-models/rust-scientist-blue-8040c84dc0194e47b9be7f73db6ffdcb | Textures 1024 px, rig kept; at load: atlased, procedurally animated | Phase B scientist (wave 2) |
 | `patient.glb` (patient_-_silent_hill_4) | "Patient - Silent Hill 4" by many-bees - sketchfab.com/3d-models/patient-silent-hill-4-5064bde886544cb18bba4da196ee080c | Textures 1024 px, rig kept; at load: hand bones repaired (unit error), atlased into one mesh, procedurally animated | Specimen tanks and cells, lurching obstacles, watchers in the dark, roof rushers |
-| `helicopter.glb` (hind_attack_helicopter) | "Hind Attack Helicopter" by Ashley Aslett - sketchfab.com/3d-models/hind-attack-helicopter-bb65bdfde2c54007a52dfbe1d91d930d | Textures 1024 px (from 44 MB); at load: weapons removed, airframe merged, rotors separated to spin | Phase B rescue helicopter |
+| `helicopter.glb` (hind_attack_helicopter) | "Hind Attack Helicopter" by Ashley Aslett - sketchfab.com/3d-models/hind-attack-helicopter-bb65bdfde2c54007a52dfbe1d91d930d | Textures 1024 px (from 44 MB); at load: weapons removed, airframe merged, rotors separated to spin, the red star markings painted out of the texture | The helicopter on the roof and in the ending |
 | `weapon.glb` | "Weapon" by Panoramma32 - sketchfab.com/3d-models/weapon-d418f1404556408fb065d075ffd2c1c4 | Textures 1024 px (from 106 MB); meshes merged at load | Wave 2 scientist's gadget |
 | `steampunk_weapon.glb` | "Steampunk weapon" by MakakaObami - sketchfab.com/3d-models/steampunk-weapon-696c79424c1d4b3a84112838d9091dd1 | Re-exported; meshes merged, brass material at load (it ships untextured) | Wave 1 scientist's gadget |
 | `dead_end_weapons.glb` | "Dead end weapons" by Professor E12^2 - sketchfab.com/3d-models/dead-end-weapons-255e81ecd8f8407696c0ecc243823adc | Textures 1024 px, rigs kept | Enemy gadget candidate |
@@ -112,11 +125,27 @@ credits stay in step.
 > project, but if the game is ever published, swap these for original or
 > generic models.
 
+### Photo textures (Level 3: the Labs and the Roof)
+
+Downloaded from Poly Haven (polyhaven.com) at 1K, colour + OpenGL normal +
+roughness maps, into `assets/meltdown/textures/`. All **CC0** (public
+domain; credited here as good practice). Applied at load by
+`src/levels/meltdown/photo-textures.js`, tiled at each set's real-world size;
+the drawn textures stay as the fallback.
+
+| Set | Source | Used on |
+| --- | --- | --- |
+| Long White Tiles | polyhaven.com/a/long_white_tiles | The ward's and the labs' tiled walls |
+| Metal Plate | polyhaven.com/a/metal_plate | Steel-panel walls (containment, substation) |
+| Painted Concrete | polyhaven.com/a/painted_concrete | Concrete walls (archive, boiler hall, stairwell) |
+| Concrete Floor Painted | polyhaven.com/a/concrete_floor_painted | The Labs' floor |
+| Tarred Gravel | polyhaven.com/a/tarred_gravel | The roof slab |
+
 ### Not external (Level 3)
 
 - Fire and smoke: custom GLSL shaders (`src/levels/meltdown/fire.js`).
 - Audio: synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`) - no sample files.
-- All wall/floor/signage textures: generated on canvas at runtime (`src/levels/meltdown/textures.js`).
+- Signage, hazard stripes, decals and the fallback wall/floor textures: generated on canvas at runtime (`src/levels/meltdown/textures.js`).
 - Sky, smoke bank, launcher beam, grading pass: custom GLSL (`src/levels/meltdown/roof.js`, `smoke.js`, `flashlight.js`, `post.js`).
 
 ## 3. Models, textures, sounds (Levels 1 and 2)

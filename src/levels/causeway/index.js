@@ -1524,7 +1524,7 @@ export class CausewayLevel {
       lift.blasted = true;
       this._explode(ROUTE.lift - 34, 1.6);
       this._explode(ROUTE.lift - 70, 1.2);
-      this.events.emit("radio", { who: RADIO.vale, speaker: "vale", text: "The atrium is gone. Sector two is yours, Seven. Keep climbing." });
+      this.events.emit("radio", { who: RADIO.vale, speaker: "vale", text: "The atrium's gone. Keep climbing, Seven - all the way to the roof." });
     }
 
     const liftCentre = this._v.set(0, lift.cabinY + 1.6, this.worldZ(ROUTE.lift));

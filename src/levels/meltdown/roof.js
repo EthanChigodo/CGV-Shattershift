@@ -47,6 +47,7 @@ import { fillAssetSlots } from "./assets.js";
 import { cloneCharacter, HumanoidRig } from "./characters.js";
 import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
+import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -683,9 +684,12 @@ export class RoofLevel {
   _buildSet() {
     const k = this.kit;
     const mat = k.materials;
-    const roofing = this._track(new THREE.MeshStandardMaterial({ map: roofingTexture(), roughnessMap: k.textures.floorRoughness, roughness: 1, metalness: 0.05 }));
+    const roofing = this._track(new THREE.MeshStandardMaterial(photoReady({ map: roofingTexture(), roughnessMap: k.textures.floorRoughness, roughness: 1, metalness: 0.05 })));
     roofing.envMapIntensity = 0.5;
     this.owned.textures.push(roofing.map);
+    // Tarred gravel (Poly Haven, CC0) when it arrives; the wet patches stay.
+    applyPhotoSet(roofing, PHOTO_SETS.roofing, { repeat: [15, 15], roughness: false }); // 2.2 m a tile
+    k.applyPhotos(); // the parapets' concrete, too
     const concrete = mat.concreteWall;
 
     // The slab, and the building falling away beneath it.

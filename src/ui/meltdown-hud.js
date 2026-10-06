@@ -154,6 +154,11 @@ export class MeltdownHud {
     this._bannerTimer = setTimeout(() => this.banner.classList.remove("show"), hold);
   }
 
+  hideBanner() {
+    clearTimeout(this._bannerTimer);
+    this.banner.classList.remove("show");
+  }
+
   flashDamage() {
     this.damage.classList.remove("hit");
     void this.damage.offsetWidth;

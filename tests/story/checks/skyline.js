@@ -85,6 +85,9 @@ export async function run(page, { shots }) {
     return { angle: shell.tilt?.angle ?? 0, low: shell.deckHeight(480), high: shell.deckHeight(530) };
   });
   check("the bridge swings down into a ramp up to the tip", ramp.angle > 0.15 && ramp.low < ramp.high - 5, JSON.stringify(ramp));
+  // The prompt as it first comes up (fully faded in), before the miss below.
+  await page.evaluate(() => __t.step(8));
+  await shot("02-sprint-prompt");
 
   // Miss the sprint: the bridge takes you; back to the sprint.
   const sprintMiss = await page.evaluate(() => {
@@ -102,7 +105,6 @@ export async function run(page, { shots }) {
   });
   check("the sprint is a mash of A and D", sprintMiss.kind === "mash" && sprintMiss.keys === "KeyA,KeyD", JSON.stringify(sprintMiss));
   check("a missed sprint falls, then retries from the sprint", sprintMiss.failed && sprintMiss.falling && sprintMiss.again, JSON.stringify(sprintMiss));
-  await shot("02-sprint-prompt");
 
   // Sprint right, then miss the latch: back to the sprint again.
   const latchMiss = await page.evaluate(() => {

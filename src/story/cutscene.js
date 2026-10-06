@@ -36,6 +36,8 @@
  *                up; `retryFrom` an earlier reaction's id to go back to on a miss
  *   onUpdate     (t, dt, ctx, player) => void - per-frame scene logic
  *   letterbox    default true
+ *   hideHud      hide the level HUDs even without the letterbox (a quick
+ *                reaction moment in play, like the roof's ladder latch)
  *   skippable    default true (hold Esc). A skip runs up to the next
  *                reaction - reactions are gameplay, never skipped - firing
  *                every event it jumps over, in order.
@@ -207,6 +209,7 @@ export class CutscenePlayer {
     this.state = "playing";
     this.ui.show();
     this.ui.setCutscene(s.letterbox);
+    if (!s.letterbox && s.hideHud) document.body.classList.add("story-cutscene");
     this._emit("start", s.id);
     this._apply(0);
     return this;

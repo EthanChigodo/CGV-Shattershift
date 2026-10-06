@@ -58,10 +58,10 @@ export function authoredLayout() {
   // Beat A's title is the level intro card, shown by the host at run start.
   add(-0.5, "pod", { x: C });
   add(-12, "sign", { x: C, y: 3.6, sign: "ward", facing: 1, width: 4.4, height: 1.1 });
-  radio(4, "halcyon", "Subject 07 vitals restored. Containment breach logged.");
+  radio(4, "halcyon", "Subject 07 on Skybridge B. Containment breach logged.");
   add(8, "sign", { x: -5.75, y: 2.4, sign: "evac", side: -1 });
   add(10, "beacon", { x: 2.6 });
-  radio(14, "vale", "Seven? You're awake. You were never supposed to wake up.");
+  radio(14, "vale", "Still running, Seven? Elias bought you a lift ride. That's all he could buy.");
   pane(20, C, { hint: "Throw at the glass" });
   pane(34, L); pane(34, R);
   add(42, "cache", { x: C, y: 2.3 });
@@ -88,7 +88,7 @@ export function authoredLayout() {
   add(170, "sprinkler", { x: 0 }); fire(178, C, 3.6);
   add(186, "file", { x: L, y: 1.7, index: 1 });
   add(192, "hazard", { x: R, kind: "cart" }); pane(192, C);
-  radio(198, "vale", "The charges are armed on every floor. I can't stop them. I'm sorry.");
+  radio(198, "vale", "Every floor is wired, Seven. I signed the order myself.");
   add(210, "collapse", { x: C, kind: "beam" });
   pane(218, L); pane(218, R, { reinforced: true });
   add(228, "cache", { x: C, y: 2.0 });
@@ -106,7 +106,7 @@ export function authoredLayout() {
   add(296, "cache", { x: C, y: 3.0 });
   add(302, "collapse", { x: R, kind: "glass" });
   add(318, "sculpture", { x: C, speed: 1.0 });
-  radio(322, "vale", "They wanted a weapon. You were supposed to be a key.");
+  radio(322, "vale", "Run all you like. Everything you are, I made.");
   add(336, "sprinkler", { x: 1.6, gantry: true }); fire(344, 1.6, 5.0);
   add(352, "cache", { x: L, y: 2.8 });
   add(360, "serum", { x: C, y: 1.6, serum: "thermal" });
@@ -132,7 +132,7 @@ export function authoredLayout() {
   /* ---------------- BEAT C - RESONANCE ATRIUM ---------------- */
   add(546, "event", { event: "title", beat: 2 });
   pane(554, L, { mirror: true }); pane(554, R, { mirror: true });
-  radio(558, "vale", "If you reach the core... cancel the sequence. Please.");
+  radio(558, "vale", "There's no sequence to cancel, Seven. There's only up.");
   add(568, "sculpture", { x: C, speed: 1.4 });
   add(578, "sprinkler", { x: 0, ceiling: 6.0 });
   fire(586, L, 3.2, { height: 3.6 }); fire(586, R, 3.2, { height: 3.6 });

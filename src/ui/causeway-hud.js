@@ -232,6 +232,8 @@ export class CausewayHud {
   }
 
   setVitals({ integrity, smoke, heat, sedation = 0 }) {
+    // (The checks make you unkillable with a huge health: keep the readout sane.)
+    integrity = Math.min(100, Math.max(0, integrity));
     this._integrity = integrity;
     const stress = (100 - integrity) / 100;
     // Sedated at the pod: a slow resting rate that climbs as the drug wears off.

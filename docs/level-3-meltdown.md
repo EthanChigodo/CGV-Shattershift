@@ -104,7 +104,7 @@ Every obstacle is placed as a **pattern** that forces a decision (a single hazar
 
 ### The player
 
-- **Your patient.** Pick on the start screen: Patient 0417 (female) or 0932 (male), both the supplied SCP models recoloured to teal patient scrubs (on the texture atlas, see §6). Remembered between visits. The default is 0417.
+- **Subject 07.** Pick on the start screen: female or male, both the supplied SCP models recoloured to teal patient scrubs (on the texture atlas, see §6). Remembered between visits. The default is female.
 - **The models are not rigged**, so their skeleton lives in the vertex shader (`rigPlayerMesh` in `characters.js`): hip, knee, shoulder and elbow pivots are *measured from the mesh's own silhouette*, and legs, arms and torso rotate about them. Stride and cadence follow running speed, knees tuck in a jump, the body drops and leans back in a slide, and the whole body leans into lane changes. A soft contact shadow grounds it.
 - **Holding the launcher:** a two-handed shoulder-launcher hold - the right hand on the grip just under the tube, elbow tucked; the left arm reaching forward and across to cradle the tube further out. The launcher sits on the right shoulder with most of the tube out in front, and its mount follows the torso's lean, the slide and the jump tuck, so the hands stay on it at a run. On the ladder the arms go overhead and the launcher is slung across the back.
 

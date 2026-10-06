@@ -200,9 +200,8 @@ demo keys 1-5; `__dbg.story.jump(name)` reaches every scene instead
   quality only: a shadow-casting key light over the player and screen-space
   ambient occlusion (`ao.js`); off below High, so Auto costs nothing extra.
   The Foundry's pace eases instead of jumping. Each stage logs its texture
-  memory. Not done: photo PBR texture sets (Poly Haven / ambientCG) - they
-  need downloading, which wasn't done without asking; all three levels
-  already use generated normal/roughness maps.
+  memory. Photo PBR texture sets came later (§0.5: Poly Haven, the Labs and the
+  roof).
 
 ### 0.8 The feedback round (after Phase 7)
 
@@ -251,6 +250,27 @@ as the user asked.
   the tower 1.6 s after the whole of it goes.
 - **Ending**: Dr. Vale has no helmet (it used to float off his head at the
   reveal); you see the back of his head from the cabin, then his face.
+
+After the team's review (the list in their message; most of it):
+
+- **The cabin** (`stages/cabin.js`) is dressed properly now: quilted
+  soundproofing over a rounded roof, ribbed floor plate with tie-down
+  tracks, troop seats with tube frames and red webbing, a bucket seat for
+  the pilot, an extinguisher, a first-aid kit, headsets, a cargo net,
+  placards. All its textures are drawn on canvases.
+- **On your back after the latch** there's a sky (`stages/night-sky.js`):
+  smoke going up lit orange from below, embers, two police searchlights
+  sweeping it, stars.
+- **Hands on the ledge** (`stages/ledge-hands.js`): jointed fingers, nails,
+  thumbs, forearms over the edge, the wristband, in the chosen skin tone;
+  the camera looks down at them.
+- **The helicopter's red stars** are painted out of its texture at load
+  (`helicopter.js` `paintOutStars`).
+- **HUD over prompts**: the story's Gravity Fault ride counts as a cutscene
+  (the game's HUD hides; Okoro's subtitles have the screen), and the roof's
+  ladder latch hides the HUD and its banner (cutscene option `hideHud`).
+- The HUD's heart rate is clamped to integrity 0-100 (the checks make you
+  unkillable with a huge health, which read "-69992 bpm").
 - **Briefing** (`src/story/prologue.js`, replaces the old voiced beats): nine
   chapters, ~97 s plus the title, captions only, Esc skips. The tower, Vale's
   pitch, the subjects (the operating-room scan), trials one to six, Subject
@@ -297,9 +317,8 @@ Tests: `node tests/story/run.js` - 70 cases: every reaction kind and option,
 the ladder, the prompt; lines/events/skip/fail-retry; the wake-up start to
 finish; both models rigged, every action, head turn, props.
 
-Not yet: the settings menu toggles for the two reaction options (they exist
-on `ReactionHits.setOptions`; add them to the game's settings when Phase 3
-puts reactions in the game).
+The two reaction options are in the game's settings ("Longer reaction
+windows", "Hold instead of mash"); `story.setOptions` passes them on.
 
 ### 0.4 Other wishes (planned)
 
@@ -311,22 +330,36 @@ puts reactions in the game).
   composer, so the pieces need Level 3-compatible materials (the way
   `src/levels/common/calibration-lift.js` rebuilt Level 1's lift).
 
-### 0.5 Loose threads in the story (flagged to the user, not fixed yet)
+### 0.5 Loose threads in the story
 
-- **Dr. Vale's radio line** as you enter the Skyline - *"Seven? You're awake.
-  You were never supposed to wake up."* - belongs to the old pod wake-up
-  (it's in `src/levels/causeway/layout.js`, Level 1's script). Rewrite with
-  the cutscenes. Level 1's `updateIntro` / pod code is now unused and could
-  seed the new opening cutscene.
-- **One goal:** older text says "reach the control core and cancel the
-  demolition"; the story now ends with the helicopter on the roof.
-- **One name:** the player is "Subject 07" in the game and "Patient
-  0417/0932" in the Level 3 preview's picker.
+Fixed (after the team's review):
+
+- ~~Dr. Vale's Skyline radio lines read like an ally~~ - he taunts you now
+  (`src/levels/causeway/layout.js`); HALCYON no longer says "vitals
+  restored" (the old pod wake-up), and the atrium line no longer says
+  "Sector two" (`src/levels/causeway/index.js`).
+- ~~One goal~~ - the win screen says "YOU GOT OUT", not "control core
+  stabilised"; the brief (`docs/project-brief.md`) now opens with what was
+  built.
+- ~~One name~~ - the player is Subject 07 everywhere (the Level 3 preview's
+  picker said "Patient 0417 / 0932").
 - ~~The ally scientist needs a name~~ - Dr. Elias Okoro (see §0.3).
-- **Sector 03 was built as a first level** (the Causeway): slow teaching
-  start, missions, the field manual and the preview flythrough are all about
-  it. The slow start is gone in the story; its difficulty as the *final*
-  level still wants a look.
+- ~~Team names in the credits~~ - in `STORY_CREDITS` (`src/story/script.js`).
+
+Still open:
+
+- **Sector 03 was built as a first level** (the Causeway): its missions,
+  field manual and preview flythrough are about it as a level of its own.
+  The slow start is gone in the story; its difficulty as the *final* sector
+  still wants a look.
+- **Three Free3D assets** (the ventilation kit, the launcher, the
+  geothermal plant) are credited with author, page and licence (Free3D
+  Personal Use). That licence doesn't allow sharing the files: the
+  repository is kept private.
+- ~~Photo PBR textures~~ - five Poly Haven CC0 sets on the Labs' walls and
+  floor and the roof (`photo-textures.js`; docs/credits.md). The Foundry and
+  the Skyline (the teammates' modules) still use their drawn textures - the
+  same loader would take them if their owners want it.
 
 ---
 

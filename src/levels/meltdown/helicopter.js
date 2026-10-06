@@ -5,7 +5,8 @@
  * The source model is a gunship: 107 separate meshes including a nose cannon,
  * missile rails and rocket pods. As loaded here it is a rescue ship:
  *
- *  - the weapons are left out entirely;
+ *  - the weapons are left out entirely, and the red stars painted on its
+ *    texture are painted out (paintOutStars) - no air force markings;
  *  - the main and tail rotors are pulled out into their own pivots, centred
  *    on their shafts, so they can spin;
  *  - everything else is merged into one mesh per material (the model uses
@@ -40,9 +41,93 @@ function mergeMeshes(meshes, inverse) {
   return out;
 }
 
+/**
+ * The texture's red stars (and their white rims), painted over with the
+ * camouflage round them: every strongly red pixel, grown a few pixels to
+ * take the rim, is refilled from the nearest unmarked pixels.
+ */
+function paintOutStars(map) {
+  const image = map?.image;
+  if (!image?.width || typeof document === "undefined") return map;
+  const w = image.width;
+  const h = image.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext("2d", { willReadFrequently: true });
+  g.drawImage(image, 0, 0);
+  const pixels = g.getImageData(0, 0, w, h);
+  const d = pixels.data;
+  const red = new Uint8Array(w * h);
+  let found = 0;
+  for (let i = 0; i < w * h; i += 1) {
+    const r = d[i * 4];
+    const gr = d[i * 4 + 1];
+    const b = d[i * 4 + 2];
+    if (r > 110 && r > gr * 1.7 && r > b * 1.7) { red[i] = 1; found += 1; }
+  }
+  if (!found) return map;
+  // Grow the marks to take in the white rims.
+  const GROW = Math.max(3, Math.round(w / 256));
+  const mask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (!red[y * w + x]) continue;
+      for (let dy = -GROW; dy <= GROW; dy += 1) {
+        for (let dx = -GROW; dx <= GROW; dx += 1) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h) mask[yy * w + xx] = 1;
+        }
+      }
+    }
+  }
+  // Refill each marked pixel from the unmarked ones round it.
+  const R = GROW * 3;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = y * w + x;
+      if (!mask[i]) continue;
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
+      let n = 0;
+      for (let dy = -R; dy <= R; dy += 2) {
+        for (let dx = -R; dx <= R; dx += 2) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+          const j = yy * w + xx;
+          if (mask[j]) continue;
+          sr += d[j * 4];
+          sg += d[j * 4 + 1];
+          sb += d[j * 4 + 2];
+          n += 1;
+        }
+      }
+      if (n) {
+        d[i * 4] = sr / n;
+        d[i * 4 + 1] = sg / n;
+        d[i * 4 + 2] = sb / n;
+      }
+    }
+  }
+  g.putImageData(pixels, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  for (const key of ["flipY", "colorSpace", "wrapS", "wrapT", "channel", "anisotropy"]) texture[key] = map[key];
+  return texture;
+}
+
 /** Build the helicopter template from the loaded glTF scene. */
 export function buildHelicopterTemplate(scene) {
   scene.updateMatrixWorld(true);
+  // No markings: the stars come off its paint (one texture, shared).
+  const repainted = new Map();
+  scene.traverse((o) => {
+    if (!o.isMesh || !o.material?.map) return;
+    if (!repainted.has(o.material.map)) repainted.set(o.material.map, paintOutStars(o.material.map));
+    o.material.map = repainted.get(o.material.map);
+  });
   const body = [];
   const main = [];
   const tail = [];
