@@ -279,27 +279,31 @@
     <section id="manualScreen" class="screen manual-screen" aria-label="Field manual">
       <div class="screen-copy manual-copy">
         <p class="eyebrow">FIELD MANUAL // SECTOR 03 - THE SKYLINE</p>
-        <h2>Everything in the Causeway, and what it does</h2>
+        <div class="manual-head">
+          <h2>Everything in the Causeway, and what it does</h2>
+          <button id="manualTopBackButton" type="button" class="primary-button">BACK</button>
+        </div>
+        <p class="manual-legend"><span data-act="break">Break it</span> shoot or throw at it <span data-act="avoid">Avoid it</span> change lanes or put it out <span data-act="collect">Collect it</span> run through or shoot it <span data-act="tool">Your tools</span> what you have</p>
         <div class="manual-grid">
-          <article data-tone="glass"><h3>Glass pane</h3><p>Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity.</p></article>
-          <article data-tone="glass"><h3>Reinforced glass and doors</h3><p>Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one.</p></article>
-          <article data-tone="cyan"><h3>Sphere cache</h3><p>Floating crystal. Shoot it for +3 spheres. Your only real source of ammunition.</p></article>
-          <article data-tone="hazard"><h3>Solid hazards</h3><p>Dark steel with amber stripes: carts, cabinets, racks, fallen beams. They never break. Change lanes.</p></article>
-          <article data-tone="fire"><h3>Fire</h3><p>Burns integrity while you stand in it and thickens the smoke. Put it out with a sprinkler or a cryo sphere.</p></article>
-          <article data-tone="blue"><h3>Sprinkler bulb</h3><p>The small red glass bulb on the ceiling. Shoot it to flood the area and put out the fires below it.</p></article>
-          <article data-tone="green"><h3>Air vent</h3><p>A round frosted cover in the wall with a glowing cyan ring and a SMOKE VENT sign, angled toward you. The ring pulses when the air is smoky. Throw a sphere at it to pull the smoke out; the ring turns green.</p></article>
-          <article data-tone="hazard"><h3>Ceiling collapse</h3><p>A red ring on the floor means something is about to fall there. Beams block the lane. Falling glass can be shot mid-air.</p></article>
-          <article data-tone="glass"><h3>Rotating sculpture</h3><p>A steel pole blocks the centre lane; glass blades sweep the outer lanes. Shoot the blades or time your lane.</p></article>
-          <article data-tone="serum"><h3>Serum capsules</h3><p>Prism split (triple throw), thermal sight (see through smoke), kinetic shield (absorbs two hits), overdrive (free throws, faster).</p></article>
-          <article data-tone="amber"><h3>Case files</h3><p>Five gold holograms, each standing in a column of light: two in the ward, one on the skybridge, two in the atrium. Run through one or shoot it to read what happened here.</p></article>
-          <article data-tone="white"><h3>Specimen tanks</h3><p>Glass tanks along the walls. Optional score.</p></article>
-          <article data-tone="amber"><h3>Lift gate</h3><p>Break locks I, II, III in order. Wrong order is rejected. You have nine seconds once you reach the gate.</p></article>
+          <article data-tone="glass" data-act="break"><h3>Glass pane</h3><p>Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity.</p></article>
+          <article data-tone="glass" data-act="break"><h3>Reinforced glass and doors</h3><p>Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one.</p></article>
+          <article data-tone="cyan" data-act="collect"><h3>Sphere cache</h3><p>Floating crystal. Shoot it for +3 spheres. Your only real source of ammunition.</p></article>
+          <article data-tone="hazard" data-act="avoid"><h3>Solid hazards</h3><p>Dark steel with amber stripes: carts, cabinets, racks, fallen beams. They never break. Change lanes.</p></article>
+          <article data-tone="fire" data-act="avoid"><h3>Fire</h3><p>Burns integrity while you stand in it and thickens the smoke. Put it out with a sprinkler or a cryo sphere.</p></article>
+          <article data-tone="blue" data-act="break"><h3>Sprinkler bulb</h3><p>The small red glass bulb on the ceiling. Shoot it to flood the area and put out the fires below it.</p></article>
+          <article data-tone="green" data-act="break"><h3>Air vent</h3><p>A round frosted cover in the wall with a glowing cyan ring and a SMOKE VENT sign, angled toward you. The ring pulses when the air is smoky. Throw a sphere at it to pull the smoke out; the ring turns green.</p></article>
+          <article data-tone="hazard" data-act="avoid"><h3>Ceiling collapse</h3><p>A red ring on the floor means something is about to fall there. Beams block the lane. Falling glass can be shot mid-air.</p></article>
+          <article data-tone="glass" data-act="break"><h3>Rotating sculpture</h3><p>A steel pole blocks the centre lane; glass blades sweep the outer lanes. Shoot the blades or time your lane.</p></article>
+          <article data-tone="serum" data-act="collect"><h3>Serum capsules</h3><p>Prism split (triple throw), thermal sight (see through smoke), kinetic shield (absorbs two hits), overdrive (free throws, faster).</p></article>
+          <article data-tone="amber" data-act="collect"><h3>Case files</h3><p>Five gold holograms, each standing in a column of light: two in the ward, one on the skybridge, two in the atrium. Run through one or shoot it to read what happened here.</p></article>
+          <article data-tone="white" data-act="break"><h3>Specimen tanks</h3><p>Glass tanks along the walls. Optional score.</p></article>
+          <article data-tone="amber" data-act="break"><h3>Lift gate</h3><p>Break locks I, II, III in order. Wrong order is rejected. You have nine seconds once you reach the gate.</p></article>
         </div>
         <div class="manual-grid tools">
-          <article><h3>Glass sphere // 1</h3><p>Standard throw. Punches through panes and keeps going.</p></article>
-          <article><h3>Cryo sphere // 2</h3><p>Puts out every fire within 4.8 m and freezes falling debris.</p></article>
-          <article><h3>Shock sphere // 3</h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
-          <article><h3>Sprint, brake, focus</h3><p>W sprints, S brakes (the bridge collapses behind you, so do not brake long). Hold right mouse to slow time.</p></article>
+          <article data-act="tool"><h3>Glass sphere // 1</h3><p>Standard throw. Punches through panes and keeps going.</p></article>
+          <article data-act="tool"><h3>Cryo sphere // 2</h3><p>Puts out every fire within 4.8 m and freezes falling debris.</p></article>
+          <article data-act="tool"><h3>Shock sphere // 3</h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
+          <article data-act="tool"><h3>Sprint, brake, focus</h3><p>W sprints, S brakes (the bridge collapses behind you, so do not brake long). Hold right mouse to slow time.</p></article>
         </div>
         <div class="button-row">
           <button id="manualBackButton" class="primary-button">BACK</button>

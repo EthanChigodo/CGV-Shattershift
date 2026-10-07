@@ -314,3 +314,21 @@ body.cutscene .reticle-hint {
   #startScreen .intro { margin-bottom: 0; }
   .mode-card { min-height: 112px; padding: 13px 16px 15px; }
 }
+
+/* ---- Field manual: what to do with each thing, at a glance ------------- */
+.manual-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.manual-head .primary-button { flex: none; }
+.manual-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 14px 0 0; color: var(--text-dim); font-size: 12px; }
+.manual-grid article { position: relative; }
+.manual-grid article[data-act]::before, .manual-legend span {
+  --act: #5ef0ff; display: inline-block; padding: 2px 7px; border-radius: 3px; background: var(--act); color: #071012;
+  font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase;
+}
+.manual-grid article[data-act]::before { float: right; margin: 0 0 6px 8px; }
+.manual-grid article[data-act="break"]::before { content: "Break it"; }
+.manual-grid article[data-act="avoid"]::before { content: "Avoid it"; --act: #ff5a4e; }
+.manual-grid article[data-act="collect"]::before { content: "Collect it"; --act: #ffd23f; }
+.manual-grid article[data-act="tool"]::before { content: "Your tool"; --act: #b98cff; }
+.manual-legend span[data-act="avoid"] { --act: #ff5a4e; }
+.manual-legend span[data-act="collect"] { --act: #ffd23f; }
+.manual-legend span[data-act="tool"] { --act: #b98cff; }

@@ -3450,6 +3450,7 @@ $("#endlessBackButton").addEventListener("click", () => { ui.endless.classList.r
 $("#previewButton").addEventListener("click", startPreview);
 $("#manualButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.manual.classList.add("active"); });
 $("#manualBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
+$("#manualTopBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
 $("#previewExitButton").addEventListener("click", endPreview);
 $("#settingsButton").addEventListener("click", () => openSettings("intro"));
 $("#settingsBackButton").addEventListener("click", closeSettings);
