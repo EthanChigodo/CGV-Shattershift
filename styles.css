@@ -238,6 +238,8 @@ body.cw-active .brand-mark { background: #5ef0ff; }
 .briefing-card li.done::after { content: " (done before)"; font-weight: 600; color: var(--text-dimmer); }
 .briefing-keys { font-size: 12px !important; line-height: 2 !important; }
 .briefing-keys kbd { margin-right: 2px; }
+/* Keep the menu clear of the briefing card, so nothing ends up under it. */
+@media (min-width: 1001px) { #startScreen { padding-right: calc(min(360px, 34vw) + clamp(20px, 5vw, 70px) + 28px); } }
 @media (max-width: 1000px) { .briefing-card { position: static; transform: none; width: auto; margin: 0 20px 20px; } #startScreen { flex-direction: column; } }
 
 /* ---- Aiming: the crosshair follows the pointer ----------------------- */
@@ -286,4 +288,29 @@ body.cutscene #launchControls,
 body.cutscene .cw-ui,
 body.cutscene .reticle-hint {
   display: none !important;
+}
+
+/* ---- Main menu: the two game modes as equals (feedback) ---------------- */
+.mode-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 22px; max-width: 640px; }
+.mode-card {
+  display: grid; align-content: start; gap: 6px; min-height: 132px; padding: 16px 18px 18px; text-align: left; cursor: pointer;
+  border: 2px solid var(--mode); border-radius: 6px; background: rgba(8, 10, 12, .72); color: var(--text-dim);
+  font: inherit; transition: background .15s, box-shadow .15s, transform .15s;
+}
+.mode-card small { color: var(--mode); font-size: 10px; font-weight: 800; letter-spacing: .2em; }
+.mode-card b { color: var(--text); font-size: 26px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.mode-card span { font-size: 13px; line-height: 1.45; }
+.mode-card:hover, .mode-card:focus-visible { background: color-mix(in srgb, var(--mode) 18%, rgba(8, 10, 12, .8)); box-shadow: 0 0 28px color-mix(in srgb, var(--mode) 40%, transparent); transform: translateY(-2px); outline: none; }
+.story-mode { --mode: var(--accent); }
+.endless-mode { --mode: #5ef0ff; }
+.mode-card:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.menu-links { margin-top: 10px; gap: 26px; }
+#startScreen .mode-row { animation: fadeSlideUp .7s .36s ease both; }
+@media (max-width: 640px) { .mode-row { grid-template-columns: 1fr; } }
+/* Shorter screens (most laptops): the whole menu fits without scrolling. */
+@media (max-height: 820px) {
+  #startScreen { padding-top: 62px; padding-bottom: 62px; }
+  #startScreen h1 { font-size: clamp(36px, 5.4vw, 64px); }
+  #startScreen .intro { margin-bottom: 0; }
+  .mode-card { min-height: 112px; padding: 13px 16px 15px; }
 }
