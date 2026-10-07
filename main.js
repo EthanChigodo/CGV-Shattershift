@@ -7,6 +7,7 @@ import { PostFX } from "./src/fx/postfx.js";
 import { Minimap } from "./src/fx/minimap.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
+import { PowerupBanner } from "./src/ui/powerup-banner.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
 import { PlayerAvatar, THROW_RELEASE } from "./src/levels/meltdown/player.js";
@@ -625,6 +626,12 @@ const keysDown = new Set();
 
 const causewayHud = new CausewayHud();
 const arsenal = new Arsenal();
+// Serums in front of the player: explained (paused) the first time each is
+// picked up, then a badge at the top centre while it lasts - every level.
+const powerups = new PowerupBanner();
+arsenal.onActivate = (type) => {
+  if (powerups.needsIntro(type)) openPowerupIntro(type);
+};
 const progress = loadProgress();
 const missions = new MissionTracker(progress);
 const postfx = new PostFX(renderer, { quality: resolvedQuality() });
@@ -3209,6 +3216,7 @@ function animate() {
   renderer.info.reset();
   // Checks that step the game themselves (__dbg.manual) stop the real clock.
   if (!manualStep) updateGame(dt, clock.elapsedTime);
+  powerups.update(state === "playing" ? arsenal.list() : [], { shieldCharges: arsenal.shieldCharges });
   renderFrame();
   updatePerformance(rawDt);
 }
@@ -3247,7 +3255,23 @@ function openPause() {
   ui.pause.classList.add("active");
 }
 
+/** The first pickup of a serum: pause, and explain it. */
+function openPowerupIntro(type) {
+  if (state !== "playing" || paused || !SERUMS[type]) return;
+  paused = true; run.focusing = false;
+  story.setPaused(true);
+  music.pauseDuck();
+  level1Audio.setPaused(true);
+  if (currentLevel === 3) meltdown?.setPaused(true);
+  powerups.intro(SERUMS[type]);
+}
+
+function closePowerupIntro() {
+  if (powerups.open) closePause();
+}
+
 function closePause() {
+  powerups.closeIntro();
   const wasPaused = paused;
   ui.pause.classList.remove("active");
   paused = false;
@@ -3437,6 +3461,12 @@ addEventListener("click", (event) => {
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
 ui.aimAssistToggle.addEventListener("change", (event) => { settings.aimAssist = event.target.checked; saveSettings(); });
+$("#resetPowerupTipsButton").addEventListener("click", (event) => {
+  powerups.resetSeen();
+  event.currentTarget.textContent = "Done - you will see them again";
+});
+// The serum card: its button, or a click anywhere on it, carries on.
+powerups.card.addEventListener("click", closePowerupIntro);
 ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
 ui.longReactionsToggle.addEventListener("change", (event) => { settings.longReactions = event.target.checked; saveSettings(); story.setOptions({ longWindows: settings.longReactions }); });
 ui.holdInsteadOfMashToggle.addEventListener("change", (event) => { settings.holdInsteadOfMash = event.target.checked; saveSettings(); story.setOptions({ holdInsteadOfMash: settings.holdInsteadOfMash }); });
@@ -3495,6 +3525,7 @@ function placeReticle() {
   ui.reticle.style.top = `${((1 - pointer.y) / 2) * innerHeight}px`;
 }
 addEventListener("pointerdown", (event) => {
+  if (powerups.open) return; // the serum card takes the click
   if (state === "launch" && causeway) { skipLaunch(); return; }
   if (state === "cutscene" || story.player.active) return;
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
@@ -3532,6 +3563,11 @@ addEventListener("wheel", (event) => {
 }, { passive: true });
 
 addEventListener("keydown", (event) => {
+  // The serum card: Space or Enter carries on (Esc too, below); nothing else.
+  if (powerups.open && event.code !== "Escape") {
+    if (event.code === "Space" || event.code === "Enter" || event.code === "NumpadEnter") { event.preventDefault(); closePowerupIntro(); }
+    return;
+  }
   if (event.code === "Escape") {
     if (event.repeat) return;
     level1Audio.uiClick();
@@ -3645,6 +3681,7 @@ globalThis.__dbg = {
   aliveTargets: () => aliveTargets(),
   get projectiles() { return projectiles; },
   get arsenal() { return arsenal; },
+  get powerups() { return powerups; },
   get missions() { return missions; },
   get postfx() { return postfx; },
   get music() { return music.snapshot(); },

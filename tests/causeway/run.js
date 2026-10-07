@@ -62,7 +62,12 @@ async function main() {
   if (process.env.CAUSEWAY_CHROMIUM) console.log(`chromium: ${process.env.CAUSEWAY_CHROMIUM}`);
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   // Pin High quality: software GL is slow enough that Auto would drop to Low.
-  await page.addInitScript(() => localStorage.setItem("fractureRunSettings", JSON.stringify({ quality: "high", narration: false })));
+  await page.addInitScript(() => {
+    localStorage.setItem("fractureRunSettings", JSON.stringify({ quality: "high", narration: false }));
+    // The bot has "seen" every serum: the first-pickup card pauses the game
+    // until a player dismisses it (src/ui/powerup-banner.js).
+    localStorage.setItem("fractureRun.serumsSeen", JSON.stringify(["prism", "thermal", "shield", "overdrive"]));
+  });
   if (process.env.CAUSEWAY_THREE_LOCAL) {
     const body = await readFile(process.env.CAUSEWAY_THREE_LOCAL);
     await page.route("**/three.module.js", (route) => route.fulfill({ body, contentType: "text/javascript" }));

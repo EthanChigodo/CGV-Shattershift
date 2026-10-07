@@ -62,6 +62,8 @@ export class Arsenal {
     if (!def) return;
     this.active.set(type, { remaining: def.duration, duration: def.duration });
     if (type === "shield") this.shieldCharges = def.charges;
+    // The host shows it (src/ui/powerup-banner.js).
+    this.onActivate?.(type);
   }
 
   isActive(type) { return this.active.has(type); }
