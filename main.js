@@ -226,6 +226,7 @@ function applySettingsToControls() {
   ui.sensitivitySlider.value = settings.sensitivity;
   ui.aimAssistToggle.checked = settings.aimAssist;
   ui.reducedMotionToggle.checked = settings.reducedMotion;
+  document.body.classList.toggle("reduced-motion", settings.reducedMotion);
   if (ui.longReactionsToggle) ui.longReactionsToggle.checked = settings.longReactions;
   if (ui.holdInsteadOfMashToggle) ui.holdInsteadOfMashToggle.checked = settings.holdInsteadOfMash;
   ui.qualitySelect.value = settings.quality;
@@ -641,8 +642,13 @@ const arsenal = new Arsenal();
 // Serums in front of the player: explained (paused) the first time each is
 // picked up, then a badge at the top centre while it lasts - every level.
 const powerups = new PowerupBanner();
+let pendingBurst = null;
 arsenal.onActivate = (type) => {
-  if (powerups.needsIntro(type)) openPowerupIntro(type);
+  // The first pickup pauses on its card; the burst plays as the game resumes.
+  if (powerups.needsIntro(type) && state === "playing" && !paused) {
+    pendingBurst = SERUMS[type]?.colour;
+    openPowerupIntro(type);
+  } else if (SERUMS[type]) powerups.burst(SERUMS[type].colour);
 };
 const progress = loadProgress();
 const missions = new MissionTracker(progress);
@@ -3279,7 +3285,10 @@ function openPowerupIntro(type) {
 }
 
 function closePowerupIntro() {
-  if (powerups.open) closePause();
+  if (!powerups.open) return;
+  closePause();
+  if (pendingBurst) powerups.burst(pendingBurst);
+  pendingBurst = null;
 }
 
 function closePause() {
@@ -3480,7 +3489,7 @@ $("#resetPowerupTipsButton").addEventListener("click", (event) => {
 });
 // The serum card: its button, or a click anywhere on it, carries on.
 powerups.card.addEventListener("click", closePowerupIntro);
-ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
+ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); document.body.classList.toggle("reduced-motion", settings.reducedMotion); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
 ui.subtitleSizeSelect.addEventListener("change", (event) => { settings.subtitleSize = event.target.value; saveSettings(); applySubtitleSize(); });
 ui.longReactionsToggle.addEventListener("change", (event) => { settings.longReactions = event.target.checked; saveSettings(); story.setOptions({ longWindows: settings.longReactions }); });
 ui.holdInsteadOfMashToggle.addEventListener("change", (event) => { settings.holdInsteadOfMash = event.target.checked; saveSettings(); story.setOptions({ holdInsteadOfMash: settings.holdInsteadOfMash }); });

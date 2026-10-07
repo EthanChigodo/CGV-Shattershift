@@ -159,6 +159,19 @@ export class PowerupBanner {
     if (first) this.edge.style.setProperty("--c", first.colour);
   }
 
+  /**
+   * The pickup itself: a ring of the serum's colour bursts out from the
+   * centre of the screen with a quick flash. Removes itself when done.
+   */
+  burst(colour) {
+    const node = el("div", "pu-burst", this.badges.parentElement);
+    node.style.setProperty("--c", colour);
+    el("i", "pu-burst-ring", node);
+    const last = el("i", "pu-burst-ring late", node);
+    last.addEventListener("animationend", () => node.remove());
+    setTimeout(() => node.remove(), 3000); // in case animations are off
+  }
+
   /** No serums (a level ended, a restart). */
   clear() {
     this.update([]);
