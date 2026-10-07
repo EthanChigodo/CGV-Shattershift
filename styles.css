@@ -238,6 +238,8 @@ body.cw-active .brand-mark { background: #5ef0ff; }
 .briefing-card li.done::after { content: " (done before)"; font-weight: 600; color: var(--text-dimmer); }
 .briefing-keys { font-size: 12px !important; line-height: 2 !important; }
 .briefing-keys kbd { margin-right: 2px; }
+/* Keep the menu clear of the briefing card, so nothing ends up under it. */
+@media (min-width: 1001px) { #startScreen { padding-right: calc(min(360px, 34vw) + clamp(20px, 5vw, 70px) + 28px); } }
 @media (max-width: 1000px) { .briefing-card { position: static; transform: none; width: auto; margin: 0 20px 20px; } #startScreen { flex-direction: column; } }
 
 /* ---- Aiming: the crosshair follows the pointer ----------------------- */
