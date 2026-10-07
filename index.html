@@ -89,12 +89,22 @@
         <p class="eyebrow">ASCENSION TOWER // LEVEL 212 // DEMOLITION ARMED</p>
         <h1>WAKE UP.<br />GET TO THE ROOF.</h1>
         <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Climb out of the basement, through the labs and across the skyline to the helicopter on the roof before the tower comes down.</p>
-        <div class="button-row">
-          <button id="startButton" class="primary-button">START STORY</button>
-          <button id="endlessButton" class="text-button">Endless</button>
-          <button id="previewButton" class="text-button">Preview the Skyline</button>
-          <button id="manualButton" class="text-button">Field manual</button>
+        <!-- The two ways to play, as equals (feedback: Endless looked like a setting). -->
+        <div class="mode-row" role="group" aria-label="Choose a game mode">
+          <button id="startButton" type="button" class="mode-card story-mode">
+            <small>GAME MODE</small>
+            <b>Story</b>
+            <span>Escape Ascension Tower: four sectors and cutscenes, from the basement to the roof.</span>
+          </button>
+          <button id="endlessButton" type="button" class="mode-card endless-mode">
+            <small>GAME MODE</small>
+            <b>Endless</b>
+            <span>Pick an area - Foundry, Labs, Skyline or Roof - and run until you go down. Best scores kept.</span>
+          </button>
+        </div>
+        <div class="button-row menu-links">
           <button id="settingsButton" class="text-button">Settings</button>
+          <button id="manualButton" class="text-button">Field manual</button>
           <button id="replayStoryButton" class="text-button">Replay briefing</button>
         </div>
         <div class="subject-pick" role="group" aria-label="Choose your character">
@@ -293,6 +303,7 @@
         </div>
         <div class="button-row">
           <button id="manualBackButton" class="primary-button">BACK</button>
+          <button id="previewButton" class="text-button">Fly through the Skyline (preview)</button>
         </div>
       </div>
     </section>

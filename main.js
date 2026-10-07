@@ -1216,6 +1216,7 @@ function startPreview() {
   state = "preview";
   run.preview = 0;
   ui.start.classList.remove("active");
+  ui.manual.classList.remove("active");
   ui.previewBar.hidden = false;
   document.body.classList.add("cw-preview");
   causewayHud.show();
@@ -1245,7 +1246,6 @@ function refreshMenuProgress() {
   const p = missions.progress;
   ui.endlessButton.disabled = false;
   ui.endlessButton.title = "Pick any environment and run it until you go down";
-  ui.endlessButton.textContent = "Endless";
   const bits = [];
   if (p.best.story) bits.push(`Best run ${String(p.best.story).padStart(6, "0")}`);
   for (const env of ["foundry", "labs", "skyline", "roof"]) {
