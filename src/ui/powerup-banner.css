@@ -76,3 +76,20 @@ body.story-cutscene .pu-badges, body.cutscene .pu-badges { display: none; }
   .pu-badges { top: 64px; flex-direction: column; }
   .pu-badge { min-width: 0; width: calc(100vw - 32px); }
 }
+
+/* ---- The pickup burst: a flash and two rings in the serum's colour ------ */
+.pu-burst {
+  position: fixed; inset: 0; z-index: 7; pointer-events: none; overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--c) 45%, transparent), transparent 60%);
+  animation: puFlash .7s ease-out forwards;
+}
+.pu-burst-ring {
+  position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%;
+  border: 6px solid var(--c); box-shadow: 0 0 30px var(--c), inset 0 0 20px var(--c);
+  animation: puRing .75s cubic-bezier(.15, .7, .3, 1) forwards;
+}
+.pu-burst-ring.late { border-width: 3px; animation-delay: .1s; opacity: 0; }
+@keyframes puFlash { from { opacity: 1; } to { opacity: 0; } }
+@keyframes puRing { from { transform: scale(.4); opacity: 1; } to { transform: scale(40); opacity: 0; border-width: 1px; } }
+body.reduced-motion .pu-burst-ring { display: none; }
+@media (prefers-reduced-motion: reduce) { .pu-burst-ring { display: none; } }
