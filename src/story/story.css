@@ -39,9 +39,11 @@ body.story-cutscene .message { opacity: 0 !important; transition: opacity .4s; }
 .story-sub.show { opacity: 1; }
 /* During play (Okoro talking while you run): bottom left, like a radio,
    clear of the centred combo/prompts and above every level's bottom bar. */
-.story-layer.gameplay .story-sub { left: 3vw; bottom: calc(15vh + 34px); transform: none; width: min(44vw, 560px); text-align: left; }
-.story-sub .who { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; letter-spacing: .24em; }
-.story-sub .line { display: inline; padding: 3px 10px; font-size: clamp(16px, 2.1vw, 23px); line-height: 1.5; font-weight: 600; color: #f4f7f8; background: rgba(0,0,0,.55); box-decoration-break: clone; -webkit-box-decoration-break: clone; text-shadow: 0 1px 2px #000; }
+.story-layer.gameplay .story-sub { left: 3vw; bottom: calc(15vh + 34px); transform: none; width: min(46vw, 640px); text-align: left; }
+/* Feedback: with no voiceovers the subtitles must be big and easy to read.
+   --sub-scale is the Settings choice (Large by default). */
+.story-sub .who { display: block; margin-bottom: 6px; font-size: calc(13px * var(--sub-scale, 1.25)); font-weight: 900; letter-spacing: .2em; text-shadow: 0 1px 3px #000; }
+.story-sub .line { display: inline; padding: 5px 14px; font-size: calc(clamp(18px, 2.1vw, 24px) * var(--sub-scale, 1.25)); line-height: 1.5; font-weight: 700; color: #fff; background: rgba(0,0,0,.74); border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; text-shadow: 0 1px 2px #000; }
 .story-sub.direction .line { font-style: italic; font-weight: 500; color: #b9c4c9; background: rgba(0,0,0,.35); }
 
 /* Hold-to-skip ring, bottom right. */

@@ -139,6 +139,9 @@ const settingsDefaults = {
   sensitivity: 100, aimAssist: true, reducedMotion: false, quality: "auto",
   // The story's reaction hits (src/story/reaction.js).
   longReactions: false, holdInsteadOfMash: false,
+  // Subtitle size (there are no voiceovers, so they must be easy to read):
+  // "normal", "large" or "xl" - see --sub-scale in styles.css.
+  subtitleSize: "large",
   // Which HUD panels are shown. See HUD_PANELS in src/ui/causeway-hud.js.
   hud: Object.fromEntries(HUD_PANELS.map((p) => [p.key, p.on])),
 };
@@ -212,6 +215,7 @@ const ui = {
   sensitivitySlider: $("#sensitivitySlider"), reducedMotionToggle: $("#reducedMotionToggle"),
   aimAssistToggle: $("#aimAssistToggle"),
   longReactionsToggle: $("#longReactionsToggle"), holdInsteadOfMashToggle: $("#holdInsteadOfMashToggle"),
+  subtitleSizeSelect: $("#subtitleSizeSelect"),
   viewButton: $("#viewButton"), viewMenu: $("#viewMenu"), briefing: $("#briefingMissions"),
   qualitySelect: $("#qualitySelect"),
   manual: $("#manualScreen"), previewBar: $("#previewBar"), fade: $("#fadeOverlay"),
@@ -225,8 +229,16 @@ function applySettingsToControls() {
   if (ui.longReactionsToggle) ui.longReactionsToggle.checked = settings.longReactions;
   if (ui.holdInsteadOfMashToggle) ui.holdInsteadOfMashToggle.checked = settings.holdInsteadOfMash;
   ui.qualitySelect.value = settings.quality;
+  ui.subtitleSizeSelect.value = settings.subtitleSize;
+  applySubtitleSize();
   for (const input of document.querySelectorAll("[data-hud-key]")) input.checked = !!settings.hud[input.dataset.hudKey];
   applyHudPanels(settings.hud);
+}
+
+/** Every subtitle in the game (cutscenes, the intercom, the lift rides) scales with this. */
+function applySubtitleSize() {
+  const scale = { normal: 1, large: 1.25, xl: 1.55 }[settings.subtitleSize] ?? 1.25;
+  document.documentElement.style.setProperty("--sub-scale", String(scale));
 }
 
 /** Build the HUD panel checkboxes into every [data-hud-toggles] container. */
@@ -3468,6 +3480,7 @@ $("#resetPowerupTipsButton").addEventListener("click", (event) => {
 // The serum card: its button, or a click anywhere on it, carries on.
 powerups.card.addEventListener("click", closePowerupIntro);
 ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
+ui.subtitleSizeSelect.addEventListener("change", (event) => { settings.subtitleSize = event.target.value; saveSettings(); applySubtitleSize(); });
 ui.longReactionsToggle.addEventListener("change", (event) => { settings.longReactions = event.target.checked; saveSettings(); story.setOptions({ longWindows: settings.longReactions }); });
 ui.holdInsteadOfMashToggle.addEventListener("change", (event) => { settings.holdInsteadOfMash = event.target.checked; saveSettings(); story.setOptions({ holdInsteadOfMash: settings.holdInsteadOfMash }); });
 ui.qualitySelect.addEventListener("change", (event) => {

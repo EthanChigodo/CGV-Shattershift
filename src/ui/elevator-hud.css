@@ -227,10 +227,11 @@
   padding: 8px 16px;
   text-align: center;
   text-transform: none;
-  font-size: 17px;
+  font-size: calc(19px * var(--sub-scale, 1.25));
+  font-weight: 600;
   line-height: 1.4;
-  color: #f4fbff;
-  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  background: rgba(0, 0, 0, 0.74);
   border-radius: 4px;
   opacity: 0;
   transition: opacity 0.3s ease;
