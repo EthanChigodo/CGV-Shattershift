@@ -9,7 +9,7 @@ export const LEVEL1_SFX_VOLUME = Object.freeze({
   falling: 0.28,
   gameOver: 0.44,
   glassStep: 0.12,
-  elevator: 0.36,
+  elevatorMechanical: 0.28,
   wind: 0.3,
   throw: 0.26,
   pickup: 0.28,
@@ -24,6 +24,11 @@ export const LEVEL1_SFX_RANGE = Object.freeze({
   waterMax: 9,
 });
 
+export const LEVEL1_SFX_TIMING = Object.freeze({
+  elevatorMechanicalFade: 0.35,
+  elevatorMechanicalLoopOverlap: 0.75,
+});
+
 const ASSETS = Object.freeze({
   fire: new URL("../../assets/audio/sound-effects/vanzetpictures-fire-457848.mp3", import.meta.url).href,
   impact: new URL("../../assets/audio/sound-effects/sumaga123-wood-hit-432148.mp3", import.meta.url).href,
@@ -33,7 +38,7 @@ const ASSETS = Object.freeze({
   falling: new URL("../../assets/audio/sound-effects/dragon-studio-falling-tree-356127.mp3", import.meta.url).href,
   gameOver: new URL("../../assets/audio/sound-effects/universfield-marimba-game-over-250960.mp3", import.meta.url).href,
   glassStep: new URL("../../assets/audio/sound-effects/368343__johandeecke__glass-hit-32.wav", import.meta.url).href,
-  elevator: new URL("../../assets/audio/sound-effects/wind1.wav", import.meta.url).href,
+  elevatorMechanical: new URL("../../assets/audio/soundtracks/174908__oneirophile__noisy-old-elevator.wav", import.meta.url).href,
   wind: new URL("../../assets/audio/sound-effects/wind1.wav", import.meta.url).href,
   throw: new URL("../../assets/audio/sound-effects/floraphonic-swing-whoosh-9-198502.mp3", import.meta.url).href,
   pickup: new URL("../../assets/audio/sound-effects/floraphonic-arcade-ui-6-229503.mp3", import.meta.url).href,
@@ -53,6 +58,7 @@ export class Level1Audio {
     this.context = null;
     this.buffers = new Map();
     this.loads = new Map();
+    this.loopStarts = new Map();
     this.buses = null;
     this.ambient = new Map();
     this.falling = new Map();
@@ -97,6 +103,12 @@ export class Level1Audio {
           return response.arrayBuffer();
         })
         .then((data) => this.context.decodeAudioData(data))
+        .then((buffer) => {
+          if (name === "elevatorMechanical") {
+            this._prepareLoop(name, buffer, LEVEL1_SFX_TIMING.elevatorMechanicalLoopOverlap);
+          }
+          return buffer;
+        })
         .then((buffer) => { this.buffers.set(name, buffer); return buffer; })
         .catch((error) => {
           this.loads.delete(name);
@@ -217,11 +229,11 @@ export class Level1Audio {
   }
 
   updateElevator(velocity, active) {
-    const level = active ? smoothstep(0.2, 5, velocity) * LEVEL1_SFX_VOLUME.elevator : 0;
-    this._setAmbient("elevator", level, 0);
+    const level = active ? smoothstep(0.2, 5, Math.abs(velocity)) * LEVEL1_SFX_VOLUME.elevatorMechanical : 0;
+    this._setAmbient("elevatorMechanical", level, 0, LEVEL1_SFX_TIMING.elevatorMechanicalFade);
   }
 
-  async _setAmbient(name, volume, offsetX) {
+  async _setAmbient(name, volume, offsetX, seconds = 0.18) {
     const desired = { volume, pan: clamp(offsetX / 7, -0.65, 0.65) };
     let channel = this.ambient.get(name);
     if (!channel && volume > 0.001 && this.context) {
@@ -233,6 +245,8 @@ export class Level1Audio {
       const panner = this.context.createStereoPanner?.() ?? null;
       source.buffer = buffer;
       source.loop = true;
+      source.loopStart = this.loopStarts.get(name) ?? 0;
+      source.loopEnd = buffer.duration;
       gain.gain.value = 0;
       if (panner) source.connect(panner).connect(gain);
       else source.connect(gain);
@@ -243,7 +257,7 @@ export class Level1Audio {
     }
     if (!channel) return;
     channel.desired = desired;
-    this._rampAmbient(channel, 0.18);
+    this._rampAmbient(channel, seconds);
   }
 
   _rampAmbient(channel, seconds) {
@@ -255,6 +269,22 @@ export class Level1Audio {
 
   _applyAmbientTargets() {
     for (const channel of this.ambient.values()) this._rampAmbient(channel, 0.18);
+  }
+
+  /** Blend noisy ambience across its PCM boundary once, then loop the blend. */
+  _prepareLoop(name, buffer, overlap) {
+    const frames = Math.min(Math.floor(overlap * buffer.sampleRate), Math.floor(buffer.length / 4));
+    if (frames < 2) { this.loopStarts.set(name, 0); return; }
+    const tailStart = buffer.length - frames;
+    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+      const samples = buffer.getChannelData(channel);
+      for (let i = 0; i < frames; i += 1) {
+        const mix = i / (frames - 1);
+        samples[tailStart + i] = samples[tailStart + i] * Math.cos(mix * Math.PI * 0.5)
+          + samples[i] * Math.sin(mix * Math.PI * 0.5);
+      }
+    }
+    this.loopStarts.set(name, frames / buffer.sampleRate);
   }
 
   setPaused(paused) {
