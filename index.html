@@ -16,6 +16,8 @@
         }
       }
     </script>
+    <!-- No favicon file: an empty inline one stops the browser asking the server root for /favicon.ico. -->
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./src/ui/menu-fx.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
@@ -245,7 +247,7 @@
             <input type="checkbox" id="longReactionsToggle" />
           </label>
           <label class="setting-row toggle-row">
-            <span>Hold instead of mash</span>
+            <span>Fill bars by holding the key instead of tapping it fast</span>
             <input type="checkbox" id="holdInsteadOfMashToggle" />
           </label>
         </div>
@@ -261,7 +263,7 @@
             <span><kbd>SPACE</kbd><kbd>SHIFT</kbd> Jump / slide</span>
             <span><kbd>C</kbd> Change camera</span>
             <span><kbd>HOLD CLICK</kbd> Fire the launcher (Sector 02, Roof) - it overheats</span>
-            <span><kbd>SPACE</kbd> Push a fallen duct (mash, Sector 02)</span>
+            <span><kbd>SPACE</kbd> Push a fallen duct (tap fast, Sector 02)</span>
             <span><kbd>WASD</kbd> Move on the roof, <kbd>SPACE</kbd> dodge / jump for the ladder</span>
             <span><kbd>P</kbd> Photo mode (Sectors 01, 03)</span>
             <span><kbd>M</kbd> Minimap</span>
