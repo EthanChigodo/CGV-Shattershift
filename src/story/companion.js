@@ -336,8 +336,10 @@ export class Companion {
         pose = { lean: 0.5, headNod: 0.9, crouch: 0.4, elbow: 0.1, headTilt: 0.3 };
         break;
       default: {
-        // Idle: breathing, shifting weight.
-        pose = { headNod: 0.04 + Math.sin(t * 1.6) * 0.02, elbow: 0.3, lean: Math.sin(t * 1.6) * 0.012, twist: Math.sin(t * 0.4) * 0.03 };
+        // Idle: breathing, shifting weight from foot to foot every few
+        // seconds, and the small glances people make while they wait.
+        const glance = Math.sin(t * 0.37) * Math.sin(t * 0.91 + 1.3);
+        pose = { headNod: 0.04 + Math.sin(t * 1.6) * 0.02, headTilt: glance * 0.05, elbow: 0.3, lean: Math.sin(t * 1.6) * 0.012, twist: Math.sin(t * 0.4) * 0.03 + glance * 0.03, spread: 0.02 + Math.max(0, Math.sin(t * 0.45)) * 0.03 };
       }
     }
 
@@ -349,6 +351,12 @@ export class Companion {
     } else {
       this.body.position.y += (-drop + (moving && !g ? Math.abs(Math.sin(this.phase)) * 0.03 * Math.min(1, sp / 3) : 0) - this.body.position.y) * k(12);
     }
+    // Idle and talking, the weight shifts from foot to foot: the hips sway
+    // over the standing leg (and the shoulders counter it a little).
+    const shifting = !moving && (this.action === "idle" || this.action === "talk" || this.action === "point") ? 1 : 0;
+    this.sway = (this.sway ?? 0) + ((Math.sin(t * 0.45) * 0.028 * shifting) - (this.sway ?? 0)) * k(3);
+    this.body.position.x = this.sway;
+    this.body.rotation.z = -this.sway * 0.6;
     // Slumped: down onto the floor.
     this.body.rotation.x = -this.slump * 1.35;
     this.body.position.z = this.slump * 0.6;

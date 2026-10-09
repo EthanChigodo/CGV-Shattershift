@@ -42,7 +42,7 @@ export class MeltdownHud {
 
     this.banner = element("div", "mlt-banner");
     this.bannerLabel = element("span", null, "SECTOR 02");
-    this.bannerName = element("strong", null, "THE MELTDOWN");
+    this.bannerName = element("strong", null, "THE LABS");
     this.banner.append(this.bannerLabel, this.bannerName);
 
     this.vignette = element("div", "mlt-vignette");
@@ -76,7 +76,7 @@ export class MeltdownHud {
     this.summary = element("div", "mlt-summary");
     this.summaryCard = element("div", "mlt-summary-card");
     this.summaryEyebrow = element("span", null, "SECTOR 02");
-    this.summaryTitle = element("h2", null, "THE MELTDOWN");
+    this.summaryTitle = element("h2", null, "THE LABS");
     this.summaryRows = element("div", "mlt-summary-rows");
     this.summaryCard.append(
       this.summaryEyebrow,
@@ -129,7 +129,7 @@ export class MeltdownHud {
 
   show() {
     this.root.hidden = false;
-    this.showBanner("SECTOR 02", "THE MELTDOWN");
+    this.showBanner("SECTOR 02", "THE LABS");
     return this;
   }
 
@@ -227,6 +227,8 @@ export class MeltdownHud {
 
   toast(text, value = "", kind = "", life = 2200) {
     const node = element("div", `mlt-toast ${kind}`.trim(), `${text}${value ? `<b>${value}</b>` : ""}`);
+    // The same line twice is one line: the older copy goes.
+    for (const old of [...this.toasts.children]) if (old.innerHTML === node.innerHTML) old.remove();
     this.toasts.append(node);
     setTimeout(() => {
       node.classList.add("leaving");

@@ -96,7 +96,7 @@ the repository.
 | File | Title / author / source | Licence | Modifications | Used in |
 | --- | --- | --- | --- | --- |
 | `backpack.glb` | "Military Backpack" by Neslihan Çakmak - sketchfab.com/3d-models/military-backpack-06be5c0f15aa4aa3af8ebcc4c83d02a3 | CC BY 4.0 | Decimated, textures resized | Dr. Okoro's bag of spheres (the Foundry; worn by the player) |
-| `duffel_bag.glb` | "Military Duffel bag" by Sousinho - sketchfab.com/3d-models/military-duffel-bag-d69478f0c5334e189e98f99e84bbe3e6 | CC BY 4.0 | Textures resized | Sphere sacks (the Labs) |
+| `duffel_bag.glb` | "Military Duffel bag" by Sousinho - sketchfab.com/3d-models/military-duffel-bag-d69478f0c5334e189e98f99e84bbe3e6 | CC BY 4.0 | Textures resized | Beside the sphere caches (the Labs, the Roof) |
 | `police_helicopter.glb` | "Dolphin Helicopter (AS-365/Harbin Z-9)" by Martini-SF - sketchfab.com/3d-models/dolphin-helicopter-as-365harbin-z-9-d27aaf297dc94a3abb31571217179612 | **CC BY-NC 4.0** | Skin baked to static parts, police livery, rotor blades rebuilt in code, textures resized | Police helicopters (Skyline, roof, briefing) |
 | `city_night.glb` | "city at night low poly skyscrapers" by dasy444 - sketchfab.com/3d-models/city-at-night-low-poly-skyscrapers-dc1294de66194054961c16aa74fda2cb | **Sketchfab Standard** | Textures resized; its sky dome hidden | The city (briefing) |
 | `operating_room.glb` | "Charité University Hospital - Operating Room" by ChrisRE - sketchfab.com/3d-models/charite-university-hospital-operating-room-9ec46c4d615a4581a235eebfb162f574 | **CC BY-NC 4.0** | Decimated, textures resized | The operating theatre (briefing) |
@@ -125,7 +125,7 @@ credits stay in step.
 > project, but if the game is ever published, swap these for original or
 > generic models.
 
-### Photo textures (Level 3: the Labs and the Roof)
+### Photo textures (the Foundry, the Labs and the Roof)
 
 Downloaded from Poly Haven (polyhaven.com) at 1K, colour + OpenGL normal +
 roughness maps, into `assets/meltdown/textures/`. All **CC0** (public
@@ -136,7 +136,7 @@ the drawn textures stay as the fallback.
 | Set | Source | Used on |
 | --- | --- | --- |
 | Long White Tiles | polyhaven.com/a/long_white_tiles | The ward's and the labs' tiled walls |
-| Metal Plate | polyhaven.com/a/metal_plate | Steel-panel walls (containment, substation) |
+| Metal Plate | polyhaven.com/a/metal_plate | Steel-panel walls (containment, substation); the Foundry's wall and ceiling plating |
 | Painted Concrete | polyhaven.com/a/painted_concrete | Concrete walls (archive, boiler hall, stairwell) |
 | Concrete Floor Painted | polyhaven.com/a/concrete_floor_painted | The Labs' floor |
 | Tarred Gravel | polyhaven.com/a/tarred_gravel | The roof slab |
@@ -144,7 +144,8 @@ the drawn textures stay as the fallback.
 ### Not external (Level 3)
 
 - Fire and smoke: custom GLSL shaders (`src/levels/meltdown/fire.js`).
-- Audio: synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`) - no sample files.
+- Audio: the Labs' own cues are synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`), and so is the Foundry's machinery bed (`src/audio/foundry-ambience.js`) - no sample files; the recorded sounds every level shares are listed below.
+- The city round the roof (`city.js`), the story's furniture and set dressing (`src/story/stages/props.js`), the power-up looks (`src/ui/serum-fx.js`) and the menus' capsule pictures: built in code.
 - Signage, hazard stripes, decals and the fallback wall/floor textures: generated on canvas at runtime (`src/levels/meltdown/textures.js`).
 - Sky, smoke bank, launcher beam, grading pass: custom GLSL (`src/levels/meltdown/roof.js`, `smoke.js`, `flashlight.js`, `post.js`).
 
@@ -168,7 +169,7 @@ Level 1 sound effects supplied to the project:
 - Falling object: `dragon-studio-falling-tree-356127.mp3` — Dragon Studio.
 - Game over: `universfield-marimba-game-over-250960.mp3` — Universfield.
 - Broken-glass footstep: `368343__johandeecke__glass-hit-32.wav` — JohanDeecke.
-- Elevator: `wind1.wav` — source and licence details pending.
+- Elevator, and the wind on the roof: `wind1.wav` — source and licence details pending.
 - Sphere throw: `floraphonic-swing-whoosh-9-198502.mp3` — Floraphonic.
 - Sphere cache / serum collected: `floraphonic-arcade-ui-6-229503.mp3` — Floraphonic.
 - Side-wall / ceiling ricochet: `freesound_community-wall-hit-1-100717.mp3` — Freesound Community.

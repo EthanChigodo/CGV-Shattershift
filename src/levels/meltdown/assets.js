@@ -77,7 +77,7 @@ export const MELTDOWN_ASSETS = {
   industrialPipes: "industrial_pipes.glb",
   experimentRing: "experiment_ring.glb",
   launcher: "launcher.glb",
-  // The duffel beside each sphere sack.
+  // The duffel beside each sphere cache.
   duffelBag: "duffel_bag.glb",
   // People (see characters.js): normalised, atlas-merged, and rigged.
   patient: "patient.glb",

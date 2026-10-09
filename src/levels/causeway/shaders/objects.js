@@ -14,6 +14,7 @@
 
 import * as THREE from "../../../three.js";
 import { NOISE_GLSL, FOG_FADE_GLSL } from "./common.js";
+import { SERUMS } from "../../../systems/arsenal.js";
 
 /* ------------------------------------------------------------------ */
 /* Serum capsule - ray marched signed distance field                    */
@@ -118,20 +119,18 @@ void main() {
     float diff = max(dot(n, l), 0.0);
     float rim = pow(1.0 - max(dot(n, -rdIn), 0.0), 2.0);
     float core = exp(-length(p) * 6.0);
-    colour = uColor * (0.25 + diff * 0.9) + uColor * rim * 1.6 + vec3(1.0) * core * 0.8;
+    // Kept under white so the serum reads as its own colour, not a glare.
+    colour = uColor * (0.22 + diff * 0.75) + uColor * rim * 1.1 + mix(uColor, vec3(1.0), 0.45) * core * 0.45;
     alpha = 0.95;
   }
-  colour += vec3(0.85, 0.95, 1.0) * fresnel * 1.2 + uColor * 0.15;
+  colour += mix(vec3(0.85, 0.95, 1.0), uColor, 0.5) * fresnel * 1.0 + uColor * 0.15;
   gl_FragColor = vec4(colour * fogFade(), alpha);
 }
 `;
 
-export const SERUM_COLOURS = {
-  prism: new THREE.Color(0.7, 0.45, 1.0),
-  thermal: new THREE.Color(1.0, 0.45, 0.12),
-  shield: new THREE.Color(0.3, 0.9, 1.0),
-  overdrive: new THREE.Color(1.0, 0.2, 0.55),
-};
+/** Each serum's own colour (arsenal.js SERUMS), in linear space: saturated once lit. */
+const rawColour = (hex) => new THREE.Color(hex);
+export const SERUM_COLOURS = Object.fromEntries(Object.values(SERUMS).map((s) => [s.key, rawColour(s.colour)]));
 const SERUM_MODES = { prism: 0, thermal: 1, shield: 2, overdrive: 3 };
 
 export function createSerumMaterial(type, time) {
@@ -339,7 +338,7 @@ export function createShieldMaterial(time) {
       uStrength: { value: 0 },
       uRipple: { value: 0 },
       uRippleDir: { value: new THREE.Vector3(0, 0, -1) },
-      uColor: { value: new THREE.Color(0x4fe8ff) },
+      uColor: { value: rawColour(SERUMS.shield.colour) },
     },
     vertexShader: shieldVertex,
     fragmentShader: shieldFragment,

@@ -108,7 +108,9 @@ async function main() {
 
   let failed = 0;
   const shotsOnly = process.argv.includes("--shots-only");
-  for (const check of shotsOnly ? [] : Object.values(checks)) {
+  // --only "brake clamps" runs just the checks whose name contains it.
+  const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] ?? "" : null;
+  for (const check of shotsOnly ? [] : Object.values(checks).filter((c) => only === null || c.name.includes(only))) {
     process.stdout.write(`${check.name} ... `);
     try {
       await open();

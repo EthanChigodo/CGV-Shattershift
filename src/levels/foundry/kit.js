@@ -25,6 +25,35 @@
 
 import * as THREE from "../../three.js";
 import { createFoundryTextures } from "./textures.js";
+import { serumPickup } from "../../systems/spheres.js";
+import { applyPhotoSet, PHOTO_SETS } from "../meltdown/photo-textures.js";
+
+/**
+ * A box with rounded edges (radius r), so machinery catches a highlight along
+ * its edges instead of ending in a razor line. The rounded-box method: a
+ * subdivided unit box whose vertices are pushed out onto the rounded shape;
+ * the box's own UVs are kept.
+ */
+export function bevelledBox(width, height, depth, r = 0.06, segments = 2) {
+  const n = segments * 2 + 1;
+  const g = new THREE.BoxGeometry(1, 1, 1, n, n, n);
+  r = Math.min(r, width / 2, height / 2, depth / 2);
+  const half = new THREE.Vector3(width / 2 - r, height / 2 - r, depth / 2 - r);
+  const pos = g.attributes.position;
+  const nor = g.attributes.normal;
+  const p = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  const h = 0.5 / n;
+  for (let i = 0; i < pos.count; i += 1) {
+    p.fromBufferAttribute(pos, i);
+    v.set(p.x - Math.sign(p.x) * h, p.y - Math.sign(p.y) * h, p.z - Math.sign(p.z) * h).normalize();
+    pos.setXYZ(i, half.x * Math.sign(p.x) + v.x * r, half.y * Math.sign(p.y) + v.y * r, half.z * Math.sign(p.z) + v.z * r);
+    nor.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
 
 export function createFoundryKit({ shadows = false } = {}) {
   const textures = createFoundryTextures();
@@ -40,6 +69,7 @@ export function createFoundryKit({ shadows = false } = {}) {
       normalScale: new THREE.Vector2(1.35, 1.35),
       metalness: 0.86,
       roughness: 0.44,
+      envMapIntensity: 0.6,
     }),
     trim: new THREE.MeshStandardMaterial({ color: 0x1b2228, metalness: 0.9, roughness: 0.32 }),
     grate: new THREE.MeshStandardMaterial({
@@ -119,24 +149,24 @@ export function createFoundryKit({ shadows = false } = {}) {
     floorPlate: new THREE.BoxGeometry(11.2, 0.3, 8),
     kerb: new THREE.BoxGeometry(0.5, 0.44, 8),
     seamStrip: new THREE.BoxGeometry(0.16, 0.04, 7.6),
-    beam: new THREE.BoxGeometry(11.6, 0.42, 0.5),
+    beam: bevelledBox(11.6, 0.42, 0.5, 0.05),
     conduit: new THREE.CylinderGeometry(0.14, 0.14, 11.4, 8),
     lampHousing: new THREE.ConeGeometry(0.52, 0.62, 10, 1, true),
     lampBulb: new THREE.SphereGeometry(0.17, 8, 6),
     pistonHousing: new THREE.CylinderGeometry(0.78, 0.9, 1.5, 12),
     pistonShaft: new THREE.CylinderGeometry(0.3, 0.3, 1, 10),
-    pistonHead: new THREE.BoxGeometry(2.3, 0.75, 2.3),
+    pistonHead: bevelledBox(2.3, 0.75, 2.3, 0.1),
     roller: new THREE.CylinderGeometry(0.38, 0.38, 2.1, 12),
-    beltSurface: new THREE.BoxGeometry(2.1, 0.16, 9),
-    ventFrame: new THREE.BoxGeometry(0.34, 3.1, 3.1),
+    beltSurface: bevelledBox(2.1, 0.16, 9, 0.05),
+    ventFrame: bevelledBox(0.34, 3.1, 3.1, 0.06),
     ventPanel: new THREE.PlaneGeometry(2.6, 2.6),
-    shutterSlab: new THREE.BoxGeometry(4.6, 6.6, 0.7),
-    shutterEdge: new THREE.BoxGeometry(0.3, 6.6, 0.86),
-    switchHousing: new THREE.BoxGeometry(1.5, 0.36, 0.5),
-    switchGlass: new THREE.BoxGeometry(1.16, 1.34, 0.24),
+    shutterSlab: bevelledBox(4.6, 6.6, 0.7, 0.08),
+    shutterEdge: bevelledBox(0.3, 6.6, 0.86, 0.06),
+    switchHousing: bevelledBox(1.5, 0.36, 0.5, 0.06),
+    switchGlass: bevelledBox(1.16, 1.34, 0.24, 0.06),
     switchStem: new THREE.CylinderGeometry(0.09, 0.09, 1.1, 6),
     strobeLens: new THREE.SphereGeometry(0.24, 10, 8),
-    chevron: new THREE.BoxGeometry(1.5, 0.14, 0.42),
+    chevron: bevelledBox(1.5, 0.14, 0.42, 0.04),
     cellGlass: new THREE.OctahedronGeometry(0.46, 0),
     cellCage: new THREE.TorusGeometry(0.52, 0.06, 6, 12),
     cellMount: new THREE.CylinderGeometry(0.08, 0.08, 0.8, 6),
@@ -150,6 +180,12 @@ export function createFoundryKit({ shadows = false } = {}) {
     geometries: Object.values(geometries),
     textures: [],
   };
+
+  // The plating, photographed (Poly Haven's metal plates, CC0 -
+  // docs/credits.md), replaces the drawn panels once it loads: the same
+  // maps it already has, so nothing recompiles.
+  applyPhotoSet(materials.plating, PHOTO_SETS.steelWall, { repeat: [3, 3], roughness: false, normalScale: 1.1 })
+    .then((ok) => { if (ok) tracked.textures.push(materials.plating.map, materials.plating.normalMap); });
 
   /* -------------------------------------------------------------- */
   /* Helpers                                                         */
@@ -631,10 +667,12 @@ export function createFoundryKit({ shadows = false } = {}) {
    * the corridor. Emissive material self-lights them for free.
    */
   /**
-   * `serum` makes it a serum vial instead (the Skyline's power-ups, in every
-   * level): tinted `colour`, worth no spheres, and breaking it injects it.
+   * `serum` makes it a serum capsule instead - the Skyline's, as in every
+   * level (src/systems/spheres.js): worth no spheres, and breaking it (or
+   * running into it) injects it.
    */
   function pressureCell({ points = 60, spheres = 1, serum = null, colour = null } = {}) {
+    if (serum) return serumCapsule(serum, points);
     const group = new THREE.Group();
     group.name = serum ? "SerumVial" : "PressureCell";
 
@@ -677,6 +715,26 @@ export function createFoundryKit({ shadows = false } = {}) {
       return true;
     };
 
+    return group;
+  }
+
+  function serumCapsule(serum, points) {
+    const pickup = serumPickup(serum, { scale: 0.9 });
+    tracked.materials.push(...pickup.materials);
+    const group = pickup.root;
+    group.name = "SerumCapsule";
+    const hit = pickup.hit;
+    hit.userData = { kind: "cell", breakable: true, alive: true, points, spheres: 0, serum, label: "SERUM", node: group };
+    group.userData.glass = hit;
+    group.userData.tick = (dt, time) => {
+      if (hit.userData.alive) pickup.tick(dt, time);
+    };
+    group.userData.onBreak = () => {
+      if (!hit.userData.alive) return false;
+      hit.userData.alive = false;
+      pickup.hide();
+      return true;
+    };
     return group;
   }
 

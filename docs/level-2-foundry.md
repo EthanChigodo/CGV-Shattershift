@@ -22,6 +22,7 @@ Level 1 is aiming and ammunition. Level 3 is gravity and orientation. Level 2 is
 | Materials | Ribbed metal plating, open floor grating, hazard-striped slabs, reinforced cyan glass, slotted furnace grilles |
 | Lighting | A light travelling with the player, pooled furnace glow and work lights, red warning strobes, and weak ambient fill. One `brightness` option scales it (default 1.6); in the preview `[` and `]` adjust it live and the choice is remembered. |
 | Motion | Pistons, conveyor belts with crates, steam jets, sparks, sliding walls |
+| Dressing | Pipe runs, cable trays and gantries (instanced); lamp light falling in shafts through the haze; **furnace mouths** in the walls every ~52 m on the straights (an iron frame and grate bars over a flickering fire shader, its glow pooling on the floor); machinery edges bevelled (`kit.js` `bevelledBox`) so they catch a highlight |
 | Readability rule | Breakable = cyan glass, glowing, pulsing. Solid hazard = red/amber metal, blocky, never glowing cyan. The player should never have to guess. |
 
 ---
@@ -226,7 +227,7 @@ Audio is **not** implemented here - it belongs to the UI/audio workstream. The l
 
 > **These figures are for the 194 m version.** The route has since doubled to 384 m. Structurally the cost should barely move — the shell is instanced, the light pool is still fixed at 11 whether there are 39 emitters or 61 — and draw calls and triangle counts measured at the new length agree (74-262 draws, 13-30k triangles, both within the old range).
 >
-> **The frame rate at 384 m has not been reliably re-measured.** The attempt ran with the browser pane hidden, which throttles the animation loop; the same section timed 18 ms on one pass and 39 ms on the next. Rather than publish a number that noisy: press `F` in the preview and read the FPS counter while actually playing, with the window visible and focused. That reading is the Sprint 1 deliverable, and it is trustworthy in a way these were not.
+> **The frame rate at 384 m has not been reliably re-measured.** The attempt ran with the browser pane hidden, which throttles the animation loop; the same section timed 18 ms on one pass and 39 ms on the next. Rather than publish a number that noisy: use the browser's performance tools (DevTools > Performance, or the FPS meter in Rendering) while actually playing, with the window visible and focused. That reading is the Sprint 1 deliverable, and it is trustworthy in a way these were not.
 
 AMD Radeon integrated graphics (`nkosi-laptop`), Chromium, 1280×720, shadows on, all 11 dynamic lights:
 

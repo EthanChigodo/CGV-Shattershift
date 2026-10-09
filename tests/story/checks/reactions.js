@@ -23,11 +23,14 @@ export async function run(page) {
     h.keyDown("KeyE");
     check("press: right key in time succeeds", h.state === "success", h.state);
     h = fresh().start({ kind: "press", keys: ["KeyE"], window: 2 });
-    h.keyDown("KeyQ");
+    h.keyDown("KeyR");
     check("press: another reaction key fails", h.state === "fail" && h.failReason === "wrong key", `${h.state} ${h.failReason}`);
     h = fresh().start({ kind: "press", keys: ["KeyE"], window: 2 });
     const used = h.keyDown("KeyW");
     check("press: movement keys are ignored (not consumed)", h.state === "running" && !used, `${h.state} ${used}`);
+    h = fresh().start({ kind: "press", keys: ["KeyR"], window: 2 });
+    const habit = h.keyDown("KeyQ");
+    check("press: the sphere/camera keys (Q E C V) are not reaction keys", h.state === "running" && !habit && !REACTION_KEYS.some((k) => ["KeyQ", "KeyE", "KeyC", "KeyV"].includes(k)), `${h.state} ${habit}`);
     h = fresh().start({ kind: "press", keys: ["KeyE"], window: 2 });
     tick(h, 1.95);
     const before = h.state;

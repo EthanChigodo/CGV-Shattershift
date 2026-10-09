@@ -285,10 +285,10 @@ export const pace = {
       const failures = [];
       const at = (dist) => d.causewayPace(dist).pace;
       if (at(5) > 6.5) failures.push(`start pace ${at(5).toFixed(1)} m/s is not groggy (expected about 6)`);
-      if (Math.abs(at(235) - 10.2) > 0.3) failures.push(`pace at the end of the ward is ${at(235).toFixed(1)} m/s, expected 10.2`);
-      // The bridge collapse runs at 8.6 m/s: the player must outpace it from its start.
+      if (Math.abs(at(235) - 11.4) > 0.3) failures.push(`pace at the end of the ward is ${at(235).toFixed(1)} m/s, expected 11.4`);
+      // The bridge collapse runs at 9.6 m/s: the player must outpace it from its start.
       const chaseStart = 262;
-      for (let x = chaseStart; x < 530; x += 10) if (at(x) < 9.6) failures.push(`pace ${at(x).toFixed(1)} m/s at ${x} m is too close to the collapse speed`);
+      for (let x = chaseStart; x < 530; x += 10) if (at(x) < 10.6) failures.push(`pace ${at(x).toFixed(1)} m/s at ${x} m is too close to the collapse speed`);
 
       // Measured in play: the real speed after running a while at the start and mid-ward.
       d.resetGame("story"); d.setHealth(1e6);

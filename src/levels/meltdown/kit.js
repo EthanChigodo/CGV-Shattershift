@@ -38,6 +38,112 @@ import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { createFire } from "./fire.js";
 import { assetSlot } from "./assets.js";
 import { HumanoidRig } from "./characters.js";
+import { SERUMS } from "../../systems/arsenal.js";
+import { serumPickup, sphereCachePickup } from "../../systems/spheres.js";
+
+/**
+ * Thermal sight (a serum): every patient shows as a white-hot body, brightest
+ * at its silhouette, through the dark and the smoke. 0..1, set each frame by
+ * the game from the serum's strength; shared by every patient.
+ */
+export const THERMAL_HEAT = { value: 0 };
+
+/** Give a patient model's materials the heat signature (once per material). */
+export function heatSignature(object) {
+  object.traverse((node) => {
+    if (!node.isMesh) return;
+    for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+      if (!material || material.userData.heat || !("emissive" in material)) continue;
+      material.userData.heat = true;
+      const before = material.onBeforeCompile;
+      material.onBeforeCompile = (shader, renderer) => {
+        before?.call(material, shader, renderer);
+        shader.uniforms.uThermalHeat = THERMAL_HEAT;
+        shader.fragmentShader = shader.fragmentShader
+          .replace("#include <common>", "#include <common>\nuniform float uThermalHeat;")
+          .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+            if (uThermalHeat > 0.001) {
+              float rim = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+              vec3 heat = mix(vec3(1.0, 0.42, 0.12), vec3(1.0, 0.96, 0.9), 0.35 + 0.65 * rim);
+              totalEmissiveRadiance += heat * uThermalHeat * (0.55 + 1.6 * rim * rim);
+            }`);
+      };
+      material.customProgramCacheKey = () => "heat-signature";
+      material.needsUpdate = true;
+    }
+  });
+}
+
+/** The lab behind an observation window (canvas): tiles, shelves of bottles, a whiteboard, a hood. */
+function labRoomTexture() {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 384;
+  const g = c.getContext("2d");
+  let seed = 7;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // Pale clinical tiles.
+  g.fillStyle = "#8fa39d";
+  g.fillRect(0, 0, 512, 384);
+  g.strokeStyle = "rgba(40,60,55,0.35)";
+  g.lineWidth = 1;
+  for (let x = 0; x <= 512; x += 24) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 384); g.stroke(); }
+  for (let y = 0; y <= 384; y += 24) { g.beginPath(); g.moveTo(0, y); g.lineTo(512, y); g.stroke(); }
+  // Shelving, left and right, full of reagent bottles.
+  for (const x0 of [24, 360]) {
+    g.fillStyle = "#3b4446";
+    g.fillRect(x0, 40, 128, 230);
+    for (let y = 70; y < 270; y += 50) {
+      g.fillStyle = "#c9d0d0";
+      g.fillRect(x0, y + 26, 128, 5);
+      for (let x = x0 + 6; x < x0 + 120; x += 10 + r() * 8) {
+        const h = 12 + r() * 14;
+        const hue = [`#d8f0ff`, `#ffd27a`, `#7fe0b0`, `#e88a6a`, `#b9a8ff`][Math.floor(r() * 5)];
+        g.fillStyle = hue;
+        g.fillRect(x, y + 26 - h, 6 + r() * 3, h);
+      }
+    }
+  }
+  // A whiteboard with scribbled working.
+  g.fillStyle = "#eef3f1";
+  g.fillRect(176, 52, 164, 104);
+  g.strokeStyle = "#5a6a8a";
+  g.lineWidth = 2;
+  for (let i = 0; i < 7; i += 1) {
+    g.beginPath();
+    let x = 188;
+    const y = 68 + i * 12;
+    g.moveTo(x, y);
+    while (x < 320 - r() * 60) { x += 6 + r() * 8; g.lineTo(x, y + (r() - 0.5) * 4); }
+    g.stroke();
+  }
+  g.strokeStyle = "#b03a2e";
+  g.beginPath(); g.arc(300, 130, 14, 0, Math.PI * 2); g.stroke();
+  // A fume hood under it, glowing faintly.
+  g.fillStyle = "#2c3436";
+  g.fillRect(180, 176, 156, 104);
+  g.fillStyle = "#9fd8c8";
+  g.fillRect(190, 186, 136, 60);
+  // Bench along the bottom, with equipment on it.
+  g.fillStyle = "#20282a";
+  g.fillRect(0, 290, 512, 94);
+  g.fillStyle = "#5d6a6c";
+  g.fillRect(0, 284, 512, 8);
+  for (let x = 30; x < 500; x += 70 + r() * 40) {
+    g.fillStyle = r() < 0.5 ? "#3c4a50" : "#2e3a3e";
+    const w = 24 + r() * 30;
+    const h = 16 + r() * 30;
+    g.fillRect(x, 284 - h, w, h);
+    if (r() < 0.5) { g.fillStyle = "#7ff0d0"; g.fillRect(x + 4, 284 - h + 4, w * 0.5, 4); }
+  }
+  // A hazard placard.
+  g.fillStyle = "#f2c230";
+  g.beginPath(); g.moveTo(462, 300); g.lineTo(492, 352); g.lineTo(432, 352); g.closePath(); g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
 
 export function createMeltdownKit({ shadows = false, fire } = {}) {
   const textures = createMeltdownTextures();
@@ -97,6 +203,13 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     crackOverlay: new THREE.MeshBasicMaterial({ map: textures.crackOverlay, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }),
     windowGlass: std({ color: 0x9fb8c2, transparent: true, opacity: 0.2, roughness: 0.15, metalness: 0.3, depthWrite: false }),
     roomBack: std({ color: 0x0f1411, emissive: 0x1a3a30, emissiveIntensity: 0.6, roughness: 0.9 }),
+    // A lab seen through the glass: tiled wall, shelves of reagents, a
+    // whiteboard, a fume hood - still lit, nobody in it.
+    labRoom: (() => {
+      const map = labRoomTexture();
+      return std({ color: 0xffffff, map, emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.55, roughness: 0.8 });
+    })(),
+    labStrip: new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 2.4, 2.3) }),
     fireBehind: std({ color: 0x100502, emissive: 0xff5a14, emissiveIntensity: 1.8, roughness: 0.9 }),
     lightTube: std({ color: 0xffffff, emissive: 0xfff2d8, emissiveIntensity: 1.05 }),
     lightTubeDead: std({ color: 0x3a3c3e, metalness: 0.3, roughness: 0.35 }),
@@ -128,14 +241,9 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     applyPhotoSet(materials.floor, PHOTO_SETS.floor, { repeat: [8, 4], roughness: false, normalScale: 0.8 }),
   ]));
 
-  // The vials hold the Skyline's serums now (game.js VIAL_SERUM), in the
-  // serums' own colours: thermal, overdrive, prism, shield.
-  const POWERUP_COLOURS = {
-    coolant: { core: 0xff8a2a, label: "THERMAL SIGHT" },
-    adrenaline: { core: 0xff3d8b, label: "OVERDRIVE" },
-    overcharge: { core: 0xb273ff, label: "PRISM SPLIT" },
-    barrier: { core: 0x4fe8ff, label: "KINETIC SHIELD" },
-  };
+  // The level's power-up kinds hold the Skyline's serums (game.js
+  // VIAL_SERUM): thermal, overdrive, prism, shield.
+  const VIAL_SERUM = { coolant: "thermal", adrenaline: "overdrive", overcharge: "prism", barrier: "shield" };
 
   /* -------------------------------------------------------------- */
   /* Geometries                                                      */
@@ -181,7 +289,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   const tracked = {
     materials: Object.values(materials),
     geometries: Object.values(geometries),
-    textures: [],
+    textures: [materials.labRoom.map],
   };
 
   /* -------------------------------------------------------------- */
@@ -447,11 +555,19 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     }
 
     if (mode === "bridge") {
-      // Run along the route, lying in the centre lane, slightly dented.
-      duct.position.y = 0.55;
-      duct.rotation.x = 0.04;
+      // Run along the route, lying in the centre lane, crushed flatter by
+      // its fall. It's solid: jump up onto it and run along the top, or run
+      // into it and scramble up (a hit, as with any fallen duct).
+      const TOP = 0.62;
+      duct.scale.y = TOP / 1.1;
+      duct.position.y = TOP / 2;
+      duct.rotation.x = 0.01;
       group.add(duct);
+      const hit = collider(1.4, TOP, length, 0, { duct: true, top: TOP });
+      group.add(hit);
       group.userData.walkable = true;
+      group.userData.hazardMesh = hit;
+      group.userData.bridge = { top: TOP, depth: length, halfWidth: 0.7 };
       return group;
     }
 
@@ -870,87 +986,80 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   /* PICKUPS                                                         */
   /* ============================================================== */
 
+  /**
+   * A sphere cache - the Skyline's floating crystal, as in every level
+   * (src/systems/spheres.js). A tougher one (`hp` > 1) flares with each hit
+   * and stays brighter until it breaks.
+   */
   function sack({ hp = 1, spheres = 4 } = {}) {
     const group = new THREE.Group();
-    group.name = "Sack";
-    const mount = mesh(geometries.sackMount, materials.trim);
-    mount.position.y = 0.4;
-    group.add(mount);
-    const glassMaterial = materials.sackGlass.clone();
-    tracked.materials.push(glassMaterial);
-    const glass = mesh(geometries.sackGlass, glassMaterial);
-    glass.position.y = 0.9;
-    glass.userData = { kind: "sack", breakable: true, alive: true, hp, maxHp: hp, spheres, label: "SACK", node: group };
-    group.add(glass);
-    for (let i = 0; i < 5; i += 1) {
-      const ball = mesh(geometries.sackBallSmall, materials.ductMetal, { cast: false });
-      const a = (i / 5) * Math.PI * 2;
-      ball.position.set(Math.cos(a) * 0.28, Math.sin(a * 1.7) * 0.15, Math.sin(a) * 0.28);
-      glass.add(ball);
-    }
-    // An army duffel slumped against the stand, the spare spheres in it.
+    group.name = "SphereCache";
+    const cache = sphereCachePickup({ scale: 1.1 });
+    tracked.materials.push(...cache.materials);
+    // Floating at chest height (where the old sacks' glass was), over its duffel.
+    cache.root.position.y = 1.35;
+    group.add(cache.root);
+    const glass = cache.crystal;
+    glass.userData = { kind: "sack", breakable: true, alive: true, hp, maxHp: hp, spheres, label: "SPHERES", node: group };
+    const highlight = glass.material.uniforms.uHighlight;
+    // The army duffel the spare spheres came out of, slumped on the floor beside it.
     const duffel = new THREE.Group();
     duffel.position.set(0.55, 0, 0.2);
     duffel.rotation.y = 0.6;
     duffel.add(assetSlot("duffelBag", { size: [0.9, 0, 0], longAxis: "x" }));
     group.add(duffel);
     const anchor = new THREE.Object3D();
-    anchor.position.y = 0.9;
+    anchor.position.y = 1.35;
     group.add(anchor);
     group.userData.emitter = {
-      kind: "point", anchor, color: 0x8ef6c8, base: 4, distance: 9,
+      kind: "point", anchor, color: 0x66f2ff, base: 4, distance: 9,
       intensityAt: (time) => (glass.userData.alive ? 2.6 + Math.sin(time * 2.6) * 1.4 : 0),
     };
     group.userData.glass = glass;
     group.userData.tick = (dt, time) => {
       if (!glass.userData.alive) return;
-      glass.rotation.y = Math.sin(time * 0.7) * 0.3;
+      cache.tick(dt, time);
       const hurt = 1 - glass.userData.hp / glass.userData.maxHp;
-      glassMaterial.emissiveIntensity = 0.9 + hurt * 0.8 + Math.sin(time * 3) * 0.25;
+      highlight.value = Math.max(hurt * 0.6, highlight.value - dt * 2);
     };
     group.userData.hit = (power = 1) => {
       if (!glass.userData.alive) return false;
       glass.userData.hp = Math.max(0, glass.userData.hp - power);
+      highlight.value = 1;
       if (glass.userData.hp > 0) return false;
       glass.userData.alive = false;
-      glass.visible = false;
+      cache.hide();
       return true;
     };
     return group;
   }
 
+  /** A serum capsule - the Skyline's, in that serum's own colour (src/systems/spheres.js). */
   function powerup({ kind = "coolant" } = {}) {
-    const info = POWERUP_COLOURS[kind] ?? POWERUP_COLOURS.coolant;
+    const serum = VIAL_SERUM[kind] ?? "thermal";
     const group = new THREE.Group();
-    group.name = `Powerup_${kind}`;
-    const ring = mesh(geometries.powerupRing, materials.glassHousing);
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 1.1;
-    group.add(ring);
-    const vialMaterial = std({ color: info.core, transparent: true, opacity: 0.8, roughness: 0.08, metalness: 0.1, emissive: info.core, emissiveIntensity: 1.4 });
-    tracked.materials.push(vialMaterial);
-    const vial = mesh(geometries.powerupVial, vialMaterial);
-    vial.position.y = 1.1;
-    vial.userData = { kind: "powerup", breakable: true, alive: true, label: info.label, powerupKind: kind, node: group };
-    group.add(vial);
+    group.name = `Serum_${serum}`;
+    const pickup = serumPickup(serum, { scale: 1.1 });
+    tracked.materials.push(...pickup.materials);
+    pickup.root.position.y = 1.1;
+    group.add(pickup.root);
+    const hit = pickup.hit;
+    hit.userData = { kind: "powerup", breakable: true, alive: true, label: SERUMS[serum].name.toUpperCase(), powerupKind: kind, node: group };
     const anchor = new THREE.Object3D();
     anchor.position.y = 1.1;
     group.add(anchor);
     group.userData.emitter = {
-      kind: "point", anchor, color: info.core, base: 5, distance: 10,
-      intensityAt: (time) => (vial.userData.alive ? 3.4 + Math.sin(time * 4) * 1.6 : 0),
+      kind: "point", anchor, color: new THREE.Color(SERUMS[serum].colour).getHex(), base: 5, distance: 10,
+      intensityAt: (time) => (hit.userData.alive ? 3.4 + Math.sin(time * 4) * 1.6 : 0),
     };
-    group.userData.glass = vial;
+    group.userData.glass = hit;
     group.userData.tick = (dt, time) => {
-      if (!vial.userData.alive) return;
-      group.rotation.y = time * 0.9;
-      vial.position.y = 1.1 + Math.sin(time * 2.2) * 0.08;
+      if (hit.userData.alive) pickup.tick(dt, time);
     };
     group.userData.onBreak = () => {
-      if (!vial.userData.alive) return false;
-      vial.userData.alive = false;
-      vial.visible = false;
-      ring.visible = false;
+      if (!hit.userData.alive) return false;
+      hit.userData.alive = false;
+      pickup.hide();
       return true;
     };
     return group;
@@ -1252,10 +1361,14 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   function observationWindow({ side = 1, fireBehind = false, dark = false } = {}) {
     const group = new THREE.Group();
     group.name = "ObservationWindow";
-    group.add(box(0.3, 0.25, 3.4, materials.darkMetal, 1.1));
-    group.add(box(0.3, 0.25, 3.4, materials.darkMetal, 3.6));
-    group.add(box(0.3, 2.75, 0.25, materials.darkMetal, 1.1, 0, -1.6));
-    group.add(box(0.3, 2.75, 0.25, materials.darkMetal, 1.1, 0, 1.6));
+    // The wall's hole is 3.6 m wide and 3.9 m tall from the floor: a solid
+    // panel under the sill, and the frame out to the hole's edges, so nothing
+    // of the room shows except through the glass.
+    group.add(box(0.34, 1.1, 3.6, materials.darkMetal, 0));
+    group.add(box(0.3, 0.25, 3.6, materials.darkMetal, 1.1));
+    group.add(box(0.3, 0.3, 3.6, materials.darkMetal, 3.6));
+    group.add(box(0.3, 2.8, 0.32, materials.darkMetal, 1.1, 0, -1.64));
+    group.add(box(0.3, 2.8, 0.32, materials.darkMetal, 1.1, 0, 1.64));
     const glass = mesh(geometries.unitBox, materials.windowGlass, { cast: false });
     glass.scale.set(0.04, 2.3, 3.0);
     glass.position.y = 2.4;
@@ -1265,8 +1378,18 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     crack.rotation.y = Math.PI / 2;
     crack.position.set(-side * 0.03, 2.4, 0);
     group.add(crack);
-    const back = box(0.1, 3.6, 4.4, fireBehind ? materials.fireBehind : dark ? materials.pitBlack : materials.roomBack, 0.3, side * 3.2);
+    const lit = !fireBehind && !dark;
+    const back = box(0.1, 3.6, 4.4, fireBehind ? materials.fireBehind : dark ? materials.pitBlack : materials.labRoom, 0.3, side * 3.2);
     group.add(back);
+    if (lit) {
+      // The room's own walls and its fluorescent strip, so it reads as a
+      // room behind the glass and not a lit card.
+      for (const z of [-2.2, 2.2]) group.add(box(3.0, 3.6, 0.1, materials.roomBack, 0.3, side * 1.75, z));
+      group.add(box(3.0, 0.1, 4.4, materials.roomBack, 3.9, side * 1.75));
+      const strip = box(0.25, 0.06, 2.6, materials.labStrip, 3.8, side * 2.0);
+      strip.castShadow = false;
+      group.add(strip);
+    }
     if (fireBehind) {
       const f = fireSpot({ width: 2.4, depth: 1.5, height: 2.4, smoke: false });
       f.position.set(side * 2.2, 0.2, 0);
@@ -1611,6 +1734,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     slot.userData.onFilled = (person) => {
       const r = new HumanoidRig(person);
       rig = r.valid ? r : null;
+      heatSignature(person);
     };
 
     const hit = collider(1.0, 1.95, 0.9, 0, { patient: true });
@@ -1625,6 +1749,9 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     let t = 0;
     let stagger = 0;
     let fall = 0;
+    /** Where a stalker is heading across the corridor (null: holding its ground). */
+    let chaseX = null;
+    let chaseVel = 0;
     const world = new THREE.Vector3();
 
     group.userData.lurch = () => {
@@ -1645,6 +1772,14 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       return true;
     };
     group.userData.state = () => state;
+    /**
+     * Stalk: once it's out in the corridor, follow a lateral position (the
+     * player's lane), shuffling across at a man's pace; null to stop and
+     * hold where it is.
+     */
+    group.userData.chase = (x) => {
+      chaseX = x;
+    };
     group.userData.worldPosition = () => mover.getWorldPosition(world).clone();
     /** The lane they step into (lateral offset). */
     group.userData.lane = lane;
@@ -1661,8 +1796,19 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
         mover.position.x = THREE.MathUtils.lerp(startX, lane, k * k * (3 - 2 * k));
         if (k >= 1) state = "stand";
       }
-      // Face the way they are walking while crossing, then turn on you.
-      const yaw = state === "lurch" ? dir * Math.PI * 0.35 : state === "idle" ? -fromSide * 0.5 : 0;
+      // A stalker shuffles across to stay in front of you.
+      if (chaseX !== null && (state === "stand" || state === "stalk")) {
+        state = "stalk";
+        const want = THREE.MathUtils.clamp((chaseX - mover.position.x) * 3, -2.6, 2.6);
+        chaseVel += (want - chaseVel) * Math.min(1, dt * 5);
+        mover.position.x += chaseVel * dt;
+      } else if (state === "stalk") {
+        state = "stand";
+        chaseVel = 0;
+      }
+      // Face the way they are walking while crossing, then turn on you
+      // (a stalker leans its shoulders into the way it's going).
+      const yaw = state === "lurch" ? dir * Math.PI * 0.35 : state === "idle" ? -fromSide * 0.5 : state === "stalk" ? THREE.MathUtils.clamp(-chaseVel * 0.18, -0.5, 0.5) : 0;
       body.rotation.y += (yaw - body.rotation.y) * Math.min(1, dt * 6);
       if (state === "down") {
         fall = Math.min(1, fall + dt * 1.7);
@@ -1679,6 +1825,11 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
         rig.pose({ phase: time + phase0, reach: 0.2, headTilt: Math.sin(time * 0.7 + phase0) * 0.35, headNod: 0.45, lean: 0.12, elbow: 0.4 });
       } else if (state === "lurch") {
         rig.pose({ phase: time * 7 + phase0, stride: 0.5, knee: 0.8, reach: 0.85, lean: 0.35, headTilt: 0.4, spread: 0.05 });
+      } else if (state === "stalk") {
+        rig.pose({
+          phase: time * (3 + Math.abs(chaseVel) * 2) + phase0, stride: 0.2 + Math.abs(chaseVel) * 0.12, knee: 0.5, reach: (1.0 + Math.sin(time * 4 + phase0) * 0.12) * (1 - stagger),
+          lean: 0.32 - stagger * 0.9, headTilt: 0.25 + Math.sin(time * 2.1 + phase0) * 0.2, headNod: 0.15 - stagger * 0.6, spread: 0.08,
+        });
       } else if (state === "stand") {
         rig.pose({
           phase: time * 2.2 + phase0, stride: 0.12, knee: 0.3, reach: (0.95 + Math.sin(time * 3 + phase0) * 0.1) * (1 - stagger),
@@ -1714,6 +1865,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     slot.userData.onFilled = (person) => {
       const r = new HumanoidRig(person);
       rig = r.valid ? r : null;
+      heatSignature(person);
     };
 
     const phase0 = (seed % 13) * 0.5;

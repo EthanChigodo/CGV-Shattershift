@@ -13,6 +13,7 @@ export const MUSIC_VOLUME = Object.freeze({
   gameplay: 0.62,
   paused: 0.31,
   gameOver: 0.25,
+  theme: 0.56,
 });
 
 export const MUSIC_TIMING = Object.freeze({
@@ -66,6 +67,14 @@ export class MusicManager {
 
   playRound1() {
     this._setIntent("round1", MUSIC_VOLUME.gameplay, null, MUSIC_TIMING.crossfade);
+  }
+
+  /**
+   * The main theme (the menu's track) over the ending and the credits: it
+   * swells in slowly and carries on into the menu.
+   */
+  playTheme() {
+    this._setIntent("menu", MUSIC_VOLUME.theme, null, 3.0);
   }
 
   fadeOut() {

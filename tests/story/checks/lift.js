@@ -129,7 +129,7 @@ export async function run(page, { shots }) {
           const before = { y: __t.ride.state.cabinY, locked: __t.ride.clamps.clamps.map((c) => c.locked) };
           if (n === 0) {
             // A wrong key fails at once.
-            const wrong = ["KeyQ", "KeyE", "KeyR", "KeyF", "KeyZ", "KeyX", "KeyC", "KeyV"].find((k) => !__t.hits._s.keys.includes(k));
+            const wrong = ["KeyR", "KeyF", "KeyZ", "KeyX", "KeyG", "KeyT"].find((k) => !__t.hits._s.keys.includes(k));
             __t.key(wrong);
             __t.step(1);
           } else __t.until(() => __t.dir.stage === "fall", 400); // too slow

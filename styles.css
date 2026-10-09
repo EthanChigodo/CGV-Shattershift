@@ -73,6 +73,7 @@ button { font: inherit; }
 
 .message { position: fixed; z-index: 5; left: 50%; top: 24%; transform: translateX(-50%); color: var(--text); font-size: 12px; font-weight: 800; opacity: 0; transition: opacity .18s; text-shadow: 0 0 18px var(--accent); }
 .message.show { opacity: 1; }
+.message.under-title { top: 34%; }
 
 .caption {
   position: fixed; z-index: 6; left: 50%; top: 46%; transform: translate(-50%, -50%); width: min(90vw, 720px); text-align: center;
@@ -107,10 +108,17 @@ h2 { font-size: clamp(36px, 6vw, 68px); }
 .controls { display: flex; flex-wrap: wrap; gap: 20px; margin: 28px 0; color: var(--text-dim); font-size: 11px; }
 .controls span { display: flex; align-items: center; gap: 6px; }
 kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border); border-radius: 4px; color: var(--text); background: rgba(18, 10, 8, .72); text-align: center; font-size: 9px; }
-.primary-button { min-width: 180px; height: 48px; padding: 0 24px; border: 0; border-radius: 4px; color: #1a0a04; background: var(--accent); cursor: pointer; font-weight: 850; font-size: 12px; }
-.primary-button:hover { background: #ffb066; box-shadow: 0 0 30px var(--accent-glow); }
-.text-button { height: 48px; padding: 0 6px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; font-weight: 800; font-size: 12px; text-decoration: underline; text-underline-offset: 4px; }
-.text-button:hover { color: var(--text); }
+/* Every button in the menus is a button: filled (the main action) or framed. */
+.primary-button, .text-button {
+  min-width: 150px; height: 48px; padding: 0 24px; border-radius: 4px; cursor: pointer;
+  font-weight: 850; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.primary-button { border: 1px solid var(--accent); color: #1a0a04; background: var(--accent); }
+.primary-button:hover, .primary-button:focus-visible { background: #ffb066; box-shadow: 0 0 30px var(--accent-glow); transform: translateY(-1px); }
+.text-button { border: 1px solid var(--accent-border); background: rgba(18, 10, 8, .62); color: var(--text); }
+.text-button:hover, .text-button:focus-visible { border-color: var(--accent); background: rgba(255, 138, 66, .12); box-shadow: 0 0 22px rgba(255, 122, 61, .18); transform: translateY(-1px); }
+button:focus-visible { outline: 2px solid var(--accent-hot); outline-offset: 2px; }
 .button-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-top: 6px; }
 .hint { position: absolute; bottom: 24px; margin: 0; color: var(--text-dimmer); font-size: 10px; }
 .result { display: flex; gap: 16px; align-items: baseline; margin: 28px 0; }
@@ -123,6 +131,8 @@ kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border);
   margin: 0; padding-bottom: 10px; border-bottom: 1px solid var(--accent-border-soft);
   color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
 }
+.setting-note { margin: 6px 0 0; min-height: 0; color: var(--text-dim); font-size: 11px; opacity: .8; }
+.setting-note:empty { display: none; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--text-dim); font-size: 12px; font-weight: 700; cursor: pointer; }
 .setting-row input[type="range"] { width: 220px; accent-color: var(--accent); }
 .toggle-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
@@ -140,8 +150,15 @@ kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border);
 .pause-glyph i { width: 2px; height: 9px; background: currentColor; }
 
 #storyScreen .screen-copy { text-align: center; }
-.story-title { font-size: clamp(40px, 8vw, 92px); letter-spacing: -.01em; margin-bottom: 18px; }
-#storyPrompt .primary-button { margin-top: 30px; }
+#storyScreen .intro { margin-inline: auto; }
+.game-title {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 auto 18px;
+  font-size: clamp(48px, 10vw, 118px); line-height: .86; letter-spacing: .06em;
+  text-shadow: 0 0 60px rgba(255, 122, 61, .35), 0 2px 30px rgba(0, 0, 0, .6);
+  animation: fadeSlideUp .8s ease both;
+}
+.game-title span { color: var(--accent); letter-spacing: .5em; margin-right: -.5em; font-size: .42em; }
+#storyPrompt .menu-list { margin-top: 30px; justify-content: center; }
 .hint-inline { margin: 16px 0 0; color: var(--text-dimmer); font-size: 10px; }
 #storyLine {
   min-height: 140px; display: flex; align-items: center; justify-content: center;
@@ -158,7 +175,8 @@ kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border);
 #startScreen .eyebrow { animation: fadeSlideUp .6s ease both; }
 #startScreen h1 { animation: fadeSlideUp .7s .12s ease both; }
 #startScreen .intro { animation: fadeSlideUp .7s .24s ease both; }
-#startScreen .button-row { animation: fadeSlideUp .7s .36s ease both; }
+#startScreen .menu-list { animation: fadeSlideUp .7s .36s ease both; }
+#startScreen .loadout { animation: fadeSlideUp .7s .3s ease both; }
 #startScreen .hint { animation: fadeSlideUp .7s .48s ease both; }
 
 @media (max-width: 650px) {
@@ -177,13 +195,6 @@ kbd { min-width: 28px; padding: 6px 8px; border: 1px solid var(--accent-border);
 
 /* ---- Level 1 additions: fade, preview bar, field manual, progress ---- */
 .fade-overlay { position: fixed; inset: 0; z-index: 9; background: #000; opacity: 0; pointer-events: none; }
-.preview-bar {
-  position: fixed; left: 50%; bottom: 26px; z-index: 7; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 16px; padding: 10px 14px;
-  border: 1px solid var(--accent-border); border-radius: 6px; background: var(--panel-bg); backdrop-filter: blur(10px);
-  color: var(--text-dim); font-size: 12px; font-weight: 700;
-}
-body.cw-preview .cw-ui > :not(.cw-labels) { display: none !important; }
 .progress-line { margin: 18px 0 0; color: var(--text-dimmer); font-size: 11px; font-weight: 700; white-space: pre-wrap; }
 .text-button:disabled { opacity: .45; cursor: not-allowed; text-decoration: none; }
 .end-stats { margin: -12px 0 22px; color: var(--text-dim); font-size: 12px; font-weight: 700; white-space: pre-wrap; }
@@ -205,7 +216,10 @@ body.cw-preview .cw-ui > :not(.cw-labels) { display: none !important; }
 .manual-grid article[data-tone="serum"] { --tone: #ff5ad0; }
 .manual-grid article[data-tone="white"] { --tone: #ffffff; }
 .manual-grid article[data-tone="amber"] { --tone: #ffd23f; }
-.manual-grid.tools article { --tone: #b273ff; }
+.manual-grid article[data-tone="violet"] { --tone: #c77dff; }
+.manual-grid article[data-tone="prism"] { --tone: #ffd23f; }
+.manual-tabs { margin: 22px 0 0; max-width: 760px; }
+.manual-copy .tab-panel .manual-grid { margin-top: 16px; }
 .manual-grid h3 { margin: 0 0 6px; font-size: 14px; color: var(--text); }
 .manual-grid p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
 .reticle b { background: var(--ball, var(--accent)); box-shadow: 0 0 10px var(--ball, var(--accent)); }
@@ -222,23 +236,7 @@ body.cw-active .brand-mark { background: #5ef0ff; }
 .view-menu-title { margin: 0 0 6px; color: var(--text); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
 .view-menu .setting-row { min-height: 30px; font-size: 12px; }
 .view-menu-hint { margin: 8px 0 0; color: var(--text-dimmer); font-size: 11px; }
-.briefing-card {
-  position: absolute; right: clamp(20px, 5vw, 70px); top: 50%; transform: translateY(-50%);
-  width: min(360px, 34vw); padding: 20px 22px; border: 1px solid var(--accent-border);
-  border-left: 3px solid #5ef0ff; border-radius: 6px; background: rgba(8, 10, 12, 0.78); backdrop-filter: blur(10px);
-}
-.briefing-card h3 { margin: 6px 0 8px; font-size: 24px; color: var(--text); }
-.briefing-card > p { margin: 0 0 12px; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
-.briefing-card .eyebrow { margin: 0; color: #5ef0ff; }
-.briefing-label { margin: 14px 0 6px !important; color: var(--text) !important; font-size: 10px !important; font-weight: 800; letter-spacing: .14em; }
-.briefing-card ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
-.briefing-card li { position: relative; padding-left: 16px; color: var(--text); font-size: 13px; font-weight: 700; }
-.briefing-card li::before { content: ""; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border: 1px solid #5ef0ff; transform: rotate(45deg); }
-.briefing-card li.done { color: #b8ffcb; }
-.briefing-card li.done::after { content: " (done before)"; font-weight: 600; color: var(--text-dimmer); }
-.briefing-keys { font-size: 12px !important; line-height: 2 !important; }
-.briefing-keys kbd { margin-right: 2px; }
-@media (max-width: 1000px) { .briefing-card { position: static; transform: none; width: auto; margin: 0 20px 20px; } #startScreen { flex-direction: column; } }
+
 
 /* ---- Aiming: the crosshair follows the pointer ----------------------- */
 body.aiming, body.aiming #game { cursor: none; }
@@ -250,15 +248,14 @@ body.aiming button, body.aiming .view-menu, body.aiming .view-menu * { cursor: p
 .reticle.assist::after { box-shadow: none; }
 .reticle.assist { outline: 1.5px solid var(--accent-hot); outline-offset: 4px; border-radius: 50%; }
 
-/* ---- Character choice on the start screen (used by Level 3) ----------- */
-.subject-pick { display: flex; align-items: center; gap: 10px; margin: 18px 0 0; flex-wrap: wrap; }
-.subject-pick span { color: var(--text-dimmer); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+/* ---- Character choice (the loadout card) ------------------------------ */
 .subject-button {
-  min-width: 96px; padding: 8px 14px; border: 1px solid var(--accent-border); border-radius: 4px;
+  flex: 1; min-width: 96px; height: 40px; padding: 0 14px; border: 1px solid var(--accent-border); border-radius: 4px;
   background: rgba(18, 10, 8, .6); color: var(--text-dim); font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .08em; cursor: pointer;
+  text-transform: uppercase; transition: border-color .15s ease, color .15s ease, box-shadow .15s ease;
 }
-.subject-button:hover { color: var(--text); }
-.subject-button.picked { border-color: #6fe0d4; color: #ffffff; box-shadow: 0 0 16px rgba(63, 200, 186, .35); }
+.subject-button:hover { color: var(--text); border-color: var(--accent); }
+.subject-button.picked { border-color: #6fe0d4; color: #ffffff; background: rgba(63, 200, 186, .12); box-shadow: 0 0 16px rgba(63, 200, 186, .35); }
 
 /* ---- Story route on the briefing card, and the Endless picker ---------- */
 .route-list { margin: 8px 0 4px; padding-left: 18px; display: grid; gap: 6px; color: var(--text-dim); font-size: 12.5px; line-height: 1.45; }
@@ -271,7 +268,7 @@ body.aiming button, body.aiming .view-menu, body.aiming .view-menu * { cursor: p
 .endless-card b { color: var(--text); font-size: 15px; }
 .endless-card small { color: var(--accent); font-weight: 800; letter-spacing: .06em; }
 .endless-card:hover, .endless-card:focus-visible { border-color: var(--accent); color: var(--text); }
-.skin-pick { margin-top: 10px; }
+.skin-pick { display: flex; gap: 10px; flex-wrap: wrap; }
 .skin-button {
   width: 30px; height: 30px; padding: 0; border: 2px solid rgba(255, 255, 255, .25); border-radius: 50%;
   background: var(--swatch); cursor: pointer;
@@ -286,4 +283,138 @@ body.cutscene #launchControls,
 body.cutscene .cw-ui,
 body.cutscene .reticle-hint {
   display: none !important;
+}
+
+/* ---- Menus: the start, chapters and pause screens --------------------- */
+.screen {
+  background:
+    radial-gradient(ellipse at 78% 30%, rgba(200, 70, 25, .2), transparent 42%),
+    radial-gradient(ellipse at 10% 90%, rgba(40, 140, 160, .12), transparent 45%),
+    linear-gradient(90deg, rgba(10, 5, 4, .9) 0%, rgba(10, 5, 4, .72) 55%, rgba(10, 5, 4, .6) 100%);
+}
+.screen::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .5;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .018) 0 1px, transparent 1px 3px);
+}
+/* Centred while it fits; scrolls from the top when the window is short. */
+.menu-screen { gap: clamp(24px, 5vw, 80px); align-items: flex-start; justify-content: center; }
+.menu-screen > * { margin-block: auto; }
+.menu-screen.active { display: flex; }
+.menu-main { width: min(560px, 100%); position: relative; }
+.menu-main h1 { font-size: clamp(30px, min(5.4vw, 7.2vh), 74px); }
+.menu-main .intro { margin-top: 14px; line-height: 1.5; }
+.menu-main .menu-list { margin-top: 18px; gap: 6px; }
+@media (max-height: 760px) { .menu-main .intro { display: none; } .menu-button small { display: none; } .menu-button { min-height: 42px; } }
+.menu-main h2 { font-size: clamp(30px, min(5vw, 7vh), 64px); }
+.menu-main .intro { font-size: 15px; }
+
+.menu-list { display: grid; gap: 8px; margin-top: 26px; }
+.menu-list-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.menu-button {
+  position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 48px; padding: 6px 18px 6px 10px;
+  border: 1px solid var(--accent-border-soft); border-left: 3px solid var(--accent-border); border-radius: 4px;
+  background: linear-gradient(90deg, rgba(24, 13, 9, .86), rgba(24, 13, 9, .55));
+  color: var(--text); text-align: left; cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.menu-list-row .menu-button { width: auto; min-width: 230px; flex: 1 1 230px; max-width: 340px; }
+.menu-button::after {
+  content: "\203A"; margin-left: auto; color: var(--text-dimmer); font-size: 22px; line-height: 1;
+  transition: transform .15s ease, color .15s ease;
+}
+.menu-button:hover, .menu-button:focus-visible {
+  border-color: var(--accent-border); border-left-color: var(--accent);
+  background: linear-gradient(90deg, rgba(255, 138, 66, .16), rgba(24, 13, 9, .6));
+  box-shadow: 0 0 26px rgba(255, 122, 61, .14); transform: translateX(4px);
+}
+.menu-button:hover::after, .menu-button:focus-visible::after { color: var(--accent); transform: translateX(3px); }
+.menu-button span { display: grid; gap: 3px; }
+.menu-button b { font-size: 14px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.menu-button small { color: var(--text-dim); font-size: 12px; font-weight: 600; }
+.menu-glyph {
+  display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 3px;
+  border: 1px solid var(--accent-border-soft); background: rgba(255, 138, 66, .08);
+  color: var(--accent); font-style: normal; font-size: 15px; font-weight: 900;
+}
+.menu-button.primary { border-color: var(--accent); border-left-color: var(--accent-hot); background: linear-gradient(90deg, rgba(255, 138, 66, .95), rgba(255, 90, 60, .78)); color: #1a0a04; }
+.menu-button.primary small { color: rgba(26, 10, 4, .75); }
+.menu-button.primary .menu-glyph { background: rgba(26, 10, 4, .18); border-color: rgba(26, 10, 4, .25); color: #1a0a04; }
+.menu-button.primary::after { color: #1a0a04; }
+.menu-button.primary:hover, .menu-button.primary:focus-visible { background: linear-gradient(90deg, #ffb066, #ff7a4a); box-shadow: 0 0 36px var(--accent-glow); }
+
+.menu-card {
+  width: min(420px, 100%); padding: 22px 24px 24px; border: 1px solid var(--accent-border); border-top: 3px solid #5ef0ff; border-radius: 6px;
+  background: linear-gradient(180deg, rgba(10, 18, 22, .86), rgba(8, 10, 12, .82)); backdrop-filter: blur(10px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+}
+.menu-card .eyebrow { color: #5ef0ff; margin-bottom: 6px; }
+.card-label { margin: 18px 0 8px; color: var(--text); font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.card-note { margin: 0 0 12px; color: var(--text-dim); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; line-height: 1.5; }
+.card-label .card-note { display: block; margin: 4px 0 0; }
+.card-note kbd, .card-label kbd { padding: 2px 6px; min-width: 0; font-size: 9px; }
+.segmented { display: flex; gap: 8px; }
+
+/* The sphere picker: the same three spheres as the run, drawn as orbs. */
+.ball-pick { display: grid; gap: 8px; }
+.ball-card {
+  --c: #d9fbff; display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 12px; padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .1); border-radius: 4px; background: rgba(255, 255, 255, .03);
+  color: var(--text); text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.ball-card:hover, .ball-card:focus-visible { border-color: var(--c); }
+.ball-card.picked { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); box-shadow: 0 0 18px color-mix(in srgb, var(--c) 30%, transparent); }
+.ball-card b { display: block; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+.ball-card small { display: block; margin-top: 3px; color: var(--text-dim); font-size: 11.5px; line-height: 1.4; }
+.ball-card em { color: var(--c); font-style: normal; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.orb {
+  width: 38px; height: 38px; border-radius: 50%; justify-self: center;
+  background: radial-gradient(circle at 36% 32%, #ffffff 0 12%, var(--c) 42%, color-mix(in srgb, var(--c) 40%, #000) 72%, transparent 74%);
+  box-shadow: 0 0 18px var(--c), 0 0 42px color-mix(in srgb, var(--c) 45%, transparent);
+  animation: orbPulse 2.4s ease-in-out infinite;
+}
+@keyframes orbPulse { 50% { box-shadow: 0 0 26px var(--c), 0 0 60px color-mix(in srgb, var(--c) 55%, transparent); } }
+
+/* Chapters. */
+.chapters-copy { width: min(980px, 100%); }
+.chapter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin: 26px 0; }
+.chapter-card {
+  position: relative; display: grid; gap: 6px; padding: 16px 18px 18px 74px; min-height: 104px; text-align: left;
+  border: 1px solid var(--accent-border-soft); border-left: 3px solid var(--accent-border); border-radius: 4px;
+  background: linear-gradient(90deg, rgba(24, 13, 9, .9), rgba(24, 13, 9, .6)); color: var(--text-dim);
+  font-size: 12.5px; line-height: 1.45; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.chapter-card em { position: absolute; left: 16px; top: 15px; color: var(--accent); font-style: normal; font-size: 17px; font-weight: 900; }
+.chapter-card b { color: var(--text); font-size: 15px; letter-spacing: .04em; }
+.chapter-card:hover, .chapter-card:focus-visible { border-color: var(--accent-border); border-left-color: var(--accent); background: linear-gradient(90deg, rgba(255, 138, 66, .16), rgba(24, 13, 9, .6)); transform: translateY(-2px); }
+
+/* The pause menu's guide: moves, spheres, power-ups. */
+.pause-guide { width: min(460px, 100%); max-height: calc(100vh - 140px); overflow-y: auto; }
+.tabs { display: flex; gap: 4px; margin: -4px 0 16px; border-bottom: 1px solid var(--accent-border-soft); }
+.tab {
+  flex: 1; height: 38px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-dim);
+  font-size: 11px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.on { color: #5ef0ff; border-bottom-color: #5ef0ff; }
+.move-list { display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; margin: 0; align-items: center; }
+.move-list dt { display: flex; gap: 4px; justify-content: flex-end; }
+.move-list dd { margin: 0; color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.4; }
+.move-list dd small { color: var(--text-dimmer); }
+.move-list .here dd { color: #b8f9ff; }
+.serum-cards { display: grid; gap: 10px; }
+.serum-card {
+  --c: #fff; display: grid; grid-template-columns: 72px 1fr; gap: 14px; align-items: center; padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); border-left: 3px solid var(--c); border-radius: 4px;
+  background: color-mix(in srgb, var(--c) 7%, rgba(0, 0, 0, .3));
+}
+.serum-card img, .serum-card .serum-art { width: 72px; height: 72px; border-radius: 50%; }
+.serum-card .serum-art { background: radial-gradient(circle at 40% 35%, #fff 0 8%, var(--c) 35%, transparent 70%); box-shadow: 0 0 24px var(--c); }
+.serum-card b { color: var(--c); font-size: 14px; letter-spacing: .1em; text-transform: uppercase; }
+.serum-card p { margin: 4px 0 6px; color: var(--text); font-size: 12.5px; line-height: 1.45; }
+.serum-card small { color: var(--text-dim); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+
+@media (max-width: 1000px) {
+  .menu-screen { flex-direction: column; align-items: stretch; }
+  .menu-screen .menu-main, .menu-screen .menu-card { width: auto; margin: 0 auto; max-width: 620px; }
+  .pause-guide { max-height: none; }
 }

@@ -94,17 +94,24 @@ export function titleScene(ui, title = GAME_TITLE) {
   };
 }
 
-/** The credits rolling up over black (hold Esc to skip). */
+/**
+ * The credits rolling up (hold Esc to skip). They wait for the title to
+ * finish fading, then the black lifts a little so the night flight shows
+ * faintly behind them.
+ */
 export function creditsScene(ui, html, seconds = 38) {
+  const HOLD = 1.2;
+  let shown = false;
   return {
     id: "credits",
     keepFade: true,
-    duration: seconds + 1,
-    track: { fade: [[0, 1], [seconds + 1, 1]] },
-    events: [{ at: 0, name: "credits-on" }],
+    duration: seconds + HOLD + 1,
+    track: { fade: [[0, 1], [HOLD, 1], [HOLD + 3, 0.8], [seconds + HOLD - 2, 0.8], [seconds + HOLD + 1, 1]] },
+    events: [{ at: HOLD, name: "credits-on" }],
     onUpdate(t) {
-      if (t < 0.05) ui.credits(html);
-      ui.setCreditsScroll(t / seconds);
+      if (t < HOLD) { ui.setCreditsScroll(0); return; }
+      if (!shown) { shown = true; ui.credits(html); }
+      ui.setCreditsScroll((t - HOLD) / seconds);
     },
   };
 }

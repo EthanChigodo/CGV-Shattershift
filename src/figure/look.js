@@ -101,7 +101,7 @@ function skinTone(atlas, cell) {
   const image = atlas?.image;
   if (!image || !cell || !image.getContext) return fallback;
   const [u0, v0, u1, v1] = cell;
-  const ctx = image.getContext("2d");
+  const ctx = image.getContext("2d", { willReadFrequently: true });
   const x = Math.floor(u0 * image.width);
   const y = Math.floor(v0 * image.height);
   const w = Math.floor((u1 - u0) * image.width);

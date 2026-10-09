@@ -26,10 +26,15 @@ import { SCENES } from "../story/script.js";
 import { REACTION_KEYS, reactionLadder } from "../story/reaction.js";
 import { MARK } from "./diagnostic.js";
 
+/**
+ * The clamps (the ride's last, timed sequence) run 1.2x slower than the
+ * other reactions: longer to read each prompt, longer between them.
+ */
+const CLAMP_PACE = 1.2;
 /** Seconds from a clamp's shout to its reaction. */
-const SHOUT_LEAD = 0.9;
+const SHOUT_LEAD = 0.9 * CLAMP_PACE;
 /** Seconds between one clamp locking and the next shout. */
-const BETWEEN = 1.1;
+const BETWEEN = 1.1 * CLAMP_PACE;
 /** The fall after a miss: seconds before black, and before the retry. */
 const FALL_BLACK = 1.2;
 const FALL_RETRY = 2.3;
@@ -159,7 +164,11 @@ export class StoryRideDirector {
       }
     } else if (this.stage === "clamp" && !r.running && this.wait > 0) {
       this.wait -= dt;
-      if (this.wait <= 0) this._start(`clamp-${this.clamp}`, reactionLadder(this.clamp, this.rng));
+      if (this.wait <= 0) {
+        const spec = reactionLadder(this.clamp, this.rng);
+        if (spec.window) spec.window *= CLAMP_PACE;
+        this._start(`clamp-${this.clamp}`, spec);
+      }
     } else if (this.stage === "fall") {
       this._updateFall(dt);
     }

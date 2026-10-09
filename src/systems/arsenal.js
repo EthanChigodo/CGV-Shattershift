@@ -21,20 +21,33 @@ export const BALLS = {
 };
 export const BALL_ORDER = ["glass", "cryo", "shock"];
 
+/**
+ * Every serum has a colour of its own, and none of them is a sphere type's
+ * (glass white, cryo ice blue, shock violet): the capsule, the glow round
+ * the screen and its card in the pause menu are all drawn in it.
+ */
 export const SERUMS = {
-  prism: { key: "prism", name: "Prism split", duration: 10, colour: "#b273ff", text: "Every throw splits into three spheres." },
-  thermal: { key: "thermal", name: "Thermal sight", duration: 12, colour: "#ff8a2a", text: "See through smoke. Heat glows white." },
-  shield: { key: "shield", name: "Kinetic shield", duration: 25, charges: 2, colour: "#4fe8ff", text: "Absorbs the next two impacts." },
-  overdrive: { key: "overdrive", name: "Overdrive", duration: 8, colour: "#ff3d8b", text: "Free throws, faster running, heavier hits." },
+  prism: { key: "prism", name: "Prism split", duration: 10, colour: "#ffd23f", text: "Every throw splits into three spheres." },
+  thermal: { key: "thermal", name: "Thermal sight", duration: 12, colour: "#ff6a1a", text: "See through smoke and the dark. Heat glows white." },
+  shield: { key: "shield", name: "Kinetic shield", duration: 25, charges: 2, colour: "#3dff7a", text: "Absorbs the next two impacts." },
+  overdrive: { key: "overdrive", name: "Overdrive", duration: 8, colour: "#ff2f8e", text: "Free throws, faster running, heavier hits." },
 };
+export const SERUM_ORDER = ["prism", "thermal", "shield", "overdrive"];
 
 export class Arsenal {
   constructor() {
     this.reset();
   }
 
+  /** The sphere a run starts with (the menus' pick); selects it now too. */
+  prefer(key) {
+    if (!BALLS[key]) return;
+    this.preferred = key;
+    this.ball = key;
+  }
+
   reset() {
-    this.ball = "glass";
+    this.ball = this.preferred ?? "glass";
     this.active = new Map();
     this.shieldCharges = 0;
   }
@@ -60,7 +73,10 @@ export class Arsenal {
   activate(type) {
     const def = SERUMS[type];
     if (!def) return;
-    this.active.set(type, { remaining: def.duration, duration: def.duration });
+    // Every injection gets its own number, so the screen announces a real
+    // one - not a serum that simply carried over from the last level.
+    this.serial = (this.serial ?? 0) + 1;
+    this.active.set(type, { remaining: def.duration, duration: def.duration, serial: this.serial });
     if (type === "shield") this.shieldCharges = def.charges;
   }
 
@@ -92,6 +108,9 @@ export class Arsenal {
   }
 
   list() {
-    return [...this.active].map(([type, s]) => ({ ...SERUMS[type], remaining: s.remaining, ratio: s.remaining / s.duration }));
+    return [...this.active].map(([type, s]) => ({
+      ...SERUMS[type], remaining: s.remaining, ratio: s.remaining / s.duration, serial: s.serial,
+      ...(type === "shield" ? { charges: this.shieldCharges } : {}),
+    }));
   }
 }

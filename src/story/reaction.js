@@ -27,8 +27,12 @@
  * time; `holdInsteadOfMash` turns every mash into a hold.
  */
 
-/** Keys reactions draw from - clear of WASD/Space movement and Esc. */
-export const REACTION_KEYS = ["KeyQ", "KeyE", "KeyR", "KeyF", "KeyZ", "KeyX", "KeyC", "KeyV"];
+/**
+ * Keys reactions draw from - clear of WASD/Space movement, Esc, and the
+ * keys the game already uses mid-run (Q/E change sphere, C the camera, V
+ * the view menu), so a habit press is never an instant wrong key.
+ */
+export const REACTION_KEYS = ["KeyR", "KeyF", "KeyZ", "KeyX", "KeyG", "KeyT"];
 
 const LONG_WINDOW_SCALE = 1.6;
 

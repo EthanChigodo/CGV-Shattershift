@@ -32,7 +32,8 @@
 
 .mlt-banner {
   position: absolute;
-  top: 16%;
+  /* Above the vanishing point, clear of the runner and the lanes. */
+  top: 11%;
   left: 50%;
   transform: translate(-50%, 14px);
   text-align: center;
@@ -53,7 +54,7 @@
 .mlt-banner strong {
   display: block;
   margin-top: 6px;
-  font-size: clamp(24px, 5vw, 44px);
+  font-size: clamp(20px, 3.4vw, 34px);
   font-weight: 800;
   letter-spacing: 0.12em;
   text-shadow: 0 0 26px rgba(255, 58, 30, 0.5);

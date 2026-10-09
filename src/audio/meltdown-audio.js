@@ -2,11 +2,15 @@
  * Level 3 audio - every sound synthesized with the Web Audio API.
  *
  * No sample files: nothing to download, nothing for the credits register,
- * and every sound can react to game state continuously (the siren and fire
+ * and every sound can react to game state continuously (the fire and heart
  * swell as danger rises rather than switching between recordings).
  *
- * Beds (continuous):  building siren, smoke-detector chirps, fire roar,
- *                     fire crackle, heartbeat at low vitality.
+ * Beds (continuous):  smoke-detector chirps, fire roar, fire crackle,
+ *                     heartbeat at low vitality. (No siren: the building
+ *                     sounds like the Skyline's - the fire, the glass, the
+ *                     structure groaning and giving way somewhere above.
+ *                     With `useSamples` the game's recorded fire, from
+ *                     level1-audio.js, replaces the synthesized roar.)
  * One-shots:          launcher shot, glass crack/shatter, concrete crash,
  *                     metal clang, player stumble, pickup, power-up,
  *                     overheat whine + lockout clunk, duct push, warp,
@@ -25,6 +29,8 @@ export class MeltdownAudio {
     this.danger = 0;
     this.fireNear = 0;
     this.heart = 0;
+    /** The recorded fire plays (level1-audio.js): no synthesized roar or crackle. */
+    this.useSamples = false;
   }
 
   get ready() {
@@ -51,8 +57,7 @@ export class MeltdownAudio {
     this.noise = this._noiseBuffer(2);
     this.brown = this._brownBuffer(4);
 
-    this._startSiren();
-    this._startFire();
+    if (!this.useSamples) this._startFire();
     this._scheduleLoop();
   }
 
@@ -66,9 +71,8 @@ export class MeltdownAudio {
     this.danger = Math.max(0, Math.min(1, d));
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.sirenGain.gain.setTargetAtTime(this._sirenDucked ? 0.008 : 0.05 + this.danger * 0.06, t, 0.3);
-    this.fireFilter.frequency.setTargetAtTime(380 + this.danger * 900 + this.fireNear * 900, t, 0.3);
-    this.fireGain.gain.setTargetAtTime(0.1 + this.danger * 0.22 + this.fireNear * 0.35, t, 0.3);
+    this.fireFilter?.frequency.setTargetAtTime(380 + this.danger * 900 + this.fireNear * 900, t, 0.3);
+    this.fireGain?.gain.setTargetAtTime(0.1 + this.danger * 0.22 + this.fireNear * 0.35, t, 0.3);
     this.heart = this.danger > 0.72 ? (this.danger - 0.72) / 0.28 : 0;
   }
 
@@ -81,32 +85,6 @@ export class MeltdownAudio {
   /* Beds                                                          */
   /* ------------------------------------------------------------ */
 
-  _startSiren() {
-    const ctx = this.ctx;
-    // Two detuned saws swept by a slow LFO: the classic rising/falling wail.
-    this.sirenGain = ctx.createGain();
-    this.sirenGain.gain.value = 0.05;
-    const band = ctx.createBiquadFilter();
-    band.type = "bandpass";
-    band.frequency.value = 900;
-    band.Q.value = 0.8;
-    band.connect(this.sirenGain).connect(this.master);
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.28;
-    const depth = ctx.createGain();
-    depth.gain.value = 240;
-    lfo.connect(depth);
-    for (const detune of [0, 7]) {
-      const osc = ctx.createOscillator();
-      osc.type = "sawtooth";
-      osc.frequency.value = 720;
-      osc.detune.value = detune;
-      depth.connect(osc.frequency);
-      osc.connect(band);
-      osc.start();
-    }
-    lfo.start();
-  }
 
   _startFire() {
     const ctx = this.ctx;
@@ -136,14 +114,16 @@ export class MeltdownAudio {
     const tick = () => {
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
-      // Crackle: random short noise pops, more of them when the fire is near.
-      const pops = 1 + Math.round((this.danger + this.fireNear) * 4);
+      // Crackle: random short noise pops, more of them when the fire is near
+      // (the recorded fire has its own).
+      const pops = this.useSamples ? 0 : 1 + Math.round((this.danger + this.fireNear) * 4);
       for (let i = 0; i < pops; i += 1) {
         if (Math.random() < 0.55) this._pop(now + Math.random() * 0.1, 0.02 + (this.danger + this.fireNear) * 0.05);
       }
+      // Smoke detectors somewhere down the corridor, chirping on their batteries.
       if (now >= nextChirp) {
-        for (let i = 0; i < 3; i += 1) this._beep(now + i * 0.11, 3150, 0.07, 0.018);
-        nextChirp = now + 1.4;
+        for (let i = 0; i < 3; i += 1) this._beep(now + i * 0.11, 3150, 0.07, 0.012);
+        nextChirp = now + 2.6 + Math.random() * 2;
       }
       if (this.heart > 0 && now >= nextBeat) {
         const interval = 0.85 - this.heart * 0.4;
@@ -320,7 +300,7 @@ export class MeltdownAudio {
     this._tone(t + 0.3, { freq: 1200, to: 80, duration: 3, gain: 0.12, type: "sine" });
   }
 
-  /** The grid dying: everything winds down, a relay slams, the siren chokes. */
+  /** The grid dying: everything winds down, a relay slams. */
   powerDown() {
     if (!this.ctx) return;
     const t = this._now();
@@ -332,7 +312,7 @@ export class MeltdownAudio {
     this._sirenDucked = true;
   }
 
-  /** Emergency power: the siren comes back. */
+  /** Emergency power comes back. */
   powerUp() {
     if (!this.ctx || !this._sirenDucked) return;
     this._sirenDucked = false;
@@ -434,12 +414,130 @@ export class MeltdownAudio {
     this._burst(t, { duration: 0.2, gain: 0.12, type: "bandpass", freq: 3000, sweepTo: 800 });
   }
 
-  /** The telegraph before a patient charges. */
-  growl() {
+  /**
+   * A mutant's growl - the telegraph before one charges, and the snarl as it
+   * goes for you: a ragged low voice driven into grit, shaped by a throat
+   * (two formants), fluttering, with breath under it. Each one different.
+   */
+  growl(strength = 1) {
     if (!this.ctx) return;
+    const ctx = this.ctx;
     const t = this._now();
-    this._tone(t, { freq: 70, to: 140, duration: 0.6, gain: 0.25, type: "sawtooth" });
-    this._burst(t, { duration: 0.6, gain: 0.16, type: "bandpass", freq: 380, q: 2 });
+    const dur = 0.85 + Math.random() * 0.45;
+    const level = 0.42 * Math.max(0.2, Math.min(1.2, strength));
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(level, t + 0.07);
+    out.gain.setValueAtTime(level, t + dur * 0.55);
+    out.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+    out.connect(this.master);
+    // The throat: two formants in parallel.
+    const throat = ctx.createGain();
+    for (const [freq, q, gain] of [[380 + Math.random() * 80, 3.5, 1], [1050 + Math.random() * 200, 5, 0.55]]) {
+      const f = ctx.createBiquadFilter();
+      f.type = "bandpass";
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.value = gain;
+      throat.connect(f).connect(g).connect(out);
+    }
+    // Grit, and the flutter of a rattling throat.
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = (this._grit ??= (() => {
+      const curve = new Float32Array(1024);
+      for (let i = 0; i < curve.length; i += 1) {
+        const x = (i / (curve.length - 1)) * 2 - 1;
+        curve[i] = ((1 + 28) * x) / (1 + 28 * Math.abs(x));
+      }
+      return curve;
+    })());
+    const flutter = ctx.createGain();
+    flutter.gain.value = 0.55;
+    const am = ctx.createOscillator();
+    am.frequency.value = 22 + Math.random() * 12;
+    const amDepth = ctx.createGain();
+    amDepth.gain.value = 0.45;
+    am.connect(amDepth).connect(flutter.gain);
+    shaper.connect(flutter).connect(throat);
+    // The voice: low and detuned, rising into the snarl and falling away,
+    // its pitch wandering (a slow, uneven vibrato).
+    const base = 55 + Math.random() * 25;
+    const oscs = [am];
+    for (const [mult, type] of [[1, "sawtooth"], [1.51, "square"], [0.5, "sawtooth"]]) {
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      const f0 = base * mult;
+      osc.frequency.setValueAtTime(f0 * 0.8, t);
+      osc.frequency.linearRampToValueAtTime(f0 * 1.3, t + dur * 0.35);
+      osc.frequency.exponentialRampToValueAtTime(f0 * 0.65, t + dur);
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 6 + Math.random() * 5;
+      const vibDepth = ctx.createGain();
+      vibDepth.gain.value = f0 * 0.09;
+      vib.connect(vibDepth).connect(osc.frequency);
+      const g = ctx.createGain();
+      g.gain.value = mult === 1 ? 0.5 : 0.25;
+      osc.connect(g).connect(shaper);
+      oscs.push(osc, vib);
+    }
+    // Breath through the teeth.
+    const breath = ctx.createBufferSource();
+    breath.buffer = this.noise;
+    const hiss = ctx.createBiquadFilter();
+    hiss.type = "bandpass";
+    hiss.frequency.value = 1800;
+    hiss.Q.value = 0.9;
+    const breathGain = ctx.createGain();
+    breathGain.gain.value = 0.18;
+    breath.connect(hiss).connect(breathGain).connect(out);
+    oscs.push(breath);
+    for (const o of oscs) {
+      o.start(t);
+      o.stop(t + dur + 0.1);
+    }
+  }
+
+  /**
+   * Somewhere above, the building giving way: a deep boom, a long rumble
+   * through the floor, a steel beam groaning. (The Skyline's collapse, heard
+   * from inside.)
+   */
+  distantCollapse(strength = 1) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = this._now();
+    const src = ctx.createBufferSource();
+    src.buffer = this.brown;
+    const low = ctx.createBiquadFilter();
+    low.type = "lowpass";
+    low.frequency.setValueAtTime(260, t);
+    low.frequency.exponentialRampToValueAtTime(70, t + 2.8);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5 * strength, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 3.0);
+    src.connect(low).connect(g).connect(this.master);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 3.1);
+    this._tone(t + 0.05, { freq: 46, to: 28, duration: 1.8, gain: 0.3 * strength });
+    // The beam: a slow metallic groan.
+    const beam = ctx.createOscillator();
+    beam.type = "sawtooth";
+    const f = 160 + Math.random() * 80;
+    beam.frequency.setValueAtTime(f, t + 0.6);
+    beam.frequency.linearRampToValueAtTime(f * 0.72, t + 2.2);
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.frequency.value = 900;
+    band.Q.value = 9;
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.0001, t + 0.6);
+    bg.gain.exponentialRampToValueAtTime(0.06 * strength, t + 0.9);
+    bg.gain.exponentialRampToValueAtTime(0.0008, t + 2.3);
+    beam.connect(band).connect(bg).connect(this.master);
+    beam.start(t + 0.6);
+    beam.stop(t + 2.4);
   }
 
   /** Over the edge. */

@@ -60,7 +60,8 @@ export class FoundryHud {
 
     /* Systems readout */
     this.systemsPanel = element("div", "fdy-systems");
-    this.systemsPanel.append(element("span", null, "Tower systems"));
+    // The three switches between you and the lift: break them to open the way.
+    this.systemsPanel.append(element("span", null, "The way out"));
     this.systemRows = SYSTEMS.map((name) => {
       const row = element("div", "fdy-system");
       row.append(element("i"), element("span", null, name));
@@ -122,7 +123,8 @@ export class FoundryHud {
     this.escape = element("div", "fdy-escape");
     const header = element("header");
     this.escapeClock = element("b", null, "26.0");
-    header.append(element("span", null, "Containment"), this.escapeClock);
+    // Vale's charges in the plant: the clock to the lift once they arm.
+    header.append(element("span", null, "Plant charges"), this.escapeClock);
     this.escapeFill = element("div", "fdy-fill");
     const track = element("div", "fdy-track");
     track.append(this.escapeFill);
@@ -328,8 +330,8 @@ export class FoundryHud {
     this._escapeActive = true;
     this.escape.classList.add("show");
     this.vignette.classList.add("show");
-    this.escapeHint.textContent = "GATES CLOSING // HOLD THE CENTRE LANE";
-    this.showBanner("CONTAINMENT FAILING", "RUN");
+    this.escapeHint.textContent = "SHUTTERS SEALING // KEEP TO THE CENTRE, GET TO THE LIFT";
+    this.showBanner("THE PLANT'S CHARGES ARE ARMED", "RUN");
   }
 
   updateEscape(remaining) {
@@ -346,7 +348,7 @@ export class FoundryHud {
     this._escapeActive = false;
     this.escape.classList.remove("critical");
     this.vignette.classList.remove("show", "critical");
-    this.escapeHint.textContent = survived ? "CONTAINMENT STABLE" : "CONTAINMENT LOST";
+    this.escapeHint.textContent = survived ? "VALVE OPEN // THE LIFT IS CLEAR" : "SHUTTERS SEALED";
     setTimeout(() => this.escape.classList.remove("show"), survived ? 900 : 1600);
   }
 

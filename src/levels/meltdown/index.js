@@ -56,6 +56,7 @@ import { SmokeBank } from "./smoke.js";
 import { loadMeltdownAssets, fillAssetSlots } from "./assets.js";
 import { createLift } from "./elevator.js";
 import { CalibrationLift, LIFT_RADIUS } from "../common/calibration-lift.js";
+import { routeSurfaceHit, locateOnRoute } from "../../systems/spheres.js";
 
 const _liftCam = new THREE.Vector3();
 const _liftFwd = new THREE.Vector3();
@@ -133,6 +134,8 @@ const FALLING = {
 };
 /** Patients step out of the wall into a lane once you are this close. */
 const LURCH = { range: 22, duration: 1.35 };
+/** The dark beat's lurchers stalk: out early, keeping pace ahead of you, committing at the end. */
+const STALK = { range: 42, pace: 0.5, commit: 4.5 };
 const WARP_DURATION = 9;
 
 function createEmitter() {
@@ -291,6 +294,25 @@ export class MeltdownLevel {
     return this.hallAt(distance)?.halfWidth ?? CORRIDOR_HALF;
   }
 
+  /**
+   * The walls and ceiling a sphere moving start -> end bounces off (the
+   * Skyline's ricochet, src/systems/spheres.js): a hall's, or the
+   * corridor's - which widens round the bends.
+   */
+  surfaceHit(start, end, radius) {
+    this._spaceAt ??= (distance) => {
+      const hall = this.hallAt(distance);
+      if (hall) return { halfWidth: hall.halfWidth - 0.3, ceiling: (HALL_THEMES[hall.theme]?.height ?? 12) - 0.4 };
+      let widen = 1;
+      const { node } = this.route.nodeAt(distance);
+      if (!this.options.straightRoute && node.type === "arc") {
+        widen = 1 + 0.55 * Math.sin(THREE.MathUtils.clamp((distance - node.startDistance) / node.length, 0, 1) * Math.PI);
+      }
+      return { halfWidth: CORRIDOR_HALF * widen - 0.3, ceiling: CORRIDOR_HEIGHT - 0.35 };
+    };
+    return routeSurfaceHit(this.route, start, end, radius, this._spaceAt);
+  }
+
   /** Inside the blacked-out beat (including its hall)? */
   isDarkStretch(distance) {
     return Boolean(DARK_BEAT && distance >= DARK_BEAT.start - 1 && distance <= DARK_BEAT.end + 1);
@@ -393,6 +415,16 @@ export class MeltdownLevel {
       this.breakables.push(b);
     }
     return piece;
+  }
+
+  /** Move a stalking lurcher along the route (its collider's broad-phase index with it). */
+  _moveLurcher(entry, offset) {
+    entry.offset = THREE.MathUtils.clamp(offset, -10, 60);
+    const d = entry.distance + entry.offset;
+    this.route.place(entry.group, d, 0);
+    const hit = entry.group.userData.hazardMesh;
+    for (const h of this._hazardIndex) if (h.mesh === hit) h.distance = d;
+    for (const c of this._culled) if (c.piece === entry.group) c.distance = d;
   }
 
   /** A piece that falls or topples once the player is close. */
@@ -655,13 +687,13 @@ export class MeltdownLevel {
     const hw = CORRIDOR_HALF;
     this._hazard(this.kit.barrier({ kind: "low" }), at(0.05), 0);
     this._falling(this.kit.ceilingChunk({ seed: 1 }), at(0.1), -3.2, "chunk");
-    this._pickup(this.kit.sack({ hp: 1, spheres: 5 }), at(0.15), 3.2, 0.4);
+    this._pickup(this.kit.sack({ hp: 1, spheres: 5 }), at(0.15), 3.2, 0);
     this._hazard(this.kit.glassPane({ lanes: LANES, hp: 1 }), at(0.2), 0);
     this._pickup(this.kit.powerup({ kind: "coolant" }), at(0.26), 0, 0);
     this._hazard(this.kit.floorGap({ mandatory: false }), at(0.46), 0);
     this._falling(this.kit.airDuct({ mode: "blocker", halfWidth: hw }), at(0.53), 0, "duct");
     this._hazard(this.kit.laserGrid({ mode: "low", span: hw * 2 - 1.6 }), at(0.6), 0);
-    this._pickup(this.kit.sack({ hp: 1, spheres: 5 }), at(0.9), -3.2, 0.4);
+    this._pickup(this.kit.sack({ hp: 1, spheres: 5 }), at(0.9), -3.2, 0);
   }
 
   /** BEAT B - CONTAINMENT CORRIDOR. Escalation; the experiment and the warp. */
@@ -675,7 +707,7 @@ export class MeltdownLevel {
     this._crossing(at(0.42));
     this._pickup(this.kit.powerup({ kind: "adrenaline" }), at(0.47), -3.2, 0);
     this._falling(this.kit.airDuct({ mode: "blocker", halfWidth: hw }), at(0.52), 0, "duct");
-    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.57), 3.2, 0.4);
+    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.57), 3.2, 0);
     this._pickup(this.kit.powerup({ kind: "overcharge" }), at(0.8), 0, 0);
     this._hazard(this.kit.glassPane({ lanes: LANES, hp: 2 }), at(0.86), 0);
     this._falling(this.kit.ceilingChunk({ seed: 4 }), at(0.93), 0, "chunk");
@@ -694,15 +726,18 @@ export class MeltdownLevel {
     const at = (f) => this._mark(base + L * f);
     const hw = CORRIDOR_HALF;
     this._hazard(this.kit.glassPane({ lanes: LANES, hp: 2 }), at(0.12), 0);
-    this._lurcher(at(0.2), 0, -1);
-    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.26), 3.2, 0.4);
+    // In the dark they don't wait in one place: they come out and stalk
+    // you - shuffling across to stay in your lane, coming at you - until
+    // you're past. Shoot them, or sidestep late, once they've committed.
+    this._lurcher(at(0.2), 0, -1, { stalk: true });
+    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.26), 3.2, 0);
     this._crossing(at(0.33));
     this._pickup(this.kit.powerup({ kind: "adrenaline" }), at(0.45), 0, 0);
-    this._lurcher(at(0.53), 3.2, 1);
-    this._lurcher(at(0.53), -3.2, -1);
+    this._lurcher(at(0.53), 3.2, 1, { stalk: true });
+    this._lurcher(at(0.56), -3.2, -1, { stalk: true });
     this._falling(this.kit.ceilingChunk({ seed: 8 }), at(0.63), 0, "chunk");
-    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.8), -3.2, 0.4);
-    this._lurcher(at(0.86), 0, 1);
+    this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.8), -3.2, 0);
+    this._lurcher(at(0.86), 0, 1, { stalk: true });
     this._falling(this.kit.airDuct({ mode: "blocker", halfWidth: hw }), at(0.94), 0, "duct");
   }
 
@@ -710,10 +745,10 @@ export class MeltdownLevel {
    * A patient standing against the wall who lurches into `lane` as the
    * player closes in: shoot them down, or be somewhere else.
    */
-  _lurcher(distance, lane, fromSide) {
+  _lurcher(distance, lane, fromSide, { stalk = false } = {}) {
     const piece = this.kit.lurcher({ lane, fromSide, seed: Math.round(distance * 7) });
     this._hazard(piece, distance, 0);
-    this._lurchers.push({ distance, group: piece, triggered: false, elapsed: 0 });
+    this._lurchers.push({ distance, group: piece, triggered: false, elapsed: 0, stalk, offset: 0 });
     return piece;
   }
 
@@ -738,7 +773,7 @@ export class MeltdownLevel {
     this._pickup(this.kit.powerup({ kind: "barrier" }), at(0.53), 0, 0);
     this._falling(this.kit.ceilingChunk({ seed: 7 }), at(0.58), -3.2, "chunk");
     this._falling(this.kit.airDuct({ mode: "blocker", halfWidth: hw }), at(0.87), 0, "duct");
-    this._pickup(this.kit.sack({ hp: 3, spheres: 7 }), at(0.91), 3.2, 0.4);
+    this._pickup(this.kit.sack({ hp: 3, spheres: 7 }), at(0.91), 3.2, 0);
     // Reinforced glass, the last thing between you and the lift up.
     this._hazard(this.kit.glassPane({ lanes: LANES, hp: 3 }), at(0.94), 0);
   }
@@ -757,7 +792,7 @@ export class MeltdownLevel {
     this.startLift.userData.lift.setLight(1);
     const total = this.route.totalLength;
     const end = this.route.sample(total);
-    this.endLift = new CalibrationLift({ landing: END_LANDING, landingWidth: CORRIDOR_HALF * 2 });
+    this.endLift = new CalibrationLift({ landing: END_LANDING, landingWidth: CORRIDOR_HALF * 2, core: { ceiling: CORRIDOR_HEIGHT + 0.3 } });
     const root = this.endLift.root;
     root.position.copy(end.position).addScaledVector(_liftFwd.set(-Math.sin(end.heading), 0, -Math.cos(end.heading)), END_LANDING + LIFT_RADIUS);
     root.rotation.y = end.heading;
@@ -907,7 +942,8 @@ export class MeltdownLevel {
   _crossing(distance) {
     this._hazard(this.kit.floorGap({ mandatory: true }), distance, -3.2);
     this._hazard(this.kit.floorGap({ mandatory: true }), distance, 3.2);
-    this._add(this.groups.hazards, this.kit.airDuct({ mode: "bridge" }), distance, 0);
+    const duct = this._hazard(this.kit.airDuct({ mode: "bridge" }), distance, 0);
+    (this._bridges ??= []).push({ distance, ...duct.userData.bridge });
   }
 
   /**
@@ -1406,7 +1442,11 @@ export class MeltdownLevel {
    * lies across every lane, so it's jumped - over it, or onto it.
    */
   ductAhead(playerDistance, radius = 6) {
-    return this._pushables.some((e) => {
+    const bridge = (this._bridges ?? []).some((b) => {
+      const gap = b.distance - b.depth / 2 - playerDistance;
+      return gap > 0.6 && gap < radius;
+    });
+    return bridge || this._pushables.some((e) => {
       const gap = e.distance - playerDistance;
       return e.group.userData.standTop?.() !== null && gap > 0.6 && gap < radius;
     });
@@ -1418,12 +1458,17 @@ export class MeltdownLevel {
    * else 0. The host only stands the runner on it from above - running into
    * a duct is a hit.
    */
-  groundAt(playerDistance, margin = 0.45) {
+  groundAt(playerDistance, margin = 0.45, lateral = 0) {
     let ground = 0;
     for (const e of this._pushables) {
       const top = e.group.userData.standTop?.();
       if (top === null || top === undefined) continue;
       if (Math.abs(e.distance - playerDistance) <= e.group.userData.standDepth / 2 + margin) ground = Math.max(ground, top);
+    }
+    // A duct lying along the centre lane (a crossing's bridge): its top, for
+    // as long as you're on it.
+    for (const b of this._bridges ?? []) {
+      if (Math.abs(lateral) <= b.halfWidth + 0.25 && Math.abs(b.distance - playerDistance) <= b.depth / 2 + margin * 0.5) ground = Math.max(ground, b.top);
     }
     return ground;
   }
@@ -1527,13 +1572,30 @@ export class MeltdownLevel {
       if (t >= 1 && entry.kind === "duct") entry.group.userData.blocking = true;
     }
 
+    let playerLateral = null;
+    // How fast you're running (the stalkers keep pace with half of it).
+    const runSpeed = this._lastDistance === undefined || dt <= 0 ? 0 : THREE.MathUtils.clamp((distance - this._lastDistance) / dt, 0, 30);
+    this._lastDistance = distance;
     for (const entry of this._lurchers) {
-      const gap = entry.distance - distance;
+      const gap = entry.distance + entry.offset - distance;
       if (!entry.triggered) {
-        if (gap > LURCH.range || gap < -2) continue;
+        if (gap > (entry.stalk ? STALK.range : LURCH.range) || gap < -2) continue;
         entry.triggered = true;
         entry.group.userData.lurch();
         this.events.emit("patient-lurch", { distance: entry.distance, position: entry.group.userData.worldPosition() });
+      }
+      if (!entry.stalk) continue;
+      const state = entry.group.userData.state();
+      if (state === "down") { entry.group.userData.chase(null); continue; }
+      // Stalking: it moves with you - ahead of you, at half your pace,
+      // shuffling across to stay in your lane - until the last few metres;
+      // then it's committed, and a late sidestep (or two spheres) beats it.
+      if (gap > STALK.commit) {
+        playerLateral ??= locateOnRoute(this.route, player).lateral;
+        entry.group.userData.chase(THREE.MathUtils.clamp(playerLateral, -CORRIDOR_HALF + 1.2, CORRIDOR_HALF - 1.2));
+        if (state !== "lurch") this._moveLurcher(entry, entry.offset + dt * runSpeed * STALK.pace);
+      } else {
+        entry.group.userData.chase(null);
       }
     }
 

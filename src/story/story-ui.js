@@ -123,6 +123,9 @@ export class StoryUI {
       return;
     }
     this.creditsRoll.innerHTML = html;
+    // The credits have the screen to themselves: no subtitle left over.
+    this.say(null);
+    this.title(null);
     this.creditsEl.classList.add("show");
     this.setCreditsScroll(0);
   }

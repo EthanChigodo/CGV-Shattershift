@@ -211,8 +211,24 @@ export class PlayerAvatar {
     this._airborne = height > 0.05;
     this.tuck += ((height > 0.05 ? 1 : 0) - this.tuck) * k(height > 0.05 ? 16 : 22);
     this.crouch += ((sliding ? 1 : 0) - this.crouch) * k(sliding ? 20 : 10);
-    // Lane changes bank the body into the turn.
-    this.lean += (THREE.MathUtils.clamp(-lateralVel * 0.045, -0.32, 0.32) - this.lean) * k(10);
+    // Secondary motion: the body is a damped spring, not a dial. A lane
+    // change banks it into the turn a beat late, it overshoots a touch as the
+    // feet catch up, and settles; a landing pitches it forward and back.
+    this.time = (this.time ?? 0) + dt;
+    const bank = THREE.MathUtils.clamp(-lateralVel * 0.045, -0.32, 0.32);
+    const steps = Math.max(1, Math.ceil(dt / 0.01));
+    const h = dt / steps;
+    this.leanVel ??= 0;
+    this.pitch ??= 0;
+    this.pitchVel ??= 0;
+    if (landed) this.pitchVel += 1.6 + Math.min(1.5, this._fall ?? 0) * 0.8;
+    for (let i = 0; i < steps; i += 1) {
+      this.leanVel += ((bank - this.lean) * 130 - this.leanVel * 17) * h;
+      this.lean += this.leanVel * h;
+      this.pitchVel += (-this.pitch * 160 - this.pitchVel * 14) * h;
+      this.pitch += this.pitchVel * h;
+    }
+    this._fall = height > 0.05 ? Math.max(this._fall ?? 0, height) : 0;
     this.lurch += (stumble - this.lurch) * k(12);
 
     // The gait: planted feet, cadence from speed, the pelvis dropping on
@@ -247,7 +263,11 @@ export class PlayerAvatar {
       }
       u.uPhase.value = g ? this.phase - Math.PI * 0.4 : this.phase;
       u.uStride.value = pushing ? 0.3 : running ? THREE.MathUtils.clamp(0.45 + speed * 0.028, 0.45, 0.85) * (1 - this.tuck) : 0;
-      u.uArmSwing.value = running ? 0.55 * (1 - this.crouch * 0.6) : 0.05;
+      // Arms out a little for balance in the air; a gentle sway at rest.
+      u.uArmSwing.value = running ? 0.55 * (1 - this.crouch * 0.6) + this.tuck * 0.15 : 0.05;
+      // Standing still, the chest rises and falls; the landing spring rocks it.
+      const breath = running ? 0 : Math.sin(this.time * 1.7) * 0.012;
+      const rock = this.pitch * 0.5;
       if (g) {
         u.uGait.value = 1;
         u.uLegR.value.set(g.hipR, g.kneeR);
@@ -255,9 +275,9 @@ export class PlayerAvatar {
         // Both hands on the launcher keep the shoulders square (the mount
         // doesn't twist); a throw turns them into it.
         u.uTwist.value = g.twist * (1 - this.crouch) * (1 - this.hold * 0.75) + (thrown ? thrown[3] * thrown[4] : 0);
-        u.uLean.value = g.lean * (1 - this.crouch) + (pushing ? 0.35 : 0) - this.crouch * 0.55;
+        u.uLean.value = g.lean * (1 - this.crouch) + (pushing ? 0.35 : 0) - this.crouch * 0.55 + breath + rock;
       } else {
-        u.uLean.value = (running ? 0.12 + speed * 0.008 : 0) + (pushing ? 0.35 : 0) - this.crouch * 0.55;
+        u.uLean.value = (running ? 0.12 + speed * 0.008 : 0) + (pushing ? 0.35 : 0) - this.crouch * 0.55 + breath + rock;
       }
       // A landing folds the knees for a moment.
       u.uCrouch.value = this.crouch + squash * 0.22;

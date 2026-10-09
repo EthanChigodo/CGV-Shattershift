@@ -33,14 +33,13 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | Right mouse (hold) | Focus - slow time to aim |
 | `A` / `D` or left / right | Change lane |
 | `W` / `S` or up / down | Sprint / brake (the Skyline); jump / slide (the Foundry, the Labs) |
-| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock |
+| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock (picked in the main menu's loadout and the pause menu too) |
 | `Space` / `Shift` | Jump / slide |
 | `C` | First-person / chase camera |
 | `M` | Minimap |
 | `V` / VIEW button | Choose which HUD panels show |
 | `H` | Hide the whole HUD |
 | `P` | Photo mode (filters, save photo, save 360° panorama) |
-| `F` | Performance overlay |
 | `Esc` | Pause and settings |
 | `R` | Run again from the end screen |
 | `1` `2` `3` `4` | Demo: jump to Sector 01 (Foundry), 02 (Labs), 03 (Skyline), the Roof - with that stage's story and cutscenes |
@@ -48,6 +47,16 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | `6` | Demo: the quiet ride from the Labs up to the Skyline |
 | The Labs and the Roof | Hold left mouse to fire; jump onto fallen ducts (running into one hurts); on the roof `WASD` moves (the open ledges are a long drop) and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available there |
 | Cutscenes | Hold `Esc` to skip the talking; reaction prompts show the keys to press |
+
+A run that uses a demo key (`1`-`6`) still plays on, but it no longer counts for the records: the fastest story run (from Sector 01 to the helicopter, in h:mm:ss) and each Endless level's best (distance and the time it took).
+
+## Spheres and power-ups (every level)
+
+One set of rules and one look everywhere - the Skyline's (`src/systems/arsenal.js`, `src/systems/spheres.js`):
+
+- **Spheres:** glass (1), cryo (2) and shock (3) spheres are the same glowing orbs in every level, on the same arcs. They ricochet cleanly off a corridor's walls and ceiling, bounce off hazards and the floor, and a glass sphere punches through a pane it breaks. Ammunition comes from the floating cyan **sphere caches**.
+- **Serums (power-ups):** prism split (gold), thermal sight (orange), kinetic shield (green) and overdrive (pink) - each its own colour, never a sphere type's. The pickup is the Skyline's glass capsule with the serum alive inside it; shoot it or run into it.
+- **What you see:** a banner across the top names the serum, says what it does and how long it lasts, then shrinks into a countdown chip; the screen's edges glow in its colour, and each has its own look - a prism fringe, a heat grade with scan lines, a honeycomb shield rim (that ripples when it takes a hit), overdrive's speed lines and wider view. The last three seconds blink (`src/ui/serum-fx.js`).
 
 ## Sector 03 - The Skyline (the Glass Causeway module)
 
@@ -59,7 +68,8 @@ A research wing 212 floors up, burning at 03:47 in the morning, in three beats: 
 - **From sedated to running for your life:** the run starts slow and blurred as Subject 07 staggers out of the pod, and builds to full pace as the adrenaline kicks in; explosions scare you into a sprint.
 - **The building coming down:** telegraphed ceiling collapses, a distant tower falling, the skybridge collapsing behind you, the atrium detonating below the lift.
 - **Tools:** three sphere types, four serum power-ups (prism split, thermal sight, kinetic shield, overdrive), sprint/brake, bullet-time focus.
-- **Extras:** orthographic minimap, field manual, level preview flythrough, three missions per run, five collectible case files, photo mode with 360° export, and an endless mode of randomised chunks (Endless -> The Skyline).
+- **Extras:** orthographic minimap, field manual, three missions per run, five collectible case files, photo mode with 360° export, and an endless mode of randomised chunks (Endless -> The Skyline).
+- **The hardest sector:** it comes after the Labs, so it runs faster (11.4 m/s), hits, fire and smoke hurt more, the collapse behind you is quicker (9.6 m/s) and the sealed gate gives you seven seconds.
 - **In the story** it is Sector 03: you arrive by the glass lift (no pod, no sedated start) and its lift goes up to the Roof.
 - **Graphics pipeline:** custom multi-pass post-processing (screen-space refraction, bloom, FXAA, heat haze, thermal vision, power-up looks), dynamic ray-marched sky, reflection probe, sun shadows, wet reflective floors, and Auto quality with dynamic resolution for lab machines.
 
@@ -67,9 +77,11 @@ See [`docs/level-1-causeway.md`](./docs/level-1-causeway.md) and [`docs/shaders-
 
 ## Menus and settings
 
-The title screen idles on a slow drift through the Skyline's ward. From it you can start the story, pick an Endless environment, preview the Skyline, read its field manual, open settings, or replay the briefing. **Start Story** starts with the wake-up in the ward, then the Foundry.
+The title screen offers the briefing film or goes straight to the menu. The main menu's buttons: **Start story** (the wake-up in the ward, then the Foundry), **Chapters** (start the story from the briefing, the Foundry, the Gravity Fault lift, the Labs, the Skyline or the Roof, cutscenes and all), **Endless**, **Field manual**, **Settings** and **Replay the briefing**.
 
-The start screen also shows the sector briefing and this run's missions, so pressing Start goes straight into play, and **Play as** chooses your character (female or male patient; Level 3 shows them, and the choice is remembered).
+Beside it, the **Loadout** card: who you play as (female or male), skin tone, and the sphere you start with - all remembered.
+
+The **pause menu** has the same buttons (resume, settings, restart, quit) and a guide with three tabs: the **moves** for the sector you are in (highlighted) and everywhere, the **spheres** (change type mid-run), and the **power-ups**, each with a picture of its capsule, what it does and how long it lasts.
 
 **Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. The story briefing, menu and Level 1 have looping background music; Level 3 retains its generated Web Audio effects.
 
@@ -82,8 +94,10 @@ The game uses JavaScript modules, so serve the folder over HTTP rather than doub
 Open a terminal in this folder and run:
 
 ```text
-python -m http.server 4173
+python tools/serve.py
 ```
+
+and open http://localhost:4173. It works like `python -m http.server 4173`, but it tells the browser not to cache anything - with the plain server, after an update the browser can mix new and old files (the menus lose their styling and buttons stop working) until you hard-refresh with Ctrl+Shift+R.
 
 Then open `http://localhost:4173/` in Chrome.
 
@@ -149,7 +163,7 @@ Upload the contents of the demo archive so that `index.html` is at the top level
 
 ## Current status
 
-The whole story is playable from start to finish: the briefing film, the wake-up and the Foundry with Dr. Okoro, the Gravity Fault lift (its brake clamps as reaction prompts), the Labs with the breach, the bend attack and Okoro's sacrifice, the quiet ride up, the Skyline's demolition and bridge jump, the Roof, and the ending in the helicopter with the credits. A death restarts the sector you were in. The character and skin tone picked on the start screen are the player in every level. Endless runs each environment on its own. Menu and Skyline music is managed by `src/audio/music-manager.js`; the Labs and the Roof use generated Web Audio effects. Each module has its own checks (`node tests/<story|meltdown|causeway|foundry|elevators>/run.js`). Frame rates still need to be measured on lab hardware with the `F` overlay.
+The whole story is playable from start to finish: the briefing film, the wake-up and the Foundry with Dr. Okoro, the Gravity Fault lift (its brake clamps as reaction prompts), the Labs with the breach, the bend attack and Okoro's sacrifice, the quiet ride up, the Skyline's demolition and bridge jump, the Roof, and the ending in the helicopter with the credits - over the main theme. A death restarts the sector you were in. The character and skin tone picked on the start screen are the player in every level. Endless runs each environment on its own. Music is managed by `src/audio/music-manager.js`. The Skyline's recorded sounds (fire, glass, wind) play in every level; the Foundry adds a synthesized machinery bed (`src/audio/foundry-ambience.js`), and the Labs its own synthesized effects - no siren, but the building collapsing somewhere above and the patients' growls. Each module has its own checks (`node tests/<story|meltdown|causeway|foundry|elevators>/run.js`). Frame rates still need to be measured on lab hardware with the `F` overlay.
 
 ## Technology
 

@@ -1,0 +1,127 @@
+/*
+ * Serums on screen (serum-fx.js): the glow round the edges in each serum's
+ * colour, each serum's own look, the banner that names it and the chips
+ * that count it down. Every layer's strength is --a (0..1), set per frame.
+ */
+
+.sx { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+.sx-layer { position: absolute; inset: 0; opacity: 0; transition: opacity 0.25s ease; --a: 0; }
+.sx-layer.on { opacity: 1; }
+.sx-layer > i { position: absolute; inset: 0; display: block; }
+
+/* The glow round the edges, in the serum's colour. */
+.sx-edge {
+  box-shadow: inset 0 0 140px 26px rgba(var(--rgb), calc(var(--a) * 0.5));
+  background: radial-gradient(ellipse 75% 70% at 50% 50%, transparent 58%, rgba(var(--rgb), calc(var(--a) * 0.22)) 100%);
+}
+.sx-layer.flash .sx-edge { animation: sxFlash 0.9s ease-out; }
+.sx-layer.ending .sx-edge { animation: sxEnding 0.5s ease-in-out infinite; }
+@keyframes sxFlash {
+  0% { box-shadow: inset 0 0 260px 90px rgba(var(--rgb), 0.85); background-color: rgba(var(--rgb), 0.18); }
+  100% { background-color: transparent; }
+}
+@keyframes sxEnding { 50% { opacity: 0.25; } }
+
+/* Prism split: a prism fringe turning round the edges. */
+.sx-prism .sx-look {
+  background: conic-gradient(from 0deg, #ff3b3b, #ffd23f, #4dff6a, #3de8ff, #5b6bff, #ff4dd8, #ff3b3b);
+  -webkit-mask-image: radial-gradient(ellipse 70% 66% at 50% 50%, transparent 66%, #000 100%);
+  mask-image: radial-gradient(ellipse 70% 66% at 50% 50%, transparent 66%, #000 100%);
+  mix-blend-mode: screen;
+  opacity: calc(var(--a) * 0.32);
+  animation: sxSpin 4s linear infinite;
+}
+@keyframes sxSpin { to { filter: hue-rotate(360deg); } }
+
+/* Thermal sight: a heat grade, scan lines, a slow sweep. */
+.sx-thermal .sx-look {
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(255, 240, 200, 0.10) 48%, transparent 52%) 0 0 / 100% 220% no-repeat,
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse 60% 55% at 50% 48%, rgba(255, 220, 160, 0.10), rgba(255, 70, 0, 0.22) 100%);
+  mix-blend-mode: overlay;
+  opacity: calc(var(--a) * 0.42); /* the heat on the patients carries it */
+  animation: sxSweep 2.6s linear infinite;
+}
+@keyframes sxSweep { from { background-position: 0 -120%, 0 0, 0 0; } to { background-position: 0 120%, 0 0, 0 0; } }
+
+/* Kinetic shield: a honeycomb rim, brighter when it takes a hit. */
+.sx-shield .sx-look {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'%3E%3Cpath d='M28 1 54 16v32L28 63 2 48V16zM28 63v34M2 16 0 15M54 16l2-1' fill='none' stroke='%23ffffff' stroke-width='1.6'/%3E%3C/svg%3E");
+  background-size: 42px 73px;
+  -webkit-mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, transparent 62%, #000 100%);
+  mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, transparent 62%, #000 100%);
+  filter: drop-shadow(0 0 6px var(--c));
+  opacity: calc(var(--a) * 0.32);
+}
+.sx-shield .sx-look { background-color: rgba(var(--rgb), 0.06); }
+.sx-shield.hit .sx-look { animation: sxShieldHit 0.7s ease-out; }
+@keyframes sxShieldHit {
+  0% { opacity: 1; -webkit-mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, transparent 20%, #000 100%); mask-image: radial-gradient(ellipse 72% 68% at 50% 50%, transparent 20%, #000 100%); }
+}
+
+/* Overdrive: speed lines (the canvas) over a hot pink rim. */
+.sx-overdrive .sx-look {
+  background: radial-gradient(ellipse 80% 70% at 50% 48%, transparent 50%, rgba(var(--rgb), calc(var(--a) * 0.16)) 100%);
+}
+.sx-lines { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; }
+
+/* The banner: which serum, what it does, for how long. */
+.sx-banner {
+  position: absolute; top: 64px; left: 50%; min-width: min(420px, 86vw); max-width: 86vw;
+  padding: 12px 22px 14px; text-align: center;
+  border: 1px solid rgba(var(--rgb), 0.55); border-top: 3px solid var(--c); border-radius: 4px;
+  background: linear-gradient(180deg, rgba(var(--rgb), 0.18), rgba(4, 12, 16, 0.78) 70%);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 40px rgba(var(--rgb), 0.35), 0 10px 30px rgba(0, 0, 0, 0.4);
+  color: #f3f8fa; font-family: Inter, "Segoe UI", Arial, sans-serif;
+  opacity: 0; transform: translate(-50%, -14px) scale(0.96);
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.2, .9, .3, 1.2);
+}
+.sx-banner.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.sx-kicker { display: block; color: var(--c); font-size: 10px; font-weight: 800; letter-spacing: 0.38em; text-transform: uppercase; }
+.sx-banner strong {
+  display: block; margin-top: 4px; color: var(--c); font-size: clamp(26px, 3.6vw, 40px); font-weight: 900; letter-spacing: 0.02em;
+  text-transform: uppercase; text-shadow: 0 0 24px rgba(var(--rgb), 0.7);
+}
+.sx-banner p { margin: 4px 0 8px; font-size: 14px; font-weight: 650; line-height: 1.4; }
+.sx-duration {
+  display: inline-block; padding: 3px 10px; border-radius: 999px; font-style: normal;
+  background: rgba(var(--rgb), 0.2); border: 1px solid rgba(var(--rgb), 0.5); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+}
+
+/* The chips: what's running and how long it has left. */
+.sx-chips {
+  position: absolute; top: 62px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  transition: opacity 0.3s ease;
+}
+.sx-chips.lowered { opacity: 0; }
+.sx-chip {
+  position: relative; display: flex; align-items: center; gap: 8px; min-width: 170px; padding: 7px 12px 9px; overflow: hidden;
+  border: 1px solid rgba(var(--rgb), 0.5); border-radius: 4px; background: rgba(4, 12, 16, 0.72); backdrop-filter: blur(6px);
+  color: #f3f8fa; font: 800 11px/1 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: 0.1em; text-transform: uppercase;
+  box-shadow: 0 0 18px rgba(var(--rgb), 0.25);
+}
+.sx-chip::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--r) * 100%);
+  background: var(--c); box-shadow: 0 0 10px var(--c);
+}
+.sx-chip i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.sx-chip small { color: var(--c); font-size: 10px; }
+.sx-chip b { margin-left: auto; color: var(--c); font-variant-numeric: tabular-nums; }
+.sx-chip.ending { animation: sxEnding 0.5s ease-in-out infinite; }
+
+body.hud-off-serums .sx-chips { display: none; }
+.cw-title { transition: opacity 0.6s ease, transform 0.6s ease, top 0.4s ease; }
+body.sx-announcing .cw-title { top: calc(17% + 130px); }
+body.sx-announcing .mlt-banner { top: calc(11% + 128px) !important; }
+@media (prefers-reduced-motion: reduce) {
+  .sx-prism .sx-look, .sx-thermal .sx-look, .sx-layer.ending .sx-edge, .sx-chip.ending { animation: none; }
+}
+
+/* Between levels and in the films the serums' screen looks stand down
+   (they are still counting; the chips come back with the HUD). */
+body.riding-lift .sx-layer,
+body.cutscene .sx-layer,
+body.story-cutscene .sx,
+body.finale-film .sx { opacity: 0 !important; transition: opacity .3s; }

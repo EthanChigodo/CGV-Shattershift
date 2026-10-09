@@ -16,6 +16,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { createPropKit } from "./props.js";
 
 const canvas = (w, h) => {
   const c = document.createElement("canvas");
@@ -184,6 +185,56 @@ function webbingTexture() {
     }
   }
   return colourTexture(c, [2, 2]);
+}
+
+/** The night outside a side window: the city's lights far below, a haze of fire. */
+function portTexture(seed = 5) {
+  const [c, g] = canvas(256, 256);
+  g.scale(2, 2);
+  const sky = g.createLinearGradient(0, 0, 0, 128);
+  sky.addColorStop(0, "#04060c");
+  sky.addColorStop(0.55, "#12182a");
+  sky.addColorStop(1, "#3a1c12");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 128, 128);
+  let s = seed;
+  const rnd = () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+  for (let i = 0; i < 700; i += 1) {
+    const y = 66 + rnd() * 62;
+    g.fillStyle = `rgba(255,${170 + rnd() * 80},${90 + rnd() * 100},${0.3 + rnd() * 0.7})`;
+    g.fillRect(rnd() * 128, y, 1 + rnd() * 1.5, 1);
+  }
+  return colourTexture(c);
+}
+
+/** A multi-function display: a moving map or the radar. */
+function mfdTexture(kind) {
+  const [c, g] = canvas(128, 128);
+  g.fillStyle = "#03100a";
+  g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = "#3bff8f";
+  g.fillStyle = "#3bff8f";
+  g.lineWidth = 1.5;
+  if (kind === "radar") {
+    for (const r of [18, 36, 54]) { g.beginPath(); g.arc(64, 70, r, Math.PI, Math.PI * 2); g.stroke(); }
+    g.beginPath(); g.moveTo(64, 70); g.lineTo(110, 30); g.stroke();
+    for (const [x, y] of [[40, 50], [88, 44], [70, 30]]) g.fillRect(x, y, 3, 3);
+    g.font = "bold 10px monospace";
+    g.fillText("WX  10NM", 6, 120);
+  } else {
+    g.strokeStyle = "#2c7a55";
+    for (let i = 0; i < 9; i += 1) { g.beginPath(); g.moveTo(0, i * 16); g.lineTo(128, i * 16 + 30); g.stroke(); }
+    g.strokeStyle = "#ffb547";
+    g.lineWidth = 2.5;
+    g.beginPath(); g.moveTo(64, 120); g.lineTo(64, 20); g.stroke();
+    g.fillStyle = "#ffffff";
+    g.beginPath(); g.moveTo(64, 70); g.lineTo(58, 82); g.lineTo(70, 82); g.closePath(); g.fill();
+    g.fillStyle = "#3bff8f";
+    g.font = "bold 10px monospace";
+    g.fillText("HDG 090", 6, 12);
+    g.fillText("RNG 5", 90, 12);
+  }
+  return colourTexture(c);
 }
 
 /** A stencilled placard: white on dark, or red-cross white. */
@@ -422,7 +473,7 @@ export class CabinStage {
     screen.rotation.x = -0.4;
     this.root.add(screen);
     // The centre console between the seats.
-    part(mat.dark, 0.3, 0.55, 0.6, 0.48, 0.3, -2.7);
+    part(mat.dark, 0.26, 0.55, 0.6, 0.15, 0.3, -2.7);
     // Windscreen frame and glass.
     rod(mat.steel, 0.03, [-0.8, 1.1, -3.25], [-0.8, 2.08, -3.2]);
     rod(mat.steel, 0.03, [0.8, 1.1, -3.25], [0.8, 2.08, -3.2]);
@@ -434,16 +485,139 @@ export class CabinStage {
     this.root.add(glass);
     part(mat.quilt, 2.0, 0.06, 1.8, 0, 2.1, -2.5);
 
+    // ---- What a working cabin carries ------------------------------------
+    const props = createPropKit(own);
+    // Side windows in the right wall over the seats: the city's lights below.
+    const port = own(new THREE.MeshBasicMaterial({ map: own(portTexture(7)) }));
+    for (const z of [-0.05, 1.0, 2.05]) {
+      part(mat.rubber, 0.05, 0.4, 0.46, W - 0.03, 1.32, z);
+      sheet(port, 0.36, 0.3, W - 0.06, 1.32, z, -Math.PI / 2);
+      sheet(mat.glass, 0.36, 0.3, W - 0.065, 1.32, z, -Math.PI / 2);
+    }
+    // On the bulkhead: an oxygen bottle in its straps, the intercom panel, a
+    // map case, the seatbelt sign.
+    props.rod(this.root, own(new THREE.MeshStandardMaterial({ color: 0x2f6b3c, roughness: 0.5, metalness: 0.4 })), 0.08, 0.7, -0.88, 0.5, -1.5, { seg: 14 });
+    props.rod(this.root, mat.steel, 0.025, 0.06, -0.88, 0.89, -1.5);
+    for (const y of [0.32, 0.68]) part(mat.dark, 0.2, 0.03, 0.03, -0.88, y, -1.43);
+    const intercom = new THREE.Group();
+    part(mat.dark, 0.32, 0.22, 0.08, 0, 0, 0, intercom);
+    for (let i = 0; i < 4; i += 1) props.rod(intercom, mat.steel, 0.018, 0.03, -0.11 + i * 0.07, 0.03, 0.05, { rx: Math.PI / 2, seg: 10 });
+    part(props.M.ledGreen, 0.02, 0.012, 0.005, 0.12, -0.06, 0.042, intercom);
+    part(props.M.ledAmber, 0.02, 0.012, 0.005, 0.08, -0.06, 0.042, intercom);
+    intercom.position.set(-0.85, 1.35, -1.53);
+    this.root.add(intercom);
+    part(mat.olive, 0.36, 0.28, 0.05, 0.85, 1.25, -1.54);
+    part(own(new THREE.MeshStandardMaterial({ color: 0x7d7a64, roughness: 0.9 })), 0.3, 0.2, 0.005, 0.85, 1.27, -1.512);
+    const belts = own(new THREE.MeshBasicMaterial({ map: own(placardTexture("BELTS", { bg: "#1a0d08", fg: "#ffb547" })) }));
+    sheet(belts, 0.22, 0.08, 0, H - 0.52, -1.565);
+    // Cable looms along the roof, wired into the frames.
+    for (const sx of [-1, 1]) {
+      props.tube(this.root, mat.dark, [[sx * 0.98, WALL + 0.1, -1.55], [sx * 0.99, WALL + 0.08, 0.4], [sx * 0.98, WALL + 0.1, 2.6]].map((p) => new THREE.Vector3(...p)), 0.022);
+      props.tube(this.root, mat.red, [[sx * 0.94, WALL + 0.16, -1.55], [sx * 0.95, WALL + 0.15, 0.4], [sx * 0.94, WALL + 0.16, 2.6]].map((p) => new THREE.Vector3(...p)), 0.01);
+    }
+    // Air vents (gaspers) and reading lights in a strip down the roof.
+    for (const z of [-0.6, 0.8, 2.2]) {
+      part(mat.dark, 0.24, 0.03, 0.12, 0, H - 0.02, z);
+      for (const dx of [-0.07, 0.07]) props.rod(this.root, mat.steel, 0.022, 0.025, dx, H - 0.045, z, { seg: 10 });
+    }
+    // Loose straps hanging from the grab rails: they swing with the flight (update()).
+    this.straps = [];
+    for (const [x, z] of [[0.55, -0.4], [0.55, 0.45], [0.55, 1.3], [-0.55, 0.0], [-0.55, 2.0]]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, H - 0.2, z);
+      part(mat.webbing, 0.035, 0.42, 0.006, 0, -0.21, 0, pivot);
+      part(mat.buckle, 0.05, 0.035, 0.01, 0, -0.42, 0, pivot);
+      this.root.add(pivot);
+      this.straps.push({ pivot, phase: x * 3 + z * 1.7 });
+    }
+    // On the bench beside you: a flight helmet; under it, a kit bag; a medic's bag by the tail.
+    const helmet = new THREE.Group();
+    props.ball(helmet, mat.olive, 0.13, 0.12, 0.15, 0, 0.1, 0);
+    props.part(helmet, mat.dark, 0.2, 0.06, 0.03, 0, 0.08, -0.13);
+    props.part(helmet, props.M.glass, 0.2, 0.08, 0.02, 0, 0.12, -0.15);
+    helmet.position.set(W - 0.27, 0.45, 1.25);
+    helmet.rotation.y = 0.8;
+    this.root.add(helmet);
+    const bag = (colour, x, z, ry) => {
+      const g = new THREE.Group();
+      props.part(g, own(new THREE.MeshStandardMaterial({ color: colour, roughness: 0.9 })), 0.5, 0.26, 0.3, 0, 0.13, 0, { r: 0.09 });
+      props.part(g, mat.dark, 0.52, 0.03, 0.04, 0, 0.2, 0.0);
+      g.position.set(x, 0, z);
+      g.rotation.y = ry;
+      this.root.add(g);
+    };
+    bag(0x3b4031, W - 0.3, -0.3, Math.PI / 2 + 0.2);
+    bag(0xb5432a, -0.6, 2.35, 0.3);
+    // A stretcher folded and strapped to the tail wall.
+    part(mat.steel, 0.5, 1.2, 0.05, -0.55, 0.85, 2.62);
+    part(own(new THREE.MeshStandardMaterial({ color: 0x5f6f86, roughness: 0.8 })), 0.44, 1.1, 0.06, -0.55, 0.85, 2.58);
+    for (const y of [0.55, 1.15]) part(mat.webbing, 0.56, 0.05, 0.08, -0.55, y, 2.56);
+
+    // The cockpit: a co-pilot's seat (empty), the sticks, the pedals, an
+    // overhead switch panel, two more screens on the panel.
+    const copilot = seat.clone(true);
+    copilot.position.set(0.45, 0, -2.45);
+    copilot.scale.setScalar(0.92);
+    this.root.add(copilot);
+    seat.position.x = -0.2;
+    for (const x of [-0.2, 0.45]) {
+      props.rod(this.root, mat.dark, 0.016, 0.62, x, 0.31, -2.82, { rx: 0.12 });
+      props.part(this.root, mat.rubber, 0.05, 0.12, 0.05, x, 0.66, -2.86, { r: 0.015 });
+      for (const dx of [-0.13, 0.13]) props.part(this.root, mat.steel, 0.08, 0.03, 0.18, x + dx, 0.12, -3.0, { rx: -0.6 });
+    }
+    props.rod(this.root, mat.dark, 0.02, 0.5, -0.52, 0.3, -2.42, { rx: -0.5 });
+    const overhead = part(mat.dark, 0.9, 0.06, 0.6, 0.15, 2.0, -2.85);
+    overhead.rotation.x = 0.35;
+    for (let i = 0; i < 14; i += 1) {
+      const sw = part(i % 5 === 0 ? props.M.ledAmber : mat.steel, 0.015, 0.03, 0.015, -0.2 + (i % 7) * 0.11, 1.96 - Math.floor(i / 7) * 0.06, -2.75 - Math.floor(i / 7) * 0.12);
+      sw.rotation.x = 0.35;
+    }
+    // The cockpit's own shell, so nothing round the pilot opens onto the
+    // dark: side walls (door frames and windows onto the city's lights),
+    // a chin panel under the instruments, side consoles by the seats.
+    const cockpitPort = own(new THREE.MeshBasicMaterial({ map: own(portTexture(11)) }));
+    for (const sx of [-1, 1]) {
+      const x = sx * 1.0;
+      part(mat.olive, 0.06, 1.0, 1.8, x, 0.5, -2.5);             // below the window
+      part(mat.olive, 0.06, 0.25, 1.8, x, 2.0, -2.5);            // above it
+      part(mat.rubber, 0.08, 0.95, 0.06, x, 1.48, -1.62);        // door frame, aft
+      part(mat.rubber, 0.08, 0.95, 0.06, x, 1.48, -3.36);        // and forward
+      sheet(cockpitPort, 1.7, 0.85, x + sx * 0.04, 1.47, -2.5, -sx * Math.PI / 2);
+      sheet(mat.glass, 1.7, 0.85, x, 1.47, -2.5, -sx * Math.PI / 2);
+      part(mat.steel, 0.04, 0.03, 0.3, x - sx * 0.05, 1.1, -1.9); // door handle
+      // A side console by each seat: switches and a glowing panel.
+      part(mat.dark, 0.14, 0.6, 1.0, x - sx * 0.12, 0.3, -2.65);
+      part(props.M.ledAmber, 0.02, 0.02, 0.5, x - sx * 0.19, 0.61, -2.65);
+    }
+    // The chin under the instrument panel, and the nose floor up to it.
+    part(mat.olive, 2.0, 0.75, 0.25, 0, 0.37, -3.42);
+    part(mat.floor, 2.0, 0.06, 0.4, 0, 0.02, -3.3);
+    part(mat.dark, 2.0, 0.05, 1.8, 0, 2.12, -2.5);
+    for (const [x, kind] of [[-0.58, "map"], [0.62, "radar"]]) {
+      const mfd = new THREE.Mesh(own(new THREE.PlaneGeometry(0.26, 0.26)), own(new THREE.MeshBasicMaterial({ map: own(mfdTexture(kind)) })));
+      mfd.position.set(x, 1.08, -3.03);
+      mfd.rotation.x = -0.4;
+      this.root.add(mfd);
+    }
+
     this.anchors = {
       /** You, on the bench by the open door. */
       seatEye: new THREE.Vector3(W - 0.35, 1.18, 0.75),
       /** Where the pilot sits (his root), facing -Z (the nose). */
-      pilot: new THREE.Vector3(0, 0, -2.42),
+      pilot: new THREE.Vector3(-0.2, 0, -2.42),
       /** Out of the door, down at the city. */
       doorLook: new THREE.Vector3(-6, -2.5, 0.4),
       /** Through the bulkhead, the back of the pilot's head. */
-      pilotBack: new THREE.Vector3(0, 1.45, -2.3),
+      pilotBack: new THREE.Vector3(-0.2, 1.45, -2.3),
     };
+  }
+
+  /** The loose straps swinging with the flight. */
+  update(dt, time) {
+    for (const s of this.straps ?? []) {
+      s.pivot.rotation.z = Math.sin(time * 1.9 + s.phase) * 0.12;
+      s.pivot.rotation.x = Math.sin(time * 1.3 + s.phase * 0.7) * 0.18;
+    }
   }
 
   /** A local point in world space. */

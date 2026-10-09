@@ -35,6 +35,7 @@
 import * as THREE from "../../three.js";
 import { createFoundryKit } from "./kit.js";
 import { createRoute, straightSegments } from "./route.js";
+import { routeSurfaceHit } from "../../systems/spheres.js";
 import { LightPool, createFoundryAmbience } from "./lighting.js";
 
 const TURN_RADIUS = 9;
@@ -74,14 +75,10 @@ export const BEATS = [
 ];
 
 /**
- * The serums a Foundry vial can hold (the Skyline's power-ups; thermal sight
- * is left out - there's no smoke down here to see through).
+ * The serums a Foundry capsule can hold (the Skyline's power-ups; thermal
+ * sight is left out - there's no smoke down here to see through).
  */
-const FOUNDRY_SERUMS = [
-  { key: "prism", colour: "#b273ff" },
-  { key: "shield", colour: "#4fe8ff" },
-  { key: "overdrive", colour: "#ff3d8b" },
-];
+const FOUNDRY_SERUMS = [{ key: "prism" }, { key: "shield" }, { key: "overdrive" }];
 
 /** Roughly one hazard every this many metres in the filler stretches. */
 const HAZARD_SPACING = 14;
@@ -206,6 +203,7 @@ export class FoundryLevel {
     };
 
     this._buildShell();
+    this._buildDressing();
     this._buildBeatA();
     this._buildBeatB();
     this._buildBeatC();
@@ -221,6 +219,317 @@ export class FoundryLevel {
   /* ================================================================ */
   /* Building                                                          */
   /* ================================================================ */
+
+  /**
+   * What a working plant has on its walls: pipe runs (steam, water, a
+   * yellow gas line), cable trays, gantry beams overhead with the lamps'
+   * light falling through the haze in shafts. Instanced, a few draw calls
+   * for the whole corridor; decoration only (no colliders).
+   */
+  _buildDressing() {
+    const { halfWidth } = this.options;
+    const total = this.route.totalLength;
+    const owned = (this._dressingOwned = []);
+    const own = (x) => (owned.push(x), x);
+    const pipeGeo = own(new THREE.CylinderGeometry(1, 1, 1, 12));
+    pipeGeo.rotateX(Math.PI / 2); // along the route
+    const boxGeo = own(new THREE.BoxGeometry(1, 1, 1));
+    const runs = [
+      { lateral: -(halfWidth - 0.55), y: 5.6, r: 0.22, material: own(new THREE.MeshStandardMaterial({ color: 0x7b3324, metalness: 0.5, roughness: 0.45 })) },
+      { lateral: -(halfWidth - 0.5), y: 6.25, r: 0.13, material: own(new THREE.MeshStandardMaterial({ color: 0x8c949a, metalness: 0.85, roughness: 0.3 })) },
+      { lateral: halfWidth - 0.5, y: 5.9, r: 0.16, material: own(new THREE.MeshStandardMaterial({ color: 0xb08a22, metalness: 0.4, roughness: 0.5 })) },
+      { lateral: halfWidth - 0.45, y: 1.6, r: 0.09, material: own(new THREE.MeshStandardMaterial({ color: 0x3d4a52, metalness: 0.7, roughness: 0.4 })) },
+    ];
+    const SEG = 8;
+    const count = Math.ceil(total / SEG);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    for (const run of runs) {
+      const mesh = new THREE.InstancedMesh(pipeGeo, run.material, count);
+      for (let i = 0; i < count; i += 1) {
+        const { position, heading } = this.route.sample(i * SEG + SEG / 2, run.lateral, run.y);
+        q.setFromAxisAngle(up, heading);
+        m.compose(position, q, s.set(run.r, run.r, SEG + 0.05));
+        mesh.setMatrixAt(i, m);
+      }
+      mesh.frustumCulled = false;
+      this.groups.shell.add(mesh);
+    }
+    // Brackets holding them to the wall, every 4 m.
+    const bracketMat = own(new THREE.MeshStandardMaterial({ color: 0x24292d, metalness: 0.8, roughness: 0.4 }));
+    const brackets = new THREE.InstancedMesh(boxGeo, bracketMat, Math.ceil(total / 4) * 2);
+    let b = 0;
+    for (let d = 2; d < total && b < brackets.count - 1; d += 4) {
+      for (const side of [-1, 1]) {
+        const { position, heading } = this.route.sample(d, side * (halfWidth - 0.4), 5.9);
+        q.setFromAxisAngle(up, heading);
+        m.compose(position, q, s.set(0.5, 1.2, 0.12));
+        brackets.setMatrixAt(b++, m);
+      }
+    }
+    brackets.count = b;
+    brackets.frustumCulled = false;
+    this.groups.shell.add(brackets);
+    // A cable tray along the right wall, high.
+    const tray = new THREE.InstancedMesh(boxGeo, bracketMat, count);
+    for (let i = 0; i < count; i += 1) {
+      const { position, heading } = this.route.sample(i * SEG + SEG / 2, halfWidth - 0.75, 6.75);
+      q.setFromAxisAngle(up, heading);
+      m.compose(position, q, s.set(0.55, 0.08, SEG));
+      tray.setMatrixAt(i, m);
+    }
+    tray.frustumCulled = false;
+    this.groups.shell.add(tray);
+    // Gantries across the ceiling every 16 m, and the lamps' light falling in shafts.
+    const GAP = 16;
+    const n = Math.floor(total / GAP);
+    const gantry = new THREE.InstancedMesh(boxGeo, bracketMat, n * 3);
+    const shaftMat = own(new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(1.0, 0.82, 0.6) } },
+      vertexShader: /* glsl */ `
+        varying float vH;
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          vH = uv.y;
+          vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+          vN = normalize(normalMatrix * mat3(instanceMatrix) * normal);
+          vV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor;
+        varying float vH;
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          // Brightest at the lamp, thinning to nothing at the floor; soft at the edges.
+          float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.5);
+          float a = vH * vH * edge * 0.13;
+          gl_FragColor = vec4(uColor * a, a);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }));
+    const shaftGeo = own(new THREE.CylinderGeometry(0.35, 2.4, 7.2, 20, 1, true));
+    const shafts = new THREE.InstancedMesh(shaftGeo, shaftMat, n);
+    let g = 0;
+    for (let i = 1; i < n; i += 1) {
+      const d = i * GAP;
+      const { position, heading } = this.route.sample(d, 0, 7.15);
+      q.setFromAxisAngle(up, heading);
+      m.compose(position, q, s.set(halfWidth * 2, 0.35, 0.45));
+      gantry.setMatrixAt(g++, m);
+      for (const side of [-1, 1]) {
+        const p = this.route.sample(d, side * 2.4, 7.0).position;
+        m.compose(p, q, s.set(0.35, 0.3, 0.6));
+        gantry.setMatrixAt(g++, m);
+      }
+      const shaft = this.route.sample(d, (i % 2 ? -1 : 1) * 1.8, 3.6).position;
+      m.compose(shaft, q, s.set(1, 1, 1));
+      shafts.setMatrixAt(i, m);
+    }
+    gantry.count = g;
+    gantry.frustumCulled = false;
+    shafts.frustumCulled = false;
+    shafts.renderOrder = 3;
+    this.groups.shell.add(gantry, shafts);
+    this._buildFurnaces(own);
+  }
+
+  /**
+   * Furnace mouths in the walls, every 50-odd metres on the straights,
+   * alternating sides: an iron frame standing proud of the plating, grate
+   * bars across it, and behind them the fire - white-yellow at the bed,
+   * orange above, flickering - with its glow spilling across the floor.
+   * Breaks the corridor up and says what this plant is for.
+   */
+  _buildFurnaces(own) {
+    const { halfWidth } = this.options;
+    const total = this.route.totalLength;
+    this._furnaceTime = { value: 0 };
+    // Everything here is instanced across all the furnaces (five draw calls
+    // for the lot, whatever the corridor length): the fire, the lit iron, the
+    // dark iron, the floor glow and the embers.
+    const fire = own(new THREE.ShaderMaterial({
+      uniforms: { uTime: this._furnaceTime },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying float vSeed;
+        void main() {
+          vUv = uv;
+          vSeed = instanceMatrix[3].x * 0.13 + instanceMatrix[3].z * 0.07;
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vSeed;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
+        float noise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+        }
+        void main() {
+          float t = uTime + vSeed;
+          vec2 p = vec2(vUv.x * 3.0 + vSeed, vUv.y * 2.0 - t * 1.6);
+          float n = noise(p * 2.0) * 0.6 + noise(p * 5.0 + 3.1) * 0.4;
+          // Hottest at the bed, licking upward.
+          float heat = clamp((1.0 - vUv.y) * 1.25 + (n - 0.5) * 0.9, 0.0, 1.0);
+          float flicker = 0.85 + 0.15 * sin(t * 9.0 + vUv.x * 4.0) * sin(t * 3.7);
+          vec3 c = mix(vec3(0.35, 0.05, 0.0), vec3(2.6, 0.9, 0.18), smoothstep(0.15, 0.6, heat));
+          c = mix(c, vec3(3.4, 2.6, 1.4), smoothstep(0.75, 1.0, heat));
+          gl_FragColor = vec4(c * flicker, 1.0);
+        }`,
+    }));
+    const spillTexture = own((() => {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const g = c.getContext("2d");
+      // A soft round pool, centred on the wall's foot (half of it is hidden in the wall).
+      const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, "rgba(255,140,50,0.75)");
+      grad.addColorStop(0.45, "rgba(255,90,20,0.28)");
+      grad.addColorStop(1, "rgba(255,60,0,0)");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 64);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    })());
+    const spill = own(new THREE.MeshBasicMaterial({ map: spillTexture, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const iron = own(new THREE.MeshStandardMaterial({ color: 0x1d1a18, metalness: 0.7, roughness: 0.55 }));
+    // The alcove's inside, lit by the fire in it: warm, a little emissive.
+    const hotIron = own(new THREE.MeshStandardMaterial({ color: 0x3a2418, metalness: 0.5, roughness: 0.6, emissive: 0xff5a1a, emissiveIntensity: 0.35 }));
+    const plane = own(new THREE.PlaneGeometry(1, 1));
+    const flat = own(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
+    const bar = own(new THREE.BoxGeometry(1, 1, 1));
+
+    const W = 3.0;
+    const H = 2.2;
+    const Y = 2.2;
+    // The alcove stands this far out of the wall, so from the running line
+    // you see into it, not a flat card edge-on.
+    const D = 0.85;
+    // Where they go: every 52 m on the straights, alternating walls, each
+    // turned 17 degrees toward the runner coming up the corridor.
+    const spots = [];
+    let side = 1;
+    for (let d = 34; d < total - 30; d += 52) {
+      const { node } = this.route.nodeAt(d);
+      if (node.type === "arc" || d - node.startDistance < 6 || node.startDistance + node.length - d < 6) continue;
+      side = -side;
+      const { position, heading } = this.route.sample(d, side * (halfWidth - 0.22), 0);
+      // Local: +z into the corridor.
+      const yaw = heading + (side > 0 ? -Math.PI / 2 : Math.PI / 2) + side * 0.3;
+      spots.push(new THREE.Matrix4().compose(position.clone(), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(1, 1, 1)));
+    }
+    const n = spots.length;
+    if (!n) return;
+
+    // Cheeks, lintel and sill (lit), then the hood, the lip and five grate bars (dark).
+    const HOT = [
+      [0.32, H + 0.9, D, -W / 2 - 0.16, Y],
+      [0.32, H + 0.9, D, W / 2 + 0.16, Y],
+      [W + 0.64, 0.45, D, 0, Y + H / 2 + 0.225],
+      [W + 0.64, 0.3, D, 0, Y - H / 2 - 0.15],
+    ];
+    const COLD = [
+      [W + 1.1, 0.25, D + 0.25, 0, Y + H / 2 + 0.6, (D + 0.25) / 2],
+      [W + 0.8, 0.12, 0.14, 0, Y + H / 2 + 0.06, 0.07],
+      ...[-2, -1, 0, 1, 2].map((i) => [0.08, H, 0.08, i * (W / 5.5), Y, D - 0.12]),
+    ];
+    const local = new THREE.Matrix4();
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const v = new THREE.Vector3();
+    const s = new THREE.Vector3();
+    const place = (mesh, i, base, x, y, z, sx, sy, sz) => {
+      local.compose(v.set(x, y, z), q.identity(), s.set(sx, sy, sz));
+      mesh.setMatrixAt(i, m.multiplyMatrices(base, local));
+    };
+    const mouths = new THREE.InstancedMesh(plane, fire, n);
+    const hot = new THREE.InstancedMesh(bar, hotIron, n * HOT.length);
+    const cold = new THREE.InstancedMesh(bar, iron, n * COLD.length);
+    const glows = new THREE.InstancedMesh(flat, spill, n);
+    spots.forEach((base, f) => {
+      place(mouths, f, base, 0, Y, 0.01, W, H, 1);
+      HOT.forEach(([w, h, depth, x, y], k) => place(hot, f * HOT.length + k, base, x, y, depth / 2, w, h, depth));
+      COLD.forEach(([w, h, depth, x, y, z], k) => place(cold, f * COLD.length + k, base, x, y, z, w, h, depth));
+      place(glows, f, base, 0, 0.03, 0, W * 2.4, 1, 8);
+    });
+    for (const mesh of [mouths, hot, cold, glows]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+    glows.renderOrder = 2;
+
+    // Embers: points drifting up and out of every mouth, looping (all in the
+    // shader). Each point knows its furnace (origin and turn).
+    const EMBERS = 28;
+    const count = n * EMBERS;
+    const seeds = new Float32Array(count * 3);
+    const origins = new Float32Array(count * 3);
+    const turns = new Float32Array(count * 2);
+    spots.forEach((base, f) => {
+      const pos = new THREE.Vector3().setFromMatrixPosition(base);
+      const quat = new THREE.Quaternion().setFromRotationMatrix(base);
+      const yaw = new THREE.Euler().setFromQuaternion(quat, "YXZ").y;
+      for (let e = 0; e < EMBERS; e += 1) {
+        const i = f * EMBERS + e;
+        for (let k = 0; k < 3; k += 1) seeds[i * 3 + k] = Math.random();
+        origins.set([pos.x, pos.y, pos.z], i * 3);
+        turns.set([Math.cos(yaw), Math.sin(yaw)], i * 2);
+      }
+    });
+    const emberGeo = own(new THREE.BufferGeometry());
+    emberGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    emberGeo.setAttribute("seed", new THREE.BufferAttribute(seeds, 3));
+    emberGeo.setAttribute("origin", new THREE.BufferAttribute(origins, 3));
+    emberGeo.setAttribute("turn", new THREE.BufferAttribute(turns, 2));
+    const embers = own(new THREE.ShaderMaterial({
+      uniforms: { uTime: this._furnaceTime },
+      vertexShader: /* glsl */ `
+        attribute vec3 seed;
+        attribute vec3 origin;
+        attribute vec2 turn;
+        uniform float uTime;
+        varying float vLife;
+        void main() {
+          float life = fract(uTime * (0.22 + seed.y * 0.25) + seed.x);
+          vLife = life;
+          // Out of the bed of the fire, up and into the corridor, wandering.
+          vec3 p = vec3((seed.x - 0.5) * 2.6 + sin(uTime * 2.0 + seed.z * 9.0) * 0.25 * life,
+                        1.3 + life * (3.2 + seed.z * 2.0),
+                        0.5 + life * (0.8 + seed.y * 1.6));
+          // The furnace's turn about y (cos, sin), then its place.
+          vec3 world = origin + vec3(turn.x * p.x + turn.y * p.z, p.y, -turn.y * p.x + turn.x * p.z);
+          vec4 mv = modelViewMatrix * vec4(world, 1.0);
+          gl_PointSize = (2.0 + seed.z * 3.0) * (1.0 - life) * 40.0 / -mv.z;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */ `
+        varying float vLife;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          float a = (1.0 - d * 2.0) * (1.0 - vLife);
+          gl_FragColor = vec4(vec3(3.0, 1.3, 0.35) * a, a);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+    const sparks = new THREE.Points(emberGeo, embers);
+    // The points are placed in the shader; the CPU-side box doesn't know them.
+    sparks.frustumCulled = false;
+    this.groups.shell.add(mouths, hot, cold, glows, sparks);
+  }
 
   /** Add a piece at a route distance, tracking animation and culling. */
   _add(group, piece, distance, lateral = 0, height = 0, { cull = true } = {}) {
@@ -844,7 +1153,7 @@ export class FoundryLevel {
         // cell ran dry before the extraction valve and could not finish.
         // Every seventh is a serum vial instead: the Skyline's power-ups.
         const serum = index % 7 === 3 && i === 0 ? FOUNDRY_SERUMS[Math.floor(index / 7) % FOUNDRY_SERUMS.length] : null;
-        const cell = this.kit.pressureCell({ points: serum ? 120 : 60, spheres: 3, serum: serum?.key ?? null, colour: serum?.colour ?? null });
+        const cell = this.kit.pressureCell({ points: serum ? 120 : 60, spheres: 3, serum: serum?.key ?? null });
         this._add(this.groups.targets, cell, at, lateral, height);
         cell.userData.glass.userData.routeDistance = at;
         this.breakables.push(cell.userData.glass);
@@ -899,6 +1208,23 @@ export class FoundryLevel {
    * returned; the level handles it only if it is one of its own switches.
    * @returns {{points:number,label:string,position:THREE.Vector3}|null}
    */
+  /**
+   * The walls and ceiling a sphere moving start -> end bounces off (the
+   * Skyline's ricochet, src/systems/spheres.js). The corridor widens round
+   * the bends, as the shell does.
+   */
+  surfaceHit(start, end, radius) {
+    this._spaceAt ??= (distance) => {
+      let widen = 1;
+      const { node } = this.route.nodeAt(distance);
+      if (node.type === "arc") {
+        widen = 1 + 0.55 * Math.sin(THREE.MathUtils.clamp((distance - node.startDistance) / node.length, 0, 1) * Math.PI);
+      }
+      return { halfWidth: this.options.halfWidth * widen - 0.3, ceiling: 7.45 };
+    };
+    return routeSurfaceHit(this.route, start, end, radius, this._spaceAt);
+  }
+
   breakTarget(mesh) {
     const data = mesh?.userData;
     if (!data?.alive || (data.kind !== "switch" && data.kind !== "cell")) return null;
@@ -1059,6 +1385,7 @@ export class FoundryLevel {
    * @param {{dt:number,time:number,distance:number,playerPosition?:THREE.Vector3}} args
    */
   update({ dt, time, distance, playerPosition }) {
+    if (this._furnaceTime) this._furnaceTime.value = time;
     const player = playerPosition ?? this.route.sample(distance, 0, 1.4, this._playerWorld).position;
 
     // Beat announcements.
@@ -1180,6 +1507,7 @@ export class FoundryLevel {
     });
 
     this.lights.dispose();
+    for (const x of this._dressingOwned ?? []) x.dispose();
     this.ambience.userData.dispose?.();
     this.kit.dispose();
     this.root.parent?.remove(this.root);

@@ -14,7 +14,15 @@ body.story-cutscene .foundry-ui,
 body.story-cutscene .cw-ui,
 body.story-cutscene .elevator-ui,
 body.story-cutscene .reticle,
-body.story-cutscene .message { opacity: 0 !important; transition: opacity .4s; }
+body.story-cutscene .message,
+/* The ending (the cabin, the reveal, the credits): nothing of the fight. */
+body.finale-film .hud,
+body.finale-film .meltdown-ui,
+body.finale-film .foundry-ui,
+body.finale-film .cw-ui,
+body.finale-film .reticle,
+body.finale-film .message,
+body.finale-film .topbar { opacity: 0 !important; transition: none !important; }
 
 /* Blur and darkness over the whole frame (the anaesthetic, a hit). */
 .story-blur { position: absolute; inset: 0; backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
@@ -91,7 +99,7 @@ body.story-cutscene .message { opacity: 0 !important; transition: opacity .4s; }
 /* End credits: a centred column scrolling up over black. */
 .story-credits { position: absolute; inset: 0; overflow: hidden; opacity: 0; transition: opacity .8s; }
 .story-credits.show { opacity: 1; }
-.story-credits .roll { position: absolute; left: 50%; top: 0; width: min(86vw, 760px); margin-left: calc(min(86vw, 760px) / -2); text-align: center; color: #e8eef2; will-change: transform; }
+.story-credits .roll { position: absolute; left: 50%; top: 0; width: min(86vw, 760px); margin-left: calc(min(86vw, 760px) / -2); text-align: center; color: #e8eef2; text-shadow: 0 1px 3px #000, 0 0 18px rgba(0,0,0,.9); will-change: transform; }
 .story-credits h2 { margin: 2.4em 0 .4em; color: #ffb547; font-size: 13px; font-weight: 800; letter-spacing: .32em; }
 .story-credits h1 { margin: 0 0 .2em; font-size: clamp(32px, 5vw, 60px); font-weight: 900; letter-spacing: .14em; }
 .story-credits p { margin: .25em 0; font-size: 15px; line-height: 1.5; }
