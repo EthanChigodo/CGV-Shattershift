@@ -1355,10 +1355,23 @@ export class CausewayLevel {
         this.events.emit("crushed", {});
       }
     }
-    if (this.lift && !this.state.lift.entered && distance >= ROUTE.lift - 0.4) {
+    if (this.lift && !this.state.lift.entered && this.isPlayerInsideLift(this._player)) {
       this.state.lift.entered = true;
       this.events.emit("lift-enter", {});
     }
+  }
+
+  /** The finale lift's actual cabin volume, excluding its landing and shaft. */
+  isPlayerInsideLift(point) {
+    if (!this.lift?.root || !point) return false;
+    this.lift.root.updateMatrixWorld(true);
+    this._v2.copy(point);
+    this.lift.root.worldToLocal(this._v2);
+    const radial = Math.hypot(this._v2.x, this._v2.z);
+    return radial <= 4.15
+      && this._v2.z <= 4.05
+      && this._v2.y >= -0.35
+      && this._v2.y <= 5.65;
   }
 
   /**
