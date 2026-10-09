@@ -10,6 +10,7 @@ export const LEVEL1_SFX_VOLUME = Object.freeze({
   gameOver: 0.44,
   glassStep: 0.12,
   elevator: 0.36,
+  wind: 0.3,
   throw: 0.26,
   pickup: 0.28,
   wall: 0.32,
@@ -33,6 +34,7 @@ const ASSETS = Object.freeze({
   gameOver: new URL("../../assets/audio/sound-effects/universfield-marimba-game-over-250960.mp3", import.meta.url).href,
   glassStep: new URL("../../assets/audio/sound-effects/368343__johandeecke__glass-hit-32.wav", import.meta.url).href,
   elevator: new URL("../../assets/audio/sound-effects/wind1.wav", import.meta.url).href,
+  wind: new URL("../../assets/audio/sound-effects/wind1.wav", import.meta.url).href,
   throw: new URL("../../assets/audio/sound-effects/floraphonic-swing-whoosh-9-198502.mp3", import.meta.url).href,
   pickup: new URL("../../assets/audio/sound-effects/floraphonic-arcade-ui-6-229503.mp3", import.meta.url).href,
   wall: new URL("../../assets/audio/sound-effects/freesound_community-wall-hit-1-100717.mp3", import.meta.url).href,
@@ -207,6 +209,11 @@ export class Level1Audio {
       : 0;
     this._setAmbient("fire", fireLevel * LEVEL1_SFX_VOLUME.fire, fire?.offsetX ?? 0);
     this._setAmbient("water", waterLevel * LEVEL1_SFX_VOLUME.water, water?.offsetX ?? 0);
+  }
+
+  /** Wind across the top of a tower (the Roof): 0..1. */
+  updateWind(level) {
+    this._setAmbient("wind", clamp(level) * LEVEL1_SFX_VOLUME.wind, 0);
   }
 
   updateElevator(velocity, active) {

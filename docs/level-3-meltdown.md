@@ -74,8 +74,9 @@ The ring's warp takes the power out. Through the doorway after the Experiment Ch
 - **Balls are flares.** They glow brighter in the dark, and point lights ride the two newest balls in flight and linger a moment where they land - firing down the corridor is scouting.
 - **Darkness is real, not a filter.** The level reports `darknessAt(distance)`; the ambient light, the pooled lamps, the travelling fill on the player (down to a faint cool spill so you can still see yourself), the chasing fire's glow (smothered by smoke - you see the flames behind you, but they do not light the way), environment reflections on metal (which would otherwise keep steel shining in total dark - see `createEnvironmentDimmer`), fog colour and the grading pass's vignette all follow it.
 - **Hazards:** fewer than the corridor before it but harder to read - lasers and vents announce themselves; rubble, glass and patients have to be found with the beam. Set pieces: a reinforced pane in the dark, a patient straight ahead, the mandatory duct-bridge crossing lit only by the fire under the gap, two patients stepping out together, a fallen duct at the exit.
+- **The patients stalk you here.** In the dark they come out about 40 m ahead and move with you - ahead of you at half your pace, shuffling across to stay in whatever lane you take - until the last few metres, when they commit. Shoot them down (two hits), or sidestep late (`stalk` in `index.js`, `chase` in `kit.js lurcher`).
 - **Watchers:** patients standing motionless against the walls. The first time the beam finds one they jerk their head up at you (with a stinger), then turn and walk off into the dark. Never a hazard.
-- **Audio:** the power dies with a wind-down and a relay slam, the siren chokes, the beam clicks on; emergency power brings the siren back at the stairwell.
+- **Audio:** the power dies with a wind-down and a relay slam, the beam clicks on; a stalker growls as it goes for you.
 
 ![Emergency substation](images/meltdown-substation.jpg)
 
@@ -91,7 +92,7 @@ Every obstacle is placed as a **pattern** that forces a decision (a single hazar
 | Falling ceiling chunk | Dodge, then jump the rubble | Red landing ring telegraphs it |
 | Fallen air duct | **Stops you** - mash Space x6 | Every second pushing, the fire gains |
 | Floor gap, fire burning up through it | Jump | |
-| Mandatory gap + fallen-duct bridge | Take the duct's lane | |
+| Mandatory gap + fallen-duct bridge | Take the duct's lane: jump up onto it and run along the top (it's solid - run into it and you scramble up, a hit) | |
 | Pendulum weight | Lane timing | |
 | Security laser grid - low / high / sweeping | Jump / slide / time it | |
 | Erupting fire vents | Lane or timing | Grates glow before each burst |
@@ -142,6 +143,7 @@ Only balls and vitality are persistent on screen. Heat shows on the launcher its
 
 - **Grading pass** (`post.js`, runs last): heat haze rippling up from the bottom of the screen as the fire closes in, a chromatic split on a hit, a vignette that closes in with danger and in the dark, per-frame film grain (which also breaks up banding in the smoky near-black).
 - **Wet floors:** a puddle roughness map (gloss where the sprinklers and burst pipes left water) lets the fire, alarms and beam reflect in the floor.
+- **Lab identity:** the observation windows along the corridors look into lit labs - a tiled room with shelves of reagents, a whiteboard of working, a fume hood and a bench, its own walls and a fluorescent strip (`kit.js` `labRoomTexture`).
 - Bloom at half resolution with a high threshold; a low-strength environment map so metal reads; danger pushes fog and ambience toward red; pixel ratio capped at 1; lights pooled at a fixed count; no transmissive materials.
 
 ![Experiment chamber](images/meltdown-experiment.jpg)
@@ -156,7 +158,7 @@ The lift doors close, the screen goes black, the corridor is hidden, the roof co
 
 ### Setup
 
-A helipad rooftop at night (`src/levels/meltdown/roof.js`), 32 x 32 m. Parapets north and south; the **east and west parapets have collapsed** - a painted warning line, rubble on the lip, and fire climbing the facade below, flames licking over the edge. Cover: four AC units, a water tank, vents, the lift housing you came out of, and the machine room. Three ball sacks. Around you, the city is lit below in the smoke, under a sky shader (orange at the horizon from the fires, drifting smoke, a few stars).
+A helipad rooftop at night (`src/levels/meltdown/roof.js`), 32 x 32 m. Parapets north and south; the **east and west parapets have collapsed** - a painted warning line, rubble on the lip, and fire climbing the facade below, flames licking over the edge. Cover: four AC units (weathered, louvred housings), a water tank, vents, the lift housing you came out of, and the machine room. Three ball sacks. Around you, the city (`city.js`) is lit below in the smoke - with a ring of neighbouring towers 45-85 m away that come up to about roof height, so it stands round you - under a sky shader (orange at the horizon from the fires, drifting smoke, a few stars).
 
 ### Enemies
 
@@ -164,6 +166,8 @@ Three waves, each a **scientist** who lets **patients** out of the roof hatches.
 
 - **Scientists** (the Radioman and Rust models, each with a supplied gadget in hand - brass for one, the coil rifle for the other): keep 9-13 m away on a ring around you, off the ledges. Telegraph (the gadget glows for 0.85 s), then fire a slow orb (11 m/s) aimed a little ahead of you - standing still is how you get hit. 3 hits to put down; a hit spoils a shot being lined up.
 - **Patients** (melee rushers): stalk you, and when they have a clear line inside 12 m they **wind up** (crouch, scream, arms thrown back - 0.62 s) and **charge** in a straight line at 10 m/s, direction locked at the end of the wind-up. Connect: -14 and knockback. Miss into cover or a parapet: stunned for 1.5 s - shoot them now. **Miss near an open ledge: they go straight over it**, a kill that costs no balls. 2 hits to put down.
+- **Climbers:** mid-wave (about 9 s into the first wave, twice in the second, once in the third), a patient hauls itself up the outside of the tower and over an open ledge near you, with a toast saying which side ("OVER THE LEDGE // WEST SIDE"). The fight is not only at the hatches.
+- **Thermal sight** (a serum) shows every patient as heat: a white-hot body brightest at its silhouette, through the dark and the smoke (`kit.js` `heatSignature`, one shared uniform).
 - All animation is procedural on the models' real skeletons (`HumanoidRig`, §6).
 
 ### Chaos
@@ -199,17 +203,16 @@ Cutscenes are letterboxed and scripted: the level returns where the camera is an
 
 ## 5. Audio (as built)
 
-Everything is synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`) - no sample files, nothing to credit, and every bed reacts to game state.
-
-**Team decision pending:** the rest of the game has no sound (audio is another member's workstream). Level 3 keeps its own in the integrated game; `MELTDOWN_AUDIO = false` in `main.js` silences it (the game runs a no-op stand-in instead).
+The Labs' own cues are synthesized live with the Web Audio API (`src/audio/meltdown-audio.js`), every bed reacting to game state; on top of them play the game's recorded sounds (`src/audio/level1-audio.js`, the Skyline's): the fire, glass, impacts, throws, and on the roof the wind. There is no siren - the building sounds like the Skyline's: the fire, the glass, and the structure giving way somewhere above. `MELTDOWN_AUDIO = false` in `main.js` silences the synthesized cues.
 
 | Cue | Behaviour |
 | --- | --- |
-| Building siren | Two detuned saws swept by a slow LFO; louder with danger; chokes in the blackout, returns with emergency power |
-| Smoke detectors, fire roar, crackle, heartbeat | As before: swell with danger and the fire front's distance |
+| Fire | The recorded fire (the Skyline's), louder as the fire front closes; the synthesized roar and crackle only play standalone (no recorded sounds) |
+| Distant collapse | Every 12-24 s of the run: a deep boom, a rumble through the floor, a steel beam groaning - and the camera shakes |
+| Smoke detectors, heartbeat | Chirps somewhere down the corridor; the heartbeat swells at low vitality |
 | Launcher shot, glass crack/shatter, crash, clang, stumble, pickup, power-up, overheat, duct push, warp | One-shots |
 | Power failure / power up / beam on | Wind-down and relay slam; spin-up; a click and a faint high whine |
-| Patients | A rising moan as one steps out, a thud per ball, a body hitting the floor, a growl before a charge, a scream over the edge |
+| Patients | A growl (a gritty, rising voice through two throat formants, with a rattle and breath) as one lunges out at you - and as one hits you - a thud per ball, a body hitting the floor, a growl before a charge on the roof, a scream over the edge |
 | Stinger | When the beam finds someone standing in the dark |
 | Rotor | Filtered noise chopped at blade rate plus turbine whine, swelling as the helicopter nears |
 | Gadget zap, dodge whoosh | One-shots |

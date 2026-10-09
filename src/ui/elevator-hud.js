@@ -6,7 +6,7 @@
  * to the lift, the brake clamps still to lock (with the seconds left), and
  * the frame and label of the diagnostic monitor.
  *
- *   const hud = new ElevatorHud({ title: "SECTOR 02 -> 03" });
+ *   const hud = new ElevatorHud({ title: "SECTOR 01 -> 02" });
  *   hud.show();
  *   hud.setFloor(141, 12.5);
  *   hud.alert("GRAVITY FAULT", "danger");
@@ -35,7 +35,7 @@ export class ElevatorHud {
    * @param {boolean} [o.panel]  the floor counter panel (off for cutscenes,
    *   whose floor display is in the cabin itself)
    */
-  constructor({ container = document.body, eyebrow = "GRAVITY LIFT", title = "SECTOR 02 → 03", panel: showPanel = true } = {}) {
+  constructor({ container = document.body, eyebrow = "GRAVITY LIFT", title = "SECTOR 01 → 02", panel: showPanel = true } = {}) {
     ensureStylesheet();
     this.root = element("section", "elevator-ui");
     this.root.setAttribute("aria-label", "Lift status");

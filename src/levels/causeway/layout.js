@@ -32,7 +32,7 @@ export const ROUTE = {
   gate: 768,
   stopLine: 760,
   lift: 781,
-  chase: { start: 262, end: 528, gap: 34, speed: 8.6 },
+  chase: { start: 262, end: 528, gap: 34, speed: 9.6 },
 };
 
 /** Smoke zones: base density; each linked vent removes its share when broken. */

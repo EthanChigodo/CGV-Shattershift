@@ -140,10 +140,10 @@ Shoot the capsule or run through it. Each one is a visible transformation driven
 | **Smoke** | Authored smoke zones plus smoke from each fire. Thick smoke veils the screen, drops the fog, and drains integrity above 55% | Makes the air a resource |
 | **Vents** | A round frosted cover on the wall, mounted low (2.5 m; 3 m in the atrium) and turned ~35° toward the approaching runner, with a glowing cyan ring (the breakable colour) that pulses harder the smokier the air, a backlit "SMOKE VENT" sign, and a red status lamp. Throw any sphere at the cover: the ring and lamp turn green, the fan spins up, smoke visibly spirals into it, and that zone's smoke falls by up to 85%. Six vents: two in each beat's smoke zone | Counter to smoke; built to be found exactly when you need it |
 | **Ceiling collapse** | Red ring and dust at 44 m, falls at 21 m. Beams land as lane-blocking solids; glass panels can be shot mid-air for 400 | Telegraphed danger |
-| **Bridge collapse chase** | From 262 m the bridge falls away behind you at 8.6 m/s. Braking (S) too long lets it catch you | Gives the speed control a reason to exist |
+| **Bridge collapse chase** | From 262 m the bridge falls away behind you at 9.6 m/s. Braking (S) too long lets it catch you | Gives the speed control a reason to exist |
 | **Rotating sculptures** | Steel pole blocks the centre lane; two glass blades sweep the outer lanes | Shoot or time |
 | **Security doors** | Full-width reinforced glass. Two hits, or crash through for 24 damage | Mandatory shooting moments |
-| **Finale gate** | Locks I, II, III must break in order; wrong order is rejected. Reach the gate with them intact and you have 9 s before the atrium falls | The level's final aiming test |
+| **Finale gate** | Locks I, II, III must break in order; wrong order is rejected. Reach the gate with them intact and you have 7 s before the atrium falls | The level's final aiming test |
 
 ### Pace: from sedated to running for your life
 
@@ -152,9 +152,9 @@ Subject 07 has just been woken from a sedated pod, so the run does not start at 
 | Stretch | Pace | What the player feels |
 | --- | --- | --- |
 | Pod, 0-40 m (about 6 s) | 6.0 m/s | Heavy uneven steps, slow drifting gaze, blurred and slightly doubled vision, drained colour, slow heartbeat, sluggish lane changes. The blur and sway fade out by 40 m: "Your vision clears" |
-| Ward, 40-230 m | 6.0 → 10.2 m/s (smooth) | Sharp vision; the body is still catching up, so the pace keeps climbing and the heartbeat quickens; "Adrenaline: you can run now" at full pace |
-| Skybridge, 240-540 m | Up to 11.0 m/s | Peak pace while the bridge collapses behind (the collapse runs at 8.6 m/s, so the player always outpaces it unless they brake) |
-| Atrium, 540 m on | 10.2 m/s | Settles so the lock finale stays about aiming |
+| Ward, 40-230 m | 6.0 → 11.4 m/s (smooth) | Sharp vision; the body is still catching up, so the pace keeps climbing and the heartbeat quickens; "Adrenaline: you can run now" at full pace |
+| Skybridge, 240-540 m | Up to 12.2 m/s | Peak pace while the bridge collapses behind (the collapse runs at 9.6 m/s, so the player always outpaces it unless they brake) |
+| Atrium, 540 m on | 11.4 m/s | Settles so the lock finale stays about aiming |
 | Explosions | +up to ~1 m/s surge, fading over ~3 s | The ward detonating behind you, and the distant tower collapsing, scare the patient into running |
 
 The groggy start doubles as the tutorial: the first pane, cache and sprinkler arrive while the player still has time to think. The **eyes and the legs recover on different curves on purpose**: the first version tied the blur to the pace, so it lingered for ~30 s; playtesting asked for proper vision early. `causewayPace(distance)` in `main.js` returns `pace`, `sedation` (speed and pulse, 20-230 m) and `drowsy` (blur and sway, 4-40 m). Endless mode keeps its own ramp (base pace + 1 m/s every 300 m, cap +6).
@@ -184,7 +184,6 @@ Five collectibles that tell the story. Each is a **gold** hologram (gold so it n
 | Choose which HUD panels show | `V` or the VIEW button |
 | Hide the whole HUD | `H` |
 | Photo mode with filters and 360° export | `P` |
-| Performance overlay | `F` |
 
 ### Scoring
 
@@ -218,7 +217,7 @@ Every panel is optional (VIEW button, `V`, or Settings → Interface; `H` hides 
 | Panel | Default |
 | --- | --- |
 | Spheres and score, vitals (ECG, integrity, air), sphere type/speed/focus, intercom subtitles, hints and section titles, active serums | On |
-| Missions (they are on the start screen), minimap, performance overlay | Off |
+| Missions (they are on the start screen), minimap | Off |
 
 ---
 

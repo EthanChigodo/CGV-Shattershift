@@ -1343,7 +1343,7 @@ export class CausewayLevel {
     if (!finale.open && distance >= ROUTE.stopLine - 0.5) {
       if (!finale.sealed) {
         finale.sealed = true;
-        finale.sealedTime = 9;
+        finale.sealedTime = 7;
         this.events.emit("gate-sealed", { seconds: finale.sealedTime });
       }
       finale.sealedTime -= dt;

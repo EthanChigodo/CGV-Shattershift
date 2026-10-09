@@ -95,8 +95,8 @@ const GRAVITY = 9.8;
 const CRUISE = 13;
 const ACCEL = 6;
 
-/** Seconds to shoot the three clamps before they force-lock. */
-export const CLAMP_TIME = 10;
+/** Seconds to shoot the three clamps before they force-lock (the last timed sequence, paced 1.2x). */
+export const CLAMP_TIME = 12;
 /** Camera for the clamps, by how many are locked: 0, 1, 2, then all three. */
 const CLAMP_SHOTS = ["interior", "front", "diagnostic", "front"];
 

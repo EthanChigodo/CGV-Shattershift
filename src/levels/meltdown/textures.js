@@ -35,9 +35,9 @@ function finish(canvas, { repeat = [1, 1], srgb = false } = {}) {
 /** Sobel-filter a greyscale height canvas into a tangent-space normal map. */
 function heightToNormal(heightCanvas, strength = 2) {
   const size = heightCanvas.width;
-  const src = heightCanvas.getContext("2d").getImageData(0, 0, size, size).data;
+  const src = heightCanvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, size, size).data;
   const out = createCanvas(size);
-  const ctx = out.getContext("2d");
+  const ctx = out.getContext("2d", { willReadFrequently: true });
   const image = ctx.createImageData(size, size);
 
   const heightAt = (x, y) => {
@@ -100,7 +100,7 @@ function grain(ctx, size, amount, seed) {
 
 function tileHeight(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#8a8a86";
   ctx.fillRect(0, 0, size, size);
 
@@ -142,7 +142,7 @@ function tileHeight(size = 256) {
 
 function tileColour(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#4d5450";
   ctx.fillRect(0, 0, size, size);
 
@@ -185,7 +185,7 @@ function tileColour(size = 256) {
 
 function hazardStripeCanvas(size = 256, warm = "#e8560f", cold = "#1a0f0c") {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = cold;
   ctx.fillRect(0, 0, size, size);
   ctx.fillStyle = warm;
@@ -212,7 +212,7 @@ function hazardStripeCanvas(size = 256, warm = "#e8560f", cold = "#1a0f0c") {
 
 function fireGlowCanvas(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const gradient = ctx.createLinearGradient(0, 0, 0, size);
   gradient.addColorStop(0, "#160402");
   gradient.addColorStop(0.4, "#8c1c05");
@@ -235,7 +235,7 @@ function fireGlowCanvas(size = 256) {
 /** Soft round sprite for embers, smoke puffs, and impact sparks. */
 function softParticleCanvas(size = 64, inner = "rgba(255,255,255,0.95)") {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   gradient.addColorStop(0, inner);
   gradient.addColorStop(0.45, "rgba(255,255,255,0.22)");
@@ -261,7 +261,7 @@ export function createSignTexture(initialText = "EXIT") {
   texture.colorSpace = THREE.SRGBColorSpace;
 
   function draw(text) {
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.clearRect(0, 0, 256, 256);
     ctx.fillStyle = "#0c1410";
     ctx.fillRect(0, 0, 256, 256);
@@ -310,7 +310,7 @@ export function createSignTexture(initialText = "EXIT") {
 /** Ward: pale clinical tile with a darker wainscot band and scorch creep. */
 function clinicalTileCanvas(size = 512) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#b9c3bd";
   ctx.fillRect(0, 0, size, size);
   const random = seededRandom(7331);
@@ -345,7 +345,7 @@ function clinicalTileCanvas(size = 512) {
 /** Containment: riveted steel panels with warning chevrons at the base. */
 function steelPanelCanvas(size = 512) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#3b4246";
   ctx.fillRect(0, 0, size, size);
   const random = seededRandom(90121);
@@ -406,7 +406,7 @@ function steelPanelCanvas(size = 512) {
 /** Stairwell: poured concrete with form-tie holes, water stains, and cracks. */
 function concreteCanvas(size = 512) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#6d6a64";
   ctx.fillRect(0, 0, size, size);
   const random = seededRandom(60617);
@@ -466,7 +466,7 @@ function concreteCanvas(size = 512) {
 /** Floor: large scuffed vinyl/concrete tiles with a painted evac line. */
 function labFloorCanvas(size = 512) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#3d3f3c";
   ctx.fillRect(0, 0, size, size);
   const random = seededRandom(24593);
@@ -509,7 +509,7 @@ function labFloorCanvas(size = 512) {
 /** A wall console's screen: readouts, a waveform, and a status grid. */
 function consoleScreenCanvas(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#040a06";
   ctx.fillRect(0, 0, size, size);
 
@@ -545,7 +545,7 @@ function consoleScreenCanvas(size = 256) {
 /** A web of cracks over glass - used on tanks and observation windows. */
 function crackOverlayCanvas(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.clearRect(0, 0, size, size);
 
   const random = seededRandom(3126986123);
@@ -579,7 +579,7 @@ function crackOverlayCanvas(size = 256) {
  */
 function puddleCanvas(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#b4b4b4";
   ctx.fillRect(0, 0, size, size);
   const random = seededRandom(771);

@@ -120,6 +120,7 @@ export class EndingDirector {
 
   _credits() {
     this.stage = "credits";
+    this.creditsT = 0;
     const ui = this.layer.ui;
     ui.title(null);
     this.layer.play(creditsScene(ui, creditsHTML()), {
@@ -138,12 +139,14 @@ export class EndingDirector {
   /** Every frame of the finale: the flight, the pilot, the helicopter outside. */
   update(dt, time) {
     this.t += dt;
+    if (this.stage === "credits") this._creditsShot(dt);
     const cabin = this.cabin;
     // Pulling away from the tower, slowly (the view out of the door is the
     // point), banking a little, riding the air.
     cabin.root.position.copy(START).addScaledVector(VELOCITY, this.t * 0.22);
     cabin.root.position.y += Math.sin(time * 1.3) * 0.12;
     cabin.root.rotation.set(-0.06 + Math.sin(time * 0.9) * 0.025, -0.3, 0.05 + Math.sin(time * 0.7) * 0.03);
+    cabin.update(dt, time);
     // The pilot turns round in his seat at the reveal (the seat with him).
     const vale = this.vale;
     vale.root.rotation.y = this.turn * 2.75;
@@ -164,6 +167,19 @@ export class EndingDirector {
       heli.root.rotation.set(-0.12 - Math.min(0.1, k * 0.03), -0.35, 0.08);
       heli.update(dt, { rotor: 1, light: 1 });
     }
+  }
+
+  /**
+   * Behind the credits: the burning tower in the city at night, the camera
+   * circling it slowly from far out and above (the story layer keeps the
+   * frame dark, so it is a backdrop, not a shot).
+   */
+  _creditsShot(dt) {
+    this.creditsT += dt;
+    const camera = this.game.camera;
+    const a = 2.2 + this.creditsT * 0.035;
+    camera.position.set(Math.cos(a) * 150, 70 - this.creditsT * 0.4, Math.sin(a) * 150);
+    camera.lookAt(0, -10, 0);
   }
 
   dispose() {

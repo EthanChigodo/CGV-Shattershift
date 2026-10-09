@@ -21,6 +21,8 @@
  *   banner.update(arsenal.list(), { shieldCharges });
  */
 
+import { serumPicture } from "./menus.js";
+
 const SEEN_KEY = "fractureRun.serumsSeen";
 
 /** What the player can do with each serum, in a few words. */
@@ -69,16 +71,27 @@ export class PowerupBanner {
     this.card.setAttribute("role", "dialog");
     this.card.setAttribute("aria-modal", "true");
     this.card.hidden = true;
+    // A holographic readout: the capsule itself on the left, turning in a
+    // ring of its own colour; what it does on the right.
     const box = el("div", "pu-card-box", this.card);
-    el("p", "pu-card-eyebrow", box).textContent = "NEW SERUM // GAME PAUSED";
-    this.cardName = el("h2", "pu-card-name", box);
-    this.cardText = el("p", "pu-card-text", box);
-    this.cardAction = el("p", "pu-card-action", box);
-    this.cardTime = el("p", "pu-card-time", box);
-    this.cardButton = el("button", "pu-card-button", box);
+    for (const corner of ["tl", "tr", "bl", "br"]) el("i", `pu-corner ${corner}`, box);
+    const art = el("div", "pu-card-art", box);
+    el("i", "pu-card-halo", art);
+    el("i", "pu-card-ring", art);
+    this.cardArt = el("img", "pu-card-img", art);
+    this.cardArt.alt = "";
+    const info = el("div", "pu-card-info", box);
+    el("p", "pu-card-eyebrow", info).innerHTML = "<i class=\"pu-dot\"></i>NEW SERUM ACQUIRED <span>// TIME HELD</span>";
+    this.cardName = el("h2", "pu-card-name", info);
+    this.cardText = el("p", "pu-card-text", info);
+    this.cardTime = el("div", "pu-card-stats", info);
+    const act = el("div", "pu-card-action", info);
+    el("small", null, act).textContent = "WHAT TO DO";
+    this.cardAction = el("span", null, act);
+    this.cardButton = el("button", "pu-card-button", info);
     this.cardButton.type = "button";
-    this.cardButton.textContent = "GOT IT";
-    el("p", "pu-card-keys", box).innerHTML = "<kbd>Click</kbd> <kbd>Space</kbd> or <kbd>Enter</kbd> to carry on";
+    this.cardButton.innerHTML = "<span>GOT IT</span><i>&#9654;</i>";
+    el("p", "pu-card-keys", info).innerHTML = "<kbd>Click</kbd> <kbd>Space</kbd> or <kbd>Enter</kbd> to carry on";
     this.open = false;
   }
 
@@ -109,9 +122,17 @@ export class PowerupBanner {
     this.cardName.textContent = def.name;
     this.cardText.textContent = def.text;
     this.cardAction.textContent = SERUM_ACTIONS[def.key] ?? "";
-    this.cardTime.textContent = def.charges
-      ? `Lasts ${def.duration} s, or ${def.charges} hits`
-      : `Lasts ${def.duration} s - watch the timer at the top of the screen`;
+    const stat = (label, value) => `<div><small>${label}</small><b>${value}</b></div>`;
+    this.cardTime.innerHTML = stat("LASTS", `${def.duration} s`) +
+      (def.charges ? stat("OR", `${def.charges} hits`) : "") +
+      stat("TIMER", "Top of screen");
+    const picture = serumPicture(def.key);
+    this.cardArt.hidden = !picture;
+    if (picture) this.cardArt.src = picture;
+    // Replay the entrance each time.
+    this.card.classList.remove("show");
+    void this.card.offsetWidth;
+    this.card.classList.add("show");
     this.card.hidden = false;
     this.open = true;
     this.cardButton.focus({ preventScroll: true });

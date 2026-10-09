@@ -227,7 +227,7 @@ A 1024² `CubeCamera` renders the full sphere of view. A full-screen shader conv
 
 ## Demonstration script (2 minutes)
 
-1. Settings → Performance overlay on. Show draw calls and resolution scale.
+1. Browser DevTools → Rendering → FPS meter on (the in-game performance overlay was removed).
 2. First pane: point out the cyan rim (readability), grime and soot, Fresnel (look at it edge-on), refraction and colour fringes. Move the mouse: the crosshair follows it, and turns amber with a ring when aim assist locks onto a target.
 3. Shoot reinforced glass once: cracks form around the exact hit point. Shoot again: shards fracture outward from that point and bounce.
 4. Fire: walk past it to show parallax (it is a volume) and the soot rolling along the ceiling. Shoot the sprinkler bulb: the shower starts, the fire gutters out, the floor turns into a mirror; run under it for water on the lens.

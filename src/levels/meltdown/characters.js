@@ -683,6 +683,8 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uTuck;
   uniform float uHold;
   uniform float uReachUp;
+  // Arms at rest: straight down the sides, elbows unbent (lying in a bed).
+  uniform float uRest;
   uniform float uHipY;
   uniform float uKneeY;
   uniform float uShoulderX;
@@ -734,6 +736,9 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     float inward = right ? uHold * 0.12 : uHold * 0.42;
     fold = fold * (1.0 - uReachUp * 0.85) + max(0.0, swing) * 0.5;
     pitch += uReachUp * 2.75;
+    fold = mix(fold, 0.06, uRest);
+    pitch *= 1.0 - uRest;
+    inward *= 1.0 - uRest;
     // An overhand throw with the right arm (player.js throw()): the pose
     // (pitch, fold, inward) it calls for, blended in by uThrow.w.
     if (right && uThrow.w > 0.0) {
@@ -748,7 +753,7 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     turn(rigP, rigN, elbow, rotY(-side * fold * elbowW));
     vec3 shoulder = vec3(side * uShoulderX, uShoulderY, 0.0);
     // Drop the arm to the side (about Z), weighted so the shoulder seam blends.
-    turn(rigP, rigN, shoulder, rotZ(-side * uArmDrop * armW));
+    turn(rigP, rigN, shoulder, rotZ(-side * (uArmDrop + uRest * 0.18) * armW));
     // Swing / raise (about X), then bring the arm in across the body (about Y).
     turn(rigP, rigN, shoulder, rotX((-swing - pitch) * armW));
     turn(rigP, rigN, shoulder, rotY(-side * inward * armW));
@@ -806,6 +811,7 @@ export function rigPlayerMesh(mesh) {
     uTuck: { value: 0 },
     uHold: { value: 1 },
     uReachUp: { value: 0 },
+    uRest: { value: 0 },
     uHipY: { value: body.hipY },
     uKneeY: { value: body.kneeY },
     uShoulderX: { value: body.shoulderX },

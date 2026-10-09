@@ -7,6 +7,8 @@ import { PostFX } from "./src/fx/postfx.js";
 import { Minimap } from "./src/fx/minimap.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
+import { SPHERE_GEOMETRY, sphereMaterial, sphereHalo } from "./src/systems/spheres.js";
+import { buildBallPickers, buildTabs, showMoves, savedBall } from "./src/ui/menus.js";
 import { PowerupBanner } from "./src/ui/powerup-banner.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
@@ -15,9 +17,12 @@ import { loadMeltdownAssets } from "./src/levels/meltdown/assets.js";
 import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCharacter, saveCharacter } from "./src/levels/meltdown/game.js";
 import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
+import { FoundryAmbience } from "./src/audio/foundry-ambience.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 import { QuietRide } from "./src/elevators/quiet-ride.js";
 import { ShatterFX } from "./src/fx/shatter.js";
+import { SphereImpactFX } from "./src/fx/sphere-impact.js";
+import { CollectibleSet, foundSummary } from "./src/systems/collectibles.js";
 import { StoryLayer } from "./src/story/story-layer.js";
 import { Companion, loadStoryCharacter } from "./src/story/companion.js";
 import { wakeScene, walkOutScene } from "./src/story/scenes.js";
@@ -89,6 +94,19 @@ let shake = 0;
 let jumpVelocity = 0;
 let jumpHeight = 0;
 let sliding = 0;
+/** A jump pressed just before landing still happens (seconds left on it). */
+let jumpBuffer = 0;
+
+/** Jump (Space, or W / up in the Foundry - as in the Labs). */
+function pressJump() {
+  if (jumpHeight <= 0.01) jumpVelocity = 7.4;
+  else jumpBuffer = 0.16;
+}
+/** Slide (Shift, or S / down in the Foundry); in the air, slam down into it. */
+function pressSlide() {
+  sliding = 0.65;
+  if (jumpHeight > 0.05) jumpVelocity = Math.min(jumpVelocity, -12);
+}
 /**
  * Set when the player is teleported - a demo jump, or arriving in a sector that
  * lives elsewhere in world space. The chase camera eases toward its target,
@@ -109,6 +127,17 @@ let gravityLift = null;
  * pick any one environment and run it until you go down.
  */
 let runKind = "story"; // "story" | "endless"
+/** Seconds actually played this run (not paused, not in the menus): the records' clock. */
+let runClock = 0;
+/** A story run begun at Sector 01 - only those can set the story record. */
+let runFromStart = false;
+/** False once a demo key (1-6) or a debug jump has been used: no records for this run. */
+let runRecordable = false;
+/** A demo jump: the run goes on, but its time no longer counts. */
+function markDemo() {
+  runFromStart = false;
+  runRecordable = false;
+}
 let endlessEnv = null; // "foundry" | "labs" | "skyline" | "roof"
 const endlessRun = { laps: 0, distance: 0 };
 let foundrySpeedScale = 1;
@@ -153,17 +182,23 @@ try {
 
 function saveSettings() {
   try { localStorage.setItem("fractureRunSettings", JSON.stringify(settings)); } catch (error) {}
+  document.body.classList.toggle("reduced-motion", !!settings.reducedMotion);
 }
+document.body.classList.toggle("reduced-motion", !!settings.reducedMotion);
 
 // Music belongs to the application shell, not a level: Level 1 can be rebuilt
 // by Play Again while its soundtrack and playback position remain untouched.
 // Level 3's existing synthesized effects remain independent.
 const music = new MusicManager();
 const level1Audio = new Level1Audio(() => music.context);
+// The Foundry's machinery, heard (synthesized on the same context).
+const foundryAmbience = new FoundryAmbience(() => (music.context?.state === "running" ? music.context : null));
 // Level 1's GPU glass shards, for the Foundry (the Causeway has its own; the
 // Labs and the Roof make theirs in their own scene). The Foundry runs down
 // -Z at x = 0 with a floor at y = 0, 5.6 m either side.
 const shatterFX = new ShatterFX(scene, { floorHalfWidth: 5.6, env: [0x9fb4ba, 0x14110e, 0x4c5a5e] });
+// A special sphere going off: its colour pulsing out (the Skyline has its own).
+const sphereImpact = new SphereImpactFX(scene);
 music.showMenu();
 const unlockMusic = async (event) => {
   // Set the briefing intent before unlocking on the same pointer/key gesture,
@@ -218,7 +253,8 @@ const ui = {
   subtitleSizeSelect: $("#subtitleSizeSelect"),
   viewButton: $("#viewButton"), viewMenu: $("#viewMenu"), briefing: $("#briefingMissions"),
   qualitySelect: $("#qualitySelect"),
-  manual: $("#manualScreen"), previewBar: $("#previewBar"), fade: $("#fadeOverlay"),
+  qualityNote: $("#qualityNote"),
+  manual: $("#manualScreen"), chapters: $("#chaptersScreen"), fade: $("#fadeOverlay"),
   endlessButton: $("#endlessButton"), progressLine: $("#progressLine"), endless: $("#endlessScreen"),
 };
 
@@ -361,7 +397,7 @@ async function loadPlayerBody(name = savedCharacter()) {
  * 3 the Skyline and the Roof.
  */
 function storyPosition() {
-  return state === "intro" || state === "preview" ? 0 : sectorNumber();
+  return state === "intro" ? 0 : sectorNumber();
 }
 
 function updatePlayerBody(dt) {
@@ -392,13 +428,26 @@ function sectorNumber(level = currentLevel) {
   return 3;
 }
 
+/** "02 / 03", "01 → 02" while riding the lift between sectors, "03+ / 03" on the roof. */
+function sectorLabel() {
+  if (state === "lift" && currentLevel === 2) return "01 → 02";
+  if (currentLevel === 3 && onRoofStage) return "03+ / 03";
+  return `0${sectorNumber()} / 03`;
+}
+
 function updateUI() {
-  ui.level.textContent = `0${sectorNumber()} / 03`;
+  ui.level.textContent = sectorLabel();
   ui.ammo.textContent = ammo; ui.health.textContent = Math.max(0, Math.round(health)); ui.score.textContent = String(Math.floor(score)).padStart(6, "0");
   ui.camera.textContent = currentLevel === 3 && meltdown ? meltdown.cameraModeName : cameraThird ? "CHASE VIEW" : "FIRST PERSON";
 }
 
-function showMessage(text) { ui.message.textContent = text; ui.message.classList.add("show"); messageTimer = 1.2; }
+function showMessage(text) {
+  ui.message.textContent = text;
+  ui.message.classList.add("show");
+  // A section title up there already: the line sits under it, not across it.
+  ui.message.classList.toggle("under-title", !!document.querySelector(".cw-title.show, .mlt-banner.show"));
+  messageTimer = 1.2;
+}
 
 /* ==================================================================== */
 /* FOUNDRY INTEGRATION - Level 2                                         */
@@ -460,6 +509,23 @@ function foundrySpeed() {
 const STORY_GENTLE_START = 0.15;
 
 /** @param {number} [variant]  0 = the authored layout; endless laps reshuffle it */
+/** The Foundry's plant logs, while the Foundry is built (story and demo runs). */
+let foundryFiles = null;
+
+/** A collectible coming up: a nudge to go and get it. */
+function collectibleNear({ label, level }) {
+  // The roof is an arena (no "ahead"): say where, not which way.
+  causewayHud.hint(level === "roof" ? `${label} up here - the gold beam. Walk into it.` : `${label} ahead - the gold beam. Run through it.`, 2.6);
+}
+
+/** A collectible found (any level): the recovered panel, a chime, some score. */
+function collectibleFound({ lines, found, total, label }) {
+  causewayHud.caseFile(lines, found, total, label);
+  level1Audio.serumCollected();
+  score += 500 * combo;
+  updateUI();
+}
+
 function buildFoundry(variant = 0) {
   if (foundry) {
     foundryHud.unbind();
@@ -482,10 +548,21 @@ function buildFoundry(variant = 0) {
   foundry.addTo(scene);
   foundry.root.visible = false;
   foundryExit = false;
-  foundryLift = new CalibrationLift({ landing: FOUNDRY_LANDING, landingWidth: 11.2 });
+  foundryLift = new CalibrationLift({ landing: FOUNDRY_LANDING, landingWidth: 11.2, core: { ceiling: 7.8 } });
   foundryLift.root.position.set(0, 0, FOUNDRY_ORIGIN_Z - foundry.route.totalLength - FOUNDRY_LANDING - LIFT_RADIUS);
   foundryLift.root.visible = false;
   scene.add(foundryLift.root);
+
+  // The plant logs (src/systems/collectibles.js): four down the route, on the
+  // outer lanes, in the story and the demo runs (not Endless).
+  foundryFiles?.dispose();
+  foundryFiles = null;
+  if (runKind !== "endless") {
+    const total = foundry.route.totalLength;
+    const spots = [[0.16, -3.4], [0.4, 3.4], [0.63, -3.4], [0.86, 3.4]];
+    foundryFiles = new CollectibleSet("foundry", { positions: spots.map(([k, x]) => foundry.route.sample(total * k, x).position.clone()) });
+    foundry.root.add(foundryFiles.root);
+  }
 
   foundryHud.bind(foundry);
   foundry.events.on("complete", () => {
@@ -507,6 +584,37 @@ function buildFoundry(variant = 0) {
 }
 
 /** Called when the player enters or leaves Level 2. */
+/**
+ * What the Foundry's metal reflects: a dark plant room, the furnace glowing
+ * orange down one side, cold work lights overhead. Without it the plating
+ * (metalness ~0.9) has nothing to reflect and reads flat black.
+ */
+let foundryEnvironment = null;
+function foundryEnvMap() {
+  if (foundryEnvironment) return foundryEnvironment;
+  const env = new THREE.Scene();
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const made = [box];
+  const add = (colour, strength, sx, sy, sz, x, y, z, side = THREE.FrontSide) => {
+    const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(colour).multiplyScalar(strength), side });
+    made.push(material);
+    const m = new THREE.Mesh(box, material);
+    m.scale.set(sx, sy, sz);
+    m.position.set(x, y, z);
+    env.add(m);
+  };
+  add(0x1a1f23, 1, 30, 14, 40, 0, 4, 0, THREE.BackSide);   // the shell
+  add(0xff6a1e, 2.4, 0.4, 3, 14, -9, 1, -4);                 // the furnace's glow
+  add(0xffa040, 1.2, 0.4, 1, 10, 9, 0.5, 6);                 // a heat vent
+  for (const z of [-12, -4, 4, 12]) add(0xd6ecff, 3.5, 6, 0.2, 0.5, 0, 9, z); // work lights
+  add(0x38515c, 1.5, 30, 0.2, 40, 0, -2.5, 0);               // light coming back off the floor
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  foundryEnvironment = pmrem.fromScene(env, 0.04).texture;
+  pmrem.dispose();
+  for (const x of made) x.dispose();
+  return foundryEnvironment;
+}
+
 function setFoundryActive(active) {
   if (!foundry) return;
   foundry.root.visible = active;
@@ -522,8 +630,12 @@ function setFoundryActive(active) {
     scene.fog.density = 0.0115;
     scene.fog.color.set(0x141d23);
     scene.background.set(0x121a20);
+    scene.environment = foundryEnvMap();
+    foundryAmbience.start();
   } else {
     foundryHud.hide();
+    scene.environment = null;
+    foundryAmbience.stop();
     sun.intensity = 2.5;
     hemi.intensity = 1.8;
     scene.fog.density = 0.032;
@@ -552,10 +664,18 @@ function updateFoundry(dt, time) {
 
   updateFoundryBox();
   foundry.update({ dt, time, distance, playerPosition: foundryCentre });
+  // (Audio may only have been unlocked since the Foundry came up.)
+  if (!foundryAmbience.running && foundry.root.visible) foundryAmbience.start();
 
   if (state !== "playing" || paused) return;
 
   const { hits, grazes } = foundry.probe(foundryBox, distance);
+
+  foundryFiles?.update(dt, time, foundryCentre, collectibleFound, collectibleNear);
+  // Running into a serum capsule injects it, as in the Skyline.
+  for (const target of foundry.breakables) {
+    if (target.userData.serum && target.userData.alive && target.getWorldPosition(_sv).distanceTo(foundryCentre) < 1.5) shatter(target, { body: true });
+  }
 
   for (const mesh of grazes) {
     if (foundryGrazed.has(mesh)) continue;
@@ -604,7 +724,14 @@ function updateFoundry(dt, time) {
  * src/levels/causeway/ and follows the same contract as the Foundry.
  */
 const CAUSEWAY_ORIGIN_Z = 4000;
-const CAUSEWAY_SPEED = { base: 10.2, sprint: 14.6, brake: 5.2 };
+/**
+ * The Skyline comes after the Labs, so it's the hardest of the three: a
+ * quicker pace, hits that hurt more, fire and smoke that burn faster - and,
+ * in the level itself, a quicker collapse behind you (layout.js) and less
+ * time at the sealed gate (causeway/index.js).
+ */
+const SKYLINE_HARD = Object.freeze({ damage: 1.3, burn: 1.35, smoke: 1.4 });
+const CAUSEWAY_SPEED = { base: 11.4, sprint: 15.8, brake: 5.2 };
 
 /**
  * Level 1 pace. Subject 07 has just been woken from a sedated pod, so the run
@@ -639,14 +766,19 @@ const keysDown = new Set();
 
 const causewayHud = new CausewayHud();
 const arsenal = new Arsenal();
-// Serums in front of the player: explained (paused) the first time each is
-// picked up, then a badge at the top centre while it lasts - every level.
+// The sphere picked in the main menu (or the pause menu) is the one a run starts with.
+arsenal.prefer(savedBall());
+// Serums in front of the player: the first time each is picked up the
+// game pauses on a card explaining it (PowerupBanner); after that the
+// HUD's serum banner, chips and screen looks (serum-fx.js) carry it.
 const powerups = new PowerupBanner();
 let pendingBurst = null;
 arsenal.onActivate = (type) => {
   // The first pickup pauses on its card; the burst plays as the game resumes.
   if (powerups.needsIntro(type) && state === "playing" && !paused) {
     pendingBurst = SERUMS[type]?.colour;
+    // The card has explained it: no second banner for this one.
+    causewayHud.serumFx.quiet(type);
     openPowerupIntro(type);
   } else if (SERUMS[type]) powerups.burst(SERUMS[type].colour);
 };
@@ -664,7 +796,7 @@ function resetRun() {
     speed: CAUSEWAY_SPEED.base, slow: 0, invulnerable: 0, focus: 1, focusing: false,
     timeScale: 1, hitStop: 0, recharge: 0, damage: 0, heat: 0, flash: 0,
     shots: 0, hits: 0, nearMisses: 0, fireDamage: 0, time: 0, finished: false,
-    grazed: new Map(), stepPhase: 0, lean: 0, preview: 0, fadeOut: 0, liftFrom: new THREE.Vector3(),
+    grazed: new Map(), stepPhase: 0, lean: 0, fadeOut: 0, liftFrom: new THREE.Vector3(),
     missionTimer: 0, ripple: 0, chaseWarned: false,
     rumble: null, heartPhase: 0, lens: 0,
     surge: 0, sedation: 1, drowsy: 1, awakeHinted: false, clearHinted: false,
@@ -788,7 +920,7 @@ function missionStats() {
 }
 
 function damage(amount, label) {
-  health -= amount;
+  health -= amount * (currentLevel === 1 ? SKYLINE_HARD.damage : 1);
   combo = 1; comboTimer = 0;
   run.damage = 1;
   run.slow = 0.6;
@@ -812,8 +944,7 @@ function activateSerum(type) {
   const def = SERUMS[type];
   if (!def) return;
   arsenal.activate(type);
-  causewayHud.title("Serum injected", def.name, 2.2);
-  causewayHud.hint(def.text, 3);
+  // The banner across the top names it (src/ui/serum-fx.js).
   run.flash = Math.max(run.flash, 0.25);
 }
 
@@ -901,13 +1032,13 @@ function updateCauseway(dt, time) {
   const exposure = causeway.fireExposure(foundryBox);
   run.heat += ((exposure > 0 ? 1 : 0) - run.heat) * Math.min(1, dt * 5);
   if (exposure > 0 && !arsenal.isActive("shield")) {
-    const burn = 18 * exposure * dt;
+    const burn = 18 * SKYLINE_HARD.burn * exposure * dt;
     health -= burn;
     run.fireDamage += burn;
     combo = 1;
   }
   const smoke = causeway.state.smoke;
-  if (smoke > 0.55) health -= (smoke - 0.55) * 10 * dt;
+  if (smoke > 0.55) health -= (smoke - 0.55) * 10 * SKYLINE_HARD.smoke * dt;
   if (health <= 0) { updateUI(); endRun(false, exposure > 0 ? "fire" : "smoke"); return; }
   level1Audio.updateEnvironment(causeway.audioEnvironment(_playerPos));
   level1Audio.updateBrokenGlass(_playerPos, run.speed > 1 && jumpHeight < 0.12);
@@ -1216,49 +1347,18 @@ function updateUnifiedHud(dt) {
   }
 }
 
-/** Level preview: a guided flythrough with world-attached labels. */
-function startPreview() {
-  resetStats("story");
-  state = "preview";
-  run.preview = 0;
-  ui.start.classList.remove("active");
-  ui.manual.classList.remove("active");
-  ui.previewBar.hidden = false;
-  document.body.classList.add("cw-preview");
-  causewayHud.show();
-}
-
-function endPreview() {
-  causewayHud.clearLabels();
-  causewayHud.hide();
-  ui.previewBar.hidden = true;
-  document.body.classList.remove("cw-preview");
-  resetStats("story");
-  state = "intro";
-  ui.start.classList.add("active");
-}
-
-function updatePreview(dt, time) {
-  run.preview += dt;
-  const d = causeway.previewCamera(run.preview, camera);
-  causeway.update({ dt, time, distance: d, playing: false });
-  scene.fog.color.copy(causeway.fogColor);
-  scene.fog.density = causeway.fogDensity;
-  causewayHud.labels(causeway.landmarks(d), camera);
-  if (d >= CAUSEWAY_ROUTE.length - 31) endPreview();
-}
 
 function refreshMenuProgress() {
   const p = missions.progress;
-  ui.endlessButton.disabled = false;
-  ui.endlessButton.title = "Pick any environment and run it until you go down";
   const bits = [];
-  if (p.best.story) bits.push(`Best run ${String(p.best.story).padStart(6, "0")}`);
+  if (runTimes.story) bits.push(`Best run ${hms(runTimes.story)}${p.best.story ? ` (${String(p.best.story).padStart(6, "0")})` : ""}`);
+  else if (p.best.story) bits.push(`Best score ${String(p.best.story).padStart(6, "0")}`);
   for (const env of ["foundry", "labs", "skyline", "roof"]) {
-    const best = env === "skyline" ? Math.max(endlessBest.skyline ?? 0, p.bestDistance ?? 0) : endlessBest[env];
-    if (best) bits.push(`${ENDLESS_NAMES[env]} ${best} ${endlessUnit(env)}`);
+    const best = endlessRecordText(env);
+    if (best) bits.push(`${ENDLESS_NAMES[env]} ${best}`);
   }
   bits.push(`Case files ${p.files.length}/5`);
+  bits.push(...foundSummary());
   bits.push(`Missions ${p.completed.length}/13`);
   ui.progressLine.textContent = bits.join("   ");
   if (ui.briefing) ui.briefing.innerHTML = missions.active.map((m) => `<li class="${p.completed.includes(m.def.id) ? "done" : ""}">${m.def.text}</li>`).join("");
@@ -1319,6 +1419,10 @@ function getMeltdown() {
     pendingSkyline = true;
   });
   meltdown.events.on("lap", ({ laps }) => showMessage(`LAP ${laps + 1} // NEW LAYOUT`));
+  meltdown.events.on("collectible", collectibleFound);
+  meltdown.events.on("collectible-near", collectibleNear);
+  // The ending (the helicopter, then the credits) plays over the main theme.
+  meltdown.events.on("phase", ({ phase }) => { if (phase === "finale") music.playTheme(); });
   return meltdown;
 }
 
@@ -1471,21 +1575,27 @@ function finishMeltdown(escaped, result) {
   ammo = s.balls;
   updateUI();
   if (runKind === "endless") { endRun(false, null, endlessResult()); return; }
+  // The whole run, timed: from the Foundry to the helicopter.
+  const timed = escaped && runKind === "story" && runFromStart;
+  const record = timed ? recordStoryTime(runClock) : 0;
+  const time = timed ? `Run time ${hms(runClock)}${record === runClock ? " // NEW RECORD" : `   Best ${hms(record)}`}   ` : "";
   endRun(escaped, null, {
-    eyebrow: escaped ? "RUN COMPLETE // ALL THREE SECTORS" : "RUN TERMINATED // SECTOR 03",
+    eyebrow: escaped ? "RUN COMPLETE // OUT OF ASCENSION TOWER" : `RUN TERMINATED // ${onRoofStage || meltdown?.roof ? "THE ROOF" : "SECTOR 02 // THE LABS"}`,
     title: result.title,
     text: MELTDOWN_ENDINGS[result.title],
-    stats: `${Math.round(s.time)} s on the roof   ${s.breaks} broken   ${s.downs} downed   ${s.falls} over the edge   ${s.hits} hits taken`,
+    stats: `${time}${hms(s.time)} on the roof   ${s.breaks} broken   ${s.downs} downed   ${s.falls} over the edge   ${s.hits} hits taken`,
   });
+  refreshMenuProgress();
 }
 
 /* ==================================================================== */
 /* Projectiles (all levels)                                             */
 /* ==================================================================== */
 
-const projectileGeometry = new THREE.SphereGeometry(1, 16, 12);
-const projectileMaterials = Object.fromEntries(Object.values(BALLS).map((b) => [b.key, new THREE.MeshBasicMaterial({ color: new THREE.Color(...b.glow) })]));
-const legacyProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffcf9a });
+// One sphere for every level (src/systems/spheres.js): the Labs draws the same orbs.
+const projectileGeometry = SPHERE_GEOMETRY;
+const projectileMaterials = Object.fromEntries(Object.values(BALLS).map((b) => [b.key, sphereMaterial(b.key)]));
+const legacyProjectileMaterial = sphereMaterial("glass");
 const _aim = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _segment = new THREE.Vector3();
@@ -1712,6 +1822,9 @@ function launchSpheres(origin, target, point, ball, count, physical) {
     const velocity = dir.multiplyScalar(speed).addScaledVector(_up, 0.5 * gravity * t);
     const mesh = new THREE.Mesh(projectileGeometry, ball ? projectileMaterials[ball.key] : legacyProjectileMaterial);
     mesh.scale.setScalar(ball?.radius ?? 0.18);
+    const halo = sphereHalo(ball?.key ?? "glass");
+    halo.layers.set(LAYERS.FX);
+    mesh.add(halo);
     mesh.position.copy(origin);
     mesh.layers.set(LAYERS.FX);
     scene.add(mesh);
@@ -1744,6 +1857,7 @@ function detonate(p, point) {
  */
 function detonateFoundry(p, point) {
   const def = BALLS[p.ball];
+  sphereImpact.splash(point, p.ball, def.splash);
   shatterFX.chunks(point, 26, { tint: p.ball === "cryo" ? 0xbff4ff : 0xd9a6ff, speed: 5, radius: def.splash * 0.3, size: 0.08 });
   if (p.ball === "shock") {
     for (const target of foundry.breakables.slice()) {
@@ -1796,7 +1910,9 @@ function updateProjectiles(dt) {
       raycaster.far = length + p.mesh.scale.x;
       let hit = raycaster.intersectObjects(targets, false)[0];
       const solid = solids.length ? raycaster.intersectObjects(solids, false)[0] : null;
-      const surface = currentLevel === 1 && causeway ? causeway.corridorSurfaceHit(old, p.mesh.position, p.mesh.scale.x) : null;
+      // The corridor's walls and ceiling: a clean ricochet (the Skyline's, in the Foundry too).
+      const surface = currentLevel === 1 && causeway ? causeway.corridorSurfaceHit(old, p.mesh.position, p.mesh.scale.x)
+        : currentLevel === 2 && foundry ? foundry.surfaceHit(old, p.mesh.position, p.mesh.scale.x) : null;
       raycaster.far = Infinity;
       // Near miss on a small target counts: a sphere passing within its own
       // radius plus 0.25 m of a small target's bounding sphere hits it.
@@ -1814,7 +1930,8 @@ function updateProjectiles(dt) {
         if (surface.surface === "ceiling") p.ceilingBounces += 1;
         else p.wallBounces += 1;
         level1Audio.surfaceRicochet();
-        causeway.ricochet(surface.point);
+        if (causeway && currentLevel === 1) causeway.ricochet(surface.point);
+        else shatterFX.chunks(surface.point, 8, { tint: 0xffd9a0, speed: 3, radius: 0.05, size: 0.04, life: 0.9 });
       } else if (solid) {
         if (p.ball !== "glass") { detonate(p, solid.point); p.life = 0; }
         else {
@@ -1960,6 +2077,7 @@ function demoGravityLift() {
   if (currentLevel === 1 && causeway) setCausewayActive(false);
   ammo = Math.max(ammo, 8);
   startGravityLift();
+  markDemo();
 }
 
 /** Demo key 6: straight into the quiet ride (cutscene 7), then the Skyline. */
@@ -1970,6 +2088,7 @@ function demoQuietRide() {
   runKind = "story"; endlessEnv = null;
   if (currentLevel === 1 && causeway) { setCausewayActive(false); level1Audio.cleanupLevel(); }
   startQuietRide();
+  markDemo();
 }
 
 /* ==================================================================== */
@@ -2006,6 +2125,7 @@ function resetStats(mode = causewayMode) {
   for (const p of projectiles) scene.remove(p.mesh); projectiles.length = 0;
   pendingThrows.length = 0;
   shatterFX.clear();
+  sphereImpact.clear();
   ui.end.classList.remove("active"); updateUI();
 }
 
@@ -2077,6 +2197,9 @@ function resetRunner() {
 /** Start pressed: the story, from the basement up. */
 function startCampaign() {
   storyRun = true;
+  runClock = 0;
+  runFromStart = true;
+  runRecordable = true;
   resetStats("story");
   runKind = "story"; endlessEnv = null; storyBalls = null;
   music.playRound1();
@@ -2105,7 +2228,7 @@ function beginOpening() {
   cameraThird = true;
   cutsceneShowsPlayer = false;
   ward?.dispose();
-  ward = new WardStage({ startZ: FOUNDRY_ORIGIN_Z });
+  ward = new WardStage({ startZ: FOUNDRY_ORIGIN_Z, foundry: foundry?.kit.materials ?? null });
   scene.add(ward.root);
   showOkoro(ward.okoroStart.position, ward.okoroStart.heading);
   setWardLight(1);
@@ -2580,10 +2703,11 @@ function enterFoundry() {
   // Outside the story's opening, you start with the bag already on.
   if (!storyRun || runKind !== "story") wearSphereBag(true);
   shatterFX.clear();
+  sphereImpact.clear();
   level1Audio.startLevel();
   ui.fade.style.opacity = "1";
   run.fadeOut = 1;
-  showMessage(runKind === "endless" ? "ENDLESS // THE FOUNDRY" : "SECTOR 01 // THE SHIFTING FOUNDRY");
+  // (The Foundry's own section title says where you are: no second line over it.)
   updateUI();
 }
 
@@ -2675,6 +2799,9 @@ async function enterRoof() {
 /** Endless: one environment, until you go down. */
 function startEndless(env) {
   storyRun = false;
+  runClock = 0;
+  runFromStart = false;
+  runRecordable = true;
   resetStats(env === "skyline" ? "endless" : "story");
   missions.active = [];
   runKind = "endless"; endlessEnv = env; storyBalls = null;
@@ -2765,6 +2892,53 @@ function recordEndless(env, value) {
 }
 function endlessUnit(env) { return env === "roof" ? "s" : "m"; }
 
+/* ---- Run times (records in hours, minutes and seconds) ------------------- */
+
+/** 3725 -> "1:02:05". */
+function hms(seconds) {
+  const t = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = t % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+function loadRunTimes() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("fractureRunTimes"));
+    return { story: saved?.story ?? 0, endless: saved?.endless ?? {} };
+  } catch (error) {
+    return { story: 0, endless: {} };
+  }
+}
+/** The fastest whole story run, and the longest run in each Endless level (seconds). */
+const runTimes = loadRunTimes();
+function saveRunTimes() {
+  try { localStorage.setItem("fractureRunTimes", JSON.stringify(runTimes)); } catch (error) {}
+}
+/** A finished story run: is it the fastest? Returns the record. */
+function recordStoryTime(seconds) {
+  if (!runRecordable || !runFromStart) return runTimes.story;
+  if (!runTimes.story || seconds < runTimes.story) { runTimes.story = seconds; saveRunTimes(); }
+  return runTimes.story;
+}
+/**
+ * An Endless run's record: distance and the time it took, as one pair - the
+ * best run's own time, never a time from some other run. (The Roof's record
+ * is its time.) Returns { distance, time } of the record.
+ */
+function recordEndlessRun(env, distance, seconds) {
+  if (runRecordable) {
+    const before = endlessBest[env] ?? 0;
+    const value = env === "roof" ? seconds : distance;
+    if (value > before || (value === before && !runTimes.endless[env])) {
+      recordEndless(env, value);
+      runTimes.endless[env] = seconds;
+      saveRunTimes();
+    }
+  }
+  return { distance: endlessBest[env] ?? 0, time: runTimes.endless[env] ?? (env === "roof" ? endlessBest.roof ?? 0 : 0) };
+}
+
 /** How far this endless run got, for the end screen and the records. */
 function endlessResult() {
   const env = endlessEnv;
@@ -2773,20 +2947,33 @@ function endlessResult() {
   else if (env === "labs") value = Math.floor(meltdown?.stats.endlessDistance ?? 0);
   else if (env === "roof") value = Math.floor(meltdown?.stats.roofTime ?? 0);
   else if (env === "skyline") value = Math.floor(causeway ? causewayDistance() : 0);
-  const best = recordEndless(env, value);
-  const unit = endlessUnit(env);
+  const seconds = env === "roof" ? value : runClock;
+  const best = recordEndlessRun(env, value, seconds);
   return {
     eyebrow: `ENDLESS // ${ENDLESS_NAMES[env].toUpperCase()}`,
-    title: env === "roof" ? `SURVIVED ${value} S` : `${value} M`,
-    text: `Best in ${ENDLESS_NAMES[env]}: ${best} ${unit}.${env === "foundry" || env === "labs" ? " Every lap is a new layout, and faster." : env === "roof" ? " The waves never stop coming." : ""}`,
+    title: env === "roof" ? `SURVIVED ${hms(value)}` : `${value} M IN ${hms(seconds)}`,
+    text: (env === "roof"
+      ? `Best in ${ENDLESS_NAMES[env]}: ${hms(best.time)}.`
+      : `Best in ${ENDLESS_NAMES[env]}: ${best.distance} m in ${hms(best.time)}.`) +
+      (env === "foundry" || env === "labs" ? " Every lap is a new layout, and faster." : env === "roof" ? " The waves never stop coming." : ""),
   };
+}
+
+/** The Endless record for a level: "1240 m · 0:04:12", or the Roof's "0:04:12". */
+function endlessRecordText(env) {
+  const time = runTimes.endless[env] ?? (env === "roof" ? endlessBest.roof ?? 0 : 0);
+  const distance = endlessBest[env] ?? 0;
+  if (env === "roof") return time ? hms(time) : "";
+  if (!distance) return "";
+  // The best run's distance and its own time ("in"), not two separate bests.
+  return time ? `${distance} m in ${hms(time)}` : `${distance} m`;
 }
 
 function refreshEndlessMenu() {
   for (const button of document.querySelectorAll("[data-endless]")) {
     const env = button.dataset.endless;
-    const best = endlessBest[env];
-    button.querySelector("small").textContent = best ? `Best ${best} ${endlessUnit(env)}` : "No record yet";
+    const best = endlessRecordText(env);
+    button.querySelector("small").textContent = best ? `Best ${best}` : "No record yet";
   }
 }
 
@@ -2834,7 +3021,7 @@ function shatter(target, hit = {}) {
   const cell = target.userData.kind === "cell";
   const push = hit.direction ? hit.direction.clone().normalize().multiplyScalar(cell ? 3 : 2) : null;
   shatterFX.chunks(shatterAt, cell ? 34 : 22, {
-    tint: isFoundry ? 0x9ff4f0 : crystal ? 0xffb04a : 0xffb26b,
+    tint: result.serum ? SERUMS[result.serum].colour : isFoundry ? 0x9ff4f0 : crystal ? 0xffb04a : 0xffb26b,
     speed: cell ? 4.6 : 3.6, radius: cell ? 0.7 : 0.4, size: cell ? 0.14 : 0.1, push,
   });
   level1Audio.glassBreak();
@@ -2886,7 +3073,7 @@ function endRun(won, reason = null, detail = null) {
     const s = missionStats();
     const accuracy = run.shots ? Math.round((run.hits / run.shots) * 100) : 0;
     if (causewayMode === "endless") {
-      if (runKind === "endless") recordEndless("skyline", distance);
+      if (runKind === "endless") recordEndlessRun("skyline", distance, runClock);
       ui.endTitle.textContent = `SIGNAL LOST AT ${distance} M`;
       ui.endText.textContent = `Best endless distance: ${Math.max(distance, missions.progress.bestDistance ?? 0)} m. The lab rebuilds itself differently every run.`;
     }
@@ -2916,6 +3103,7 @@ function demoStoryJump(stage) {
     if (!causeway) buildCauseway("story");
     enterSkyline();
   } else if (stage === 4) storyJumps.roof();
+  markDemo();
 }
 
 /**
@@ -2939,6 +3127,7 @@ function demoJump(stage) {
   else if (stage === 2) { setFoundryActive(false); enterMeltdown(); }
   else if (stage === 3) { setFoundryActive(false); if (!causeway) buildCauseway("story"); enterSkyline(); }
   else if (stage === 4) { setFoundryActive(false); enterRoof(); }
+  markDemo();
 }
 
 
@@ -2982,9 +3171,11 @@ function clearPostLooks() {
 }
 
 function updateGame(dt, time) {
+  if ((state === "playing" || state === "lift") && !paused) runClock += dt;
   const inCauseway = currentLevel === 1 && causeway && causeway.root.visible;
-  document.body.classList.toggle("pregame", state === "intro" || state === "launch" || state === "preview");
+  document.body.classList.toggle("pregame", state === "intro" || state === "launch");
   document.body.classList.toggle("paused", paused);
+  document.body.classList.toggle("riding-lift", state === "lift");
   document.body.classList.toggle("cw-active", !!inCauseway && (state === "playing" || state === "lift" || state === "ended"));
   // The foundry HUD is its own overlay, so it has to follow the game's menu
   // states too - otherwise it shows through the briefing and pause screens.
@@ -2997,8 +3188,8 @@ function updateGame(dt, time) {
   // on the Roof too, with their own level-specific widgets alongside.
   const unified = (currentLevel === 2 || (currentLevel === 3 && !!meltdown?.visible)) && (state === "playing" || state === "lift") && !gravityLift;
   document.body.classList.toggle("hud-unified", unified);
-  const hudWanted = (inCauseway || unified) && ((state === "playing" && !paused && !photoActive) || state === "preview");
-  if (hudWanted) causewayHud.show(); else if (state !== "preview") causewayHud.hide();
+  const hudWanted = (inCauseway || unified) && state === "playing" && !paused && !photoActive;
+  if (hudWanted) causewayHud.show(); else causewayHud.hide();
   causewayHud.update(dt);
 
   avatar.position.set(playerX, playerY + jumpHeight, runZ + .5);
@@ -3009,7 +3200,6 @@ function updateGame(dt, time) {
   body.rotation.z = Math.sin(time * 9) * .035;
   updatePlayerBody(paused ? 0 : dt);
   for (const crystal of breakables) if (crystal.userData.kind === "crystal" && crystal.userData.alive) crystal.rotation.y += dt * 1.8;
-  if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
   if (run.fadeOut > 0) { run.fadeOut = Math.max(0, run.fadeOut - dt * 1.4); ui.fade.style.opacity = run.fadeOut.toFixed(3); }
   if (!inCauseway) clearPostLooks();
   updatePolice(inCauseway ? dt : 0, time, inCauseway);
@@ -3029,7 +3219,7 @@ function updateGame(dt, time) {
     }
     return;
   }
-  if (state === "preview") { updatePreview(dt, time); return; }
+
   if (state === "launch") { updateLaunch(dt, time); return; }
   if (paused) return;
   // The story layer: cutscenes, reactions, and Okoro's talk during play.
@@ -3053,6 +3243,8 @@ function updateGame(dt, time) {
   simTime += simDt;
 
   // Level 3 runs its own world, camera and HUD (src/levels/meltdown/game.js).
+  // Messages clear on their own in every level (the Labs returns early below).
+  if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) ui.message.classList.remove("show"); }
   if (currentLevel === 3) { updateMeltdownFrame(simDt, time); updateUnifiedHud(dt); return; }
   // So does the lift ride between Levels 2 and 3 (src/elevators/).
   if (gravityLift) { updateGravityLiftFrame(dt, time); return; }
@@ -3068,7 +3260,10 @@ function updateGame(dt, time) {
     jumpVelocity -= 19 * simDt;
     jumpHeight = Math.max(0, jumpHeight + jumpVelocity * simDt);
     if (jumpHeight <= 0) jumpVelocity = 0;
-    sliding = Math.max(0, sliding - simDt);
+    jumpBuffer = Math.max(0, jumpBuffer - simDt);
+    if (jumpBuffer > 0 && jumpHeight <= 0.01) { jumpVelocity = 7.4; jumpBuffer = 0; }
+    // A slide pressed in the air starts when you land.
+    if (jumpHeight <= 0.05 || jumpVelocity > -1) sliding = Math.max(0, sliding - simDt);
 
     // Combo decays on its own; a miss or an impact resets it elsewhere.
     if (comboTimer > 0) { comboTimer = Math.max(0, comboTimer - simDt); if (comboTimer === 0) combo = 1; }
@@ -3150,6 +3345,11 @@ function updateGame(dt, time) {
     else camera.position.lerp(desired, 1 - Math.exp(-dt * 7));
     camera.lookAt(forward);
     if (shake > .001) { camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake; shake = Math.max(0, shake - dt * 2.4); }
+    // Overdrive widens the view, as in the Skyline: you see yourself go faster.
+    if (currentLevel === 2) {
+      const fov = 68 + arsenal.level("overdrive") * (settings.reducedMotion ? 3 : 9);
+      if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 4); camera.updateProjectionMatrix(); }
+    }
   }
 
   // ---- Aim feedback, projectiles, debris -------------------------------
@@ -3165,13 +3365,14 @@ function updateGame(dt, time) {
   updateProjectiles(simDt);
 
   shatterFX.update(simDt);
+  sphereImpact.update(simDt);
 
   if (causewayLive && (state === "playing" || state === "lift")) updateCausewayPresentation(dt);
 }
 
 /* ---- Rendering and performance ---------------------------------------- */
 
-const perf = { ema: 16, slowFor: 0, fastFor: 0, frames: 0, acc: 0, fps: 60, level: 0 };
+const perf = { ema: 16, slowFor: 0, fastFor: 0, frames: 0, acc: 0, fps: 60, level: 0, settle: 0, seen: "" };
 
 function updatePerformance(rawDt) {
   const ms = rawDt * 1000;
@@ -3181,7 +3382,12 @@ function updatePerformance(rawDt) {
   if (perf.acc >= 0.5) { perf.fps = Math.round(perf.frames / perf.acc); perf.frames = 0; perf.acc = 0; }
 
   // Dynamic resolution, then an automatic drop to low quality if needed.
-  if (settings.quality === "auto" && state === "playing" && currentLevel !== 3 && !paused && document.visibilityState === "visible") {
+  // A level's first seconds are always slow (shaders compiling, textures
+  // uploading): judge the machine only once it has settled.
+  const where = `${state}:${currentLevel}`;
+  if (where !== perf.seen) { perf.seen = where; perf.settle = 0; perf.slowFor = 0; }
+  perf.settle += rawDt;
+  if (settings.quality === "auto" && state === "playing" && currentLevel !== 3 && !paused && document.visibilityState === "visible" && perf.settle > 6) {
     perf.slowFor = perf.ema > 21 ? perf.slowFor + rawDt : 0;
     perf.fastFor = perf.ema < 14 ? perf.fastFor + rawDt : 0;
     // Degrade in order of how little it shows: first work nobody sees (the
@@ -3193,7 +3399,8 @@ function updatePerformance(rawDt) {
       if (perf.level === 0) { perf.level = 1; if (causeway) causeway.probe.interval = 2; }
       else if (perf.level === 1) { perf.level = 2; postfx.setLite(true); }
       else if (postfx.scale > 0.86) postfx.setScale(postfx.scale - 0.075);
-      else if (!autoLow && perf.ema > 34) { autoLow = true; applyQuality(); showMessage("GRAPHICS // AUTO LOW"); }
+      // Said in the settings, not across the middle of a run.
+      else if (!autoLow && perf.ema > 34) { autoLow = true; applyQuality(); ui.qualityNote.textContent = "Auto lowered detail to keep the frame rate up."; }
     }
     if (perf.fastFor > 4 && postfx.enabled) {
       perf.fastFor = 0;
@@ -3202,16 +3409,6 @@ function updatePerformance(rawDt) {
       else if (perf.level === 1) { perf.level = 0; if (causeway) causeway.probe.interval = causeway.quality === "low" ? 3 : 1; }
     }
   }
-
-  if (settings.hud.fps) {
-    const info = renderer.info;
-    causewayHud.perf(
-      `FPS ${perf.fps}   ${perf.ema.toFixed(1)} ms\n` +
-      `Draw calls ${info.render.calls}   Triangles ${(info.render.triangles / 1000).toFixed(1)}k\n` +
-      `Geometries ${info.memory.geometries}   Textures ${info.memory.textures}\n` +
-      `Quality ${postfx.quality}${perf.level ? ` (auto step ${perf.level})` : ""}   Resolution ${Math.round(postfx.scale * 100)}%`,
-    );
-  } else causewayHud.perf(null);
 }
 
 function renderFrame() {
@@ -3234,7 +3431,6 @@ function animate() {
   renderer.info.reset();
   // Checks that step the game themselves (__dbg.manual) stop the real clock.
   if (!manualStep) updateGame(dt, clock.elapsedTime);
-  powerups.update(state === "playing" ? arsenal.list() : [], { shieldCharges: arsenal.shieldCharges });
   renderFrame();
   updatePerformance(rawDt);
 }
@@ -3256,14 +3452,50 @@ function closeSettings() {
   settingsFrom = null;
 }
 
+/**
+ * Chapters (the main menu): start the story from any part of it, as the
+ * story reaches it - its cutscenes play again.
+ */
+function startChapter(name) {
+  ui.chapters.classList.remove("active");
+  if (name === "briefing") { startStory(); return; }
+  story.forgetSeen();
+  if (name === "foundry") { startCampaign(); return; }
+  if (name === "skyline") {
+    // From the start of the Skyline (the Calibration Lift's doors), not the blast.
+    story.markSeen("wake");
+    startCampaign();
+    runFromStart = false;
+    endStoryStage();
+    setFoundryActive(false);
+    if (!causeway) buildCauseway("story");
+    enterSkyline();
+    return;
+  }
+  storyJumps[name]?.();
+  // Begun part-way through: a good run, but not a whole one to time.
+  runFromStart = false;
+}
+
+/** Where the pause menu's moves are for. */
+function movesHere() {
+  if (currentLevel === 2) return "foundry";
+  if (currentLevel === 3) return meltdown?.phase?.startsWith("roof") ? "roof" : "labs";
+  if (currentLevel === 1 && causeway) return "skyline";
+  return null;
+}
+
 function openPause() {
   if (state !== "playing" && state !== "lift" && state !== "cutscene") return;
+  showMoves(movesHere());
+  ballPickers.show(arsenal.ball);
   paused = true;  run.focusing = false;
   story.setPaused(true);
   music.pauseDuck();
   level1Audio.setPaused(true);
+  foundryAmbience.setPaused(true);
   if (currentLevel === 3) meltdown?.setPaused(true);
-  ui.pauseLevel.textContent = `0${sectorNumber()} / 03`;
+  ui.pauseLevel.textContent = sectorLabel();
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
   ui.pauseAmmo.textContent = ammo;
   ui.pauseHealth.textContent = Math.max(0, Math.round(health));
@@ -3299,6 +3531,7 @@ function closePause() {
   story.setPaused(false);
   if (wasPaused) music.restore();
   if (wasPaused) level1Audio.setPaused(false);
+  if (wasPaused) foundryAmbience.setPaused(false);
   if (currentLevel === 3) meltdown?.setPaused(false);
 }
 
@@ -3318,7 +3551,13 @@ function togglePhoto() {
 }
 
 function quitToMenu() {
+  // Leaving an Endless run part-way still sets the records it earned.
+  if (runKind === "endless" && endlessEnv && (state === "playing" || state === "lift")) {
+    if (endlessEnv === "skyline") recordEndlessRun("skyline", causeway ? Math.max(0, Math.floor(causewayDistance())) : 0, runClock);
+    else endlessResult();
+  }
   closePause(); cancelStory();
+  document.body.classList.remove("finale-film");
   storyRun = false;
   level1Audio.cleanupLevel();
   if (photoActive) togglePhoto();
@@ -3342,6 +3581,10 @@ let prologue = null;
 
 function cancelStory() {
   storyPlaying = false;
+  // Whatever the story layer last showed (the end credits, a held black
+  // fade, a title) goes with it: the menu and the briefing start clean.
+  story.stop();
+  document.body.classList.remove("finale-film", "story-cutscene");
 }
 
 async function startStory() {
@@ -3449,6 +3692,13 @@ for (const [key, tone] of Object.entries(SKIN_TONES)) {
 }
 showSkinChoice();
 
+// The sphere you start with (the loadout card; the pause menu changes it mid-run).
+const ballPickers = buildBallPickers((key) => {
+  arsenal.prefer(key);
+  if (state === "playing") showMessage(`${BALLS[key].name.toUpperCase()} SPHERE`);
+});
+buildTabs();
+
 // A new story from the menu plays every scene again ("Run again" after a death does not).
 $("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); story.forgetSeen(); startCampaign(); });
 ui.endlessButton.addEventListener("click", () => { ui.start.classList.remove("active"); refreshEndlessMenu(); ui.endless.classList.add("active"); });
@@ -3456,11 +3706,14 @@ for (const button of document.querySelectorAll("[data-endless]")) {
   button.addEventListener("click", () => startEndless(button.dataset.endless));
 }
 $("#endlessBackButton").addEventListener("click", () => { ui.endless.classList.remove("active"); ui.start.classList.add("active"); });
-$("#previewButton").addEventListener("click", startPreview);
 $("#manualButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.manual.classList.add("active"); });
 $("#manualBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
+$("#chaptersButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.chapters.classList.add("active"); });
+$("#chaptersBackButton").addEventListener("click", () => { ui.chapters.classList.remove("active"); ui.start.classList.add("active"); });
+for (const button of document.querySelectorAll("[data-chapter]")) {
+  button.addEventListener("click", () => startChapter(button.dataset.chapter));
+}
 $("#manualTopBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
-$("#previewExitButton").addEventListener("click", endPreview);
 $("#settingsButton").addEventListener("click", () => openSettings("intro"));
 $("#settingsBackButton").addEventListener("click", closeSettings);
 $("#pauseButton").addEventListener("click", () => { paused ? closePause() : openPause(); });
@@ -3498,7 +3751,7 @@ ui.qualitySelect.addEventListener("change", (event) => {
   autoLow = false;
   saveSettings();
   applyQuality();
-  showMessage("GRAPHICS UPDATED // LEVEL DETAIL APPLIES NEXT RUN");
+  ui.qualityNote.textContent = state === "playing" || paused ? "Updated. Level detail (shadows, props) applies from the next run." : "";
 });
 $("#resetSettingsButton").addEventListener("click", () => {
   settings = { ...settingsDefaults, hud: { ...settingsDefaults.hud } };
@@ -3571,6 +3824,7 @@ addEventListener("pointerdown", (event) => {
 function cycleSphere(step) {
   if (photoActive || state !== "playing" || paused) return;
   const ball = arsenal.cycle(step);
+  ballPickers.show(ball.key);
   const verb = currentLevel === 2 ? "THROW" : "SHOT";
   showMessage(`${ball.name.toUpperCase()} SPHERE // ${ball.cost} PER ${verb}`);
   meltdown?.hud?.toast?.(`${ball.name.toUpperCase()} SPHERE`, `${ball.cost} PER SHOT`, "", 1200);
@@ -3595,8 +3849,8 @@ addEventListener("keydown", (event) => {
     if (event.repeat) return;
     level1Audio.uiClick();
     if (photoActive) togglePhoto();
-    else if (state === "preview") endPreview();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
+    else if (ui.chapters.classList.contains("active")) { ui.chapters.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.endless.classList.contains("active")) { ui.endless.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.settings.classList.contains("active")) closeSettings();
     else if (storyPlaying) finishStory();
@@ -3617,15 +3871,17 @@ addEventListener("keydown", (event) => {
   if (photoActive) return;
   if (event.code === "Space" && storyPlaying) { event.preventDefault(); finishStory(); return; }
   if (event.code === "KeyR" && state === "ended") { level1Audio.uiClick(); restartRun(); return; }
-  if (event.code === "KeyF" && !event.repeat) { settings.hud.fps = !settings.hud.fps; saveSettings(); applySettingsToControls(); }
-  if (event.code === "KeyM" && !event.repeat) { settings.hud.minimap = !settings.hud.minimap; saveSettings(); applySettingsToControls(); }
-  if (event.code === "KeyH" && !event.repeat) document.body.classList.toggle("hud-hidden");
-  if (event.code === "KeyV" && !event.repeat) ui.viewMenu.hidden = !ui.viewMenu.hidden;
+  // A reaction prompt on screen owns the letter keys (Q E R F Z X C V):
+  // no shortcut fires underneath it.
+  const reacting = story.reactions?.state === "running";
+  if (event.code === "KeyM" && !event.repeat && !reacting) { settings.hud.minimap = !settings.hud.minimap; saveSettings(); applySettingsToControls(); }
+  if (event.code === "KeyH" && !event.repeat && !reacting) document.body.classList.toggle("hud-hidden");
+  if (event.code === "KeyV" && !event.repeat && !reacting) ui.viewMenu.hidden = !ui.viewMenu.hidden;
   if (event.code === "Space" && state === "playing" && !paused) {
     event.preventDefault();
-    if (jumpHeight <= 0.01) jumpVelocity = 7.4;
+    pressJump();
   }
-  if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && state === "playing" && !paused) sliding = 0.65;
+  if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && state === "playing" && !paused) pressSlide();
   if (event.code === "Digit1") demoStoryJump(1);
   if (event.code === "Digit2") demoStoryJump(2);
   if (event.code === "Digit3") demoStoryJump(3);
@@ -3636,12 +3892,14 @@ addEventListener("keydown", (event) => {
   if (event.code === "KeyD" || event.code === "ArrowRight") lane = Math.min(2, lane + 1);
   if (event.code === "KeyW" || event.code === "ArrowUp") {
     if (currentLevel === 1) { keysDown.add("up"); event.preventDefault(); }
+    else if (currentLevel === 2 && state === "playing" && !paused && !event.repeat) { event.preventDefault(); pressJump(); }
   }
   if (event.code === "KeyS" || event.code === "ArrowDown") {
     if (currentLevel === 1) { keysDown.add("down"); event.preventDefault(); }
+    else if (currentLevel === 2 && state === "playing" && !paused && !event.repeat) { event.preventDefault(); pressSlide(); }
   }
-  if ((event.code === "KeyQ" || event.code === "KeyE") && !event.repeat && !gravityLift) cycleSphere(event.code === "KeyE" ? 1 : -1);
-  if (event.code === "KeyC" && (state === "playing" || state === "lift")) { cameraThird = !cameraThird; updateUI(); showMessage(cameraThird ? "CHASE CAMERA" : "FIRST-PERSON CAMERA"); }
+  if ((event.code === "KeyQ" || event.code === "KeyE") && !event.repeat && !gravityLift && !reacting) cycleSphere(event.code === "KeyE" ? 1 : -1);
+  if (event.code === "KeyC" && !reacting && (state === "playing" || state === "lift")) { cameraThird = !cameraThird; updateUI(); showMessage(cameraThird ? "CHASE CAMERA" : "FIRST-PERSON CAMERA"); }
 });
 addEventListener("keyup", (event) => {
   meltdown?.onKeyUp(event);

@@ -112,7 +112,7 @@ export async function run(page, { shots }) {
     const sprinted = __t.R.state === "success";
     const ok = __t.until(() => __t.R.running && __t.R._s.spec.label === "GRAB", 200);
     const keys = __t.R._s?.keys.length;
-    const wrong = ["KeyQ", "KeyE", "KeyR", "KeyF", "KeyZ", "KeyX", "KeyC", "KeyV"].find((k) => !__t.R._s.keys.includes(k));
+    const wrong = ["KeyR", "KeyF", "KeyZ", "KeyX", "KeyG", "KeyT"].find((k) => !__t.R._s.keys.includes(k));
     __t.key(wrong);
     __t.step(2);
     const falling = __t.L.deathTime > 0;
@@ -181,7 +181,7 @@ export async function run(page, { shots }) {
     const latch = m.phase === "latch" && __t.R.running && __t.R._s.spec.label === "GRAB";
     if (!latch) return { ok, canGrab, latch, phase: m.phase };
     const from = m.hero.position.clone();
-    const wrong = ["KeyQ", "KeyE", "KeyR", "KeyF", "KeyZ", "KeyX", "KeyC", "KeyV"].find((k) => !__t.R._s.keys.includes(k));
+    const wrong = ["KeyR", "KeyF", "KeyZ", "KeyX", "KeyG", "KeyT"].find((k) => !__t.R._s.keys.includes(k));
     __t.key(wrong);
     __t.step(20);
     const fell = m.hero.position.y < from.y - 1;

@@ -118,5 +118,5 @@ node tests/causeway/run.js
 - [ ] `node tests/foundry/run.js` passes.
 - [ ] Play from the menu through the lift into the Foundry in Chrome over HTTP; no console errors.
 - [ ] Press `R` on the Level 2 end screen: the run restarts in Level 1 with no leftover Foundry HUD.
-- [ ] Performance overlay (`F`) in both levels on a lab machine; record the numbers in the level sheets.
+- [ ] Frame rate (browser DevTools FPS meter) in both levels on a lab machine; record the numbers in the level sheets.
 - [ ] If you move a level in world space, update its `*_ORIGIN_Z` constant and this document.

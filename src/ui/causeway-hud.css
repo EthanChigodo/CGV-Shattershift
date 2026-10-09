@@ -39,8 +39,7 @@ body.hud-unified .fdy-integrity,
 body.hud-unified .mlt-vitals { display: none !important; }
 /* The Skyline-only panels: its minimap, missions, intercom and case files. */
 body.hud-unified .cw-map,
-body.hud-unified .cw-missions,
-body.hud-unified .cw-file { display: none !important; }
+body.hud-unified .cw-missions { display: none !important; }
 
 .cw-ui kbd {
   min-width: 20px; padding: 2px 5px; border: 1px solid var(--cw-line); border-radius: 3px;
@@ -175,16 +174,10 @@ body.hud-unified .cw-file { display: none !important; }
   position: absolute; right: 22px; bottom: 20px; width: 262px; padding: 10px 12px;
   border: 1px solid var(--cw-line); background: var(--cw-glass); backdrop-filter: blur(8px);
 }
-.cw-balls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.cw-ball {
-  display: grid; justify-items: center; gap: 3px; padding: 7px 4px; border: 1px solid transparent;
-  font-size: 10px; font-weight: 800; color: var(--cw-dim);
-}
-.cw-ball i { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--c) 55%, transparent 72%); box-shadow: 0 0 10px var(--c); }
-.cw-ball b { font-size: 9px; color: var(--cw-dim); }
-.cw-ball b::after { content: " per throw"; font-weight: 600; }
-.cw-ball.on { border-color: var(--cw-cyan); color: var(--cw-white); background: rgba(94, 240, 255, 0.08); }
-.cw-ball.dry { opacity: 0.4; }
+.cw-type { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-style: normal; font-size: 9px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c, var(--cw-cyan)); }
+.cw-type u { text-decoration: none; }
+.cw-type i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--cw-cyan)); box-shadow: 0 0 8px var(--c, var(--cw-cyan)); }
+.cw-type.dry { opacity: 0.45; }
 .cw-keys { margin: 6px 0 8px; font-size: 10px; color: var(--cw-dim); text-align: center; }
 .cw-speed { background: var(--cw-white) !important; }
 .cw-focus { background: #9fb8ff !important; }
@@ -316,8 +309,6 @@ body.hud-hidden .reticle-hint { display: none !important; }
 .cw-vitals canvas { height: 32px; margin: 2px 0 4px; }
 .cw-meters label, .cw-gauges label { grid-template-columns: 50px 1fr 44px; font-size: 9px; }
 .cw-tools { width: 212px; padding: 8px 10px; background: rgba(4, 16, 22, 0.5); }
-.cw-ball { padding: 4px 2px; }
-.cw-ball b::after { content: ""; }
 .cw-gauges { margin-top: 6px; }
 .cw-core { gap: 18px; padding: 7px 16px; background: rgba(4, 16, 22, 0.5); }
 .cw-spheres b { font-size: 28px; }

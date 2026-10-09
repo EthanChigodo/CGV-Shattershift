@@ -29,6 +29,8 @@ export const RIDE_SECONDS = 7.4;
 const RIDE_SECONDS_REDUCED = 6.2;
 /** Cabin radius (to the octagon's corners). */
 export const LIFT_RADIUS = 4.5;
+/** The glass shaft's radius. */
+const R_SHAFT = 5;
 
 export class CalibrationLift {
   /**
@@ -37,8 +39,11 @@ export class CalibrationLift {
    * @param {number} [o.landing]  length of the floor slab from the doors toward +Z (0 = none)
    * @param {number} [o.shaftHeight]
    * @param {number} [o.landingWidth]
+   * @param {{ceiling: number}|null} [o.core]  build the lift core round the
+   *   shaft (an atrium of floors it climbs past); `ceiling` is the height of
+   *   the level's own ceiling, where the core's galleries start
    */
-  constructor({ accent = 0x7ef4f1, landing = 0, landingWidth = 11, shaftHeight = 80 } = {}) {
+  constructor({ accent = 0x7ef4f1, landing = 0, landingWidth = 11, shaftHeight = 80, core = null } = {}) {
     this.root = new THREE.Group();
     this.root.name = "CalibrationLift";
     this.cabin = new THREE.Group();
@@ -106,10 +111,98 @@ export class CalibrationLift {
       mesh(box, darkSteel, landingWidth, 0.4, landing, 0, -0.2, R + landing / 2, this.root);
       for (const s of [-1, 1]) mesh(box, strip, 0.08, 0.04, landing, s * (landingWidth / 2 - 0.1), 0.02, R + landing / 2, this.root);
     }
+    if (core) this._buildCore({ own, mesh, box, darkSteel, strip, shaftHeight, ceiling: core.ceiling ?? 8 });
 
     this.state = { t: 0, cabinY: 0, velocity: 0, riding: false };
     this._v = new THREE.Vector3();
     this.reset();
+  }
+
+  /**
+   * The lift core: the shaft rises through an atrium in the middle of the
+   * building - a ring of galleries, one a floor, lit doors and office
+   * windows round the walls, a steel ring beam round the tube at every
+   * floor - so the ride climbs past the building's floors instead of out
+   * of the top of the level into the dark. The camera circles inside it.
+   */
+  _buildCore({ own, mesh, box, darkSteel, strip, shaftHeight, ceiling }) {
+    const RADIUS = 26;
+    const GALLERY = 4;
+    const FLOOR = 4.2;
+    const core = new THREE.Group();
+    core.name = "LiftCore";
+    this.root.add(core);
+    // The walls: each floor a band of concrete with lit doors and windows.
+    const c = document.createElement("canvas");
+    c.width = 512;
+    c.height = 128;
+    const g = c.getContext("2d");
+    g.fillStyle = "#1a1d20";
+    g.fillRect(0, 0, 512, 128);
+    g.fillStyle = "#0c0e10";
+    g.fillRect(0, 100, 512, 28); // the slab edge
+    let s = 7;
+    const rnd = () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+    for (let x = 6; x < 506; x += 32) {
+      const kind = rnd();
+      if (kind < 0.18) { g.fillStyle = "rgba(255,226,170,0.95)"; g.fillRect(x, 34, 18, 62); } // a lit doorway
+      else if (kind < 0.7) { g.fillStyle = rnd() < 0.5 ? "rgba(190,215,235,0.75)" : "rgba(255,210,150,0.6)"; g.fillRect(x, 30, 24, 30); }
+      else { g.fillStyle = "#14171a"; g.fillRect(x, 30, 24, 30); }
+    }
+    const tex = own(new THREE.CanvasTexture(c));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(5, shaftHeight / FLOOR);
+    const wallMat = own(new THREE.MeshStandardMaterial({ color: 0x444a50, map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.55, roughness: 0.85, side: THREE.BackSide }));
+    const wall = new THREE.Mesh(own(new THREE.CylinderGeometry(RADIUS, RADIUS, shaftHeight, 8, 1, true)), wallMat);
+    wall.position.y = shaftHeight / 2;
+    wall.rotation.y = Math.PI / 8;
+    core.add(wall);
+    // A floor under it all (just below the level's own), and a roof over it.
+    const slabMat = own(new THREE.MeshStandardMaterial({ color: 0x2a2e31, roughness: 0.8, metalness: 0.3, side: THREE.DoubleSide }));
+    const base = new THREE.Mesh(own(new THREE.RingGeometry(R_SHAFT, RADIUS, 8, 1)), slabMat);
+    base.rotation.x = -Math.PI / 2;
+    base.rotation.z = Math.PI / 8;
+    base.position.y = -0.25;
+    core.add(base);
+    const roof = base.clone();
+    roof.position.y = shaftHeight;
+    core.add(roof);
+    // Galleries round the walls, one per floor above the level's ceiling,
+    // with a railing and a strip of light along the edge.
+    const ringGeo = own(new THREE.RingGeometry(RADIUS - GALLERY, RADIUS, 8, 1));
+    const railGeo = own(new THREE.TorusGeometry(RADIUS - GALLERY, 0.05, 4, 8));
+    const lightGeo = own(new THREE.TorusGeometry(RADIUS - GALLERY + 0.1, 0.04, 4, 8));
+    const beamGeo = own(new THREE.TorusGeometry(5.6, 0.18, 6, 8));
+    for (let y = Math.ceil(ceiling / FLOOR) * FLOOR; y < shaftHeight - 1; y += FLOOR) {
+      const floor = new THREE.Mesh(ringGeo, slabMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.rotation.z = Math.PI / 8;
+      floor.position.y = y;
+      core.add(floor);
+      const rail = new THREE.Mesh(railGeo, darkSteel);
+      rail.rotation.x = Math.PI / 2;
+      rail.rotation.z = Math.PI / 8;
+      rail.position.y = y + 1.05;
+      core.add(rail);
+      const light = new THREE.Mesh(lightGeo, strip);
+      light.rotation.x = Math.PI / 2;
+      light.rotation.z = Math.PI / 8;
+      light.position.y = y + 0.05;
+      core.add(light);
+    }
+    // A ring beam round the tube at every floor, all the way up.
+    for (let y = FLOOR; y < shaftHeight; y += FLOOR) {
+      const beam = new THREE.Mesh(beamGeo, darkSteel);
+      beam.rotation.x = Math.PI / 2;
+      beam.position.y = y;
+      core.add(beam);
+    }
+    // Columns from the ground to the roof, round the gallery edge.
+    for (let i = 0; i < 8; i += 1) {
+      const a = (i / 8) * Math.PI * 2;
+      mesh(box, darkSteel, 0.6, shaftHeight, 0.6, Math.cos(a) * (RADIUS - GALLERY), shaftHeight / 2, Math.sin(a) * (RADIUS - GALLERY), core);
+    }
   }
 
   /** Doors open, cabin down, ready for the player. */

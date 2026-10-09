@@ -36,6 +36,9 @@ There are no voiceovers, so every subtitle is bigger, bolder and on a darker box
 
 ![The main menu at 1280x720](images/feedback/main-menu.jpg)
 
+> **Merged with `feat/level3`:** the team kept the Level 3 branch's main menu (one list - Start story, Chapters, Endless, Field manual, Settings, Replay the briefing - beside the loadout card with the sphere picker), so the mode cards above are not in the merged game; the glitching headline is. The Skyline preview was removed on that branch, and the Field manual became tabs per sector (Spheres & serums, Foundry, Labs, Skyline, Roof), each card keeping its *Break it / Avoid it / Collect it / Your tool* tag and the BACK at the top.
+> The first-pickup serum card is restyled there too: the capsule itself, turning in a ring of its colour, beside the name, what it does, how long it lasts and what to do. After that first card, the HUD's serum chips at the top centre (`src/ui/serum-fx.js`) show the time left, in place of the badges.
+
 ## 6 - Replay Briefing (bug)
 
 Two causes:

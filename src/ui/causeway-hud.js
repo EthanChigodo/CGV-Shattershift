@@ -10,7 +10,8 @@
  * Scoped under .cw-ui so it cannot clash with styles.css or the Level 2 HUD.
  */
 
-import { BALLS, BALL_ORDER } from "../systems/arsenal.js";
+import { BALLS } from "../systems/arsenal.js";
+import { SerumFx } from "./serum-fx.js";
 
 /**
  * Every panel the player can switch on or off (View menu, Settings, or `H`
@@ -20,13 +21,12 @@ import { BALLS, BALL_ORDER } from "../systems/arsenal.js";
 export const HUD_PANELS = [
   { key: "stats", label: "Spheres and score", on: true },
   { key: "vitals", label: "Vitals (integrity, air)", on: true },
-  { key: "tools", label: "Sphere type, speed, focus", on: true },
+  { key: "tools", label: "Speed and focus", on: true },
   { key: "intercom", label: "Intercom subtitles", on: true },
   { key: "hints", label: "Hints and section titles", on: true },
   { key: "serums", label: "Active serums", on: true },
   { key: "missions", label: "Missions", on: false },
   { key: "minimap", label: "Minimap", on: false },
-  { key: "fps", label: "Performance overlay", on: false },
 ];
 
 /** Apply a { key: boolean } map to the page. */
@@ -42,12 +42,14 @@ function el(tag, className, html) {
 }
 
 function ensureStylesheet() {
-  if (document.querySelector("link[data-causeway-hud]")) return;
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = new URL("./causeway-hud.css", import.meta.url).href;
-  link.dataset.causewayHud = "";
-  document.head.appendChild(link);
+  for (const [file, key] of [["./causeway-hud.css", "causewayHud"], ["./serum-fx.css", "serumFx"]]) {
+    if (document.querySelector(`link[data-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}]`)) continue;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = new URL(file, import.meta.url).href;
+    link.dataset[key] = "";
+    document.head.appendChild(link);
+  }
 }
 
 export class CausewayHud {
@@ -75,21 +77,17 @@ export class CausewayHud {
     this.ecg = this.vitalsEl.querySelector("canvas");
     this.ecgCtx = this.ecg.getContext("2d");
 
+    // The sphere type is picked in the menus (main and pause) or with Q / E;
+    // the spheres counter names the one in hand.
     this.toolsEl = el("div", "cw-tools");
-    const balls = BALL_ORDER.map((k, i) => `
-      <div class="cw-ball" data-ball="${k}">
-        <i style="--c:#${BALLS[k].colour.toString(16).padStart(6, "0")}"></i>
-        <span>${BALLS[k].name}</span><b>${BALLS[k].cost}</b>
-      </div>`).join("");
     this.toolsEl.innerHTML = `
-      <div class="cw-balls">${balls}</div>
       <div class="cw-gauges">
         <label><span>Speed</span><i><em class="cw-speed"></em></i><b class="cw-speed-n">0</b></label>
         <label><span>Focus</span><i><em class="cw-focus"></em></i><b>RMB</b></label>
       </div>`;
 
     this.coreEl = el("div", "cw-core", `
-      <div class="cw-spheres"><b>20</b><span>Spheres</span></div>
+      <div class="cw-spheres"><b>20</b><span>Spheres</span><em class="cw-type"><i></i><u>Glass</u></em></div>
       <div class="cw-score"><b>000000</b><span>Score</span></div>
       <div class="cw-combo"><b>x1</b><span>Combo</span><i><em></em></i></div>
       <div class="cw-cam"><b>First person</b><span>Camera (C)</span></div>`);
@@ -132,6 +130,9 @@ export class CausewayHud {
 
     this.root.append(this.fadeEl, this.labelsEl, this.titleEl, this.radioEl, this.hintEl, this.warnEl, this.fileEl,
       this.missionsEl, this.serumsEl, this.vitalsEl, this.toolsEl, this.coreEl, this.mapEl, this.introEl, this.reportEl);
+    // The serums on screen: under the panels, over the view.
+    this.serumFx = new SerumFx(this.root);
+    this.root.insertBefore(this.serumFx.root, this.root.firstChild);
     document.body.append(this.root, this.photoEl, this.perfEl);
 
     this._timers = { title: 0, radio: 0, hint: 0, file: 0, intro: 0 };
@@ -180,8 +181,8 @@ export class CausewayHud {
     this.warnEl.classList.add("show");
   }
 
-  caseFile(lines, found = 0, total = 5) {
-    this.fileEl.querySelector("span").textContent = found ? `Case file ${found} of ${total} recovered` : "Case file recovered";
+  caseFile(lines, found = 0, total = 5, label = "Case file") {
+    this.fileEl.querySelector("span").textContent = found ? `${label} ${found} of ${total} recovered` : `${label} recovered`;
     this.fileEl.querySelector("h3").textContent = lines[0];
     this.fileEl.querySelector("p").textContent = lines.slice(1).join(" ");
     this._flash(this.fileEl, "file", 6);
@@ -204,11 +205,13 @@ export class CausewayHud {
   }
 
   setTools({ ball, spheres, speed, speedRatio, focus, cost }) {
-    for (const node of this.toolsEl.querySelectorAll(".cw-ball")) {
-      const key = node.dataset.ball;
-      node.classList.toggle("on", key === ball);
-      node.classList.toggle("dry", BALLS[key].cost > spheres && cost !== 0);
+    const type = this.coreEl.querySelector(".cw-type");
+    if (type.dataset.ball !== ball) {
+      type.dataset.ball = ball;
+      type.style.setProperty("--c", `#${BALLS[ball].colour.toString(16).padStart(6, "0")}`);
+      type.querySelector("u").textContent = `${BALLS[ball].name} - ${BALLS[ball].cost}`;
     }
+    type.classList.toggle("dry", cost > spheres);
     this.toolsEl.querySelector(".cw-speed").style.transform = `scaleX(${speedRatio.toFixed(3)})`;
     this.toolsEl.querySelector(".cw-speed-n").textContent = `${speed.toFixed(1)} m/s`;
     this.toolsEl.querySelector(".cw-focus").style.transform = `scaleX(${focus.toFixed(3)})`;
@@ -247,12 +250,10 @@ export class CausewayHud {
     this.vitalsEl.classList.toggle("smoky", smoke > 0.55);
   }
 
+  /** The serums running (arsenal.list()): the banner, the chips and the looks (serum-fx.js). */
   setSerums(list) {
-    const html = list.map((s) => `
-      <div class="cw-serum" style="--c:${s.colour};--r:${s.ratio.toFixed(3)}">
-        <i></i><span>${s.name}</span><b>${Math.ceil(s.remaining)}s</b>
-      </div>`).join("");
-    if (html !== this._serumHtml) { this._serumHtml = html; this.serumsEl.innerHTML = html; }
+    this.serumFx.reducedMotion = document.body.classList.contains("reduced-motion");
+    this.serumFx.update(list, { charges: list.find((s) => s.key === "shield")?.charges ?? 0 });
   }
 
   liftReport(rows, missions) {

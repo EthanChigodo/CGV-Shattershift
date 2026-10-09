@@ -41,13 +41,15 @@
  */
 
 import * as THREE from "../../three.js";
-import { createMeltdownKit } from "./kit.js";
+import { createMeltdownKit, heatSignature } from "./kit.js";
 import { createFireMaterials } from "./fire.js";
 import { fillAssetSlots } from "./assets.js";
 import { cloneCharacter, HumanoidRig } from "./characters.js";
 import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
+import { CityAtNight } from "./city.js";
+import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -71,6 +73,14 @@ export const EXTRACT_WINDOW = 16;
 
 const PATIENT = { hp: 2, stalk: 2.3, charge: 10, windup: 0.62, chargeRange: 22, damage: 14, notice: 12 };
 const SCIENTIST = { hp: 3, walk: 2.8, aim: 0.85, orbSpeed: 11, damage: 10 };
+/** The last wave's brute: a bigger subject, slower to wind up, much harder to stop. */
+const BRUTE = { hp: 6, stalk: 2.0, charge: 12, windup: 0.85, chargeRange: 24, damage: 24, notice: 14 };
+/** Gas canisters by the cover: shoot one and everything near it goes down (you too, if you're close). */
+const CANISTERS = [new THREE.Vector3(-12.5, 0, 7.5), new THREE.Vector3(11.5, 0, -6.5), new THREE.Vector3(-7, 0, -6), new THREE.Vector3(5, 0, 13)];
+export const CANISTER_RADIUS = 4.5;
+/** Where a supply drop can come down: open roof, clear of the cover. */
+const DROP_SPOTS = [new THREE.Vector3(-12, 0, -9), new THREE.Vector3(0.5, 0, 4), new THREE.Vector3(6, 0, 3), new THREE.Vector3(-3, 0, 9)];
+const DROP_HEIGHT = 38;
 
 function rng(seed) {
   // Scramble the seed and throw the first draws away: a Lehmer generator's
@@ -116,6 +126,44 @@ function canvasTexture(size, draw, { repeat = [1, 1], srgb = true } = {}) {
   texture.anisotropy = 4;
   if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+/**
+ * An AC unit's housing: grey-green sheet steel, a louvred grille across the
+ * middle, rust streaks running down from the rivets, grime at the foot.
+ */
+function acHousingTexture() {
+  return canvasTexture(256, (ctx, s) => {
+    const r = rng(91);
+    ctx.fillStyle = "#4a524c";
+    ctx.fillRect(0, 0, s, s);
+    // Panel seams and rivets.
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(6, 6, s - 12, s - 12);
+    ctx.beginPath(); ctx.moveTo(s / 2, 6); ctx.lineTo(s / 2, s * 0.22); ctx.stroke();
+    // Louvres.
+    for (let y = s * 0.26; y < s * 0.8; y += 9) {
+      ctx.fillStyle = "#1c201e";
+      ctx.fillRect(22, y, s - 44, 5);
+      ctx.fillStyle = "rgba(160,170,160,0.35)";
+      ctx.fillRect(22, y + 5, s - 44, 1.5);
+    }
+    // Rust running down, grime at the foot.
+    for (let i = 0; i < 14; i += 1) {
+      const x = 10 + r() * (s - 20);
+      const g = ctx.createLinearGradient(0, 10, 0, 10 + 60 + r() * 120);
+      g.addColorStop(0, "rgba(110,55,25,0.55)");
+      g.addColorStop(1, "rgba(110,55,25,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x, 10, 2 + r() * 3, 200);
+    }
+    const foot = ctx.createLinearGradient(0, s * 0.8, 0, s);
+    foot.addColorStop(0, "rgba(0,0,0,0)");
+    foot.addColorStop(1, "rgba(15,12,10,0.75)");
+    ctx.fillStyle = foot;
+    ctx.fillRect(0, s * 0.8, s, s * 0.2);
+  });
 }
 
 /** Tar-and-gravel roofing, with seams. */
@@ -224,7 +272,7 @@ const SKY_FRAGMENT = /* glsl */ `
     // Night sky, orange at the horizon from a city lit from below; drifting
     // smoke across it.
     vec3 top = vec3(0.012, 0.016, 0.035);
-    vec3 horizon = vec3(0.16, 0.07, 0.035);
+    vec3 horizon = vec3(0.1, 0.06, 0.05);
     vec3 col = mix(horizon, top, smoothstep(-0.05, 0.45, h));
     vec2 p = vDir.xz / max(0.15, h + 0.3) * 1.6 + vec2(uTime * 0.02, uTime * 0.01);
     float smoke = noise(p) * 0.6 + noise(p * 2.7) * 0.4;
@@ -270,6 +318,7 @@ class Enemy {
       this.body.add(model);
       const rig = new HumanoidRig(model);
       this.rig = rig.valid ? rig : null;
+      heatSignature(model);
     } else {
       this.body.add(level.kit.personStandIn());
     }
@@ -329,10 +378,20 @@ class Enemy {
 
 class Patient extends Enemy {
   constructor(level, opts) {
-    super(level, { ...opts, kind: "patient", hp: PATIENT.hp });
+    super(level, { ...opts, kind: "patient", hp: (opts.brute ? BRUTE : PATIENT).hp });
+    this.stats = opts.brute ? BRUTE : PATIENT;
+    if (opts.brute) {
+      // Bigger, and harder to stop.
+      this.root.scale.setScalar(1.3);
+      this.brute = true;
+    }
     this.state = "emerge";
     this.hatch = opts.position.clone();
     this.position.y = -1.7;
+    // A climber comes up the outside of the building and over an open ledge
+    // (x = +/-EDGE) instead of out of a hatch.
+    this.climb = opts.climb ?? 0;
+    if (this.climb) this.position.x = this.climb * (EDGE + 0.5);
     this.cooldown = 0.5 + opts.delay;
     this.dir = new THREE.Vector3();
     this.travelled = 0;
@@ -349,10 +408,11 @@ class Patient extends Enemy {
     switch (this.state) {
       case "emerge": {
         // Hauling themselves up out of the hatch.
-        const k = Math.min(1, this.t / 1.3);
+        const k = Math.min(1, this.t / (this.climb ? 1.8 : 1.3));
         this.position.y = THREE.MathUtils.lerp(-1.7, 0, 1 - (1 - k) * (1 - k));
+        if (this.climb) this.position.x = this.climb * THREE.MathUtils.lerp(EDGE + 0.5, EDGE - 1.4, Math.max(0, k * 1.4 - 0.4));
         this.face(player, dt, 4);
-        rig?.pose({ reach: 1.1 - k * 0.4, lean: 0.4, headNod: 0.3, phase: time * 6, stride: 0.2 * (1 - k) });
+        rig?.pose({ reach: (this.climb ? 1.4 : 1.1) - k * 0.4, lean: 0.4, headNod: 0.3, phase: time * 6, stride: 0.2 * (1 - k) });
         if (k >= 1) this.setState("stalk");
         break;
       }
@@ -360,13 +420,13 @@ class Patient extends Enemy {
         this.face(player, dt, 5);
         _v.subVectors(player, this.position).setY(0);
         const d = _v.length();
-        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), PATIENT.stalk * dt);
+        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * dt);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
         rig?.pose({ phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3, headTilt: Math.sin(time * 1.7 + this.phase) * 0.3 });
-        if (d < PATIENT.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
+        if (d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
           this.setState("windup");
           this.level.events.emit("patient-windup", { position: this.position.clone() });
         }
@@ -376,10 +436,10 @@ class Patient extends Enemy {
         // The telegraph: a crouch and a scream, arms thrown back. The
         // direction locks at the end - move and they miss.
         this.face(player, dt, 10);
-        const k = Math.min(1, this.t / PATIENT.windup);
+        const k = Math.min(1, this.t / this.stats.windup);
         rig?.pose({ crouch: 0.35 * k, lean: 0.5 * k, reach: -0.6 * k, headNod: -0.5 * k, elbow: 0.2 });
         this.body.position.x = Math.sin(time * 60) * 0.02 * k;
-        if (this.t >= PATIENT.windup) {
+        if (this.t >= this.stats.windup) {
           this.dir.subVectors(player, this.position).setY(0).normalize();
           this.yaw = Math.atan2(this.dir.x, this.dir.z);
           this.body.rotation.y = this.yaw;
@@ -391,19 +451,19 @@ class Patient extends Enemy {
         break;
       }
       case "charge": {
-        const step = PATIENT.charge * dt;
+        const step = this.stats.charge * dt;
         this.position.addScaledVector(this.dir, step);
         this.travelled += step;
         rig?.pose({ phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
         // Straight off the open ledge.
         if (Math.abs(this.position.x) > EDGE - 0.1) {
-          this.velocity.copy(this.dir).multiplyScalar(PATIENT.charge * 0.7);
+          this.velocity.copy(this.dir).multiplyScalar(this.stats.charge * 0.7);
           this.die("fall");
           this.level.events.emit("enemy-fall", { enemy: this, position: this.position.clone() });
           break;
         }
         if (!ctx.frozen && this.position.distanceTo(_w.copy(player).setY(0)) < 0.95) {
-          ctx.hits.push({ damage: PATIENT.damage, from: this.position.clone(), knock: 7, source: "patient" });
+          ctx.hits.push({ damage: this.stats.damage, from: this.position.clone(), knock: 7, source: "patient" });
           this.setState("recover");
           break;
         }
@@ -414,7 +474,7 @@ class Patient extends Enemy {
           this.level.events.emit("patient-stunned", { position: this.position.clone() });
           break;
         }
-        if (this.travelled > PATIENT.chargeRange) this.setState("recover");
+        if (this.travelled > this.stats.chargeRange) this.setState("recover");
         break;
       }
       case "recover":
@@ -597,7 +657,7 @@ export class RoofLevel {
    * @param {boolean} [o.endless]  survival: no helicopter, waves keep coming,
    *   the roof comes apart over two minutes; it ends when you go down.
    */
-  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false } = {}) {
+  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null } = {}) {
     this.assets = assets;
     this.endless = endless;
     this.events = createEmitter();
@@ -641,10 +701,12 @@ export class RoofLevel {
     };
 
     this._buildSet();
-    this._buildSkyline();
+    this._dressRoof();
+    this._buildSkyline(assetBase);
     this._buildLights();
     this._buildEdges();
     this._buildPickups();
+    this._buildCanisters();
     this._buildOrbs();
     this._buildHelicopter();
     this._buildChaos();
@@ -656,6 +718,24 @@ export class RoofLevel {
   _track(material) {
     this.owned.materials.push(material);
     return material;
+  }
+
+  /**
+   * The fight camera, high behind the player: when it is close over the
+   * lift housing, the housing fades to a ghost instead of filling the bottom
+   * of the frame. Off (solid) for the cutscenes.
+   */
+  updateOcclusion(cameraPosition, dt, enabled = true) {
+    if (!this._hutBox) return;
+    const near = enabled && this._hutBox.distanceToPoint(cameraPosition) < 8;
+    const target = near ? 0.18 : 1;
+    this._hutFade += (target - this._hutFade) * Math.min(1, dt * 6);
+    const solid = this._hutFade > 0.98;
+    for (const m of this._hutMaterials) {
+      if (m.transparent === solid) { m.transparent = !solid; m.needsUpdate = true; }
+      m.opacity = solid ? 1 : this._hutFade;
+      m.depthWrite = solid;
+    }
   }
 
   _box(w, h, d, material, x, y, z, { solid = false, cover = false } = {}) {
@@ -690,14 +770,17 @@ export class RoofLevel {
     // Tarred gravel (Poly Haven, CC0) when it arrives; the wet patches stay.
     applyPhotoSet(roofing, PHOTO_SETS.roofing, { repeat: [15, 15], roughness: false }); // 2.2 m a tile
     k.applyPhotos(); // the parapets' concrete, too
-    const concrete = mat.concreteWall;
+    // Weathered grey concrete for the roof's walls (the Labs' painted
+    // concrete photo reads green up here under the floods).
+    const concrete = this._track(new THREE.MeshStandardMaterial({ color: 0x75787a, map: k.textures.concreteWall, normalMap: k.textures.concreteWallNormal, roughness: 0.94, metalness: 0.02 }));
 
     // The slab, and the building falling away beneath it.
     this._box(EDGE * 2 + 0.6, 0.6, EDGE * 2 + 0.6, roofing, 0, -0.6, 0);
     const facade = this._track(new THREE.MeshStandardMaterial({ color: 0x3a3a3c, emissive: 0xffffff, emissiveMap: windowsTexture(19, 0.12), emissiveIntensity: 0.9, roughness: 0.9 }));
-    facade.emissiveMap.repeat.set(3, 6);
+    // All the way down, into the haze (the city's streets are 160 m below).
+    facade.emissiveMap.repeat.set(3, 26);
     this.owned.textures.push(facade.emissiveMap);
-    this._box(EDGE * 2 - 0.2, 70, EDGE * 2 - 0.2, facade, 0, -70.6, 0);
+    this._box(EDGE * 2 - 0.2, 300, EDGE * 2 - 0.2, facade, 0, -300.6, 0);
 
     // Parapets north and south; the east and west ones have collapsed.
     for (const z of [-EDGE, EDGE]) {
@@ -724,14 +807,21 @@ export class RoofLevel {
     // (so the open doors show the cabin) around a placeholder lift.
     const hutZ = LIFT_DOOR.z + 1.4;
     const hutH = 3.5;
+    // Its own materials, so it can fade when the fight camera is right over
+    // it (it sits just in front of the camera at the start of every wave).
+    const hutConcrete = this._track(concrete.clone());
+    const hutTrim = this._track(mat.trim.clone());
+    this._hutMaterials = [hutConcrete, hutTrim];
+    this._hutFade = 1;
+    this._hutBox = new THREE.Box3(new THREE.Vector3(-2.7, 0, LIFT_DOOR.z - 0.1), new THREE.Vector3(2.7, hutH + 0.3, hutZ + 1.5));
     this._box(5, hutH, 2.8, mat.collider, 0, 0, hutZ, { solid: true, cover: true });
     for (const s of [-1, 1]) {
-      this._box(1.15, hutH, 0.3, concrete, s * 1.925, 0, LIFT_DOOR.z + 0.15);
-      this._box(0.25, hutH, 2.8, concrete, s * 2.375, 0, hutZ);
+      this._box(1.15, hutH, 0.3, hutConcrete, s * 1.925, 0, LIFT_DOOR.z + 0.15);
+      this._box(0.25, hutH, 2.8, hutConcrete, s * 2.375, 0, hutZ);
     }
-    this._box(2.7, hutH - ROOF_LIFT.height, 0.3, concrete, 0, ROOF_LIFT.height, LIFT_DOOR.z + 0.15);
-    this._box(5, hutH, 0.25, concrete, 0, 0, hutZ + 1.275);
-    this._box(5.3, 0.2, 3.1, mat.trim, 0, hutH, hutZ);
+    this._box(2.7, hutH - ROOF_LIFT.height, 0.3, hutConcrete, 0, ROOF_LIFT.height, LIFT_DOOR.z + 0.15);
+    this._box(5, hutH, 0.25, hutConcrete, 0, 0, hutZ + 1.275);
+    this._box(5.3, 0.2, 3.1, hutTrim, 0, hutH, hutZ);
     this.lift = this._put(createLift(k, { ...ROOF_LIFT, label: "R" }), LIFT_DOOR.x, 0, LIFT_DOOR.z);
     this.lift.userData.lift.setLight(1);
     this._put(k.alarmBeacon({ x: 0, y: 2.6, speed: 3.6 }), 1.95, 0.35, LIFT_DOOR.z - 0.2);
@@ -766,12 +856,25 @@ export class RoofLevel {
     }
 
     // Cover: AC units (the vent fan model), a water tank, vents, a dish.
+    // Their housings get their own weathered steel: plain paint went white
+    // under the floodlights.
+    const housing = this._track(new THREE.MeshStandardMaterial({ map: acHousingTexture(), color: 0x9aa39c, metalness: 0.45, roughness: 0.72 }));
+    this.owned.textures.push(housing.map);
     const acUnit = (x, z, rot = 0) => {
       const w = 2.6;
       const d = 1.8;
-      this._box(rot ? d : w, 1.7, rot ? w : d, mat.paintedMetal, x, 0, z, { solid: true, cover: true });
+      this._box(rot ? d : w, 1.7, rot ? w : d, housing, x, 0, z, { solid: true, cover: true });
       const fan = k.ventFanUnit();
       fan.scale.setScalar(0.75);
+      // The fan model is factory white: weather it, or the floods blow it out.
+      const slot = fan.children[1];
+      if (slot) slot.userData.onFilled = (model) => model.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material = this._track(o.material.clone());
+        // Down to the housing's grey-green (linear), whatever the model's paint.
+        o.material.color?.setRGB(0.13, 0.15, 0.14);
+        if ("roughness" in o.material) o.material.roughness = Math.max(0.65, o.material.roughness);
+      });
       this._put(fan, x, 1.7, z, rot);
     };
     acUnit(-8, 5);
@@ -826,35 +929,135 @@ export class RoofLevel {
     this.root.add(sky);
   }
 
-  /** The city around you: lit towers standing in the smoke, far below and away. */
-  _buildSkyline() {
-    const windows = windowsTexture(5, 0.32);
-    windows.repeat.set(2, 3);
-    this.owned.textures.push(windows);
-    const material = this._track(new THREE.MeshStandardMaterial({ color: 0x15171b, emissive: 0xffffff, emissiveMap: windows, emissiveIntensity: 0.55, roughness: 0.95 }));
-    const count = 110;
-    const towers = new THREE.InstancedMesh(this.kit.geometries.unitBox, material, count);
-    const r = rng(41);
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const p = new THREE.Vector3();
-    const s = new THREE.Vector3();
-    for (let i = 0; i < count; i += 1) {
-      const a = r() * Math.PI * 2;
-      // Mostly below you: this is the tallest building for a while, and the
-      // city should read as something you look down on, not a canyon.
-      const d = 95 + r() * 150;
-      const top = -85 + r() * 60 + (d > 200 ? 20 : 0);
-      const h = 60 + r() * 60;
-      const w = 14 + r() * 24;
-      p.set(Math.cos(a) * d, top - h / 2, Math.sin(a) * d);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r() * Math.PI);
-      s.set(w, h, w * (0.6 + r() * 0.8));
-      m.compose(p, q, s);
-      towers.setMatrixAt(i, m);
+  /**
+   * What a real roof carries - all of it decoration, none of it in your
+   * way: pipe runs along the parapets, masts and a dish on the machine
+   * room, red aircraft lights at the corners, puddles, steam from the
+   * exhaust stacks, a wind sock by the pad.
+   */
+  _dressRoof() {
+    const own = (x) => {
+      (x.isMaterial ? this.owned.materials : x.isTexture ? this.owned.textures : this.owned.geometries).push(x);
+      return x;
+    };
+    const p = createPropKit(own);
+    const g = this.groups.set;
+    const at = (o, x, y, z, ry = 0) => { o.position.set(x, y, z); o.rotation.y = ry; g.add(o); return o; };
+    // Pipe runs along the inside of both parapets, on stands.
+    g.add(p.pipe([[-14.5, 0.35, -EDGE + 0.55], [6.8, 0.35, -EDGE + 0.55]], { radius: 0.11, material: p.M.pipeGrey }));
+    g.add(p.pipe([[-14.5, 0.62, -EDGE + 0.5], [-2, 0.62, -EDGE + 0.5], [-2, 1.4, -EDGE + 0.5]], { radius: 0.06, material: p.M.pipeYellow }));
+    g.add(p.pipe([[-8.5, 0.35, EDGE - 0.55], [-2.8, 0.35, EDGE - 0.55]], { radius: 0.09, material: p.M.pipeRed }));
+    g.add(p.pipe([[2.8, 0.35, EDGE - 0.55], [14.5, 0.35, EDGE - 0.55]], { radius: 0.09, material: p.M.pipeRed }));
+    for (let x = -14; x <= 6; x += 2.5) p.part(g, p.M.darkSteel, 0.08, 0.3, 0.3, x, 0.15, -EDGE + 0.55);
+    // The machine room's roof: two masts, a dish, a condenser; cable down its wall.
+    const mx = EDGE - 4.6;
+    const mz = -EDGE + 3.6;
+    const blinkers = [];
+    const glowTex = own(new THREE.CanvasTexture((() => {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const ctx = c.getContext("2d");
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, "rgba(255,255,255,1)");
+      grad.addColorStop(0.3, "rgba(255,255,255,0.45)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+      return c;
+    })()));
+    const red = own(new THREE.SpriteMaterial({ map: glowTex, color: 0xff2a1a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+    const mast = (x, z, h) => {
+      p.rod(g, p.M.darkSteel, 0.06, h, x, 3.8 + h / 2, z);
+      for (let y = 1; y < h; y += 1.4) p.part(g, p.M.steel, 0.5, 0.03, 0.03, x, 3.8 + y, z);
+      const light = new THREE.Sprite(red);
+      light.position.set(x, 3.8 + h + 0.2, z);
+      light.scale.setScalar(1.6);
+      g.add(light);
+      blinkers.push(light);
+    };
+    mast(mx + 2.4, mz - 1.4, 7);
+    mast(mx - 2.6, mz + 1.6, 4.5);
+    const dish = new THREE.Group();
+    const bowl = new THREE.Mesh(own(new THREE.SphereGeometry(0.9, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.32)), p.M.painted);
+    bowl.rotation.x = -Math.PI / 2 - 0.5;
+    bowl.position.y = 1.1;
+    dish.add(bowl);
+    p.rod(dish, p.M.darkSteel, 0.06, 1.0, 0, 0.5, 0);
+    p.rod(dish, p.M.darkSteel, 0.02, 0.9, 0, 1.3, 0.4, { rx: 0.9 });
+    at(dish, mx - 1.2, 3.8, mz - 1.2, 2.4);
+    p.part(g, p.M.plasticGrey, 1.4, 0.9, 0.8, mx + 0.6, 3.8 + 0.45, mz + 1.4, { r: 0.04 });
+    p.part(g, p.M.darkSteel, 0.3, 3.6, 0.12, mx - 3.55, 1.9, mz + 1.0);
+    const danger = p.sign([["DANGER", 50], ["HIGH VOLTAGE", 30]], { width: 0.6, height: 0.42, bg: "#f2f2ec", fg: "#b81d12", stripe: "#d6a520" });
+    at(danger, mx - 3.52, 1.8, mz - 0.6, -Math.PI / 2);
+    // A dish on the lift housing too, and its aerial.
+    const hutZ = LIFT_DOOR.z + 1.4;
+    const small = dish.clone();
+    small.scale.setScalar(0.6);
+    at(small, 1.6, 3.7, hutZ + 0.6, 0.6);
+    p.rod(g, p.M.darkSteel, 0.03, 2.2, -1.8, 3.7 + 1.1, hutZ + 0.8);
+    // Red aircraft lights at the four corners of the tower.
+    for (const [x, z] of [[-EDGE, -EDGE], [EDGE, -EDGE], [-EDGE, EDGE], [EDGE, EDGE]]) {
+      p.rod(g, p.M.darkSteel, 0.05, 1.2, x * 0.98, 1.6, z * 0.98);
+      const light = new THREE.Sprite(red);
+      light.position.set(x * 0.98, 2.3, z * 0.98);
+      light.scale.setScalar(2.2);
+      g.add(light);
+      blinkers.push(light);
     }
-    towers.name = "Skyline";
-    this.root.add(towers);
+    // Puddles: standing water in the dips, the floods and the city in them.
+    const water = own(new THREE.MeshStandardMaterial({ color: 0x0b0d10, roughness: 0.04, metalness: 0.3, transparent: true, opacity: 0.85 }));
+    const r = rng(77);
+    for (let i = 0; i < 9; i += 1) {
+      const puddle = new THREE.Mesh(own(new THREE.CircleGeometry(0.6 + r() * 1.1, 20)), water);
+      puddle.rotation.x = -Math.PI / 2;
+      puddle.scale.set(1, 0.5 + r() * 0.6, 1);
+      puddle.rotation.z = r() * Math.PI;
+      puddle.position.set((r() - 0.5) * (EDGE * 1.6), 0.012, (r() - 0.5) * (EDGE * 1.6));
+      if (puddle.position.distanceTo(HELIPAD) < 7) continue;
+      puddle.receiveShadow = true;
+      g.add(puddle);
+    }
+    // Exhaust stacks, steaming.
+    for (const [x, z] of [[-14.2, -9], [14.2, 4]]) {
+      p.rod(g, p.M.darkSteel, 0.28, 2.6, x, 1.3, z);
+      p.rod(g, p.M.steel, 0.32, 0.12, x, 2.6, z);
+      this.cover.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, 1.3, z), new THREE.Vector3(0.6, 2.6, 0.6)));
+      const steam = this.kit.smokeJet({ count: 10 });
+      steam.position.set(x, 2.6, z);
+      steam.scale.setScalar(0.8);
+      this.groups.hazards.add(steam);
+      this._ticking.push(steam);
+    }
+    // A wind sock at the pad, its cloth streaming in the wind.
+    const sock = new THREE.Group();
+    p.rod(sock, p.M.steel, 0.04, 3.2, 0, 1.6, 0);
+    const cone = new THREE.Mesh(own(new THREE.CylinderGeometry(0.28, 0.1, 1.4, 14, 4, true)), own(new THREE.MeshStandardMaterial({ color: 0xff6a1a, roughness: 0.9, side: THREE.DoubleSide })));
+    cone.rotation.z = Math.PI / 2;
+    cone.position.set(0.72, 0, 0);
+    const swing = new THREE.Group();
+    swing.position.y = 3.15;
+    swing.add(cone);
+    sock.add(swing);
+    at(sock, HELIPAD.x + 7.6, 0, HELIPAD.z - 3.5);
+    this.cover.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(HELIPAD.x + 7.6, 1.6, HELIPAD.z - 3.5), new THREE.Vector3(0.12, 3.2, 0.12)));
+    sock.userData.tick = (dt, time) => {
+      swing.rotation.y = 0.6 + Math.sin(time * 0.7) * 0.35;
+      swing.rotation.z = -0.15 + Math.sin(time * 2.3) * 0.08;
+      for (const b of blinkers) b.material.opacity = Math.sin(time * 2.6) > 0 ? 1 : 0.05;
+    };
+    this._ticking.push(sock);
+  }
+
+  /**
+   * The city around and below you (city.js): towers rising out of the haze
+   * from streets 160 m down, the street grid glowing with traffic, aircraft
+   * lights on the masts, police helicopters circling with their searchlights.
+   */
+  _buildSkyline(assetBase) {
+    this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3 });
+    this.city.root.name = "Skyline";
+    this.root.add(this.city.root);
+    if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
   }
 
   _buildLights() {
@@ -897,14 +1100,177 @@ export class RoofLevel {
     const k = this.kit;
     for (const [x, z] of [[-13, 0], [13, 5], [0, 2]]) {
       const sack = k.sack({ hp: 1, spheres: 7 });
-      sack.position.set(x, 0.4, z);
+      sack.position.set(x, 0, z); // the crystal floats over its duffel
       this.groups.pickups.add(sack);
       this._ticking.push(sack);
       this.breakables.push(sack.userData.glass);
     }
   }
 
+  /**
+   * Gas canisters standing by the cover. Shoot one and it blows: everyone
+   * within CANISTER_RADIUS goes down (lure the patients to them), and it
+   * hurts you too if you're that close (the host checks).
+   */
+  _buildCanisters() {
+    const k = this.kit;
+    const red = this._track(new THREE.MeshStandardMaterial({ color: 0xa3201a, roughness: 0.45, metalness: 0.45 }));
+    const band = this._track(new THREE.MeshStandardMaterial({ color: 0xd8b02a, roughness: 0.6 }));
+    this.canisters = [];
+    for (const [i, at] of CANISTERS.entries()) {
+      const group = new THREE.Group();
+      group.name = "GasCanister";
+      group.position.copy(at);
+      for (const [dx, dz] of [[0, 0], [0.55, 0.25]]) {
+        const body = new THREE.Mesh(k.geometries.unitCyl, red);
+        body.scale.set(0.6, 1.3, 0.6);
+        body.position.set(dx, 0.65, dz);
+        group.add(body);
+        const stripe = new THREE.Mesh(k.geometries.unitCyl, band);
+        stripe.scale.set(0.62, 0.12, 0.62);
+        stripe.position.set(dx, 1.0, dz);
+        group.add(stripe);
+        const valve = new THREE.Mesh(k.geometries.unitCyl, k.materials.darkMetal);
+        valve.scale.set(0.16, 0.18, 0.16);
+        valve.position.set(dx, 1.38, dz);
+        group.add(valve);
+      }
+      const hit = new THREE.Mesh(k.geometries.unitBox, k.materials.collider);
+      hit.scale.set(1.3, 1.5, 1.0);
+      hit.position.set(0.27, 0.75, 0.12);
+      hit.userData = { kind: "canister", breakable: true, alive: true, index: i };
+      group.add(hit);
+      this.groups.set.add(group);
+      this.breakables.push(hit);
+      const box = new THREE.Box3().setFromCenterAndSize(at.clone().add(new THREE.Vector3(0.27, 0.75, 0.12)), new THREE.Vector3(1.3, 1.5, 1.0));
+      this.cover.push(box);
+      this.canisters.push({ group, hit, box, at: at.clone().setY(0.9) });
+    }
+  }
+
+  /** A canister going up: the blast takes down everyone near it. */
+  _blowCanister(hit) {
+    const c = this.canisters.find((x) => x.hit === hit);
+    if (!c) return null;
+    hit.userData.alive = false;
+    c.group.visible = false;
+    const ci = this.cover.indexOf(c.box);
+    if (ci >= 0) this.cover.splice(ci, 1);
+    let downs = 0;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || enemy.position.distanceTo(c.at) > CANISTER_RADIUS) continue;
+      if (enemy.hit(6, c.at)) {
+        downs += 1;
+        this.state.downs += 1;
+        const i = this.breakables.indexOf(enemy.hurt);
+        if (i >= 0) this.breakables.splice(i, 1);
+        this.events.emit("enemy-down", { enemy, position: enemy.position.clone() });
+      }
+      // Thrown back hard by it.
+      _v.subVectors(enemy.position, c.at).setY(0).normalize();
+      enemy.velocity.addScaledVector(_v, 6);
+    }
+    // Any canister in reach goes up with it - a chain.
+    for (const other of this.canisters) {
+      if (other !== c && other.hit.userData.alive && other.at.distanceTo(c.at) < CANISTER_RADIUS) {
+        other.chain = 0.35;
+      }
+    }
+    this.events.emit("canister", { position: c.at.clone(), downs });
+    return { kind: "canister", position: c.at.clone(), downs };
+  }
+
+  /**
+   * A supply drop: a crate under a parachute from high above, a red flare
+   * where it will land. When it's down, a sphere cache and a serum capsule
+   * stand over it - shoot them or walk into them.
+   */
+  _startDrop(player) {
+    const spots = DROP_SPOTS.filter((p) => !player || p.distanceTo(player) > 6);
+    const at = (spots.length ? spots : DROP_SPOTS)[Math.floor(this.random() * (spots.length || DROP_SPOTS.length))].clone();
+    const k = this.kit;
+    const crate = new THREE.Group();
+    crate.name = "SupplyDrop";
+    const wood = this._track(new THREE.MeshStandardMaterial({ color: 0x4b5232, roughness: 0.8, metalness: 0.2 }));
+    const box = new THREE.Mesh(k.geometries.unitBox, wood);
+    box.scale.set(1.3, 0.9, 1.0);
+    box.position.y = 0.45;
+    crate.add(box);
+    for (const z of [-0.3, 0.3]) {
+      const strap = new THREE.Mesh(k.geometries.unitBox, k.materials.hazard);
+      strap.scale.set(1.34, 0.94, 0.08);
+      strap.position.set(0, 0.45, z);
+      crate.add(strap);
+    }
+    // The canopy and its lines.
+    const canopy = new THREE.Mesh((() => { const g = new THREE.SphereGeometry(2.2, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42); this.owned.geometries.push(g); return g; })(), this._track(new THREE.MeshStandardMaterial({ color: 0xd8dccf, roughness: 0.9, side: THREE.DoubleSide })));
+    canopy.position.y = 4.2;
+    canopy.scale.y = 0.6;
+    const lines = new THREE.Group();
+    for (let i = 0; i < 6; i += 1) {
+      const a = (i / 6) * Math.PI * 2;
+      const line = new THREE.Mesh(k.geometries.unitBox, k.materials.darkMetal);
+      const top = new THREE.Vector3(Math.cos(a) * 1.9, 4.1, Math.sin(a) * 1.9);
+      const bottom = new THREE.Vector3(0, 0.9, 0);
+      line.scale.set(0.02, top.distanceTo(bottom), 0.02);
+      line.position.copy(top).add(bottom).multiplyScalar(0.5);
+      line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(bottom).normalize());
+      lines.add(line);
+    }
+    const chute = new THREE.Group();
+    chute.add(canopy, lines);
+    crate.add(chute);
+    crate.position.set(at.x, DROP_HEIGHT, at.z);
+    this.groups.set.add(crate);
+    // A red flare burning where it'll land.
+    const flare = k.smokeJet({ count: 14 });
+    flare.scale.set(0.8, 2.2, 0.8);
+    flare.position.copy(at);
+    this.groups.hazards.add(flare);
+    this._ticking.push(flare);
+    const glow = new THREE.Mesh(k.geometries.unitSphere, this._track(new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.4, 0.2) })));
+    glow.scale.setScalar(0.12);
+    glow.position.copy(at).setY(0.1);
+    this.groups.set.add(glow);
+    this.drop = { crate, chute, flare, glow, at, landed: false, t: 0 };
+    this.events.emit("drop-incoming", { position: at.clone() });
+  }
+
+  _updateDrop(dt, time) {
+    const d = this.drop;
+    if (!d) return;
+    d.t += dt;
+    if (!d.landed) {
+      // Down at 4.5 m/s, swaying under the canopy.
+      d.crate.position.y = Math.max(0, DROP_HEIGHT - d.t * 4.5);
+      d.crate.rotation.z = Math.sin(time * 1.4) * 0.12 * (d.crate.position.y / DROP_HEIGHT);
+      d.crate.rotation.x = Math.sin(time * 1.1 + 1) * 0.1 * (d.crate.position.y / DROP_HEIGHT);
+      if (d.crate.position.y <= 0) {
+        d.landed = true;
+        d.crate.rotation.set(0, d.crate.rotation.y, 0);
+        d.chute.visible = false;
+        d.glow.visible = false;
+        this.cover.push(new THREE.Box3().setFromCenterAndSize(d.at.clone().setY(0.45), new THREE.Vector3(1.3, 0.9, 1.0)));
+        // What it brought: spheres, and a serum.
+        const kinds = ["coolant", "adrenaline", "overcharge", "barrier"];
+        const cache = this.kit.sack({ hp: 1, spheres: 10 });
+        cache.position.copy(d.at).add(new THREE.Vector3(-1.2, 0, 0));
+        const serum = this.kit.powerup({ kind: kinds[Math.floor(this.random() * kinds.length)] });
+        serum.position.copy(d.at).add(new THREE.Vector3(1.2, 0, 0));
+        for (const piece of [cache, serum]) {
+          this.groups.pickups.add(piece);
+          this._ticking.push(piece);
+          this.breakables.push(piece.userData.glass);
+        }
+        this.events.emit("drop-landed", { position: d.at.clone() });
+      }
+    }
+    // The flare burns out a while after it lands.
+    if (d.landed && d.t > DROP_HEIGHT / 4.5 + 12) d.flare.visible = false;
+  }
+
   _buildOrbs() {
+
     this.orbs = [];
     const core = this._track(new THREE.MeshBasicMaterial({ color: 0xc8fbff }));
     const halo = this._track(new THREE.MeshBasicMaterial({ color: 0x46d8ff, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -1050,6 +1416,13 @@ export class RoofLevel {
       const patient = new Patient(this, { model: this._character("patient"), position: HATCHES[hatch], delay: 0.6 + i * 0.8 });
       this._addEnemy(patient);
     }
+    // The last wave brings the brute out of the far hatch (and endless, every
+    // third wave after it).
+    if (index === 3 || (index > 3 && index % 3 === 0)) {
+      const brute = new Patient(this, { model: this._character("patient"), position: HATCHES[2], delay: 2.2, brute: true });
+      this._addEnemy(brute);
+      this.events.emit("brute", { position: HATCHES[2].clone() });
+    }
     this.events.emit("wave", { index, scientist: spec.scientist });
   }
 
@@ -1163,6 +1536,15 @@ export class RoofLevel {
       remove();
       return { kind: "sack", spheres: data.spheres, position };
     }
+    if (data.kind === "canister") {
+      remove();
+      return this._blowCanister(mesh);
+    }
+    if (data.kind === "powerup") {
+      if (!data.node.userData.onBreak()) return null;
+      remove();
+      return { kind: "powerup", powerupKind: data.powerupKind, position };
+    }
     return null;
   }
 
@@ -1179,6 +1561,7 @@ export class RoofLevel {
   update({ dt, time, player, playerVelocity }) {
     const s = this.state;
     this.fire.setTime(time);
+    this.city?.update(dt, time, { haze: this.cityHaze });
     if (this.cutscene?.kind === "arrival") {
       // The arrival is over (the host has seen `done`): hand the roof over.
       if (!this._arrival) this.cutscene = null;
@@ -1203,6 +1586,16 @@ export class RoofLevel {
     if (!frozen && s.wave === 0 && s.time > 1.2) this._spawnWave(1);
     if (!frozen && s.wave === 1 && (s.time > 19 || (s.time > 4 && this.enemiesAlive === 0))) this._spawnWave(2);
     if (!frozen && s.wave === 2 && (s.time > 36 || (s.time > 24 && this.enemiesAlive === 0))) this._spawnWave(3);
+    // Mid-wave, more of them come up the outside of the tower and over the
+    // open ledges - the fight is not only at the hatches.
+    s.climbers ??= [{ wave: 1, at: 9, side: -1 }, { wave: 2, at: 27, side: 1 }, { wave: 2, at: 29.5, side: -1 }, { wave: 3, at: 44, side: 1 }];
+    if (!frozen && s.climbers.length && s.wave >= s.climbers[0].wave && s.time > s.climbers[0].at) {
+      const { side } = s.climbers.shift();
+      const z = THREE.MathUtils.clamp(player.z + (this.random() - 0.5) * 8, -EDGE + 3, EDGE - 4);
+      const climber = new Patient(this, { model: this._character("patient"), position: new THREE.Vector3(side * EDGE, 0, z), delay: 0.4, climb: side });
+      this._addEnemy(climber);
+      this.events.emit("patient-climb", { position: climber.position.clone() });
+    }
     // Endless: after the three set waves, another every 12-24 s (sooner the
     // longer you last), or as soon as the roof is nearly clear.
     if (this.endless && s.wave >= 3) {
@@ -1245,6 +1638,20 @@ export class RoofLevel {
       this.events.emit("clear", {});
       if (!s.heliArrived) s.heliAt = Math.min(s.heliAt, s.time + 8);
       else if (s.ending === "extraction") this._startVictory();
+    }
+
+    // A supply drop once the second wave is in (endless: every 45 s).
+    if (!frozen && !this.drop && s.wave >= 2 && s.time > 24) this._startDrop(player);
+    if (this.endless && this.drop?.landed && s.time - (this._lastDrop ?? 0) > 45) { this._lastDrop = s.time; this.drop = null; }
+    this._updateDrop(dt, time);
+    for (const c of this.canisters) {
+      if (c.chain === undefined || !c.hit.userData.alive) continue;
+      c.chain -= dt;
+      if (c.chain <= 0) {
+        const i = this.breakables.indexOf(c.hit);
+        if (i >= 0) this.breakables.splice(i, 1);
+        this._blowCanister(c.hit);
+      }
     }
 
     this._updateHelicopter(dt, time);
@@ -1676,6 +2083,7 @@ export class RoofLevel {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });
     this.lift?.userData.dispose?.();
+    this.city?.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
     for (const g of this.owned.geometries) g.dispose();

@@ -15,6 +15,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { SPHERE_FLIGHT, SPHERE_GEOMETRY, sphereMaterial, sphereHalo, sphereHaloMaterial } from "../../systems/spheres.js";
 
 const GRAVITY = -16;
 const FLOOR_Y = 0;
@@ -24,55 +25,39 @@ const FLOOR_Y = 0;
 /* ------------------------------------------------------------------ */
 
 /**
- * The look of each sphere type (src/systems/arsenal.js): glass, cryo, shock.
- * Unknown kinds draw as glass.
+ * The spheres: the Skyline's, as in every level (src/systems/spheres.js) -
+ * the same glowing orb for each sphere type, the same arc, a clean ricochet
+ * off the corridor's walls and ceiling, 45 % back off a solid hazard, 42 %
+ * off the floor, and a glass sphere punching through a pane it breaks.
  */
-const KIND_COLOURS = { glass: [0xd9fbff, 0x9fe8ff], cryo: [0x7fe9ff, 0x4fd8ff], shock: [0xc77dff, 0xb04dff] };
-
 export class Projectiles {
   constructor(scene, { count = 28 } = {}) {
     this.scene = scene;
-    this.geometry = new THREE.SphereGeometry(0.13, 14, 10);
-    this.materials = {};
-    for (const [kind, [colour, glow]] of Object.entries(KIND_COLOURS)) {
-      this.materials[kind] = {
-        body: new THREE.MeshStandardMaterial({ color: colour, metalness: 0.6, roughness: 0.12, emissive: glow, emissiveIntensity: 0.45 }),
-        glow: new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
-      };
-    }
-    this.material = this.materials.glass.body;
-    this.glowMaterial = this.materials.glass.glow;
     this.balls = [];
     for (let i = 0; i < count; i += 1) {
-      const mesh = new THREE.Mesh(this.geometry, this.material);
-      const glow = new THREE.Mesh(this.geometry, this.glowMaterial);
-      glow.scale.setScalar(2.2);
-      mesh.add(glow);
+      const mesh = new THREE.Mesh(SPHERE_GEOMETRY, sphereMaterial("glass"));
+      mesh.add(sphereHalo("glass"));
       mesh.visible = false;
       scene.add(mesh);
-      this.balls.push({ mesh, glow, velocity: new THREE.Vector3(), life: 0, active: false, bounces: 0, power: 1, gravity: -GRAVITY, kind: "glass" });
+      this.balls.push({ mesh, velocity: new THREE.Vector3(), life: 0, active: false, bounces: 0, power: 1, gravity: -GRAVITY, kind: "glass", radius: 0.17 });
     }
     this._ray = new THREE.Raycaster();
     this._dir = new THREE.Vector3();
     this._next = new THREE.Vector3();
+    this._end = new THREE.Vector3();
     this._normal = new THREE.Vector3();
   }
 
-  /** Brightness of the balls' glow: raised in the dark, where balls are flares. */
-  setGlow(value) {
-    for (const m of Object.values(this.materials)) {
-      m.body.emissiveIntensity = 0.45 * value;
-      m.glow.opacity = Math.min(0.9, 0.35 * value);
-    }
-  }
+  /** The orbs light themselves; kept so callers (the flashlight) needn't know. */
+  setGlow() {}
 
   /**
    * @param {object} [o]
-   * @param {number} [o.gravity]  m/s^2 down (the sphere type's: Level 1's arcs)
+   * @param {number} [o.gravity]  m/s^2 down (the sphere type's)
    * @param {string} [o.kind]     glass | cryo | shock
    * @param {number} [o.radius]   metres
    */
-  fire(origin, direction, speed = 70, { power = 1, inherit, gravity = -GRAVITY, kind = "glass", radius = 0.13 } = {}) {
+  fire(origin, direction, speed = 70, { power = 1, inherit, gravity = -GRAVITY, kind = "glass", radius = 0.17 } = {}) {
     const ball = this.balls.find((b) => !b.active) ?? this.balls.reduce((a, b) => (a.life > b.life ? a : b));
     ball.active = true;
     ball.life = 0;
@@ -80,10 +65,10 @@ export class Projectiles {
     ball.power = power;
     ball.gravity = gravity;
     ball.kind = kind;
-    const look = this.materials[kind] ?? this.materials.glass;
-    ball.mesh.material = look.body;
-    ball.glow.material = look.glow;
-    ball.mesh.scale.setScalar(radius / 0.13);
+    ball.radius = radius;
+    ball.mesh.material = sphereMaterial(kind);
+    ball.mesh.children[0].material = sphereHaloMaterial(kind);
+    ball.mesh.scale.setScalar(radius);
     ball.mesh.position.copy(origin);
     ball.velocity.copy(direction).normalize().multiplyScalar(speed);
     if (inherit) ball.velocity.add(inherit);
@@ -91,19 +76,28 @@ export class Projectiles {
     return ball;
   }
 
+  _retire(ball) {
+    ball.active = false;
+    ball.mesh.visible = false;
+  }
+
   /**
    * @param {number} dt
-   * @param {{breakables: THREE.Object3D[], solids: THREE.Object3D[], onBreakable: Function, onSolid: Function}} world
+   * @param {object} world
+   * @param {THREE.Object3D[]} world.breakables
+   * @param {THREE.Object3D[]} world.solids
+   * @param {Function} [world.surface]      (start, end, radius) -> wall/ceiling contact (spheres.js routeSurfaceHit)
+   * @param {Function} [world.onBreakable]  false: not consumed; "through": broke it, keep flying
+   * @param {Function} [world.onSolid]
+   * @param {Function} [world.onSurface]    a wall or ceiling ricochet
+   * @param {Function} [world.onFloor]
    */
-  update(dt, { breakables, solids, onBreakable, onSolid, onFloor }) {
+  update(dt, { breakables, solids, surface, onBreakable, onSolid, onSurface, onFloor }) {
+    const F = SPHERE_FLIGHT;
     for (const ball of this.balls) {
       if (!ball.active) continue;
       ball.life += dt;
-      if (ball.life > 2.6) {
-        ball.active = false;
-        ball.mesh.visible = false;
-        continue;
-      }
+      if (ball.life > F.life) { this._retire(ball); continue; }
 
       ball.velocity.y -= ball.gravity * dt;
       const p = ball.mesh.position;
@@ -112,61 +106,62 @@ export class Projectiles {
       if (travel < 1e-5) continue;
       this._dir.copy(this._next).divideScalar(travel);
       this._ray.set(p, this._dir);
-      this._ray.far = travel + 0.13;
+      this._ray.far = travel + ball.radius;
 
       // Breakables first. Glass panes also have an invisible collider a
       // few cm in front of them; that one is ignored so the ball reaches
       // the glass rather than bouncing off an unseen box.
       const hitB = this._ray.intersectObjects(breakables, false)[0];
       const hitS = this._ray.intersectObjects(solids, false).find((h) => !h.object.userData.glass && !h.object.userData.disabled);
+      this._end.copy(p).add(this._next);
+      const wall = surface?.(p, this._end, ball.radius) ?? null;
 
-      if (hitB && (!hitS || hitB.distance <= hitS.distance)) {
+      if (hitB && (!hitS || hitB.distance <= hitS.distance) && (!wall || hitB.distance <= wall.distance)) {
         p.copy(hitB.point);
-        const consumed = onBreakable?.(hitB.object, hitB.point, ball) !== false;
-        if (consumed) {
-          ball.active = false;
-          ball.mesh.visible = false;
+        const consumed = onBreakable?.(hitB.object, hitB.point, ball);
+        if (consumed === "through") {
+          // A glass sphere through the pane it broke, a little slower.
+          ball.velocity.multiplyScalar(F.punch);
+          p.addScaledVector(this._dir, 0.05);
           continue;
         }
+        if (consumed !== false) { this._retire(ball); continue; }
+      } else if (wall && (!hitS || wall.distance <= hitS.distance)) {
+        // The corridor hands it back at full speed: a clean ricochet.
+        const speed = ball.velocity.length();
+        ball.velocity.reflect(wall.normal).normalize().multiplyScalar(speed * F.wall);
+        p.copy(wall.position);
+        onSurface?.(wall.point, ball, wall);
+        continue;
       } else if (hitS) {
-        // Bounce off solid hazards with most of the energy gone.
-        p.copy(hitS.point).addScaledVector(this._dir, -0.14);
+        p.copy(hitS.point).addScaledVector(this._dir, -ball.radius);
         this._normal.copy(hitS.face?.normal ?? this._dir.clone().negate()).transformDirection(hitS.object.matrixWorld);
-        ball.velocity.reflect(this._normal).multiplyScalar(0.38);
+        ball.velocity.reflect(this._normal).multiplyScalar(F.solid);
         ball.bounces += 1;
         onSolid?.(hitS.object, hitS.point, ball);
-        if (ball.bounces > 3) {
-          ball.active = false;
-          ball.mesh.visible = false;
-        }
+        if (ball.bounces > F.solidBounces || ball.life > F.life) this._retire(ball);
         continue;
       }
 
       p.add(this._next);
-      if (p.y < FLOOR_Y + 0.13 && ball.velocity.y < 0) {
-        p.y = FLOOR_Y + 0.13;
-        if (Math.abs(ball.velocity.y) > 2) onFloor?.(p, ball);
-        ball.velocity.y *= -0.45;
-        ball.velocity.x *= 0.8;
-        ball.velocity.z *= 0.8;
+      if (p.y < FLOOR_Y + ball.radius && ball.velocity.y < 0) {
+        p.y = FLOOR_Y + ball.radius;
+        if (Math.abs(ball.velocity.y) > 2 || ball.kind !== "glass") onFloor?.(p, ball);
+        if (ball.life > F.life) { this._retire(ball); continue; }
+        ball.velocity.y *= -F.floor;
+        ball.velocity.x *= F.floorFriction;
+        ball.velocity.z *= F.floorFriction;
       }
     }
   }
 
   clear() {
-    for (const b of this.balls) {
-      b.active = false;
-      b.mesh.visible = false;
-    }
+    for (const b of this.balls) this._retire(b);
   }
 
   dispose() {
+    // The orb geometry and materials are shared by every level (spheres.js).
     for (const b of this.balls) this.scene.remove(b.mesh);
-    this.geometry.dispose();
-    for (const m of Object.values(this.materials)) {
-      m.body.dispose();
-      m.glow.dispose();
-    }
   }
 }
 

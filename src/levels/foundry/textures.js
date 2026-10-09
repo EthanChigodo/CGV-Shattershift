@@ -36,9 +36,9 @@ function finish(canvas, { repeat = [1, 1], srgb = false } = {}) {
  */
 function heightToNormal(heightCanvas, strength = 2) {
   const size = heightCanvas.width;
-  const src = heightCanvas.getContext("2d").getImageData(0, 0, size, size).data;
+  const src = heightCanvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, size, size).data;
   const out = createCanvas(size);
-  const ctx = out.getContext("2d");
+  const ctx = out.getContext("2d", { willReadFrequently: true });
   const image = ctx.createImageData(size, size);
 
   const heightAt = (x, y) => {
@@ -103,7 +103,7 @@ function grain(ctx, size, amount, seed) {
 
 function ribbedPlatingHeight(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#6e6e6e";
   ctx.fillRect(0, 0, size, size);
 
@@ -137,7 +137,7 @@ function ribbedPlatingHeight(size = 256) {
 
 function ribbedPlatingColour(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#39434b";
   ctx.fillRect(0, 0, size, size);
 
@@ -176,7 +176,7 @@ function ribbedPlatingColour(size = 256) {
 
 function grateHeight(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#111111";
   ctx.fillRect(0, 0, size, size);
 
@@ -202,7 +202,7 @@ function grateHeight(size = 256) {
 
 function grateColour(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#0d1114";
   ctx.fillRect(0, 0, size, size);
 
@@ -233,7 +233,7 @@ function grateColour(size = 256) {
 
 function hazardStripeCanvas(size = 256, warm = "#d8a21a", cold = "#16191c") {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = cold;
   ctx.fillRect(0, 0, size, size);
   ctx.fillStyle = warm;
@@ -261,7 +261,7 @@ function hazardStripeCanvas(size = 256, warm = "#d8a21a", cold = "#16191c") {
 
 function heatPanelCanvas(size = 256) {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const gradient = ctx.createLinearGradient(0, 0, 0, size);
   gradient.addColorStop(0, "#2b0d05");
   gradient.addColorStop(0.45, "#c8380c");
@@ -279,7 +279,7 @@ function heatPanelCanvas(size = 256) {
 /** Soft round sprite used for steam puffs and spark motes. */
 function softParticleCanvas(size = 64, inner = "rgba(255,255,255,0.95)") {
   const canvas = createCanvas(size);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   gradient.addColorStop(0, inner);
   gradient.addColorStop(0.45, "rgba(255,255,255,0.25)");
