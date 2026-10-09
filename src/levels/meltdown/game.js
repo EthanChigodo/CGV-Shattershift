@@ -1082,7 +1082,10 @@ export class MeltdownGame {
     this._placeKeyLight(avatar.root.position);
     if (playing) this._checkHazards(dt);
     if (!cutscene) this._updateCamera(dt, time);
-    this._placeLauncher(firstPerson);
+    // The story's scenes (the blocked lift, the desk, into the lift) are seen
+    // first person with the body hidden: the launcher stays in your hands, in
+    // view - not on the shoulder of a body that isn't drawn.
+    this._placeLauncher(firstPerson || this.phase === "story");
     this.projectiles.update(dt, {
       breakables: level.breakables, solids: level.obstacles,
       surface: (a, b, radius) => level.surfaceHit(a, b, radius),
