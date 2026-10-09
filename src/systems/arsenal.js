@@ -78,6 +78,8 @@ export class Arsenal {
     this.serial = (this.serial ?? 0) + 1;
     this.active.set(type, { remaining: def.duration, duration: def.duration, serial: this.serial });
     if (type === "shield") this.shieldCharges = def.charges;
+    // The host shows it (src/ui/powerup-banner.js).
+    this.onActivate?.(type);
   }
 
   isActive(type) { return this.active.has(type); }

@@ -72,6 +72,11 @@ export class SerumFx {
     return { a: Math.random() * Math.PI * 2, r: scatter ? Math.random() : 0.1 + Math.random() * 0.15, v: 0.6 + Math.random() * 1.4, w: 0.6 + Math.random() * 1.6 };
   }
 
+  /** The next injection of this serum is announced elsewhere (the first-pickup card): skip its banner. */
+  quiet(key) {
+    (this.quietKeys ??= new Set()).add(key);
+  }
+
   /** A serum just went in: the big banner (with what's left of it, if it's been running). */
   announce(def, state = null) {
     this.banner.style.setProperty("--c", def.colour);
@@ -117,6 +122,8 @@ export class SerumFx {
       const id = s.serial ?? `${key}:${Math.round(s.duration - s.remaining)}`;
       if (s.serial !== undefined ? !this.announced.has(id) : !this.previous.get(key)) {
         this.announced.add(id);
+        // Already explained on the paused first-pickup card: no banner too.
+        if (this.quietKeys?.delete(key)) continue;
         this.announce(SERUMS[key], s);
       }
     }

@@ -17,6 +17,7 @@
       }
     </script>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./src/ui/menu-fx.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
     <link rel="stylesheet" href="./src/ui/serum-fx.css" data-serum-fx />
   </head>
@@ -88,7 +89,7 @@
     <section id="startScreen" class="screen menu-screen">
       <div class="menu-main">
         <p class="eyebrow">ASCENSION TOWER // LEVEL 212 // DEMOLITION ARMED</p>
-        <h1>WAKE UP.<br />GET TO THE ROOF.</h1>
+        <h1 class="glitch-title" data-text="WAKE UP.&#10;GET TO THE ROOF.">WAKE UP.<br />GET TO THE ROOF.</h1>
         <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Climb out of the basement, through the labs and across the skyline to the helicopter on the roof before the tower comes down.</p>
         <nav class="menu-list" aria-label="Main menu">
           <button id="startButton" class="menu-button primary" type="button">
@@ -205,6 +206,10 @@
             <span>Aim assist (small targets near the crosshair count as aimed at)</span>
             <input type="checkbox" id="aimAssistToggle" checked />
           </label>
+          <div class="setting-row">
+            <span>Power-up tips (each serum is explained the first time you pick it up)</span>
+            <button type="button" id="resetPowerupTipsButton" class="text-button">Show them again</button>
+          </div>
         </div>
 
         <div class="settings-group">
@@ -223,6 +228,14 @@
 
         <div class="settings-group">
           <p class="settings-heading">Accessibility</p>
+          <label class="setting-row">
+            <span>Subtitle size</span>
+            <select id="subtitleSizeSelect">
+              <option value="normal">Normal</option>
+              <option value="large">Large</option>
+              <option value="xl">Extra large</option>
+            </select>
+          </label>
           <label class="setting-row toggle-row">
             <span>Reduced motion &amp; camera shake</span>
             <input type="checkbox" id="reducedMotionToggle" />
@@ -298,7 +311,11 @@
     <section id="manualScreen" class="screen manual-screen" aria-label="Field manual">
       <div class="screen-copy manual-copy">
         <p class="eyebrow">FIELD MANUAL // ASCENSION TOWER</p>
-        <h2>Everything in the tower, and what it does</h2>
+        <div class="manual-head">
+          <h2>Everything in the tower, and what it does</h2>
+          <button id="manualTopBackButton" type="button" class="primary-button">BACK</button>
+        </div>
+        <p class="manual-legend"><span data-act="break">Break it</span> shoot or throw at it <span data-act="avoid">Avoid it</span> change lanes or put it out <span data-act="collect">Collect it</span> run through or shoot it <span data-act="tool">Your tools</span> what you have</p>
         <div class="tabs manual-tabs" role="tablist">
           <button type="button" role="tab" class="tab on" data-tab="m-tools" aria-selected="true">Spheres &amp; serums</button>
           <button type="button" role="tab" class="tab" data-tab="m-foundry" aria-selected="false">01 Foundry</button>
@@ -308,60 +325,61 @@
         </div>
         <div class="tab-panel" data-panel="m-tools">
           <div class="manual-grid tools">
-            <article data-tone="white"><h3>Glass sphere // 1</h3><p>Standard throw. Punches through panes and keeps going; ricochets off walls and ceilings.</p></article>
-            <article data-tone="cyan"><h3>Cryo sphere // 2</h3><p>Puts out every fire within 4.8 m, freezes falling debris and machinery, knocks people down.</p></article>
-            <article data-tone="violet"><h3>Shock sphere // 3</h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
-            <article data-tone="cyan"><h3>Sphere cache</h3><p>The floating cyan crystal. Shoot it or run into it for spheres.</p></article>
-            <article data-tone="prism"><h3>Prism split</h3><p>Gold capsule. Every throw splits into three spheres. 10 s.</p></article>
-            <article data-tone="fire"><h3>Thermal sight</h3><p>Orange capsule. See through smoke and the dark. 12 s.</p></article>
-            <article data-tone="green"><h3>Kinetic shield</h3><p>Green capsule. Absorbs the next two impacts. 25 s.</p></article>
-            <article data-tone="serum"><h3>Overdrive</h3><p>Pink capsule. Free throws, faster running, heavier hits. 8 s.</p></article>
-            <article data-tone="amber"><h3>Records</h3><p>Gold holograms in light beams, in every sector: plant logs, patient records, case files, flight records. Run through one to read it.</p></article>
+            <article data-tone="white" data-act="tool"><h3>Glass sphere // 1</h3><p>Standard throw. Punches through panes and keeps going; ricochets off walls and ceilings.</p></article>
+            <article data-tone="cyan" data-act="tool"><h3>Cryo sphere // 2</h3><p>Puts out every fire within 4.8 m, freezes falling debris and machinery, knocks people down.</p></article>
+            <article data-tone="violet" data-act="tool"><h3>Shock sphere // 3</h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
+            <article data-tone="cyan" data-act="collect"><h3>Sphere cache</h3><p>The floating cyan crystal. Shoot it or run into it for spheres.</p></article>
+            <article data-tone="prism" data-act="collect"><h3>Prism split</h3><p>Gold capsule. Every throw splits into three spheres. 10 s.</p></article>
+            <article data-tone="fire" data-act="collect"><h3>Thermal sight</h3><p>Orange capsule. See through smoke and the dark. 12 s.</p></article>
+            <article data-tone="green" data-act="collect"><h3>Kinetic shield</h3><p>Green capsule. Absorbs the next two impacts. 25 s.</p></article>
+            <article data-tone="serum" data-act="collect"><h3>Overdrive</h3><p>Pink capsule. Free throws, faster running, heavier hits. 8 s.</p></article>
+            <article data-tone="amber" data-act="collect"><h3>Records</h3><p>Gold holograms in light beams, in every sector: plant logs, patient records, case files, flight records. Run through one to read it.</p></article>
           </div>
         </div>
         <div class="tab-panel" data-panel="m-foundry" hidden>
           <div class="manual-grid">
-            <article data-tone="glass"><h3>Switch cells</h3><p>Glass cells on stems. Break one and the gate it holds opens - three stand between you and the lift.</p></article>
-            <article data-tone="cyan"><h3>Pressure cells</h3><p>Small glass cells everywhere: score, and three spheres back each.</p></article>
-            <article data-tone="hazard"><h3>Pistons and presses</h3><p>Slam down on a rhythm. Read the timing or change lanes; cryo freezes them for a few seconds.</p></article>
-            <article data-tone="hazard"><h3>Barriers</h3><p>Low ones you jump (Space or W), high ones you slide under (Shift or S).</p></article>
-            <article data-tone="fire"><h3>Plant charges</h3><p>Near the end Vale's charges arm and the shutters start sealing: a clock to the lift. Break the extraction valve.</p></article>
+            <article data-tone="glass" data-act="break"><h3>Switch cells</h3><p>Glass cells on stems. Break one and the gate it holds opens - three stand between you and the lift.</p></article>
+            <article data-tone="cyan" data-act="break"><h3>Pressure cells</h3><p>Small glass cells everywhere: score, and three spheres back each.</p></article>
+            <article data-tone="hazard" data-act="avoid"><h3>Pistons and presses</h3><p>Slam down on a rhythm. Read the timing or change lanes; cryo freezes them for a few seconds.</p></article>
+            <article data-tone="hazard" data-act="avoid"><h3>Barriers</h3><p>Low ones you jump (Space or W), high ones you slide under (Shift or S).</p></article>
+            <article data-tone="fire" data-act="break"><h3>Plant charges</h3><p>Near the end Vale's charges arm and the shutters start sealing: a clock to the lift. Break the extraction valve.</p></article>
           </div>
         </div>
         <div class="tab-panel" data-panel="m-labs" hidden>
           <div class="manual-grid">
-            <article data-tone="fire"><h3>The fire front</h3><p>It's behind you the whole way. Slow down and it catches you.</p></article>
-            <article data-tone="hazard"><h3>Fallen ducts</h3><p>Jump onto them and off the far side - running into one is a hit. At the fire crossings, the duct is the only bridge.</p></article>
-            <article data-tone="hazard"><h3>Patients</h3><p>Lurch out into your lane. In the dark they stalk you, following your lane until the last moment: shoot them (two hits) or sidestep late.</p></article>
-            <article data-tone="blue"><h3>The launcher's light</h3><p>When the power dies, your beam is the only light. Spheres glow - firing ahead is scouting.</p></article>
-            <article data-tone="glass"><h3>Glass and lasers</h3><p>Panes break (glass spheres go straight through); laser grids you jump or slide.</p></article>
+            <article data-tone="fire" data-act="avoid"><h3>The fire front</h3><p>It's behind you the whole way. Slow down and it catches you.</p></article>
+            <article data-tone="hazard" data-act="avoid"><h3>Fallen ducts</h3><p>Jump onto them and off the far side - running into one is a hit. At the fire crossings, the duct is the only bridge.</p></article>
+            <article data-tone="hazard" data-act="break"><h3>Patients</h3><p>Lurch out into your lane. In the dark they stalk you, following your lane until the last moment: shoot them (two hits) or sidestep late.</p></article>
+            <article data-tone="blue" data-act="tool"><h3>The launcher's light</h3><p>When the power dies, your beam is the only light. Spheres glow - firing ahead is scouting.</p></article>
+            <article data-tone="glass" data-act="break"><h3>Glass and lasers</h3><p>Panes break (glass spheres go straight through); laser grids you jump or slide.</p></article>
           </div>
         </div>
         <div class="tab-panel" data-panel="m-skyline" hidden>
           <div class="manual-grid">
-          <article data-tone="glass"><h3>Glass pane</h3><p>Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity.</p></article>
-          <article data-tone="glass"><h3>Reinforced glass and doors</h3><p>Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one.</p></article>
-          <article data-tone="cyan"><h3>Sphere cache</h3><p>Floating crystal. Shoot it for +3 spheres. Your only real source of ammunition.</p></article>
-          <article data-tone="hazard"><h3>Solid hazards</h3><p>Dark steel with amber stripes: carts, cabinets, racks, fallen beams. They never break. Change lanes.</p></article>
-          <article data-tone="fire"><h3>Fire</h3><p>Burns integrity while you stand in it and thickens the smoke. Put it out with a sprinkler or a cryo sphere.</p></article>
-          <article data-tone="blue"><h3>Sprinkler bulb</h3><p>The small red glass bulb on the ceiling. Shoot it to flood the area and put out the fires below it.</p></article>
-          <article data-tone="green"><h3>Air vent</h3><p>A round frosted cover in the wall with a glowing cyan ring and a SMOKE VENT sign, angled toward you. The ring pulses when the air is smoky. Throw a sphere at it to pull the smoke out; the ring turns green.</p></article>
-          <article data-tone="hazard"><h3>Ceiling collapse</h3><p>A red ring on the floor means something is about to fall there. Beams block the lane. Falling glass can be shot mid-air.</p></article>
-          <article data-tone="glass"><h3>Rotating sculpture</h3><p>A steel pole blocks the centre lane; glass blades sweep the outer lanes. Shoot the blades or time your lane.</p></article>
-          <article data-tone="serum"><h3>Serum capsules</h3><p>Prism split (triple throw), thermal sight (see through smoke), kinetic shield (absorbs two hits), overdrive (free throws, faster).</p></article>
-          <article data-tone="amber"><h3>Case files</h3><p>Five gold holograms, each standing in a column of light: two in the ward, one on the skybridge, two in the atrium. Run through one or shoot it to read what happened here.</p></article>
-          <article data-tone="white"><h3>Specimen tanks</h3><p>Glass tanks along the walls. Optional score.</p></article>
-          <article data-tone="amber"><h3>Lift gate</h3><p>Break locks I, II, III in order. Wrong order is rejected. You have seven seconds once you reach the gate.</p></article>
+          <article data-tone="glass" data-act="break"><h3>Glass pane</h3><p>Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity.</p></article>
+          <article data-tone="glass" data-act="break"><h3>Reinforced glass and doors</h3><p>Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one.</p></article>
+          <article data-tone="cyan" data-act="collect"><h3>Sphere cache</h3><p>Floating crystal. Shoot it for +3 spheres. Your only real source of ammunition.</p></article>
+          <article data-tone="hazard" data-act="avoid"><h3>Solid hazards</h3><p>Dark steel with amber stripes: carts, cabinets, racks, fallen beams. They never break. Change lanes.</p></article>
+          <article data-tone="fire" data-act="avoid"><h3>Fire</h3><p>Burns integrity while you stand in it and thickens the smoke. Put it out with a sprinkler or a cryo sphere.</p></article>
+          <article data-tone="blue" data-act="break"><h3>Sprinkler bulb</h3><p>The small red glass bulb on the ceiling. Shoot it to flood the area and put out the fires below it.</p></article>
+          <article data-tone="green" data-act="break"><h3>Air vent</h3><p>A round frosted cover in the wall with a glowing cyan ring and a SMOKE VENT sign, angled toward you. The ring pulses when the air is smoky. Throw a sphere at it to pull the smoke out; the ring turns green.</p></article>
+          <article data-tone="hazard" data-act="avoid"><h3>Ceiling collapse</h3><p>A red ring on the floor means something is about to fall there. Beams block the lane. Falling glass can be shot mid-air.</p></article>
+          <article data-tone="glass" data-act="break"><h3>Rotating sculpture</h3><p>A steel pole blocks the centre lane; glass blades sweep the outer lanes. Shoot the blades or time your lane.</p></article>
+          <article data-tone="serum" data-act="collect"><h3>Serum capsules</h3><p>Prism split (triple throw), thermal sight (see through smoke), kinetic shield (absorbs two hits), overdrive (free throws, faster).</p></article>
+          <article data-tone="amber" data-act="collect"><h3>Case files</h3><p>Five gold holograms, each standing in a column of light: two in the ward, one on the skybridge, two in the atrium. Run through one or shoot it to read what happened here.</p></article>
+          <article data-tone="white" data-act="break"><h3>Specimen tanks</h3><p>Glass tanks along the walls. Optional score.</p></article>
+          <article data-tone="amber" data-act="break"><h3>Lift gate</h3><p>Break locks I, II, III in order. Wrong order is rejected. You have seven seconds once you reach the gate.</p></article>
+          <article data-act="tool"><h3>Sprint, brake, focus</h3><p>W sprints, S brakes (the bridge collapses behind you, so do not brake long). Hold right mouse to slow time.</p></article>
         </div>
         </div>
         <div class="tab-panel" data-panel="m-roof" hidden>
           <div class="manual-grid">
-            <article data-tone="hazard"><h3>Patients</h3><p>Climb out of the hatches, stalk, wind up and charge in a straight line. Sidestep one near an open ledge and it goes over.</p></article>
-            <article data-tone="serum"><h3>Scientists</h3><p>Fire slow orbs from their gadgets - dodge them (Space). Three hits each.</p></article>
-            <article data-tone="fire"><h3>Gas canisters</h3><p>Red, by the cover. Shoot one and everyone near it goes down - chains into the next. Not too close yourself.</p></article>
-            <article data-tone="cyan"><h3>Supply drop</h3><p>A flare, a crate under a parachute: spheres and a serum. Walk into them or shoot them.</p></article>
-            <article data-tone="hazard"><h3>The brute</h3><p>The last wave's big one: six hits, charges harder. Use a canister or the ledge.</p></article>
-            <article data-tone="amber"><h3>The helicopter</h3><p>Clear the roof and it lands; still fighting when it comes and it hangs off the ledge - jump for the ladder.</p></article>
+            <article data-tone="hazard" data-act="break"><h3>Patients</h3><p>Climb out of the hatches, stalk, wind up and charge in a straight line. Sidestep one near an open ledge and it goes over.</p></article>
+            <article data-tone="serum" data-act="break"><h3>Scientists</h3><p>Fire slow orbs from their gadgets - dodge them (Space). Three hits each.</p></article>
+            <article data-tone="fire" data-act="break"><h3>Gas canisters</h3><p>Red, by the cover. Shoot one and everyone near it goes down - chains into the next. Not too close yourself.</p></article>
+            <article data-tone="cyan" data-act="collect"><h3>Supply drop</h3><p>A flare, a crate under a parachute: spheres and a serum. Walk into them or shoot them.</p></article>
+            <article data-tone="hazard" data-act="avoid"><h3>The brute</h3><p>The last wave's big one: six hits, charges harder. Use a canister or the ledge.</p></article>
+            <article data-tone="amber" data-act="collect"><h3>The helicopter</h3><p>Clear the roof and it lands; still fighting when it comes and it hangs off the ledge - jump for the ladder.</p></article>
           </div>
         </div>
         <div class="button-row">

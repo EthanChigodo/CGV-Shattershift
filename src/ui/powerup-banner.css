@@ -1,0 +1,174 @@
+/* Power-ups in front of the player (src/ui/powerup-banner.js). */
+
+/* The old side panel is replaced by the badge at the top centre. */
+.cw-serums { display: none !important; }
+
+/* ---- Active serums: top centre ---------------------------------------- */
+.pu-badges {
+  position: fixed; z-index: 7; left: 50%; top: 74px; transform: translateX(-50%);
+  display: flex; gap: 12px; pointer-events: none;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+.pu-badge {
+  position: relative; min-width: 250px; padding: 10px 16px 14px; overflow: hidden;
+  border: 2px solid var(--c); border-radius: 6px;
+  background: rgba(6, 8, 10, .82);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--c) 45%, transparent);
+  animation: puIn .35s ease both;
+}
+.pu-badge-top { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
+.pu-badge-top b { color: var(--c); font-size: 19px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.pu-badge-top span { color: #fff; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pu-badge-action { margin-top: 3px; color: #eef3f5; font-size: 14px; font-weight: 600; }
+.pu-badge-bar {
+  position: absolute; left: 0; bottom: 0; height: 5px; width: 100%;
+  background: var(--c); transform-origin: left; transform: scaleX(var(--r, 1));
+}
+.pu-badge.ending { animation: puPulse .5s ease-in-out infinite alternate; }
+
+/* The screen's edges glow in the serum's colour while one is active. */
+.pu-edge {
+  position: fixed; inset: 0; z-index: 6; pointer-events: none; opacity: 0; transition: opacity .4s;
+  box-shadow: inset 0 0 90px 10px color-mix(in srgb, var(--c, #fff) 55%, transparent);
+}
+.pu-edge.on { opacity: .75; }
+.pu-edge.ending { animation: puEdge .5s ease-in-out infinite alternate; }
+
+/* Hidden with the rest of the HUD (H, the View menu's "Active serums",
+   photo mode, cutscenes). */
+body.hud-hidden .pu-badges, body.hud-off-serums .pu-badges,
+body.photo-hide-hud .pu-badges, body.photo-hide-hud .pu-edge,
+body.story-cutscene .pu-badges, body.cutscene .pu-badges { display: none; }
+
+/* ---- First pickup: the paused card (above the fade, z 9, in case a level
+   is still fading in) ---------------------------------------------------- */
+.pu-card {
+  position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px;
+  background: rgba(4, 5, 6, .62); backdrop-filter: blur(4px);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+.pu-card[hidden] { display: none; }
+.pu-card-box {
+  position: relative; display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 6px 26px;
+  width: min(720px, 100%); padding: 26px 30px 24px 22px; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--c) 70%, transparent);
+  /* Angled corners, like a HUD panel. */
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  background:
+    radial-gradient(ellipse at 18% 50%, color-mix(in srgb, var(--c) 26%, transparent), transparent 55%),
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 7%, transparent) 0 2px, transparent 2px 12px),
+    linear-gradient(160deg, rgba(14, 18, 22, .97), rgba(5, 7, 9, .97));
+  box-shadow: 0 0 80px color-mix(in srgb, var(--c) 35%, transparent), inset 0 0 0 1px rgba(255, 255, 255, .04);
+}
+/* Scanlines, and a band of light sweeping across once it lands. */
+.pu-card-box::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .03) 0 1px, transparent 1px 3px);
+}
+.pu-card-box::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 30%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .13), transparent);
+  transform: skewX(-18deg); opacity: 0;
+}
+.pu-card.show .pu-card-box { animation: puOpen .45s cubic-bezier(.2, .9, .25, 1) both; }
+.pu-card.show .pu-card-box::after { animation: puSweep 1.1s .35s ease-out both; }
+.pu-corner { position: absolute; width: 16px; height: 16px; border: 0 solid var(--c); pointer-events: none; }
+.pu-corner.tl { top: 8px; left: 8px; border-top-width: 2px; border-left-width: 2px; }
+.pu-corner.tr { top: 8px; right: 8px; border-top-width: 2px; border-right-width: 2px; }
+.pu-corner.bl { bottom: 8px; left: 8px; border-bottom-width: 2px; border-left-width: 2px; }
+.pu-corner.br { bottom: 8px; right: 8px; border-bottom-width: 2px; border-right-width: 2px; }
+
+/* The capsule, turning in its ring. */
+.pu-card-art { position: relative; display: grid; place-items: center; width: 210px; height: 210px; }
+.pu-card-halo {
+  position: absolute; inset: 18px; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--c) 55%, transparent), transparent 68%);
+  animation: puBreathe 2.4s ease-in-out infinite;
+}
+.pu-card-ring {
+  position: absolute; inset: 6px; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 18%, var(--c) 22%, transparent 30% 52%, var(--c) 56%, transparent 64% 100%);
+  -webkit-mask: radial-gradient(circle, transparent 62%, #000 63%, #000 66%, transparent 67%);
+  mask: radial-gradient(circle, transparent 62%, #000 63%, #000 66%, transparent 67%);
+  animation: puSpin 6s linear infinite;
+}
+.pu-card-img {
+  position: relative; width: 168px; height: 168px; object-fit: contain;
+  filter: drop-shadow(0 0 18px var(--c)) drop-shadow(0 8px 12px rgba(0, 0, 0, .6));
+  animation: puFloat 3s ease-in-out infinite;
+}
+.pu-card-img[hidden] { display: none; }
+
+.pu-card-info { position: relative; text-align: left; }
+.pu-card-eyebrow { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--c); font-size: 11px; font-weight: 800; letter-spacing: .24em; }
+.pu-card-eyebrow span { color: #8e9aa1; }
+.pu-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); animation: puBlink 1s steps(2) infinite; }
+.pu-card-name {
+  margin: 6px 0 8px; max-width: none; font-size: clamp(32px, 4.6vw, 50px); font-weight: 900; line-height: 1; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--c); text-shadow: 0 0 22px color-mix(in srgb, var(--c) 60%, transparent);
+}
+.pu-card-text { margin: 0 0 14px; color: #f2f6f7; font-size: 17px; font-weight: 600; line-height: 1.4; }
+.pu-card-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.pu-card-stats div {
+  min-width: 82px; padding: 6px 10px 7px; border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); border-radius: 3px;
+  background: color-mix(in srgb, var(--c) 10%, rgba(0, 0, 0, .4));
+}
+.pu-card-stats small { display: block; color: #8e9aa1; font-size: 9px; font-weight: 800; letter-spacing: .2em; }
+.pu-card-stats b { display: block; margin-top: 2px; color: #fff; font-size: 15px; font-weight: 800; }
+.pu-card-action { margin: 0 0 18px; padding: 8px 0 8px 12px; border-left: 3px solid var(--c); background: linear-gradient(90deg, color-mix(in srgb, var(--c) 14%, transparent), transparent); }
+.pu-card-action small { display: block; color: var(--c); font-size: 9px; font-weight: 800; letter-spacing: .22em; }
+.pu-card-action span { color: #e9eff1; font-size: 15px; font-weight: 600; }
+.pu-card-button {
+  display: inline-flex; align-items: center; gap: 12px; min-width: 190px; height: 48px; padding: 0 22px; border: 0; cursor: pointer;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  background: var(--c); color: #071012; font-size: 14px; font-weight: 900; letter-spacing: .14em;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--c) 50%, transparent); transition: filter .15s, transform .15s;
+}
+.pu-card-button i { font-style: normal; font-size: 11px; }
+.pu-card-button:hover, .pu-card-button:focus-visible { filter: brightness(1.15); transform: translateX(2px); outline: none; }
+.pu-card-keys { margin: 10px 0 0; color: #8e9aa1; font-size: 12px; }
+.pu-card-keys kbd { padding: 1px 6px; border: 1px solid #56636a; border-radius: 3px; font: inherit; color: #dfe7ea; }
+
+@media (max-width: 700px) {
+  .pu-card-box { grid-template-columns: 1fr; justify-items: center; padding: 22px 20px; }
+  .pu-card-art { width: 150px; height: 150px; }
+  .pu-card-img { width: 120px; height: 120px; }
+  .pu-card-info { text-align: center; }
+  .pu-card-eyebrow, .pu-card-stats { justify-content: center; }
+}
+body.reduced-motion .pu-card-box, body.reduced-motion .pu-card-box::after, body.reduced-motion .pu-card-halo,
+body.reduced-motion .pu-card-ring, body.reduced-motion .pu-card-img, body.reduced-motion .pu-dot { animation: none !important; }
+
+@keyframes puOpen { from { clip-path: polygon(50% 0, 50% 0, 50% 100%, 50% 100%); filter: brightness(2); } to { clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px); filter: none; } }
+@keyframes puSweep { 0% { left: -40%; opacity: 1; } 100% { left: 120%; opacity: 1; } }
+@keyframes puSpin { to { transform: rotate(360deg); } }
+@keyframes puBreathe { 50% { transform: scale(1.08); opacity: .75; } }
+@keyframes puFloat { 50% { transform: translateY(-8px) rotate(-3deg); } }
+@keyframes puBlink { 50% { opacity: .2; } }
+@keyframes puIn { from { opacity: 0; transform: translateY(-8px) scale(.97); } to { opacity: 1; transform: none; } }
+/* Visible from the first frame (only the scale moves), even on a slow PC. */
+@keyframes puPop { from { transform: scale(.94); } to { transform: none; } }
+@keyframes puPulse { from { box-shadow: 0 0 10px color-mix(in srgb, var(--c) 30%, transparent); } to { box-shadow: 0 0 34px var(--c); border-color: #fff; } }
+@keyframes puEdge { from { opacity: .35; } to { opacity: 1; } }
+
+@media (max-width: 700px) {
+  .pu-badges { top: 64px; flex-direction: column; }
+  .pu-badge { min-width: 0; width: calc(100vw - 32px); }
+}
+
+/* ---- The pickup burst: a flash and two rings in the serum's colour ------ */
+.pu-burst {
+  position: fixed; inset: 0; z-index: 7; pointer-events: none; overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--c) 45%, transparent), transparent 60%);
+  animation: puFlash .7s ease-out forwards;
+}
+.pu-burst-ring {
+  position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%;
+  border: 6px solid var(--c); box-shadow: 0 0 30px var(--c), inset 0 0 20px var(--c);
+  animation: puRing .75s cubic-bezier(.15, .7, .3, 1) forwards;
+}
+.pu-burst-ring.late { border-width: 3px; animation-delay: .1s; opacity: 0; }
+@keyframes puFlash { from { opacity: 1; } to { opacity: 0; } }
+@keyframes puRing { from { transform: scale(.4); opacity: 1; } to { transform: scale(40); opacity: 0; border-width: 1px; } }
+body.reduced-motion .pu-burst-ring { display: none; }
+@media (prefers-reduced-motion: reduce) { .pu-burst-ring { display: none; } }

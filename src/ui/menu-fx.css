@@ -1,0 +1,36 @@
+/*
+ * The main menu's headline glitches every few seconds - a red and a cyan
+ * copy jump out of line in torn slices, like a broken screen, then it snaps
+ * back. Off with Reduced motion (Settings, or the system setting).
+ */
+.glitch-title { position: relative; }
+.glitch-title::before,
+.glitch-title::after {
+  content: attr(data-text); position: absolute; inset: 0; white-space: pre-line;
+  pointer-events: none; opacity: 0;
+}
+.glitch-title::before { color: #ff2d55; text-shadow: none; animation: glitchRed 4.6s steps(1, end) 1.2s infinite; }
+.glitch-title::after { color: #28f0ff; text-shadow: none; animation: glitchCyan 4.6s steps(1, end) 1.2s infinite; }
+
+@keyframes glitchRed {
+  0%, 86%, 100% { opacity: 0; transform: none; clip-path: inset(0); }
+  87% { opacity: .85; transform: translate(-6px, 1px); clip-path: inset(8% 0 62% 0); }
+  89% { opacity: .85; transform: translate(5px, -2px); clip-path: inset(55% 0 12% 0); }
+  91% { opacity: .75; transform: translate(-3px, 0); clip-path: inset(30% 0 45% 0); }
+  93% { opacity: .8; transform: translate(4px, 2px); clip-path: inset(70% 0 4% 0); }
+  95% { opacity: 0; }
+}
+@keyframes glitchCyan {
+  0%, 86%, 100% { opacity: 0; transform: none; clip-path: inset(0); }
+  87% { opacity: .85; transform: translate(6px, -1px); clip-path: inset(48% 0 20% 0); }
+  89% { opacity: .85; transform: translate(-5px, 2px); clip-path: inset(12% 0 60% 0); }
+  91% { opacity: .75; transform: translate(3px, 0); clip-path: inset(62% 0 10% 0); }
+  93% { opacity: .8; transform: translate(-4px, -2px); clip-path: inset(22% 0 52% 0); }
+  95% { opacity: 0; }
+}
+
+body.reduced-motion .glitch-title::before,
+body.reduced-motion .glitch-title::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .glitch-title::before, .glitch-title::after { display: none; }
+}

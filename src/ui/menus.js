@@ -70,6 +70,11 @@ export function buildBallPickers(onPick) {
 
 let serumPictures = null;
 
+/** One serum's capsule picture (a data URL), or null without WebGL to spare. */
+export function serumPicture(type) {
+  return renderSerumPictures().get(type) ?? null;
+}
+
 /** Each serum's capsule, rendered once (192 px, transparent). */
 function renderSerumPictures() {
   if (serumPictures) return serumPictures;

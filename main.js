@@ -9,6 +9,7 @@ import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { SPHERE_GEOMETRY, sphereMaterial, sphereHalo } from "./src/systems/spheres.js";
 import { buildBallPickers, buildTabs, showMoves, savedBall } from "./src/ui/menus.js";
+import { PowerupBanner } from "./src/ui/powerup-banner.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
 import { PlayerAvatar, THROW_RELEASE } from "./src/levels/meltdown/player.js";
@@ -167,6 +168,9 @@ const settingsDefaults = {
   sensitivity: 100, aimAssist: true, reducedMotion: false, quality: "auto",
   // The story's reaction hits (src/story/reaction.js).
   longReactions: false, holdInsteadOfMash: false,
+  // Subtitle size (there are no voiceovers, so they must be easy to read):
+  // "normal", "large" or "xl" - see --sub-scale in styles.css.
+  subtitleSize: "large",
   // Which HUD panels are shown. See HUD_PANELS in src/ui/causeway-hud.js.
   hud: Object.fromEntries(HUD_PANELS.map((p) => [p.key, p.on])),
 };
@@ -246,6 +250,7 @@ const ui = {
   sensitivitySlider: $("#sensitivitySlider"), reducedMotionToggle: $("#reducedMotionToggle"),
   aimAssistToggle: $("#aimAssistToggle"),
   longReactionsToggle: $("#longReactionsToggle"), holdInsteadOfMashToggle: $("#holdInsteadOfMashToggle"),
+  subtitleSizeSelect: $("#subtitleSizeSelect"),
   viewButton: $("#viewButton"), viewMenu: $("#viewMenu"), briefing: $("#briefingMissions"),
   qualitySelect: $("#qualitySelect"),
   qualityNote: $("#qualityNote"),
@@ -257,11 +262,20 @@ function applySettingsToControls() {
   ui.sensitivitySlider.value = settings.sensitivity;
   ui.aimAssistToggle.checked = settings.aimAssist;
   ui.reducedMotionToggle.checked = settings.reducedMotion;
+  document.body.classList.toggle("reduced-motion", settings.reducedMotion);
   if (ui.longReactionsToggle) ui.longReactionsToggle.checked = settings.longReactions;
   if (ui.holdInsteadOfMashToggle) ui.holdInsteadOfMashToggle.checked = settings.holdInsteadOfMash;
   ui.qualitySelect.value = settings.quality;
+  ui.subtitleSizeSelect.value = settings.subtitleSize;
+  applySubtitleSize();
   for (const input of document.querySelectorAll("[data-hud-key]")) input.checked = !!settings.hud[input.dataset.hudKey];
   applyHudPanels(settings.hud);
+}
+
+/** Every subtitle in the game (cutscenes, the intercom, the lift rides) scales with this. */
+function applySubtitleSize() {
+  const scale = { normal: 1, large: 1.25, xl: 1.55 }[settings.subtitleSize] ?? 1.25;
+  document.documentElement.style.setProperty("--sub-scale", String(scale));
 }
 
 /** Build the HUD panel checkboxes into every [data-hud-toggles] container. */
@@ -754,6 +768,20 @@ const causewayHud = new CausewayHud();
 const arsenal = new Arsenal();
 // The sphere picked in the main menu (or the pause menu) is the one a run starts with.
 arsenal.prefer(savedBall());
+// Serums in front of the player: the first time each is picked up the
+// game pauses on a card explaining it (PowerupBanner); after that the
+// HUD's serum banner, chips and screen looks (serum-fx.js) carry it.
+const powerups = new PowerupBanner();
+let pendingBurst = null;
+arsenal.onActivate = (type) => {
+  // The first pickup pauses on its card; the burst plays as the game resumes.
+  if (powerups.needsIntro(type) && state === "playing" && !paused) {
+    pendingBurst = SERUMS[type]?.colour;
+    // The card has explained it: no second banner for this one.
+    causewayHud.serumFx.quiet(type);
+    openPowerupIntro(type);
+  } else if (SERUMS[type]) powerups.burst(SERUMS[type].colour);
+};
 const progress = loadProgress();
 const missions = new MissionTracker(progress);
 const postfx = new PostFX(renderer, { quality: resolvedQuality() });
@@ -3477,7 +3505,26 @@ function openPause() {
   ui.pause.classList.add("active");
 }
 
+/** The first pickup of a serum: pause, and explain it. */
+function openPowerupIntro(type) {
+  if (state !== "playing" || paused || !SERUMS[type]) return;
+  paused = true; run.focusing = false;
+  story.setPaused(true);
+  music.pauseDuck();
+  level1Audio.setPaused(true);
+  if (currentLevel === 3) meltdown?.setPaused(true);
+  powerups.intro(SERUMS[type]);
+}
+
+function closePowerupIntro() {
+  if (!powerups.open) return;
+  closePause();
+  if (pendingBurst) powerups.burst(pendingBurst);
+  pendingBurst = null;
+}
+
 function closePause() {
+  powerups.closeIntro();
   const wasPaused = paused;
   ui.pause.classList.remove("active");
   paused = false;
@@ -3666,6 +3713,7 @@ $("#chaptersBackButton").addEventListener("click", () => { ui.chapters.classList
 for (const button of document.querySelectorAll("[data-chapter]")) {
   button.addEventListener("click", () => startChapter(button.dataset.chapter));
 }
+$("#manualTopBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
 $("#settingsButton").addEventListener("click", () => openSettings("intro"));
 $("#settingsBackButton").addEventListener("click", closeSettings);
 $("#pauseButton").addEventListener("click", () => { paused ? closePause() : openPause(); });
@@ -3688,7 +3736,14 @@ addEventListener("click", (event) => {
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
 ui.aimAssistToggle.addEventListener("change", (event) => { settings.aimAssist = event.target.checked; saveSettings(); });
-ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
+$("#resetPowerupTipsButton").addEventListener("click", (event) => {
+  powerups.resetSeen();
+  event.currentTarget.textContent = "Done - you will see them again";
+});
+// The serum card: its button, or a click anywhere on it, carries on.
+powerups.card.addEventListener("click", closePowerupIntro);
+ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); document.body.classList.toggle("reduced-motion", settings.reducedMotion); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
+ui.subtitleSizeSelect.addEventListener("change", (event) => { settings.subtitleSize = event.target.value; saveSettings(); applySubtitleSize(); });
 ui.longReactionsToggle.addEventListener("change", (event) => { settings.longReactions = event.target.checked; saveSettings(); story.setOptions({ longWindows: settings.longReactions }); });
 ui.holdInsteadOfMashToggle.addEventListener("change", (event) => { settings.holdInsteadOfMash = event.target.checked; saveSettings(); story.setOptions({ holdInsteadOfMash: settings.holdInsteadOfMash }); });
 ui.qualitySelect.addEventListener("change", (event) => {
@@ -3746,6 +3801,7 @@ function placeReticle() {
   ui.reticle.style.top = `${((1 - pointer.y) / 2) * innerHeight}px`;
 }
 addEventListener("pointerdown", (event) => {
+  if (powerups.open) return; // the serum card takes the click
   if (state === "launch" && causeway) { skipLaunch(); return; }
   if (state === "cutscene" || story.player.active) return;
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
@@ -3784,6 +3840,11 @@ addEventListener("wheel", (event) => {
 }, { passive: true });
 
 addEventListener("keydown", (event) => {
+  // The serum card: Space or Enter carries on (Esc too, below); nothing else.
+  if (powerups.open && event.code !== "Escape") {
+    if (event.code === "Space" || event.code === "Enter" || event.code === "NumpadEnter") { event.preventDefault(); closePowerupIntro(); }
+    return;
+  }
   if (event.code === "Escape") {
     if (event.repeat) return;
     level1Audio.uiClick();
@@ -3901,6 +3962,7 @@ globalThis.__dbg = {
   aliveTargets: () => aliveTargets(),
   get projectiles() { return projectiles; },
   get arsenal() { return arsenal; },
+  get powerups() { return powerups; },
   get missions() { return missions; },
   get postfx() { return postfx; },
   get music() { return music.snapshot(); },
