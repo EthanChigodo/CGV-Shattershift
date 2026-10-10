@@ -374,6 +374,8 @@ export class MeltdownGame {
   /* ================================================================ */
 
   _resetRunner() {
+    // A new run (or lap): no checkpoint reached yet.
+    this.checkpoint = null;
     Object.assign(this.runner, {
       distance: 0, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
       jumpBuffer: 0, slideBuffer: 0, landed: 0,
@@ -805,6 +807,12 @@ export class MeltdownGame {
     on("patient-seen", () => audio.stinger());
     on("beat", ({ key }) => {
       const beat = BEATS.find((b) => b.key === key);
+      // Each section after the first is a checkpoint: die past here and you
+      // start again here, not at the top of the Labs (Endless has no checkpoints).
+      if (beat && beat.start > 0 && this.mode !== "endless-labs" && this.phase !== "over" && (this.checkpoint?.distance ?? 0) < beat.start) {
+        this.checkpoint = { distance: beat.start + 3, balls: this.runner.balls, name: beat.name };
+        hud.toast("CHECKPOINT", beat.name, "", 2400);
+      }
       if (beat?.dark) {
         audio.powerDown();
         this._after(0.9, () => {
@@ -1795,6 +1803,10 @@ export class MeltdownGame {
   _finishRun(survived, title) {
     const r = this.runner;
     if (r.finished && this.phase !== "run") return;
+    if (!survived && this.checkpoint && this.phase === "run" && this.mode !== "endless-labs") {
+      this._respawnAtCheckpoint(title);
+      return;
+    }
     r.finished = true;
     r.alive = false;
     r.firing = false;
@@ -1807,6 +1819,36 @@ export class MeltdownGame {
       ["Patients downed", r.downs],
       ["Spheres left", r.balls, true],
     ]);
+  }
+
+  /**
+   * Caught past a checkpoint: a moment of black, then back at the start of
+   * that section - some vitality back, the fire pushed back behind you, the
+   * spheres you had there - and a short grace before anything can hurt you.
+   */
+  _respawnAtCheckpoint(title) {
+    const r = this.runner;
+    const cp = this.checkpoint;
+    r.alive = false;
+    r.firing = false;
+    this.phase = "respawn";
+    this.hud.showBanner(title ?? "DOWN", `BACK TO THE CHECKPOINT // ${cp.name}`, 2200);
+    this.fade.target = 1;
+    this.fade.rate = 3;
+    this._after(0.6, () => {
+      if (this.phase !== "respawn") return;
+      Object.assign(r, {
+        distance: cp.distance, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
+        jumpBuffer: 0, slideBuffer: 0, landed: 0, pushing: false, lookBack: 0, heat: 0, lockout: 0, slow: 0,
+        vitality: Math.max(r.vitality, 70), balls: Math.max(r.balls, cp.balls), alive: true, finished: false,
+        invulnerable: 2.5, fireDistance: cp.distance - 40, speed: this.level.speedAt(cp.distance),
+      });
+      this.projectiles.clear?.();
+      this.snapCamera = true;
+      this.phase = "run";
+      this.fade.target = 0;
+      this.fade.rate = 1.5;
+    });
   }
 
   /** The run is over, one way or the other. */
@@ -2188,13 +2230,15 @@ export class MeltdownGame {
   /** Off the edge of the roof: down past the facade, and that's the run. */
   _roofFell() {
     const r = this.runner;
+    // Down an open hatch, or off an open ledge.
+    const hatch = this.roof?.overHatch(this.hero.position);
     r.alive = false;
     r.vitality = 0;
     r.firing = false;
     this.trauma = 1;
     this.audio.scream?.();
-    this.hud.toast("YOU FELL", "", "warn", 2400);
-    this._roofSummary(false, "YOU FELL");
+    this.hud.toast(hatch ? "DOWN A HATCH" : "YOU FELL", "", "warn", 2400);
+    this._roofSummary(false, hatch ? "DOWN A HATCH" : "YOU FELL");
   }
 
   _roofSummary(escaped, title) {
