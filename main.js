@@ -3720,7 +3720,7 @@ async function startStory() {
   ui.storyLine.classList.add("show");
   // The sleeping Subject 07 in it is whoever you play as.
   if (prologue && prologue.character !== savedCharacter()) { prologue.dispose(); prologue = null; }
-  prologue ??= new Prologue({ renderer, assetBase: MELTDOWN_ASSET_BASE, character: savedCharacter() });
+  prologue ??= new Prologue({ renderer, assetBase: MELTDOWN_ASSET_BASE, character: savedCharacter(), voice: story.voice });
   try {
     await prologue.load();
   } catch (error) {
