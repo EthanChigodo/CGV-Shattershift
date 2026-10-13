@@ -44,7 +44,8 @@ def words(path):
 NUMBERS = {"07": "seven", "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four", "5": "five", "6": "six",
            "7": "seven", "8": "eight", "9": "nine", "10": "ten", "30": "thirty", "40": "forty"}
 SPELLING = {"programme": "program", "anaesthesia": "anesthesia", "anaesthetic": "anesthetic", "anaesthetics": "anesthetics",
-            "catalogued": "cataloged", "okay": "ok", "mr": "mister", "dr": "doctor", "round": "around"}
+            "catalogued": "cataloged", "okay": "ok", "mr": "mister", "dr": "doctor", "round": "around",
+            "vail": "vale", "veil": "vale"}  # (and sound-alike spellings of a name)
 CONTRACTIONS = {"it's": "it is", "they're": "they are", "you'll": "you will", "that's": "that is", "i'm": "i am",
                 "we're": "we are", "you're": "you are", "there's": "there is", "he's": "he is", "what's": "what is",
                 "i'd": "i would", "you've": "you have", "i've": "i have", "let's": "let us", "who's": "who is",
@@ -61,7 +62,7 @@ def norm(t):
     words = []
     for w in re.findall(r"[a-z0-9']+", t):
         w = w.strip("'")
-        w = CONTRACTIONS.get(w, w)
+        w = CONTRACTIONS.get(w, w).replace("'", "")  # possessives: trial's = trials' = trials
         for x in w.split():
             words.append(SPELLING.get(x, x))
     t = " ".join(words)
@@ -72,6 +73,8 @@ def norm(t):
 
 def wer(ref, hyp):
     r, h = norm(ref), norm(hyp)
+    if "".join(r) == "".join(h):  # only the spacing differs ("cell fixed" / "cellfixed")
+        return 0.0
     d = np.zeros((len(r) + 1, len(h) + 1), int)
     d[:, 0] = range(len(r) + 1)
     d[0, :] = range(len(h) + 1)
