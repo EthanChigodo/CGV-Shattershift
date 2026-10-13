@@ -3,6 +3,7 @@
     node tools/audio/export-lines.mjs > lines.json
     python record.py gen     --lines lines.json [--only REGEX]   the takes (OmniVoice, then IndexTTS)
     python record.py judge   --lines lines.json [--only REGEX]   measure every take (listen.py)
+    python record.py perfect --lines lines.json [--only REGEX]   more takes where no take has every word right
     python record.py pick    --lines lines.json [--only REGEX]   choose, finish -> work/vs/out
     python record.py laughs                                       Vale's laughs, from real laughter
     python record.py install                                      into assets/ and src/audio/voice-lines.js
@@ -96,13 +97,17 @@ LAUGH_SOURCES = {  # (recording, seconds kept, semitones): Vale's register
 RADIO_FIT = {"quietRideRadio": 3.9}  # the lift's radio has a beat to fit
 
 
+# Lines a voice kept getting wrong, worded so it says them right (the subtitle is unchanged).
+SAY = {"The lift's at the far end of the labs. Go!": "The lift is at the far end of the labs. Go!"}
+
+
 def spoken(text):
     """The words as an actor says them (the subtitle keeps the script's spelling)."""
     t = text.replace("Subject 07", "Subject Seven").replace("07", "Seven")
     t = re.sub(r"\bDr\. ", "Doctor ", t)
     t = t.replace(" - ", ", ").replace("--", ", ")
-    t = re.sub(r"\b([A-Z]{2,})\b", lambda m: m.group(1).capitalize() if m.group(1) != "OK" else m.group(1), t)
-    return t.strip()
+    t = re.sub(r"\b([A-Z]{2,})\b", lambda m: m.group(1).capitalize() if m.group(1) != "OK" else m.group(1), t).strip()
+    return SAY.get(t, t)
 
 
 def file_id(key):
@@ -193,12 +198,47 @@ def judge(lines):
             if rel in cache:
                 continue
             heard = listen.words(p)
-            row = {"wer": listen.wer(job["text"], heard.replace("7", "seven")), "heard": heard, **listen.emotion(p)}
+            row = {"wer": listen.wer(job["text"], heard), "heard": heard, **listen.emotion(p)}
             if l["who"] == "okoro":
                 row["ng"] = listen.nigerian(p)
             cache[rel] = row
             print(rel, row, flush=True)
             json.dump(cache, open(path, "w"), indent=1)
+
+
+def perfect(lines, extra=6):
+    """More takes for any line with no word-perfect take, one at a time, until Whisper hears every word."""
+    import listen
+    path = os.path.join(TAKES, "scores.json")
+    for line in lines:
+        engine, n, job = recipe(line)
+        cache = json.load(open(path))
+        if any(cache.get(os.path.relpath(p, TAKES), {}).get("wer", 1) == 0 for p in takes_on_disk(line)):
+            continue
+        print("==", line["who"], line["text"], flush=True)
+        for i in range(n, n + extra):
+            out = take_path(line, i)
+            if not os.path.exists(out):
+                part = os.path.join(work.VS, "jobs-extra.json")
+                json.dump([{**job, "out": out, "seed": 100 + i}], open(part, "w"))
+                script = "omnivoice_jobs.py" if engine == "omni" else "indextts_jobs.py"
+                try:
+                    subprocess.run([OMNI_PY if engine == "omni" else INDEX_PY, os.path.join(work.TOOLS, "engines", script), part],
+                                   timeout=420)
+                except subprocess.TimeoutExpired:
+                    continue
+            if not os.path.exists(out):
+                continue
+            heard = listen.words(out)
+            row = {"wer": listen.wer(job["text"], heard), "heard": heard, **listen.emotion(out)}
+            if line["who"] == "okoro":
+                row["ng"] = listen.nigerian(out)
+            cache = json.load(open(path))
+            cache[os.path.relpath(out, TAKES)] = row
+            json.dump(cache, open(path, "w"), indent=1)
+            print(f"   take {i}: WER {row['wer']:.2f} | {heard}", flush=True)
+            if row["wer"] == 0:
+                break
 
 
 def score(who, row):
@@ -361,7 +401,7 @@ def install(order_from):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("stage", choices=["gen", "judge", "pick", "laughs", "install"])
+    ap.add_argument("stage", choices=["gen", "judge", "perfect", "pick", "laughs", "install"])
     ap.add_argument("--lines", default=os.path.join(work.VS, "lines.json"))
     ap.add_argument("--only")
     a = ap.parse_args()
@@ -372,4 +412,4 @@ if __name__ == "__main__":
     else:
         rx = re.compile(a.only) if a.only else None
         sel = [l for l in all_lines(a.lines) if not rx or rx.search(f"{l['who']}|{l['text']}")]
-        {"gen": gen, "judge": judge, "pick": pick}[a.stage](sel)
+        {"gen": gen, "judge": judge, "perfect": perfect, "pick": pick}[a.stage](sel)
