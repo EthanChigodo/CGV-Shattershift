@@ -21,7 +21,7 @@ export const VOICE_LINES = {
   "halcyon|Resonance atrium. Lift release requires the three-lock sequence.": ["halcyon-1efefc486d", 4.84, 6.6],
   "halcyon|Smoke in the ward. All personnel: break the vent covers to clear the air.": ["halcyon-ebc76073e2", 4.97, 6.72],
   "halcyon|Structural failure, Skybridge B. Evacuate the bridge.": ["halcyon-4ebf2aa514", 4.18, 5.94],
-  "halcyon|Subject 07 on Skybridge B. Containment breach logged.": ["halcyon-c83259e65a", 5.13, 6.89],
+  "halcyon|Subject 07 on Skybridge B. Containment breach logged.": ["halcyon-c83259e65a", 4.71, 6.47],
   "halcyon|Tower C has lost its core. Brace.": ["halcyon-2ddd1ad08e", 3.28, 5.04],
   "okoro|...You've done that before.": ["okoro-652fe17234", 1.91, 2.26],
   "okoro|Again - the next one's going!": ["okoro-c506d37823", 2.05, 2.4],

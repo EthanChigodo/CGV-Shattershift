@@ -3709,7 +3709,7 @@ function quitToMenu() {
  * The briefing: the prologue film (src/story/prologue.js) - what Project
  * Ascension was, why the patients were taken, who ran it, how it was found
  * out, and why the tower is coming down tonight. Staged in the engine, told
- * in captions (no voice), over the story track. Esc, Space or SKIP ends it.
+ * in captions read by a trailer voice, over "Hitman". Esc, Space or SKIP ends it.
  */
 let storyPlaying = false;
 let prologue = null;
@@ -3735,7 +3735,7 @@ async function startStory() {
   ui.storyLine.classList.add("show");
   // The sleeping Subject 07 in it is whoever you play as.
   if (prologue && prologue.character !== savedCharacter()) { prologue.dispose(); prologue = null; }
-  prologue ??= new Prologue({ renderer, assetBase: MELTDOWN_ASSET_BASE, character: savedCharacter() });
+  prologue ??= new Prologue({ renderer, assetBase: MELTDOWN_ASSET_BASE, character: savedCharacter(), voice: story.voice });
   try {
     await prologue.load();
   } catch (error) {

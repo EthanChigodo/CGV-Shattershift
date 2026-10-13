@@ -155,7 +155,7 @@ All geometry is built from Three.js primitives, and all textures are drawn at ru
 
 Background music supplied to the project:
 
-- Story briefing: `leberch-piano-story-601906.mp3` — Leberch.
+- Story briefing (no longer plays - see below): `leberch-piano-story-601906.mp3` — Leberch.
 - Main menu: `852268__holizna__trap-melody-loop-5-ebmin-165-bpm.wav` — Holizna.
 - Level 1: `GalacticTemple.ogg` — source and licence details must be added by the asset supplier before release.
 
@@ -181,19 +181,60 @@ Exact source URLs and licence terms for the supplied SFX must be recorded before
 
 `GalacticTemple.ogg` no longer plays (each stage has its own score now, below); it is kept in the repository.
 
-### Voices, creatures, effects and music made for the project
+### Voices, creatures, effects and music
 
-Made offline by the scripts in `tools/audio/` (how, and how to re-record a line: `tools/audio/README.md`). No recordings or music by anyone else are in them, except where noted.
+The voices are acted with VoiceStudio's engines; every other sound is a real recording or a composed track, cut, layered and mastered for the game. How they are made, and how to re-record a line: `tools/audio/README.md`.
 
-| Asset | Made with | Licence of what was used | Used in |
+**Voices** (`assets/audio/voice/`, listed in `src/audio/voice-lines.js`)
+
+| Who | Made with | Licence | Used in |
 | --- | --- | --- | --- |
-| Voice acting for every line (`assets/audio/voice/`, listed in `src/audio/voice-lines.js`): Dr. Okoro (in Nigerian English, `tools/audio/accent.py`), Dr. Vale and his laugh, HALCYON, the pilot, Subject 07 | Kokoro-82M text-to-speech (hexgrad, https://huggingface.co/hexgrad/Kokoro-82M) run through kokoro-onnx (thewh1teagle, https://github.com/thewh1teagle/kokoro-onnx); voices `am_onyx`, `bm_daniel`, `bm_george`, `bm_lewis`, `bf_emma`, `af_heart`, `am_puck`; then each character's processing (`tools/audio/voices.py`) | Kokoro-82M: Apache-2.0; kokoro-onnx: MIT. The model's output is ours to use | Every cutscene, Okoro's talk in the Foundry and the lift, the Skyline's intercom, Vale on the Labs' and the roof's PA, the lift's radio |
-| The patients (`assets/audio/creatures/`): growls, moans, broken speech, shrieks, pain, death, roar, horde | Kokoro-82M (voices `am_onyx`, `bm_lewis`, `am_adam`, `bf_isabella`, `af_nicole`, `am_fenrir`), processed into creature sounds (`tools/audio/creatures.py`) | As above | The Labs and the Roof |
-| Effects (`assets/audio/sfx/`): fire alarm, the player's breathing, effort, pain and fall scream, demolition charges, building collapse, explosions, distant collapses, steel groaning, debris, sprinkler burst, monitor beep, pistol, clatter, brakes, cable snap, lift chime and doors, clank, spark | Synthesized from first principles in numpy/scipy (`tools/audio/sfx.py`); the player's effort, pain and scream from Kokoro (`af_heart`, `am_puck`: held vowels, strained, no words) | Our own | Every level and the lifts |
-| `glass-cascade.mp3` | Mixed from the team's supplied glass recordings above (Eaglaxle's shattering, Universfield's bottle), re-pitched, layered and spread | As those recordings | The breach's "glass, everywhere" |
-| Stage scores (`assets/audio/music/`): foundry, labs, skyline, roof, tension, grief | Composed and synthesized in code (`tools/audio/music.py`): wavetable oscillators, filters, drums, convolution reverb | Our own | The Foundry, the Labs, the Skyline, the Roof, the wake-up and the Gravity Fault lift, the quiet ride |
+| Dr. Okoro, Subject 07, the patients' broken speech | **VoiceStudio** (debpalash, https://github.com/debpalash/VoiceStudio, AGPL-3.0) - its default engine **OmniVoice** (k2-fsa, https://huggingface.co/k2-fsa/OmniVoice: code Apache-2.0, weights CC BY-NC 4.0; its audio tokenizer carries the Higgs Audio 2 and Llama community terms) | The weights' NC terms: the generated speech is for this non-commercial university project | Okoro in every cutscene, the Foundry and the lift; Seven in the ending; the Labs' patients |
+| Dr. Okoro's voice and accent | Cloned from speaker 07049 of Google's **Crowdsourced high-quality Nigerian English speech data set** (OpenSLR 70, https://www.openslr.org/70/ - Guevara-Rukoz et al., 2020), a 8 s reference made from four of his recordings (`tools/audio/refs/ng_07049_hot.flac`) | **CC BY-SA 4.0** (the reference clip, and the lines made from it, are shared under the same licence) | Dr. Okoro |
+| Dr. Vale, the pilot, the briefing's trailer voice | **IndexTTS 2.5** (IndexTeam/bilibili, https://huggingface.co/IndexTeam/IndexTTS-2.5, run as VoiceStudio runs it), each speaker from an OmniVoice-designed voice, the emotion set per line (Vale cold or gleeful; the trailer intense) | The **bilibili Model Use License Agreement** (royalty-free); it treats the model's outputs as derivative works, so a copy of it ships with them: `assets/audio/voice/INDEXTTS-LICENSE.txt`. As it asks (4.1 a): *Any modifications made to the original model in this Derivative Work are not endorsed, warranted, or guaranteed by the original right-holder of the original model, and the original right-holder disclaims all liability related to this Derivative Work.* | Every Vale line (PA, intercom, the ending), the pilot's radio, the briefing film |
+| HALCYON | Kokoro-82M (hexgrad, Apache-2.0) via kokoro-onnx (MIT), voice `bf_emma`, kept from the earlier recording (one line re-read so "Subject 07" is said "Subject Seven") | Apache-2.0 / MIT | The tower's PA |
+| Dr. Vale's laughter | "Maniacal Laughter Pack 1" and "Evil Cackle Laugh 1" by **Nocturnal_Vanguard (AuraVoice)**, https://opengameart.org/content/maniacal-laughter-pack-1, https://opengameart.org/content/evil-cackle-laugh-1; "Evil laughter" by **qubodup**, https://opengameart.org/content/evil-laughter - lowered 1-3 semitones | **CC0** | After his taunts, the roof, the ending |
+| The breaths in Okoro's lines | "Breathless Man" (#1103) and "Man Breathing" (#2195), **BigSoundBank** - Joseph Sardin, https://bigsoundbank.com | **CC0** | Okoro running, waking Seven, hiding |
 
-Tools used only to make the files (not shipped with the game): espeak-ng through phonemizer (GPL-3.0, Kokoro's pronunciation), ffmpeg with the Rubber Band library (GPL, pitch and time), numpy and scipy (BSD).
+**Effects** (`assets/audio/sfx/`): real recordings, cut, layered and mastered (`tools/audio/sounds_build.py`)
+
+| Source | Licence | Became |
+| --- | --- | --- |
+| **BigSoundBank** (Joseph Sardin, https://bigsoundbank.com): Smoke Detector Alarm #3 (#1153); Breathless Man (#1103), Breathless Woman (#1345), Man Breathing (#2195); Glass Burst (#0148), A Mirror Explodes (#0387), Recycling bin glass #2 (#2681), Broken Christmas Ball #1 (#1121); Fall of Stone (#1022); Explosion #1 (#1807), Explosion far Away #1 (#1023); Creaking metallic door (#0616); Falling sheet steel bars (#1774, #1776); Heavy chain (#0359); Small metal grinding (#0322); Pneumatic brake released (#1490); Exploding bang-snaps (#0550); Electrocardiogram 60 Hz (#0457); Shot Beretta M12 9mm (#0437); Short welds (#0952), Neon or transformer (#2118); Watering #1 (#1302); Punch #5 (#2460), Body Fall #1 (#2452) | **CC0** | The fire alarm, Seven's breathing, the glass cascade, debris, the building collapsing, distant collapses, demolition charges, steel groaning, the lift's brakes and cable, the sprinkler, the monitor, Okoro's pistol, the spark, body hits |
+| "2 High Quality Explosions" by **qubodup**, https://opengameart.org/content/2-high-quality-explosions | **CC BY 3.0** | Explosions, demolition charges, the collapse |
+| "Rumbling Sound Effects" by **bretbernhoft**, https://opengameart.org/content/rumbling-sound-effects | CC0 | Explosions' tails |
+| "Metal Impact Sounds" by **BMacZero**; "100 CC0 metal and wood SFX" by **rubberduck** (opengameart.org) | CC0 | Clank, clatter, cable snap, brakes, steel groaning |
+| "Elevator ding" by **fvcalderan**; "old elevator door" by **sinny** (opengameart.org) | CC0 | The lift's chime and doors |
+| Seven (female): "Female RPG Voice Starter Pack" (Type 2) by **cicifyre**, https://opengameart.org/content/female-rpg-voice-starter-pack; "Female screams" by **congusbongus**, https://opengameart.org/content/female-screams | CC0; **CC BY 3.0** | Hurt, effort; the fall scream |
+| Seven (male): "Male Grunt/Yelling sounds" by **HaelDB**, https://opengameart.org/content/male-gruntyelling-sounds | CC0 / OGA-BY 3.0 | Hurt, effort, the fall scream |
+
+**The patients** (`assets/audio/creatures/`)
+
+| Source | Licence | Became |
+| --- | --- | --- |
+| Zombie #1, #2, #3, #5 (#2106-#2110) and Grunts (#0486), **BigSoundBank** | CC0 | Growls, moans, the brute's roar |
+| "Voices Sound Effects Library" (Zombie, Dinosaur, Human) and "Horror Sound Effects Library" by **Little Robot Sound Factory**, https://opengameart.org/content/voices-sound-effects-library, https://opengameart.org/content/horror-sound-effects-library | **CC BY 3.0** (www.littlerobotsoundfactory.com) | Growls, moans, shrieks, pain, deaths, the roar |
+| "80 CC0 creature SFX #2" by **rubberduck**; "Hungry ghoul" by **Darsycho**; "Ghost Monster Voice Moaning & Growling" by **qubodup**; "grunts of male death and pain" by **thebardofblasphemy** (opengameart.org) | CC0 | Growls, pain, deaths, the roar |
+| "Female screams" by **congusbongus** (above) | CC BY 3.0 | Shrieks |
+| Their broken speech | OmniVoice (above), designed voices, then lowered, roughened and laid over a growl | As OmniVoice | "Help me", "it hurts", "Seven..." |
+
+All of these are pitched, layered, given a room and mastered; the horde is fourteen of them at once.
+
+**Music** (`assets/audio/music/`): tracks by **Kevin MacLeod** (incompetech.com), each cut into a seamless loop (`tools/audio/music_build.py`), licensed under **Creative Commons: By Attribution 4.0** (http://creativecommons.org/licenses/by/4.0/):
+
+| Where | Track |
+| --- | --- |
+| The briefing | "Hitman" (the whole track) |
+| The Foundry | "The Complex" |
+| The Labs | "SCP-x3x (I am Not OK)" |
+| The Skyline | "Movement Proposition" |
+| The Roof | "Volatile Reaction" |
+| The wake-up, the Gravity Fault lift | "Constance" |
+| The quiet ride, after Okoro | "Lost Time" |
+
+The team's own `leberch-piano-story-601906.mp3` (the briefing's earlier track) is kept in the repository but no longer plays.
+
+Tools used only to make the files (not shipped): VoiceStudio's engines (above), PyTorch, faster-whisper and the AST AudioSet classifier, SpeechBrain's CommonAccent model and audEERING's emotion model (to check the takes - which words were heard, the accent, the energy), ffmpeg with the Rubber Band library (GPL, pitch and time), numpy, scipy, librosa.
 
 ## 4. Published techniques
 

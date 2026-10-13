@@ -6,16 +6,17 @@
  * wrap directly at the PCM boundary, while tracks configured for overlap have
  * their tail and opening blended once before the looping source starts.
  *
- * Each stage has its own score (assets/audio/music/, composed by
- * tools/audio/music.py): playStage("foundry" | "labs" | "skyline" | "roof" |
- * "tension" | "grief"). While someone speaks the music steps back
- * (voiceDuck).
+ * Each stage has its own score (assets/audio/music/ - Kevin MacLeod's
+ * tracks, cut into seamless loops by tools/audio/music_build.py):
+ * playStage("foundry" | "labs" | "skyline" | "roof" | "tension" | "grief").
+ * The briefing plays "Hitman" under the trailer voice. While someone speaks
+ * the music steps back (voiceDuck).
  */
 
 import { outputFor } from "./output.js";
 
 export const MUSIC_VOLUME = Object.freeze({
-  story: 0.38,
+  story: 0.5,
   menu: 0.46,
   gameplay: 0.62,
   elevatorLevelBed: 0.04,
@@ -36,12 +37,12 @@ export const MUSIC_TIMING = Object.freeze({
 /** Each stage's score, and how loud it sits under the game. */
 export const STAGE_MUSIC = Object.freeze({
   // (Gains set by measured loudness: the scores sit about 4 dB under the dialogue.)
-  foundry: 0.42,  // industrial: the press, the anvil, the countdown ticking
-  labs: 0.48,     // horror: drone, clusters, heartbeat, a music box
-  skyline: 0.42,  // the escape: ostinato, taiko, a brass line climbing
-  roof: 0.42,     // the last stand: distorted bass, choir, an alarm motif
-  tension: 0.48,  // the wake-up and the failing lift
-  grief: 0.55,    // the quiet ride up, after Okoro
+  foundry: 0.42,  // "The Complex": mechanical, electronic, building
+  labs: 0.48,     // "SCP-x3x (I am Not OK)": horror with machinery in it
+  skyline: 0.42,  // "Movement Proposition": the chase
+  roof: 0.42,     // "Volatile Reaction": brass and drums, the last stand
+  tension: 0.48,  // "Constance": the wake-up and the failing lift
+  grief: 0.55,    // "Lost Time": the quiet ride up, after Okoro
 });
 
 /** How far the music steps back while someone speaks. */
@@ -50,7 +51,8 @@ export const VOICE_DUCK = 0.5;
 const stage = (name) => new URL(`../../assets/audio/music/${name}.mp3`, import.meta.url).href;
 
 const TRACKS = Object.freeze({
-  story: new URL("../../assets/audio/soundtracks/leberch-piano-story-601906.mp3", import.meta.url).href,
+  // The briefing: "Hitman" (Kevin MacLeod) under the trailer voice.
+  story: stage("briefing"),
   menu: new URL("../../assets/audio/soundtracks/852268__holizna__trap-melody-loop-5-ebmin-165-bpm.wav", import.meta.url).href,
   round1: new URL("../../assets/audio/soundtracks/GalacticTemple.ogg", import.meta.url).href,
   elevator: new URL("../../assets/audio/soundtracks/freesound_community-lift-music-by-kk-30497.mp3", import.meta.url).href,

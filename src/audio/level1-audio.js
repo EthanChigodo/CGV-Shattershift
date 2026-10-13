@@ -5,8 +5,9 @@
  * their speech), the tower's fire alarm, the player's breathing and voice,
  * explosions and the building coming down, and the cutscenes' sound cues.
  *
- * The rendered sets (assets/audio/creatures, assets/audio/sfx) come from
- * tools/audio/ - see tools/audio/README.md.
+ * The sets in assets/audio/creatures and assets/audio/sfx are real
+ * recordings, cut, layered and mastered by tools/audio/sounds_build.py - see
+ * tools/audio/README.md (and docs/credits.md for who recorded them).
  *
  * Sounds load lazily: the first click fetches the original Level 1 set and
  * the player's breath; each stage preloads its own (`preloadStage`).
@@ -38,7 +39,7 @@ export const LEVEL1_SFX_VOLUME = Object.freeze({
   ui: 0.22,
   alarm: 0.38,
   breath: 1.3,
-  // The rendered sets are mastered to a common loudness: one gain each.
+  // The built sets are mastered to a common loudness: one gain each.
   patient: 0.85,
   player: 1.0,
   blast: 0.5,

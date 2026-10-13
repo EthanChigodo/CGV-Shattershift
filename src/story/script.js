@@ -15,7 +15,7 @@
  * Names are placeholders the team allowed ("name them anything you want for
  * now"): change them in CAST and every scene follows.
  *
- * Every line is voiced (tools/audio/voices.py; the recordings are listed in
+ * Every line is voiced (tools/audio/record.py; the recordings are listed in
  * src/audio/voice-lines.js). A subtitle stays up while its line is spoken;
  * after changing a line's words, run the generator again to re-record it
  * (until then it plays the old blip).
@@ -55,6 +55,7 @@ export const CAST = {
   vale: { name: "DR. VALE", colour: "#ff5a4e", pitch: 0.72 },
   pilot: { name: "PILOT", colour: "#c9d1d6", pitch: 0.72 },
   halcyon: { name: "HALCYON", colour: "#ffb547", pitch: 1.5 },
+  trailer: { name: "", colour: "#eef4f6", pitch: 0.8 },
   you: { name: "07", colour: "#e8eef2", pitch: 1.15 },
   sfx: { name: "", colour: "#9aa7ad", pitch: 0 },
 };
