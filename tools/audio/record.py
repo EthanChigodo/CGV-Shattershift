@@ -156,7 +156,7 @@ def take_path(line, i):
 
 
 def takes_on_disk(line):
-    return [take_path(line, i) for i in range(4) if os.path.exists(take_path(line, i))]
+    return [take_path(line, i) for i in range(12) if os.path.exists(take_path(line, i))]
 
 
 # ---------------------------------------------------------------- stages
@@ -309,7 +309,9 @@ def pick(lines):
     manifest = json.load(open(man_path)) if os.path.exists(man_path) else {}
     for line in lines:
         best, best_s = None, -99
-        for p in takes_on_disk(line):
+        takes = takes_on_disk(line)
+        perfect = [p for p in takes if scores.get(os.path.relpath(p, TAKES), {}).get("wer", 1) == 0]
+        for p in perfect or takes:  # a word-perfect take always wins
             s = score(line["who"], scores.get(os.path.relpath(p, TAKES)))
             if s > best_s:
                 best, best_s = p, s
