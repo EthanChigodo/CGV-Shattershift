@@ -98,7 +98,10 @@ RADIO_FIT = {"quietRideRadio": 3.9}  # the lift's radio has a beat to fit
 
 
 # Lines a voice kept getting wrong, worded so it says them right (the subtitle is unchanged).
-SAY = {"The lift's at the far end of the labs. Go!": "The lift is at the far end of the labs. Go!"}
+SAY = {"The lift's at the far end of the labs. Go!": "The lift is at the far end of the labs. Go!",
+       "You'll want to know what you are. You were Subject Seven. Project Ascension.":
+           "You will want to know what you are. You were... Subject Seven. Project Ascension.",
+       "Every floor is wired, Seven. I signed the order myself.": "Every floor is wired, Seven. I signed the order... myself."}
 
 
 def spoken(text):
