@@ -6,3 +6,4 @@ tests/story/shots/
 .vendor/
 __pycache__/
 dist/
+.audio-work/

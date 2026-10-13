@@ -1,6 +1,6 @@
 /**
  * The story's voices. Every line is spoken - recorded by
- * tools/audio/voices.py and listed in src/audio/voice-lines.js - and every
+ * tools/audio/record.py and listed in src/audio/voice-lines.js - and every
  * stage direction in [square brackets] is a sound cue (CUES, played from the
  * game's sound set, level1-audio.js). A line with no recording (its words
  * changed since the voices were made) falls back to a short blip pitched per

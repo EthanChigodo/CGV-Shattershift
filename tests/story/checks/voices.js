@@ -26,7 +26,7 @@ export async function run(page) {
     for (const [, text] of Object.values(RADIO)) spoken.push(["lift radio", `pilot|${text}`]);
 
     const missing = spoken.filter(([, key]) => !VOICE_LINES[key]).map(([scene, key]) => `${scene}: ${key}`);
-    check("every line has a recording (re-run tools/audio/voices.py after changing words)", !missing.length, missing.slice(0, 4).join(" / "));
+    check("every line has a recording (record it with tools/audio/record.py after changing words)", !missing.length, missing.slice(0, 4).join(" / "));
 
     const directions = new Set();
     for (const lines of Object.values(SCENES)) for (const line of lines) if (direction(line.text)) directions.add(line.text.trim());
