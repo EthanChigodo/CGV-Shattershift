@@ -60,6 +60,7 @@ node tools/audio/export-lines.mjs > .audio-work/vs/lines.json
 cd tools/audio
 GEN_THREADS=3 ../../.venv/bin/python record.py gen      # the takes - hours on a CPU
 ../../.venv/bin/python record.py judge                  # measure them
+../../.venv/bin/python record.py perfect                # more takes, until every line has one word-perfect
 ../../.venv/bin/python record.py laughs                 # Vale's laughs
 ../../.venv/bin/python record.py pick                   # the best take of each line, finished
 ../../.venv/bin/python record.py install                # into the game
@@ -92,7 +93,11 @@ Lines are read as an actor would say them: "Subject 07" is "Subject Seven",
 Nobody listens to hundreds of takes, so the machine does, and the numbers
 choose:
 
-- **Words**: Whisper transcribes the take; any missing word costs heavily.
+- **Words**: Whisper transcribes the take; any missing or wrong word costs
+  heavily, and a line with no word-perfect take gets more takes until it has
+  one (spelling, digits and contractions don't count - "programme" is
+  "program", "30" is "thirty"). A line a voice keeps getting wrong can be
+  reworded for the voice only (`SAY` in `record.py`; the subtitle keeps the script's words).
 - **Energy** (arousal, 0-1): Okoro should be frightened, the trailer exciting.
   Okoro read calmly measured about 0.35; cloned from the speaker's excited
   recordings, about 0.5.

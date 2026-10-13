@@ -41,9 +41,33 @@ def words(path):
     return " ".join(s.text.strip() for s in segs)
 
 
+NUMBERS = {"07": "seven", "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four", "5": "five", "6": "six",
+           "7": "seven", "8": "eight", "9": "nine", "10": "ten", "30": "thirty", "40": "forty"}
+SPELLING = {"programme": "program", "anaesthesia": "anesthesia", "anaesthetic": "anesthetic", "anaesthetics": "anesthetics",
+            "catalogued": "cataloged", "okay": "ok", "mr": "mister", "dr": "doctor", "round": "around"}
+CONTRACTIONS = {"it's": "it is", "they're": "they are", "you'll": "you will", "that's": "that is", "i'm": "i am",
+                "we're": "we are", "you're": "you are", "there's": "there is", "he's": "he is", "what's": "what is",
+                "i'd": "i would", "you've": "you have", "i've": "i have", "let's": "let us", "who's": "who is",
+                "anaesthetic's": "anesthetic is", "anesthetic's": "anesthetic is", "atrium's": "atrium is",
+                "lift's": "lifts", "vale's": "vale is", "can't": "cannot"}
+COMPOUNDS = [("lift off", "liftoff"), ("half hour", "halfhour"), ("sky bridge", "skybridge"), ("x ray", "xray"),
+             ("heli pad", "helipad"), ("any one", "anyone"), ("every one", "everyone")]
+
+
 def norm(t):
-    t = t.lower().replace("dr.", "doctor").replace("07", "seven").replace("-", " ")
-    return re.findall(r"[a-z']+", t)
+    """Words as spoken, so spelling, digits and contractions don't count as errors."""
+    t = t.lower().replace("\u2019", "'").replace("-", " ")
+    t = re.sub(r"\b(\d+)\b", lambda m: NUMBERS.get(m.group(1), m.group(1)), t)
+    words = []
+    for w in re.findall(r"[a-z0-9']+", t):
+        w = w.strip("'")
+        w = CONTRACTIONS.get(w, w)
+        for x in w.split():
+            words.append(SPELLING.get(x, x))
+    t = " ".join(words)
+    for a, b in COMPOUNDS:
+        t = t.replace(a, b)
+    return t.split()
 
 
 def wer(ref, hyp):
