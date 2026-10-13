@@ -22,7 +22,6 @@ Each character is a Kokoro voice plus a performance chain (dsp.py):
            after a chime.
   pilot    Vale's own voice, undisguised and untreated, over a headset or a
            radio (he is the pilot - the reveal is heard as well as seen).
-  narrator HALCYON's voice, without the PA's chime: the briefing film.
   you      af_heart / am_puck (by the character picked) - clear, exhausted.
 
 Writes assets/audio/voice/*.mp3 and src/audio/voice-lines.js (the manifest
@@ -504,20 +503,6 @@ def pilot(v, line, speed_scale=1.0):
     return dsp.normalize(x, SR, -19), speech
 
 
-def narrator(v, line, speed_scale=1.0):
-    """The briefing: HALCYON's voice telling it, without the PA's chime."""
-    x = v.say("halcyon", tts_text(line["text"]), 0.95 * speed_scale)
-    comb = np.zeros_like(x)
-    d = int(SR * 0.0045)
-    comb[d:] = x[:-d]
-    x = x + comb * 0.18
-    x = dsp.bitcrush(x, 11, 0.06)
-    x = dsp.bandpass(x, SR, 120, 9000, order=1)
-    speech = len(x) / SR
-    x = dsp.reverb(x, SR, rt60=0.9, wet=0.1, predelay=0.015, damp=4500)
-    return dsp.normalize(x, SR, -18), speech
-
-
 def you(v, line, who, speed_scale=1.0):
     """Subject 07: clear and tired, in the character's own voice."""
     x = v.say(who, tts_text(line["text"]), 0.9 * speed_scale)
@@ -545,14 +530,12 @@ def render(v, line, scale=1.0):
         return halcyon(v, line, scale)
     if who == "pilot":
         return pilot(v, line, scale)
-    if who == "narrator":
-        return narrator(v, line, scale)
     raise ValueError(who)
 
 
 # How much longer than its subtitle's reading time a line may run before it
 # is sped up (Vale is slow on purpose; the radio has to fit its beat).
-STRETCH = {"okoro": 1.12, "vale": 1.45, "halcyon": 1.5, "pilot": 1.12, "narrator": 9.0}
+STRETCH = {"okoro": 1.12, "vale": 1.45, "halcyon": 1.5, "pilot": 1.12}
 FIXED = {"quietRideRadio": 4.1}
 
 

@@ -66,7 +66,6 @@ blip instead (a line is found by its exact words).
 | Dr. Okoro | `am_onyx` + `bm_daniel`, in Nigerian English (`accent.py`) | A Nigerian doctor, terrified: one flowing take per line, pitch pushed up, breathing in the pauses between phrases and, as he runs through the Foundry, panting under his words; whispering behind the desk, shouting in the lift and when he draws them off |
 | Dr. Vale | `bm_george` + `bm_lewis` | Slow and deep: the throat and pitch dropped ~4.5 semitones, a sub-octave growl and a whispered double under the voice; the intercom's echo through the tower; laughter after his taunts and a long mad laugh in the helicopter |
 | HALCYON | `bf_emma` | The building's automatic system - announcements to all personnel, on nobody's side: calm, a little metallic, over the PA after a two-note chime |
-| The narrator | `bf_emma` | HALCYON's voice reading the briefing film, without the chime |
 | The pilot | Vale's voice, undisguised | Over a headset, and as "Kestrel One" on the radio in the lift (it is Vale: the reveal is heard as well as seen) |
 | Subject 07 | `af_heart` / `am_puck` | By the character picked: a clear, tired voice. Pain and effort are wordless - the character's own voice, strained (`sfx.py`) |
 | The patients | `am_onyx`, `bm_lewis`, `am_adam`, `bf_isabella`, `af_nicole`, `am_fenrir` | Bigger throats, lower pitch, a rattle (vocal fry), grit, a whisper of breath, and a wet gurgle as they die |
