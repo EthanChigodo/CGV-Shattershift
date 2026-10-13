@@ -455,9 +455,11 @@ def patient_speech(k):
     if not takes:
         raise FileNotFoundError(f"patient speech {k}")
     y = F.trim(F.load(takes[0]))
-    y = monstrous(y, -2.0, 1.5)
+    # (line 4 is a whisper already: roughened less, or its words go)
+    y = monstrous(y, -1.0, 1.15) if k == 4 else monstrous(y, -2.0, 1.5)
     under = F.pitch(GROWL[k % len(GROWL)](), -2)
-    y = mix((y, 0, 1.0), (lowpass(under, 1000), 0.1, 0.22))
+    if k != 4:  # (no growl under the whisper: it hides the last word)
+        y = mix((y, 0, 1.0), (lowpass(under, 1000), 0.1, 0.22))
     return fade(F.room(y, rt=0.7, wet=0.1), 0.01, 0.4)
 
 
