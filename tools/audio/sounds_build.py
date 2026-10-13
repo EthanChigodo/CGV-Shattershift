@@ -447,13 +447,17 @@ def horde(k):
 
 
 def patient_speech(k):
-    takes = sorted(glob.glob(os.path.join(work.VS, "patients", f"speech-{k}-*.wav")))
+    """A patient's broken words: the clearest take (best.json, from the listener), made wrong but still words."""
+    folder = os.path.join(os.path.dirname(OUT), "patients")
+    best = os.path.join(folder, "best.json")
+    chosen = json.load(open(best)).get(str(k)) if os.path.exists(best) else None
+    takes = [os.path.join(folder, chosen)] if chosen else sorted(glob.glob(os.path.join(folder, f"speech-{k}-*.wav")))
     if not takes:
         raise FileNotFoundError(f"patient speech {k}")
     y = F.trim(F.load(takes[0]))
-    y = monstrous(y, -3.0, 2.2)
+    y = monstrous(y, -2.0, 1.5)
     under = F.pitch(GROWL[k % len(GROWL)](), -2)
-    y = mix((y, 0, 1.0), (lowpass(under, 1200), 0.1, 0.35))
+    y = mix((y, 0, 1.0), (lowpass(under, 1000), 0.1, 0.22))
     return fade(F.room(y, rt=0.7, wet=0.1), 0.01, 0.4)
 
 
