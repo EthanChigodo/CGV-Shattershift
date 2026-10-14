@@ -10,16 +10,16 @@ import { MELTDOWN_CREDITS } from "../levels/meltdown/credits.js";
 
 /** Music and sound effects (docs/credits.md §3). */
 export const AUDIO_CREDITS = [
-  ["Voices", "Made with VoiceStudio (debpalash): OmniVoice (k2-fsa) and IndexTTS 2.5 (bilibili)"],
+  ["Voices", "Made with VoiceStudio (debpalash): VoxCPM2 (OpenBMB) and OmniVoice (k2-fsa)"],
   ["Dr. Okoro's voice", "From Google's Nigerian English speech data (OpenSLR 70, speaker 07049) - CC BY-SA 4.0"],
   ["HALCYON", "Kokoro-82M (hexgrad)"],
   ["Dr. Vale's laughter", "Nocturnal_Vanguard (AuraVoice); qubodup - CC0"],
-  ["Briefing music", "\"Hitman\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
-  ["The Foundry", "\"The Complex\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
-  ["The Labs", "\"SCP-x3x (I am Not OK)\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
-  ["The Skyline", "\"Movement Proposition\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
-  ["The Roof", "\"Volatile Reaction\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
-  ["The wake-up and the lift", "\"Constance\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
+  ["Briefing music", "\"Nerves\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
+  ["The Foundry", "\"Big Mojo\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
+  ["The Labs", "\"Darkness is Coming\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
+  ["The Skyline", "\"Rocket\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
+  ["The Roof", "\"Black Vortex\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
+  ["The wake-up and the lift", "\"Space Fighter Loop\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
   ["The quiet ride", "\"Lost Time\" - Kevin MacLeod (incompetech.com), CC BY 4.0"],
   ["Alarms, breathing, glass, stone, steel, explosions, the lift", "BigSoundBank - Joseph Sardin (CC0)"],
   ["The patients", "Little Robot Sound Factory (CC BY 3.0); BigSoundBank; rubberduck; Darsycho; qubodup; thebardofblasphemy"],

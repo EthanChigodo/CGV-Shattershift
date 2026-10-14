@@ -68,8 +68,6 @@ LOUDNESS = {  # name: [LUFS, seconds] - the loudness the game's mix was balanced
     "sfx/breath-pant-m": [-21.3, 5.55],
     "sfx/breath-recover-f": [-22.0, 7.33],
     "sfx/breath-recover-m": [-22.1, 7.33],
-    "sfx/breath-run-f": [-22.6, 8.0],
-    "sfx/breath-run-m": [-22.5, 8.0],
     "sfx/breath-scared-f": [-24.7, 4.16],
     "sfx/breath-scared-m": [-24.7, 4.16],
     "sfx/building-collapse": [-12.7, 16.28],
@@ -234,15 +232,15 @@ def brake():
 
 def breath(kind, g):
     if g == "m":
-        src_y = {"run": L(bsb("1103")), "pant": L(bsb("1103"), 6), "recover": L(bsb("2195")), "scared": L(bsb("2195"), 30)}[kind]
+        src_y = {"pant": L(bsb("1103"), 6), "recover": L(bsb("2195")), "scared": L(bsb("2195"), 30)}[kind]
     else:
-        src_y = {"run": L(bsb("1345")), "pant": L(bsb("1345"), 20), "recover": L(bsb("1345"), 45), "scared": L(bsb("1345"), 58)}[kind]
+        src_y = {"pant": L(bsb("1345"), 20), "recover": L(bsb("1345"), 45), "scared": L(bsb("1345"), 58)}[kind]
     if kind == "scared":
         src_y = F.pitch(src_y, 0, tempo=1.25)  # quick, shallow
     if kind == "recover" and g == "f":
         src_y = F.pitch(src_y, 0, tempo=0.8)  # slowing down
     secs = LOUDNESS[f"sfx/breath-{kind}-{g}"][1]
-    return loop(src_y, secs, 0.4) if kind == "run" else fade(src_y[: int(secs * SR)], 0.05, 0.6)
+    return fade(src_y[: int(secs * SR)], 0.05, 0.6)
 
 
 def rumble(seconds, at=0.0):
@@ -481,7 +479,7 @@ def recipes():
         r[f"creatures/patient-roar-{k}"] = lambda k=k: roar(k)
         r[f"creatures/patient-horde-{k}"] = lambda k=k: horde(k)
     for g in "fm":
-        for kind in ("run", "pant", "recover", "scared"):
+        for kind in ("pant", "recover", "scared"):
             r[f"sfx/breath-{kind}-{g}"] = lambda kind=kind, g=g: breath(kind, g)
         for k in (1, 2, 3):
             r[f"sfx/hurt-{k}-{g}"] = lambda k=k, g=g: hurt(k, g)

@@ -205,7 +205,7 @@ music.showMenu();
 const unlockMusic = async (event) => {
   // Set the briefing intent before unlocking on the same pointer/key gesture,
   // so the menu track cannot briefly start while the briefing's track is loading.
-  if (event.target?.closest?.("#storyBeginButton, #replayStoryButton")) music.showStory();
+  if (event.target?.closest?.("#storyBeginButton, #replayStoryButton")) music.holdStory();
   const ready = music.unlock(); // Creates the shared context synchronously.
   level1Audio.unlock();
   if (await ready) level1Audio.unlock();
@@ -672,13 +672,10 @@ function updateFoundry(dt, time) {
   if (!foundryAmbience.running && foundry.root.visible) foundryAmbience.start();
 
   if (state !== "playing" || paused) {
-    level1Audio.updateBreath(0);
     level1Audio.updateAlarm(0);
     return;
   }
-  // Huffing on the run (harder as you tire), and the tower's fire alarm a
-  // few floors up, through the concrete.
-  level1Audio.updateBreath(0.32 + Math.min(1, foundrySpeed() / 14) * 0.3 + (1 - Math.max(0, health) / 100) * 0.35);
+  // The tower's fire alarm a few floors up, through the concrete.
   level1Audio.updateAlarm(0.6, 0.78);
 
   const { hits, grazes } = foundry.probe(foundryBox, distance);
@@ -1069,8 +1066,7 @@ function updateCauseway(dt, time) {
   if (health <= 0) { updateUI(); endRun(false, exposure > 0 ? "fire" : "smoke"); return; }
   level1Audio.updateEnvironment(causeway.audioEnvironment(_playerPos));
   level1Audio.updateBrokenGlass(_playerPos, run.speed > 1 && jumpHeight < 0.12);
-  // Huffing (harder sprinting, and hurt), and the research wing's fire alarm.
-  level1Audio.updateBreath(THREE.MathUtils.clamp(run.speed / CAUSEWAY_SPEED.sprint, 0, 1) * 0.7 + (1 - Math.max(0, health) / 100) * 0.3);
+  // The research wing's fire alarm.
   level1Audio.updateAlarm(causewayMode === "story" ? 0.85 : 0.55, 0.1);
 
   // ---- Bridge collapse chase -------------------------------------------
@@ -2123,7 +2119,7 @@ function bindRideSounds(ride) {
   on("clamp-lock", () => level1Audio.play("clank"));
   on("glass-crack", () => level1Audio.play("glassStep", { volume: 0.5, cooldown: 0.1 }));
   on("glass-break", () => level1Audio.glassBreak());
-  on("depart", () => { level1Audio.play("lift-doors", { volume: 0.6 }); if (ride instanceof QuietRide) level1Audio.breath("pant"); });
+  on("depart", () => { level1Audio.play("lift-doors", { volume: 0.6 }); });
   on("arrive", () => level1Audio.play("lift-chime"));
   on("chime", () => level1Audio.play("lift-chime"));
   on("doors", () => level1Audio.play("lift-doors"));
@@ -2767,7 +2763,6 @@ function updateMainCutscene(dt, time, frame) {
     scene.fog.density = causeway.fogDensity;
     scene.background.copy(causeway.hazeColor);
     if (skylineStory) {
-      level1Audio.updateBreath(skylineStory.caught ? 0 : 0.8);
       hideRampProps();
       skylineStory.tower.update(dt);
       skylineStory.sky.update(dt, time);
@@ -3163,7 +3158,6 @@ function endRun(won, reason = null, detail = null) {
   storyDeath = !won && storyRun && runKind === "story" && !!storyCheckpoint;
   restartButtonLabel();
   if (currentLevel === 1) music.gameOverDuck();
-  level1Audio.updateBreath(0);
   // Level 3 plays it itself (the MeltdownGame shares level1Audio).
   if (!won && currentLevel !== 3) level1Audio.gameOver();
   causewayHud.warning(null);
@@ -3709,7 +3703,7 @@ function quitToMenu() {
  * The briefing: the prologue film (src/story/prologue.js) - what Project
  * Ascension was, why the patients were taken, who ran it, how it was found
  * out, and why the tower is coming down tonight. Staged in the engine, told
- * in captions read by a trailer voice, over "Hitman". Esc, Space or SKIP ends it.
+ * as Okoro's confession, in his voice, over a score cut to it. Esc, Space or SKIP ends it.
  */
 let storyPlaying = false;
 let prologue = null;
@@ -3724,7 +3718,7 @@ function cancelStory() {
 
 async function startStory() {
   cancelStory();
-  music.showStory();
+  music.holdStory();
   storyPlaying = true;
   ui.story.classList.add("active");
   ui.start.classList.remove("active");
@@ -3745,6 +3739,8 @@ async function startStory() {
   }
   if (!storyPlaying) return;
   ui.story.classList.remove("active");
+  // The score is cut to the film: it starts with it.
+  music.startStory();
   prologue.start(() => finishStory());
 }
 

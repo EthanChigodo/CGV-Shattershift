@@ -832,6 +832,10 @@ export class MeltdownGame {
       const near = Math.max(0.3, 1 - position.distanceTo(this.avatar.root.position) / 30);
       this._patientSound(Math.random() < 0.5 ? "shriek" : "growl", position, 0.6 + near * 0.6);
     });
+    // One stalking you through the dark, closing in.
+    on("patient-stalk", ({ position, gap }) => {
+      this._patientSound(Math.random() < 0.65 ? "growl" : "moan", position, 0.75 + Math.max(0, 1 - gap / 40) * 0.5);
+    });
     // In the dark, the beam finds one standing there - and it says something.
     on("patient-seen", ({ position }) => {
       audio.stinger();
@@ -1146,17 +1150,17 @@ export class MeltdownGame {
       this.sfx.updateBrokenGlass(V.sfxPos, playing && r.speed > 1 && r.height < 0.12);
       this.sfx.updateEnvironment({ fire: { distance: Math.max(0, r.distance - r.fireDistance), intensity: 1, offsetX: 0 } });
       this.sfx.updateElevator(level.endLift?.state.velocity ?? 0, this.phase === "depart");
-      // The fire alarm (dead with the power), and your breathing - harder as you weaken.
+      // The fire alarm (dead with the power).
       const running = playing && this.phase === "run";
       const breach = this.phase === "story" && this.director?.stage === "breach";
       this.sfx.updateAlarm((running || breach) && !this._alarmOff ? 0.85 : 0, 0.12);
-      this.sfx.updateBreath(running ? 0.4 + (1 - r.vitality / START_VITALITY) * 0.5 : 0);
       // They're loose: somewhere in the labs, one moans, or begs.
       if (running) {
-        this._moanIn = (this._moanIn ?? 2.5) - dt;
+        this._moanIn = (this._moanIn ?? 1.5) - dt;
         if (this._moanIn <= 0) {
-          this._moanIn = 3.5 + Math.random() * 5;
-          this.sfx.patient(Math.random() < 0.3 ? "speech" : "moan", { strength: 0.75, distance: 12 + Math.random() * 24, pan: Math.random() * 1.6 - 0.8 });
+          this._moanIn = 2.5 + Math.random() * 3.5;
+          const kind = ["speech", "moan", "moan", "growl"][Math.floor(Math.random() * 4)];
+          this.sfx.patient(kind, { strength: 0.9, distance: 8 + Math.random() * 16, pan: Math.random() * 1.6 - 0.8 });
         }
       }
     }
@@ -2473,10 +2477,9 @@ export class MeltdownGame {
     this.scene.fog.density = 0.0058 + chaos * 0.007;
     // The wind across the top of the tallest tower in the city, gusting.
     this.sfx?.updateWind(playing ? 0.7 + Math.sin(time * 0.31) * 0.2 + Math.sin(time * 1.13) * 0.1 : 0.3);
-    // The alarm below, through the roof hatches; your breath, moving and hurt.
+    // The alarm below, through the roof hatches.
     const fighting = playing && this.phase === "roof";
     this.sfx?.updateAlarm(fighting ? 0.55 : 0, 0.65);
-    this.sfx?.updateBreath(fighting ? Math.min(1, this.hero.velocity.length() / 6) * 0.5 + danger * 0.4 : 0);
     // Them: one of the living ones, every few seconds, wherever it is.
     if (fighting && this.sfx && roof) {
       this._moanIn = (this._moanIn ?? 2) - dt;

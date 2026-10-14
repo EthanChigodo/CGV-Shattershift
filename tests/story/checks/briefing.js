@@ -1,7 +1,7 @@
 /**
  * The briefing film (src/story/prologue.js, from the menu): it loads, plays
  * every chapter in order with its caption, renders each one without an
- * error, is narrated from recordings (the trailer voice, not the browser's
+ * error, is narrated from recordings (Okoro's confession, not the browser's
  * speech synthesis), ends on the title and hands back to the menu; Esc skips it.
  */
 

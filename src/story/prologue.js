@@ -1,10 +1,12 @@
 /**
  * The prologue: everything before the game, as a short in-engine film - the
  * start screen's "briefing". Chapter cards and typed captions over staged
- * shots, each caption read by a movie-trailer voice (recorded with
- * VoiceStudio - tools/audio/record.py), over "Hitman". It explains what Project
- * Ascension was for, why the patients were taken, who ran it, what went wrong,
- * how it was found out, and why the tower is coming down tonight.
+ * shots: Dr. Okoro's confession - the recording he sends the police tonight -
+ * each caption in his own voice (recorded with VoiceStudio -
+ * tools/audio/record.py), over a score that builds to the order and drops out
+ * for his last line. It explains what Project Ascension was for, why the
+ * patients were taken, who ran it, what went wrong, how it was found out, and
+ * why the tower is coming down tonight.
  *
  *   const prologue = new Prologue({ renderer, assetBase, character, voice });
  *   await prologue.load();                 // the models it stages
@@ -42,32 +44,32 @@ import { VOICE_LINES } from "../audio/voice-lines.js";
 const FILM = [
   {
     set: "city", seconds: 10, tag: "01", title: "Ascension Tower",
-    text: "The Meridian Institute owned the top forty floors of Ascension Tower. The city thought it was a hospital.",
+    text: "My name is Elias Okoro. The Meridian Institute owns the top forty floors of Ascension Tower. The city thinks it's a hospital.",
     from: { pos: [150, 22, 210], look: [0, 60, 0] }, to: { pos: [70, 120, 120], look: [0, 175, 0] },
   },
   {
     set: "office", seconds: 11, tag: "02", title: "Project Ascension",
-    text: "Its director, Dr. Adrian Vale, sold the board a resonance field that could rebuild a body cell by cell. \"Fixed\" people, he called them. No more illness. No more age.",
+    text: "Our director, Dr. Adrian Vale, sold the board a resonance field that could rebuild a body, cell by cell. \"Fixed\" people, he called them. No more illness. No more age.",
     from: { pos: [4.5, 1.7, 5.5], look: [-1, 1.5, -1.5] }, to: { pos: [1.6, 1.6, 2.6], look: [-1.4, 1.55, -1] },
   },
   {
     set: "theatre", seconds: 11, tag: "03", title: "The subjects",
-    text: "Trials need subjects. Meridian found them at the city's free clinics - the homeless, the uninsured, the ones nobody would come looking for. They signed up for a sleep study.",
+    text: "Trials need subjects. We found them at the city's free clinics - the homeless, the uninsured. People nobody would come looking for. They thought they were signing up for a sleep study.",
     from: { pos: [2.6, 2.1, 2.6], look: [0, 1.0, 0] }, to: { pos: [1.2, 2.6, 1.0], look: [0, 0.95, -0.2] },
   },
   {
     set: "labs", seconds: 11, tag: "04", title: "Trials one to six",
-    text: "Six trials failed. The subjects lived - and kept changing. Meridian sedated them, catalogued them, and kept them in the labs below the observation decks.",
+    text: "Six trials failed. The subjects lived... and kept changing. So we sedated them, catalogued them, and kept them in the labs below the observation decks.",
     from: { pos: [0, 1.7, 9], look: [0, 1.6, -6] }, to: { pos: [0.6, 1.5, 1.5], look: [-2.6, 1.7, -2.5] },
   },
   {
     set: "ward", seconds: 11, tag: "05", title: "Subject 07",
-    text: "Trial seven was different. Subject 07 came through the field changed in a way none of their instruments could measure. Vale wanted to know how - before anyone else did.",
+    text: "Trial seven was different. Subject 07 came through the field changed - in a way none of our instruments could measure. And Vale wanted to know how, before anyone else did.",
     from: { pos: [1.8, 2.4, -1.4], look: [-1.4, 0.8, 1.6] }, to: { pos: [-0.4, 1.7, 0.0], look: [-1.4, 0.75, 1.9] },
   },
   {
     set: "leak", seconds: 11, tag: "06", title: "The leak",
-    text: "Dr. Elias Okoro had run the trials' anaesthesia for two years. He kept a copy of everything. Tonight he sent it to the city police.",
+    text: "I ran the anaesthesia on those trials for two years. I kept a copy of everything. Tonight, I sent it to the city police.",
     from: { pos: [-2.4, 1.9, 2.8], look: [0.3, 1.1, -0.6] }, to: { pos: [-0.9, 1.55, 1.2], look: [0.4, 1.15, -0.8] },
   },
   {
@@ -80,18 +82,18 @@ const FILM = [
   },
   {
     set: "control", seconds: 11, tag: "08", title: "The order",
-    text: "Vale's answer was to bury it. Charges on every floor. The subjects still in their beds. Thirty minutes - and Ascension Tower comes down.",
+    text: "Vale's answer is to bury it. Charges on every floor. The subjects still in their beds. Thirty minutes - and this tower comes down.",
     from: { pos: [-1.6, 1.8, 3.8], look: [0.45, 1.5, -1] }, to: { pos: [-0.7, 1.65, 2.5], look: [0.5, 1.5, -1] },
   },
   {
     set: "ward", seconds: 8, tag: "09", title: "Tonight",
-    text: "Okoro went back for one of them.",
+    text: "I'm going back for one of them.",
     okoroArrives: true,
     from: { pos: [0.8, 1.7, -3.8], look: [-0.6, 1.1, 2] }, to: { pos: [0.2, 1.6, -2.4], look: [-1.2, 1.0, 1.8] },
   },
 ];
 
-/** Seconds into a chapter when the trailer voice starts (after the fade from black). */
+/** Seconds into a chapter when Okoro starts speaking (after the fade from black). */
 const NARRATION_AT = 0.7;
 
 /**
@@ -100,7 +102,7 @@ const NARRATION_AT = 0.7;
  * off by the next chapter.
  */
 export const CHAPTERS = FILM.map((c) => {
-  const spoken = VOICE_LINES[`trailer|${c.text}`]?.[1] ?? 0;
+  const spoken = VOICE_LINES[`okoro|${c.text}`]?.[1] ?? 0;
   return { ...c, seconds: Math.max(c.seconds, spoken ? NARRATION_AT + spoken + 1.1 : 0) };
 });
 
@@ -228,7 +230,7 @@ export class Prologue {
    * @param {THREE.WebGLRenderer} o.renderer
    * @param {string} o.assetBase     URL of assets/meltdown/
    * @param {string} [o.character]   the player character's asset key
-   * @param {{say(line:object):void, stop():void, preload(lines:object[]):void}} [o.voice]  the trailer voice (story/voice.js)
+   * @param {{say(line:object):void, stop():void, preload(lines:object[]):void}} [o.voice]  Okoro's voice (story/voice.js)
    */
   constructor({ renderer, assetBase, character = "playerFemale", voice = null }) {
     this.renderer = renderer;
@@ -1037,7 +1039,7 @@ export class Prologue {
     this.t = 0;
     this.chapter = -1;
     this.narrated.clear();
-    this.voice?.preload(CHAPTERS.map((c) => ({ who: "trailer", text: c.text })));
+    this.voice?.preload(CHAPTERS.map((c) => ({ who: "okoro", text: c.text })));
     this.ended = false;
     this.ui.root.hidden = false;
     this.ui.end.classList.remove("show");
@@ -1096,10 +1098,10 @@ export class Prologue {
     }
     const { index, chapter, local, k } = at;
     if (index !== this.chapter) this._enterChapter(index, chapter);
-    // The trailer voice reads the caption as it types out.
+    // Okoro says the caption as it types out.
     if (local >= NARRATION_AT && !this.narrated.has(index)) {
       this.narrated.add(index);
-      this.voice?.say({ who: "trailer", text: chapter.text });
+      this.voice?.say({ who: "okoro", text: chapter.text });
     }
     // Fade through black between chapters.
     const fade = Math.max(1 - smooth(local, 0, 0.7), smooth(local, chapter.seconds - 0.6, chapter.seconds));

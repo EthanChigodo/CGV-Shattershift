@@ -1,12 +1,22 @@
-"""The game's score: Kevin MacLeod's tracks (incompetech.com, CC BY 4.0), cut into seamless loops.
+"""The game's score: Kevin MacLeod's hybrid orchestral tracks (incompetech.com,
+CC BY 4.0) - big drums, brass and strings with synths and electronic beats -
+cut into seamless loops.
 
 Each stage loop starts on a bar after the piece's opening and ends on a bar
-where the music matches its start, blended across one beat; the briefing
-plays its whole track. Loudness matches what the game's mix was balanced for.
+where the music matches its start, blended across one beat. Loudness matches
+what the game's mix was balanced for.
+
+The briefing's score is cut to the film instead (briefing()): the chapters'
+lengths come from Okoro's recorded lines (src/audio/voice-lines.js), so
+build it after recording them. "Nerves" runs low under the confession, swells
+through the leak, erupts as the order is given, and drops out for his last
+line; a last hit lands on the title.
 
     python music_build.py [stage ...]      -> assets/audio/music/<stage>.mp3
 """
+import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,14 +35,14 @@ SR = 44100
 
 # stage: (track, earliest loop start in seconds, loop length range in seconds, loudness)
 PLAN = {
-    "briefing": ("Hitman", None, None, -16.0),
-    "foundry": ("The Complex", 20, (70, 100), -16.2),
-    "labs": ("SCP-x3x", 15, (70, 100), -17.9),
-    "skyline": ("Movement Proposition", 12, (60, 95), -16.1),
-    "roof": ("Volatile Reaction", 10, (60, 95), -15.7),
-    "tension": ("Constance", 8, (60, 95), -18.5),
-    "grief": ("Lost Time", 10, (70, 110), -19.2),
+    "foundry": ("Big Mojo", 32, (70, 110), -16.2),             # huge drums, electronics, strings: the machines
+    "labs": ("Darkness is Coming", 10, (70, 110), -17.0),      # synths, choir, processed drums: horror that drives
+    "skyline": ("Rocket", 10, (60, 100), -15.8),               # euro-tech guitar and symphony: the escape
+    "roof": ("Black Vortex", 35, (55, 80), -15.7),             # hybrid orchestra in 7/8: the last stand
+    "tension": ("Space Fighter Loop", 3, (45, 98), -18.5),     # synths, drums, low brass: the wake-up, the failing lift
+    "grief": ("Lost Time", 10, (70, 110), -19.2),              # the quiet ride up, after Okoro
 }
+BRIEFING = ("Nerves", -16.0)
 
 
 def load(path):
@@ -102,19 +112,78 @@ def save(y, name):
                         os.path.join(OUT, f"{name}.mp3")], check=True)
 
 
+def film_chapters():
+    """[(start, length)] of the briefing's chapters, as the game times them
+    (src/story/prologue.js: a chapter lasts its set seconds, or longer if
+    Okoro's line needs it: 0.7 s in, the line, 1.1 s after)."""
+    src = open(os.path.join(work.ROOT, "src", "story", "prologue.js"), encoding="utf8").read()
+    film = re.search(r"const FILM = \[([\s\S]*?)\n\];", src).group(1)
+    lines = open(os.path.join(work.ROOT, "src", "audio", "voice-lines.js"), encoding="utf8").read()
+    spoken = {json.loads(k): json.loads(v)[1] for k, v in re.findall(r'^  (".*"): (\[[^\]]*\]),?$', lines, re.M)}
+    out, t = [], 0.0
+    for secs, text in re.findall(r'seconds: ([\d.]+),.*?text: "((?:[^"\\]|\\.)*)"', film, re.S):
+        text = text.replace('\\"', '"')
+        say = spoken.get(f"okoro|{text}")
+        if say is None:
+            raise SystemExit(f"not recorded yet: {text}")
+        length = max(float(secs), 0.7 + say + 1.1)
+        out.append((t, length))
+        t += length
+    return out
+
+
+def briefing():
+    """The briefing's score, cut to the film (see the top of this file)."""
+    track, lufs = BRIEFING
+    y = load(os.path.join(MUSIC, f"{track}.mp3"))
+    chapters = film_chapters()
+    order, last = chapters[7][0], chapters[8][0]        # "The order", and Okoro's last line
+    end = chapters[-1][0] + chapters[-1][1]              # then the title on black (4.4 s)
+    # Where the piece erupts: the biggest rise in loudness after its first minute and a half.
+    mono = y.mean(axis=1)
+    sec = np.array([np.sqrt(np.mean(mono[i: i + SR] ** 2)) for i in range(0, len(mono) - SR, SR // 4)])
+    db = 20 * np.log10(sec + 1e-9)
+    rise = db[8:] - db[:-8]
+    k0 = 90 * 4
+    erupt = (k0 + int(np.argmax(rise[k0:])) + 8) * SR // 4
+    _, beats = librosa.beat.beat_track(y=mono[erupt - 4 * SR: erupt + 4 * SR], sr=SR, units="samples")
+    erupt += int(beats[np.argmin(np.abs(beats - 4 * SR))]) - 4 * SR if len(beats) else 0
+    offset = erupt - int(order * SR)                     # the piece starts this far in
+    n = int((end + 5.0) * SR)
+    out = np.zeros((n, 2), np.float32)
+    src = y[max(0, offset): max(0, offset) + n]
+    out[max(0, -offset): max(0, -offset) + len(src)] = src
+    # Its level through the film: low under the confession (he must be heard),
+    # rising through the leak and the police, full from the order, gone for his last line.
+    t = np.arange(n) / SR
+    leak = chapters[5][0]
+    gain_db = np.interp(t, [0, 2.5, leak, order - 0.3, order, last - 0.4, last],
+                        [-40, -11, -9, -4, 0, 0, -60])
+    gain_db[t >= last] = -80
+    out *= (10 ** (gain_db / 20))[:, None]
+    # A last hit as the title comes up: the piece's own final chord.
+    tail = y[-int(4.0 * SR):]
+    at = int((end + 0.4) * SR)
+    m = min(len(tail), n - at)
+    out[at: at + m] += tail[:m] * np.linspace(1, 0, m)[:, None] ** 0.5
+    note = (f"{track} from {offset / SR:.1f}s: erupts at {order:.1f}s (the order), "
+            f"silent at {last:.1f}s (his last line), {n / SR:.1f}s in all")
+    return master(out, lufs), note
+
+
 if __name__ == "__main__":
     only = sys.argv[1:]
+    if not only or "briefing" in only:
+        out, note = briefing()
+        save(out, "briefing")
+        print(f"briefing: {note}", flush=True)
     for stage, (track, earliest, rng, lufs) in PLAN.items():
         if only and stage not in only:
             continue
         y = load(os.path.join(MUSIC, f"{track}.mp3"))
-        if rng is None:
-            out = y
-            note = "whole track"
-        else:
-            score, a, b, beat, tempo = best_loop(y, earliest, *rng)
-            out = seamless(y, a, b, beat)
-            note = f"loop {a / SR:.1f}-{b / SR:.1f}s ({(b - a) / SR:.1f}s, {tempo:.0f} bpm, match {score:.2f})"
+        score, a, b, beat, tempo = best_loop(y, earliest, *rng)
+        out = seamless(y, a, b, beat)
+        note = f"loop {a / SR:.1f}-{b / SR:.1f}s ({(b - a) / SR:.1f}s, {tempo:.0f} bpm, match {score:.2f})"
         out = master(out, lufs)
         save(out, stage)
         print(f"{stage}: {track} - {note}", flush=True)

@@ -1,7 +1,7 @@
 """Record every line with VoiceStudio's engines, judge the takes, keep the best, finish them.
 
     node tools/audio/export-lines.mjs > lines.json
-    python record.py gen     --lines lines.json [--only REGEX]   the takes (OmniVoice, then IndexTTS)
+    python record.py gen     --lines lines.json [--only REGEX]   the takes (OmniVoice, then VoxCPM2)
     python record.py judge   --lines lines.json [--only REGEX]   measure every take (listen.py)
     python record.py perfect --lines lines.json [--only REGEX]   more takes where no take has every word right
     python record.py pick    --lines lines.json [--only REGEX]   choose, finish -> work/vs/out
@@ -12,14 +12,14 @@
 her lines (Kokoro, from the earlier version) are kept as they are.
 
 The cast (references in refs/):
-  okoro    OmniVoice, cloned from a Nigerian English speaker (OpenSLR 70,
-           speaker 07049 - his most excited recordings), a little fast;
-           real breathing laid into his pauses; best of the takes by
-           energy + Nigerian accent + the words all heard
-  vale     IndexTTS 2.5: a designed deep British voice, emotion cold (or
-           gleeful, for his big moments); the tower's PA; real laughter
+  okoro    VoxCPM2, his voice cloned from a Nigerian English speaker (OpenSLR 70,
+           speaker 07049) and directed scene by scene - talking, not reading:
+           the reference gives the voice, the direction the delivery. Also
+           the briefing (his confession). Best of the takes by the words all
+           heard + energy + Nigerian accent + how much the voice moves
+  vale     VoxCPM2, a designed deep British voice, directed: cold and amused,
+           or gleeful; the tower's PA; real laughter
   pilot    Vale's voice, calm, over the radio
-  trailer  IndexTTS 2.5: a designed deep American voice, intense - the briefing
   you-f/m  OmniVoice, each character's own designed voice
 """
 import argparse
@@ -30,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import numpy as np
 import soundfile as sf
@@ -42,43 +43,50 @@ TAKES = os.path.join(work.VS, "takes")
 OUT = os.path.join(work.VS, "out")
 REF = lambda name: os.path.join(work.REFS, name)  # noqa: E731
 OMNI_PY = os.environ.get("OMNI_PYTHON", sys.executable)
-INDEX_PY = os.environ.get("INDEX_PYTHON", os.path.join(work.EXT, "index-tts", ".venv", "bin", "python"))
+VOX_PY = os.environ.get("VOX_PYTHON", sys.executable)
 
 # ---------------------------------------------------------------- the cast
 
 NG_REF = (REF("ng_07049_hot.flac"), open(REF("ng_07049_hot.txt")).read().strip())
 VALE_REF = REF("vale.flac")
-TRAILER_REF = REF("trailer.flac")
 YOU_REF = {g: (REF(f"you-{g}.flac"), open(REF(f"you-{g}.txt")).read().strip()) for g in "fm"}
 
-#            [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
-EMO = {"cold": [0, 0.35, 0, 0, 0.2, 0, 0, 0.35],
-       "glee": [0.35, 0.3, 0, 0, 0.15, 0, 0, 0.1],
-       "calm": [0.1, 0, 0, 0, 0, 0, 0, 0.5],
-       "trailer": [0, 0.3, 0, 0, 0, 0, 0.35, 0]}
-
-# Okoro, scene by scene: speed, and the real breaths around his words
-# (which breathing, how many breaths before he speaks, how many in each pause, how loud).
+# Okoro, scene by scene: the direction (how he says it - the reference only
+# gives his voice), and a breath before he speaks where he is out of breath
+# (which breathing, how many, how loud). No breaths between his sentences:
+# they talk, they don't pause to breathe.
 OKORO = {
-    "wake":        dict(speed=1.0, breath=("man-slow", 1, 1, 0.35)),
-    "walkOut":     dict(speed=1.05, breath=("man", 1, 1, 0.45)),
-    "foundryTalk": dict(speed=1.08, breath=("man", 2, 2, 0.6)),
-    "liftFault":   dict(speed=1.12, breath=("man", 1, 1, 0.5)),
-    "liftBreaks":  dict(speed=1.12, breath=("man", 1, 1, 0.5)),
-    "liftSaved":   dict(speed=0.95, breath=("man", 3, 1, 0.5)),
-    "breach":      dict(speed=1.1, breath=("man", 1, 1, 0.5)),
-    "bendAttack":  dict(speed=1.15, breath=("man", 1, 0, 0.5)),
-    "bendSaved":   dict(speed=1.1, breath=("man", 2, 1, 0.5)),
-    "hide":        dict(speed=1.0, breath=("man-slow", 1, 1, 0.3), whisper=True),
+    "briefing":    dict(direction="a Nigerian doctor recording a secret confession late at night, low, tired and urgent, "
+                                  "speaking naturally and personally to one listener, not reading"),
+    "wake":        dict(direction="a Nigerian doctor, worried and gentle, speaking softly but urgently to a patient "
+                                  "who is waking up, natural and conversational"),
+    "walkOut":     dict(direction="a Nigerian doctor, tense and low-voiced, leading someone down a dark corridor"),
+    "foundryTalk": dict(direction="a Nigerian doctor, out of breath, talking to the person running beside him, "
+                                  "urgent, natural conversation", breath=("man", 1, 0.45)),
+    "liftFault":   dict(direction="a Nigerian doctor, panicking, shouting over screeching machinery"),
+    "liftBreaks":  dict(direction="a Nigerian doctor, shouting urgent orders over screeching machinery"),
+    "liftSaved":   dict(direction="a Nigerian doctor, breathless and relieved, quietly amazed", breath=("man", 2, 0.45)),
+    "breach":      dict(direction="a Nigerian doctor, horrified and frightened, talking fast"),
+    "bendAttack":  dict(direction="a Nigerian doctor, screaming in panic"),
+    "bendSaved":   dict(direction="a Nigerian doctor, breathless and worried, checking on someone", breath=("man", 1, 0.45)),
+    "hide":        dict(direction="a Nigerian doctor, whispering, terrified, hiding behind a desk, speaking tenderly "
+                                  "to someone he cares about"),
 }
 HIDE_SHOUTS = {"Now - GO!", "OVER HERE! COME ON, OVER HERE!"}
+SHOUTING = "a Nigerian doctor, shouting as loud as he can to draw the monsters away from someone"
 
-VALE_MOOD = {  # the rest are cold
-    "He was right. Anaesthesia to the roof in thirty minutes. I couldn't have designed a better field test.": "glee",
-    "Don't worry about the tower. Fire is very good at keeping secrets.": "glee",
-    "Did you think I'd leave the roof unguarded? Say hello to my children.": "glee",
-    "Run all you like. Everything you are, I made.": "glee",
+VALE_COLD = "a calm, cold, menacing British man speaking over a building's intercom, relaxed and conversational, quietly amused"
+VALE_GLEE = "a British man over an intercom, gleeful and mocking, enjoying himself, conversational"
+VALE_CLOSE = "a calm British man, quietly triumphant and menacing, speaking face to face, conversational"
+VALE_CLOSE_GLEE = "a British man, smug and delighted with himself, speaking face to face, conversational"
+VALE_GLEEFUL = {  # the rest are cold
+    "He was right. Anaesthesia to the roof in thirty minutes. I couldn't have designed a better field test.",
+    "Don't worry about the tower. Fire is very good at keeping secrets.",
+    "Did you think I'd leave the roof unguarded? Say hello to my children.",
+    "Run all you like. Everything you are, I made.",
 }
+PILOT = {"ending": "a calm, pleasant helicopter pilot talking to a passenger over the engine noise, friendly",
+         "quietRideRadio": "a helicopter pilot calling over a crackling radio, calm and professional, a little urgent"}
 
 # Laughter after these lines (which laugh).
 VALE_LAUGHS = {
@@ -109,7 +117,9 @@ def spoken(text):
     t = text.replace("Subject 07", "Subject Seven").replace("07", "Seven")
     t = re.sub(r"\bDr\. ", "Doctor ", t)
     t = t.replace(" - ", ", ").replace("--", ", ")
-    t = re.sub(r"\b([A-Z]{2,})\b", lambda m: m.group(1).capitalize() if m.group(1) != "OK" else m.group(1), t).strip()
+    # Shouted capitals are plain words (or they get spelt out); the subtitle keeps the shout.
+    t = re.sub(r"\b([A-Z]{2,})\b", lambda m: m.group(1).lower() if m.group(1) != "OK" else m.group(1), t).strip()
+    t = re.sub(r"(^|[.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
     return SAY.get(t, t)
 
 
@@ -117,22 +127,27 @@ def file_id(key):
     return hashlib.sha1(key.encode("utf8")).hexdigest()[:10]
 
 
+def direction(line):
+    """How the line is said - VoxCPM2 reads it from the (brackets) before the words."""
+    who, scene, text = line["who"], line["scene"], line["text"]
+    if who == "okoro":
+        return SHOUTING if text in HIDE_SHOUTS else OKORO.get(scene, OKORO["breach"])["direction"]
+    if who == "vale":
+        if scene == "ending":
+            return VALE_CLOSE_GLEE if text in VALE_GLEEFUL else VALE_CLOSE
+        return VALE_GLEE if text in VALE_GLEEFUL else VALE_COLD
+    return PILOT[scene]
+
+
 def recipe(line):
-    """How a line is recorded: (engine, takes, job fields)."""
+    """How a line is recorded: (engine, takes, job fields). `text` is what the
+    take should say (judged against Whisper); `prompt` what the engine gets."""
     who, scene, text = line["who"], line["scene"], line["text"]
     s = spoken(text)
-    if who == "okoro":
-        mood = OKORO.get(scene, OKORO["breach"])
-        job = {"text": s, "ref_audio": NG_REF[0], "ref_text": NG_REF[1], "speed": mood["speed"]}
-        if mood.get("whisper") and text not in HIDE_SHOUTS:
-            job["instruct"] = "male, whisper"
-        return "omni", 2, job
-    if who == "vale":
-        return "index", 2, {"text": s, "spk": VALE_REF, "emo_vector": EMO[VALE_MOOD.get(text, "cold")]}
-    if who == "pilot":
-        return "index", 2, {"text": s, "spk": VALE_REF, "emo_vector": EMO["calm"]}
-    if who == "trailer":
-        return "index", 2, {"text": s, "spk": TRAILER_REF, "emo_vector": EMO["trailer"]}
+    if who in ("okoro", "vale", "pilot"):
+        ref = NG_REF[0] if who == "okoro" else VALE_REF
+        # The briefing's long speeches: one take first (more where a word is missed).
+        return "vox", 1 if scene == "briefing" else 2, {"text": s, "prompt": f"({direction(line)}){s}", "ref": ref}
     if who.startswith("you-"):
         ref, rtext = YOU_REF[who[-1]]
         return "omni", 2, {"text": s, "ref_audio": ref, "ref_text": rtext, "speed": 0.92}
@@ -152,7 +167,9 @@ def all_lines(path):
 
 
 def take_path(line, i):
-    return os.path.join(TAKES, line["who"], f"{file_id(line['key'])}-{i}.wav")
+    # (VoxCPM2's takes apart from the earlier engines' takes of the same lines.)
+    sub = "vox" if line["who"] in ("okoro", "vale", "pilot") else ""
+    return os.path.join(TAKES, line["who"], sub, f"{file_id(line['key'])}-{i}.wav")
 
 
 def takes_on_disk(line):
@@ -161,10 +178,25 @@ def takes_on_disk(line):
 
 # ---------------------------------------------------------------- stages
 
+def vox_jobs(jobs, procs=None):
+    """VoxCPM2 takes, split over VOX_PROCS processes (each loads the model once)."""
+    todo = [{"out": j["out"], "text": j["prompt"], "ref": j["ref"], "seed": j["seed"]} for j in jobs if not os.path.exists(j["out"])]
+    procs = max(1, min(len(todo), procs or int(os.environ.get("VOX_PROCS", "1"))))
+    running = []
+    for k in range(procs):
+        part = os.path.join(work.VS, f"jobs-vox-{k}.json")
+        json.dump(todo[k::procs], open(part, "w"), indent=1)
+        if k:  # loading takes about 7 GB for a minute, running 5: one at a time
+            time.sleep(150)
+        running.append(subprocess.Popen([VOX_PY, os.path.join(work.TOOLS, "engines", "voxcpm_jobs.py"), part]))
+    for p in running:
+        p.wait()
+
+
 def gen(lines):
     """The takes. OmniVoice runs one process per line with a time limit, so a
     stalled take costs minutes, not the run."""
-    jobs = {"omni": [], "index": []}
+    jobs = {"omni": [], "vox": []}
     for l in lines:
         engine, n, job = recipe(l)
         jobs[engine] += [{**job, "out": take_path(l, i), "seed": 100 + i} for i in range(n)]
@@ -183,11 +215,8 @@ def gen(lines):
                            check=True, timeout=120 + 150 * len(group))
         except subprocess.TimeoutExpired:
             print(f"TIMEOUT {stem}: kept the takes already made", flush=True)
-    todo = [j for j in jobs["index"] if not os.path.exists(j["out"])]
-    if todo:
-        part = os.path.join(work.VS, "jobs-index.json")
-        json.dump(todo, open(part, "w"), indent=1)
-        subprocess.run([INDEX_PY, os.path.join(work.TOOLS, "engines", "indextts_jobs.py"), part], check=True)
+    if jobs["vox"]:
+        vox_jobs(jobs["vox"])
 
 
 def judge(lines):
@@ -200,18 +229,25 @@ def judge(lines):
             rel = os.path.relpath(p, TAKES)
             if rel in cache:
                 continue
-            heard = listen.words(p)
-            row = {"wer": listen.wer(job["text"], heard), "heard": heard, **listen.emotion(p)}
-            if l["who"] == "okoro":
-                row["ng"] = listen.nigerian(p)
-            cache[rel] = row
+            cache[rel] = measure(l, job, p)
+            row = cache[rel]
             print(rel, row, flush=True)
             json.dump(cache, open(path, "w"), indent=1)
 
 
+def measure(line, job, path):
+    """What the listener hears in a take."""
+    import listen
+    heard = listen.words(path)
+    row = {"wer": listen.wer(job["text"], heard), "heard": heard, **listen.emotion(path),
+           **listen.prosody(path, job["text"])}
+    if line["who"] == "okoro":
+        row["ng"] = listen.nigerian(path)
+    return row
+
+
 def perfect(lines, extra=6):
     """More takes for any line with no word-perfect take, one at a time, until Whisper hears every word."""
-    import listen
     path = os.path.join(TAKES, "scores.json")
     for line in lines:
         engine, n, job = recipe(line)
@@ -221,21 +257,19 @@ def perfect(lines, extra=6):
         print("==", line["who"], line["text"], flush=True)
         for i in range(n, n + extra):
             out = take_path(line, i)
-            if not os.path.exists(out):
+            if not os.path.exists(out) and engine == "vox":
+                vox_jobs([{**job, "out": out, "seed": 100 + i}], procs=1)
+            elif not os.path.exists(out):
                 part = os.path.join(work.VS, "jobs-extra.json")
                 json.dump([{**job, "out": out, "seed": 100 + i}], open(part, "w"))
-                script = "omnivoice_jobs.py" if engine == "omni" else "indextts_jobs.py"
                 try:
-                    subprocess.run([OMNI_PY if engine == "omni" else INDEX_PY, os.path.join(work.TOOLS, "engines", script), part],
-                                   timeout=420)
+                    subprocess.run([OMNI_PY, os.path.join(work.TOOLS, "engines", "omnivoice_jobs.py"), part], timeout=420)
                 except subprocess.TimeoutExpired:
                     continue
             if not os.path.exists(out):
                 continue
-            heard = listen.words(out)
-            row = {"wer": listen.wer(job["text"], heard), "heard": heard, **listen.emotion(out)}
-            if line["who"] == "okoro":
-                row["ng"] = listen.nigerian(out)
+            row = measure(line, job, out)
+            heard = row["heard"]
             cache = json.load(open(path))
             cache[os.path.relpath(out, TAKES)] = row
             json.dump(cache, open(path, "w"), indent=1)
@@ -245,16 +279,19 @@ def perfect(lines, extra=6):
 
 
 def score(who, row):
-    """Every word heard first; then what the character needs."""
+    """Every word heard first; then what the character needs. A voice that
+    moves (pitch range, in semitones) talks; a flat one reads - but not
+    gabbling (more than about 7 syllables a second of speech)."""
     if row is None:
         return -9
     s = -2.0 * row["wer"]
-    if who == "okoro":  # frightened, and Nigerian
-        s += row["arousal"] + 0.8 * max(-0.2, min(0.6, row.get("ng", 0)))
-    elif who == "vale":  # in command, and not kind
-        s += row["dominance"] - 0.3 * row["valence"]
-    elif who == "trailer":  # energy
-        s += row["arousal"] + 0.5 * row["dominance"]
+    talk = 0.03 * min(row.get("spread", 0), 14) - 0.15 * max(0, row.get("rate", 0) - 7)
+    if who == "okoro":  # frightened, Nigerian, talking
+        s += row["arousal"] + 0.8 * max(-0.2, min(0.6, row.get("ng", 0))) + talk
+    elif who == "vale":  # in command, not kind, talking
+        s += row["dominance"] - 0.3 * row["valence"] + talk
+    elif who == "pilot":
+        s += talk
     return s
 
 
@@ -272,12 +309,17 @@ def finish_line(line, y):
     who, scene, text = line["who"], line["scene"], line["text"]
     y = F.trim(y)
     if who == "okoro":
-        kind, lead, between, gain = OKORO.get(scene, OKORO["breach"])["breath"]
-        y = F.breathe(F.loud(y, -18), kind, lead, between, gain)
+        y = F.tighten(F.loud(y, -18))
+        breath = OKORO.get(scene, OKORO["breach"]).get("breath")
+        if breath and text not in HIDE_SHOUTS:
+            kind, lead, gain = breath
+            y = F.breathe(y, kind, lead, 0, gain)
         speech = len(y) / SR
+        if scene == "briefing":  # his recording: close to the microphone, a small office
+            return F.loud(F.room(y, rt=0.3, wet=0.04), -17.5), speech
         return F.loud(F.room(y, rt=0.45, wet=0.05), -18), speech
     if who == "vale":
-        y = F.loud(y, -18)
+        y = F.tighten(F.loud(y, -18))
         if text in VALE_LAUGHS:
             y = np.concatenate([y, np.zeros(int(0.15 * SR), np.float32), F.loud(laugh(VALE_LAUGHS[text]), -19)])
         speech = len(y) / SR
@@ -293,10 +335,6 @@ def finish_line(line, y):
         else:
             y = F.band(y, 150, 6000)
         return F.loud(y, -19), len(y) / SR
-    if who == "trailer":
-        y = F.ffilter(y, "acompressor=threshold=-24dB:ratio=4:attack=5:release=120:makeup=4dB")
-        speech = len(y) / SR
-        return F.loud(F.room(y, rt=0.8, wet=0.06, predelay=0.02), -16), speech
     if who.startswith("you-"):
         speech = len(y) / SR
         return F.loud(F.room(y, rt=0.3, wet=0.04), -18), speech
