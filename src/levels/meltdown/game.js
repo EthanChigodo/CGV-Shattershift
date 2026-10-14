@@ -66,6 +66,8 @@ import { EndingDirector } from "../../story/ending-director.js";
 import { SCENES as STORY_LINES } from "../../story/script.js";
 import { Arsenal, BALLS, SERUMS } from "../../systems/arsenal.js";
 import { DIFFICULTIES } from "../../systems/difficulty.js";
+import { AmmoRecovery, canAffordThrow } from "../../systems/ammo-recovery.js";
+import { AmmoRecoveryHint } from "../../ui/ammo-recovery.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
 
 /* ------------------------------------------------------------------ */
@@ -329,6 +331,9 @@ export class MeltdownGame {
     this.launcher.rig.add(this.launcherStandIn);
     this.launcher.muzzle.position.set(0, 0.02, -0.66);
 
+    this.ammoRecovery = new AmmoRecovery();
+    this.ammoHint = new AmmoRecoveryHint(this.scene);
+    this._sackBox = new THREE.Box3();
     this.runner = {};
     this._resetRunner();
     this.hero = {
@@ -384,6 +389,8 @@ export class MeltdownGame {
   /* ================================================================ */
 
   _resetRunner() {
+    this.ammoRecovery.reset();
+    this.ammoHint.hide();
     Object.assign(this.runner, {
       distance: 0, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
       jumpBuffer: 0, slideBuffer: 0, landed: 0,
@@ -543,6 +550,7 @@ export class MeltdownGame {
   }
 
   hide() {
+    this.ammoHint.hide();
     this.visible = false;
     document.body.classList.remove("mlt-active");
     this.hud.hide();
@@ -557,6 +565,7 @@ export class MeltdownGame {
   /** Pause or resume: freezes nothing by itself (the host stops calling update), but silences the level. */
   setPaused(paused) {
     this.paused = paused;
+    if (paused) this.ammoHint.hide();
     this.runner.firing = false;
     this.held.clear();
     const ctx = this.audio === SILENT_AUDIO ? null : this.audio.ctx;
@@ -598,6 +607,7 @@ export class MeltdownGame {
     this.files?.dispose();
     this.beam.dispose?.();
     this.hud.dispose();
+    this.ammoHint.dispose();
     this.credits.panel.remove();
     for (const node of Object.values(this.ui)) node.remove();
     this.composer.dispose?.();
@@ -967,16 +977,15 @@ export class MeltdownGame {
     const phase = this.phase;
     const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
     const playing = onRoof ? phase === "roof" && this.runner.alive : phase === "run" && this.runner.alive && !this.runner.finished;
-    // Out of spheres: one comes back every 2.5 s (the Skyline's resonance
-    // recharge, now in every level) - you are never left with no way to shoot.
-    if (playing && this.runner.balls <= 0) {
-      this._recharge = (this._recharge ?? 0) + dt;
-      if (this._recharge > this.difficulty.recharge) {
-        this._recharge = 0;
-        this.runner.balls += 1;
-        this.hud.toast("+1 SPHERE", "RESONANCE RECHARGE", "power", 1400);
-      }
-    } else this._recharge = 0;
+    const previousBalls = this.runner.balls;
+    this.runner.balls = this.ammoRecovery.update(dt, previousBalls, playing && !this.paused, this.difficulty?.recharge);
+    if (this.runner.balls > previousBalls) this.hud.toast("+1 SPHERE", "EMERGENCY RECHARGE — USE GLASS (Q/E)", "", 1800);
+    const source = onRoof ? this.roof : this.level;
+    const player = onRoof ? this.hero?.position : this.avatar.root.position;
+    this.ammoHint.update({ active: playing && !this.paused, seconds: this.difficulty?.recharge, ammunition: this.runner.balls, cost: this.arsenal.cost(), contact: true,
+      targets: source?.breakables ?? [], player, routeDistance: onRoof ? null : this.runner.distance,
+      filter: (target) => target.userData.kind === "sack" && (onRoof || Math.abs(source.route.sample(target.userData.routeDistance).heading - source.route.sample(this.runner.distance).heading) < 0.1),
+      solids: onRoof ? source?.solids ?? [] : source?.obstacles ?? [] });
     // Thermal sight: patients show as heat (kit.js heatSignature). On the
     // roof a faint warm rim stays on regardless, so the enemies read against
     // the dark deck from the high camera.
@@ -1114,7 +1123,10 @@ export class MeltdownGame {
     level.update({ dt, time, distance: r.distance, playerPosition: avatar.root.position, clock: this.phase === "run" && this.mode !== "endless-labs" });
     this._updateFiles(dt, time, playing ? avatar.root.position : null);
     this._placeKeyLight(avatar.root.position);
-    if (playing) this._checkHazards(dt);
+    if (playing && r.alive && this.phase === "run") {
+      this._collectLabsSacks();
+      this._checkHazards(dt);
+    }
     if (!cutscene) this._updateCamera(dt, time);
     // The story's scenes (the blocked lift, the desk, into the lift) are seen
     // first person with the body hidden: the launcher stays in your hands, in
@@ -1462,9 +1474,10 @@ export class MeltdownGame {
     if (this.phase === "run" && r.finished) return;
     const def = this.arsenal.current;
     const cost = this.arsenal.cost();
-    if (r.balls <= 0 || r.balls < cost) {
+    if (!canAffordThrow(r.balls, cost)) {
       audio.dry();
-      if (r.balls > 0) this.hud.toast(`${def.name.toUpperCase()} NEEDS ${cost}`, "", "warn", 1000);
+      this.hud.toast(r.balls > 0 ? `${def.name.toUpperCase()} NEEDS ${cost}` : "NO SPHERES",
+        "RUN THROUGH A SACK — OR WAIT FOR +1 AND USE GLASS (Q/E)", "warn", 1000);
       return;
     }
     r.balls -= cost;
@@ -1574,6 +1587,7 @@ export class MeltdownGame {
       // A glass sphere punches through and keeps going, as in the Skyline.
       if ((ball.kind ?? "glass") === "glass") return "through";
     } else if (result.kind === "sack") {
+      this.ammoRecovery.reset();
       r.balls = Math.min(MAX_BALLS, r.balls + (result.spheres ?? 0));
       debris.burst(result.position, { kind: "sack", count: 26, speed: 4 });
       debris.burst(result.position, { kind: "ball", count: 6, speed: 3, up: 2 });
@@ -1662,6 +1676,27 @@ export class MeltdownGame {
   }
 
   /* ---------------- Collision, vitality ---------------- */
+
+  /** Contact uses the hazard body volume and the sack's world bounds.
+   * Reuse projectile rewards/removal: a later shot cannot pay twice.
+   */
+  _collectLabsSacks() {
+    const { runner: r, level } = this;
+    if (!r.alive || r.finished || this.phase !== "run") return;
+    const height = r.sliding > 0 ? 1.0 : 1.9;
+    level.route.sample(r.distance, r.lateral, r.height, this._v.boxCentre);
+    this._v.boxCentre.y += 0.18 + height / 2;
+    this.playerBox.setFromCenterAndSize(this._v.boxCentre, this._v.boxSize.set(0.9, height, 0.9));
+    for (const target of level.breakables.slice()) {
+      if (target.userData.kind !== "sack" || !target.userData.alive) continue;
+      target.updateWorldMatrix(true, false);
+      target.geometry.boundingBox ?? target.geometry.computeBoundingBox();
+      this._sackBox.copy(target.geometry.boundingBox).applyMatrix4(target.matrixWorld);
+      if (!this.playerBox.intersectsBox(this._sackBox)) continue;
+      target.getWorldPosition(this._v.sfxPos);
+      this._onBallBreakable(target, this._v.sfxPos, { power: 99, velocity: this._v.crash.set(0, 0, 0), kind: "glass" });
+    }
+  }
 
   _checkHazards(dt) {
     const { runner: r, level, debris, audio, hud } = this;
@@ -1881,6 +1916,8 @@ export class MeltdownGame {
    * the fire well behind, a moment of grace. The host counts you back in.
    */
   resumeAt(distance, balls = 0) {
+    this.ammoRecovery.reset();
+    this.ammoHint.hide();
     const r = this.runner;
     Object.assign(r, {
       distance, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
@@ -1899,6 +1936,7 @@ export class MeltdownGame {
 
   /** The run is over, one way or the other. */
   _end(escaped, title, rows, eyebrow) {
+    this.ammoHint.hide();
     this.phase = "over";
     if (!escaped) this.sfx?.gameOver();
     this.sfx?.updateElevator(0, false);
@@ -1923,6 +1961,8 @@ export class MeltdownGame {
    */
   async startRoof({ fromBlack = false } = {}) {
     if (!["run", "arrive", "depart", "idle", "corridorDone"].includes(this.phase)) return;
+    this.ammoRecovery.reset();
+    this.ammoHint.hide();
     this.phase = "fade";
     this.runner.firing = false;
     this.fade.override = fromBlack ? 1 : null;
@@ -2198,6 +2238,7 @@ export class MeltdownGame {
     if (!result) return true;
     if (result.kind === "sack") {
       if (result.partial) return true;
+      this.ammoRecovery.reset();
       r.balls = Math.min(MAX_BALLS, r.balls + (result.spheres ?? 0));
       debris.burst(result.position, { kind: "sack", count: 26, speed: 4 });
       this._chunks(result.position, 14, { tint: 0xd8f6ff, speed: 3.5 });
@@ -2388,6 +2429,7 @@ export class MeltdownGame {
         this._supply = (this._supply ?? 0) + dt;
         if (this._supply >= SUPPLY_SECONDS) {
           this._supply -= SUPPLY_SECONDS;
+          this.ammoRecovery.reset();
           r.balls = Math.min(MAX_BALLS + SUPPLY_SPHERES, r.balls + SUPPLY_SPHERES);
           this.hud.toast("SUPPLY DROP", `+${SUPPLY_SPHERES} SPHERES`, "power", 2400);
           this.sfx?.sphereCollected();

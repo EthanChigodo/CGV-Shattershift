@@ -9,6 +9,8 @@ import { PostFX } from "./src/fx/postfx.js";
 import { Minimap } from "./src/fx/minimap.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
+import { AmmoRecovery, canAffordThrow, gateRecoveryWaiting } from "./src/systems/ammo-recovery.js";
+import { AmmoRecoveryHint } from "./src/ui/ammo-recovery.js";
 import { SPHERE_GEOMETRY, sphereMaterial, sphereHalo } from "./src/systems/spheres.js";
 import { buildBallPickers, buildTabs, showMoves, savedBall } from "./src/ui/menus.js";
 import { PowerupBanner } from "./src/ui/powerup-banner.js";
@@ -693,17 +695,9 @@ function updateFoundryBox() {
 
 /** The story's Foundry starts empty-handed until Dr. Okoro throws the bag. */
 let awaitingBag = false;
-let foundryRecharge = 0;
 
 function updateFoundry(dt, time) {
   const distance = foundryDistance();
-
-  // Out of spheres: one comes back every 2.5 s, as in every level - never
-  // stuck with nothing to throw (once Okoro has handed over the bag).
-  if (ammo < 1 && state === "playing" && !awaitingBag) {
-    foundryRecharge += dt;
-    if (foundryRecharge > diff().recharge) { foundryRecharge = 0; ammo += 1; showMessage("+1 SPHERE // RESONANCE RECHARGE"); updateUI(); }
-  } else foundryRecharge = 0;
 
   foundryInvulnerable = Math.max(0, foundryInvulnerable - dt);
   foundrySlow = Math.max(0, foundrySlow - dt);
@@ -818,6 +812,8 @@ const keysDown = new Set();
 
 const causewayHud = new CausewayHud();
 const arsenal = new Arsenal();
+const ammoRecovery = new AmmoRecovery();
+const ammoHint = new AmmoRecoveryHint(scene);
 // The sphere picked in the main menu (or the pause menu) is the one a run starts with.
 arsenal.prefer(savedBall());
 // Serums in front of the player: the first time each is picked up the
@@ -856,9 +852,11 @@ const photo = new PhotoMode({ renderer, root: causewayHud.photoEl });
 /** Per-run state for Level 1. Reset by resetRun(). */
 const run = {};
 function resetRun() {
+  ammoRecovery.reset();
+  ammoHint.hide();
   Object.assign(run, {
     speed: CAUSEWAY_SPEED.base, slow: 0, invulnerable: 0, focus: 1, focusing: false,
-    timeScale: 1, hitStop: 0, recharge: 0, damage: 0, heat: 0, flash: 0,
+    timeScale: 1, hitStop: 0, damage: 0, heat: 0, flash: 0,
     shots: 0, hits: 0, nearMisses: 0, fireDamage: 0, time: 0, finished: false,
     grazed: new Map(), stepPhase: 0, lean: 0, fadeOut: 0, liftFrom: new THREE.Vector3(),
     missionTimer: 0, ripple: 0, chaseWarned: false,
@@ -1068,7 +1066,7 @@ function updateCauseway(dt, time) {
 
   updateFoundryBox();
   playerWorld(_playerPos);
-  causeway.update({ dt, time, distance: causewayDistance(), player: _playerPos, playing: true });
+  causeway.update({ dt, time, distance: causewayDistance(), player: _playerPos, playing: true, ammunition: ammo, throwCost: arsenal.cost() });
   if (state !== "playing") return;
 
   // ---- Collisions -------------------------------------------------------
@@ -1127,13 +1125,9 @@ function updateCauseway(dt, time) {
     if (chase.gap < 12) triggerShake(0.05);
   }
   const finale = causeway.state.finale;
-  if (finale.sealed && !finale.open) causewayHud.warning("Gate sealed", `${finale.sealedTime.toFixed(1)} s: break the locks in order`);
-
-  // ---- Sphere safety net: never soft-lock at the gate -------------------
-  if (ammo < 1) {
-    run.recharge += dt;
-    if (run.recharge > diff().recharge) { run.recharge = 0; ammo += 1; showMessage("+1 SPHERE // RESONANCE RECHARGE"); }
-  } else run.recharge = 0;
+  if (finale.sealed && !finale.open) causewayHud.warning("Gate sealed", gateRecoveryWaiting(ammo, arsenal.cost(), true, false)
+    ? "RECHARGING — gate clock held; use Glass to break locks I / II / III"
+    : `${finale.sealedTime.toFixed(1)} s: break the locks in order (Glass)`);
 
   // ---- Tools ------------------------------------------------------------
   arsenal.update(dt);
@@ -1169,6 +1163,7 @@ function shatterCauseway(target, hit) {
     run.focus = Math.min(1, run.focus + 0.08);
   }
   if (result.spheres) {
+    ammoRecovery.reset();
     ammo += result.spheres;
     causewayHud.bump(".cw-spheres");
   }
@@ -1791,8 +1786,8 @@ function fire() {
   // The Skyline's sphere types and serums in the Foundry too.
   const ball = physical ? arsenal.current : null;
   const cost = physical ? arsenal.cost() : 1;
-  if (ammo < cost || ammo <= 0 && cost > 0) {
-    showMessage(ammo <= 0 ? "NO SPHERES" : `${ball.name.toUpperCase()} NEEDS ${cost}`);
+  if (!canAffordThrow(ammo, cost)) {
+    showMessage(ammo <= 0 ? "NO SPHERES // RECHARGING — USE GLASS (Q/E)" : `${ball.name.toUpperCase()} NEEDS ${cost} // SWITCH TO GLASS (Q/E)`);
     return;
   }
   ammo -= cost;
@@ -3383,7 +3378,7 @@ function shatter(target, hit = {}) {
     showMessage(gainedSpheres ? "+3 SPHERES" : "GLASS FRACTURED");
   }
 
-  if (gainedSpheres) ammo += gainedSpheres;
+  if (gainedSpheres) { ammoRecovery.reset(); ammo += gainedSpheres; }
 
   // Level 1's glass: GPU shards that tumble, bounce once on the floor and
   // settle, with its break and pickup sounds.
@@ -3417,6 +3412,8 @@ const failReasons = {
  */
 function endRun(won, reason = null, detail = null) {
   if (state === "ended") return;
+  ammoHint.hide();
+  meltdown?.ammoHint?.hide();
   state = "ended"; ui.final.textContent = String(Math.floor(score)).padStart(6, "0");
   // A failed run stops the lift itself; its interior music follows the
   // existing game-over duck without leaving machinery grinding forever.
@@ -3584,6 +3581,9 @@ function clearPostLooks() {
 }
 
 function updateGame(dt, time) {
+  // Hide independently of the early returns for pause, menus and cutscenes.
+  ammoHint.hide();
+  if (paused || photoActive || state !== "playing" || currentLevel !== 3) meltdown?.ammoHint?.hide();
   if ((state === "playing" || state === "lift") && !paused) runClock += dt;
   const inCauseway = currentLevel === 1 && causeway && causeway.root.visible;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
@@ -3661,6 +3661,19 @@ function updateGame(dt, time) {
   if (currentLevel === 3) { updateMeltdownFrame(simDt, time); updateUnifiedHud(dt); return; }
   // So does the lift ride between Levels 2 and 3 (src/elevators/).
   if (gravityLift) { updateGravityLiftFrame(dt, time); return; }
+
+  if (state === "playing") {
+    const previous = ammo;
+    // At the difficulty's pace; not before Okoro's bag in the story's Foundry (empty-handed by design).
+    const recovering = !(currentLevel === 2 && awaitingBag);
+    ammo = ammoRecovery.update(simDt, ammo, recovering, diff().recharge);
+    if (ammo > previous) { showMessage("+1 SPHERE // EMERGENCY RECHARGE — USE GLASS (Q/E)"); updateUI(); }
+    const targets = currentLevel === 1 ? causeway?.breakables ?? [] : foundry?.breakables ?? [];
+    ammoHint.update({ active: recovering, seconds: diff().recharge, ammunition: ammo, cost: arsenal.cost(), targets, player: playerWorld(_playerPos),
+      routeDistance: currentLevel === 1 ? null : foundryDistance(),
+      filter: (target) => (currentLevel === 1 ? target.userData.kind === "cache" && target.getWorldPosition(_sv).z <= _playerPos.z + 1 : target.userData.kind === "cell" && !target.userData.serum),
+      solids: currentLevel === 1 ? causeway?.solids ?? [] : foundry?.obstacles ?? [] });
+  }
 
   updateSmoke(dt, time);
 
