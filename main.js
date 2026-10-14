@@ -204,7 +204,7 @@ const sphereImpact = new SphereImpactFX(scene);
 music.showMenu();
 const unlockMusic = async (event) => {
   // Set the briefing intent before unlocking on the same pointer/key gesture,
-  // so the menu track cannot briefly start while the piano is loading.
+  // so the menu track cannot briefly start while the briefing's track is loading.
   if (event.target?.closest?.("#storyBeginButton, #replayStoryButton")) music.showStory();
   const ready = music.unlock(); // Creates the shared context synchronously.
   level1Audio.unlock();
