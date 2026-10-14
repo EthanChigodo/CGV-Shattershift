@@ -32,6 +32,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { gateRecoveryWaiting } from "../../systems/ammo-recovery.js";
 import { CausewayKit, CASE_FILES } from "./kit.js";
 import { ShellTreadmill } from "./shell.js";
 import { ReflectionProbe } from "./probe.js";
@@ -986,9 +987,9 @@ export class CausewayLevel {
   /* ================================================================ */
 
   /**
-   * @param {{dt:number, time:number, distance:number, player?:THREE.Vector3, playing?:boolean}} args
+   * @param {{dt:number, time:number, distance:number, player?:THREE.Vector3, playing?:boolean, ammunition?:number, throwCost?:number}} args
    */
-  update({ dt, time, distance, player, playing = true }) {
+  update({ dt, time, distance, player, playing = true, ammunition = Infinity, throwCost = 1 }) {
     this.distance = distance;
     this.time.value = time;
     this.glassShared.uTime.value = time;
@@ -1043,7 +1044,7 @@ export class CausewayLevel {
     this._updateLights(dt, time, distance);
     this._updateEffects(dt, time);
     if (this._towerFall) this._updateTower(dt);
-    this._updateFinale(dt, distance, playing);
+    this._updateFinale(dt, distance, playing, ammunition, throwCost);
 
     this.shield.position.copy(this._player).sub(this.origin);
     this.probe.position.set(this._player.x * 0.5, 1.8, this._player.z - 7);
@@ -1330,7 +1331,7 @@ export class CausewayLevel {
     }
   }
 
-  _updateFinale(dt, distance, playing) {
+  _updateFinale(dt, distance, playing, ammunition = Infinity, throwCost = 1) {
     const finale = this.state.finale;
     if (!this.gate) return;
     const slab = this.gate.parts.slab;
@@ -1346,7 +1347,9 @@ export class CausewayLevel {
         finale.sealedTime = 7;
         this.events.emit("gate-sealed", { seconds: finale.sealedTime });
       }
-      finale.sealedTime -= dt;
+      // The seven-second challenge measures usable aiming time, not the
+      // emergency recharge delay. Free Overdrive throws need no exemption.
+      if (!gateRecoveryWaiting(ammunition, throwCost, finale.sealed, finale.open)) finale.sealedTime -= dt;
       if (Math.random() < dt * 4) {
         this._burst("dust", new THREE.Vector3((Math.random() - 0.5) * 10, 9, this.worldZ(distance - 6 - Math.random() * 20)), { count: 40, gravity: 6, scale: 900 });
       }
