@@ -66,7 +66,7 @@ async function main() {
     localStorage.setItem("fractureRunSettings", JSON.stringify({ quality: "high", narration: false }));
     // The bot has "seen" every serum: the first-pickup card pauses the game
     // until a player dismisses it (src/ui/powerup-banner.js).
-    localStorage.setItem("fractureRun.serumsSeen", JSON.stringify(["prism", "thermal", "shield", "overdrive"]));
+    localStorage.setItem("fractureRun.serumsSeen", JSON.stringify(["prism", "thermal", "shield", "overdrive", "infinite", "restore"]));
   });
   if (process.env.CAUSEWAY_THREE_LOCAL) {
     const body = await readFile(process.env.CAUSEWAY_THREE_LOCAL);

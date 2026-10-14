@@ -99,6 +99,7 @@ export function authoredLayout() {
   add(242, "event", { event: "explosion", behind: 26, strength: 1 });
   add(246, "event", { event: "title", beat: 1 });
   radio(248, "halcyon", "Skybridge B. Structural failure spreading behind you. Do not stop.");
+  add(252, "serum", { x: C, y: 1.6, serum: "restore" });
   add(256, "event", { event: "tower" });
   add(262, "event", { event: "chaseStart" });
   pane(272, C); add(272, "cache", { x: L, y: 2.2 });
@@ -142,6 +143,7 @@ export function authoredLayout() {
   add(626, "cache", { x: R, y: 2.4 });
   add(632, "collapse", { x: L, kind: "beam" });
   add(642, "file", { x: R, y: 1.7, index: 3 });
+  add(648, "serum", { x: L, y: 1.6, serum: "infinite" });
   add(652, "vent", { side: -1, id: "v5", height: 3.0 });
   add(660, "sprinkler", { x: 0, ceiling: 6.0 }); fire(668, C, 3.6);
   pane(678, L); pane(678, C, { reinforced: true }); pane(678, R);
@@ -174,6 +176,41 @@ export function authoredLayout() {
   // Ward and atrium beacons, and ward signage cadence.
   for (let d = 30; d < 236; d += 40) add(d, "beacon", { x: d % 80 ? 2.6 : -2.6 });
   return e.sort((a, b) => a.d - b.d);
+}
+
+/**
+ * Hard (the story's difficulty): the authored layout, harder.
+ *   - every other plain pane is reinforced (two hits);
+ *   - the sculptures swing faster;
+ *   - in each stretch with nothing in the lanes, something solid in one lane,
+ *     and now and then debris coming down from the ceiling.
+ * Kept clear of the start, of the bridge's last stretch (the blast and the
+ * ramp) and of the lock finale. Seeded, so every Hard run is the same.
+ */
+export function hardenLayout(entries) {
+  const random = mulberry(9091);
+  const IN_LANES = new Set(["pane", "hazard", "collapse", "sculpture", "door", "cache", "serum", "file", "gate", "lift", "pod"]);
+  const blocking = entries.filter((e) => IN_LANES.has(e.type) || (e.type === "fire" && !e.decor));
+  const out = entries.map((e) => ({ ...e }));
+  let plain = 0;
+  for (const e of out) {
+    if (e.type === "pane" && !e.reinforced && !e.hint && !e.mirror && plain++ % 2 === 1) e.reinforced = true;
+    if (e.type === "sculpture") e.speed *= 1.35;
+  }
+  const kinds = ["cart", "cabinet", "rack", "rubble"];
+  const zones = [[30, 455], [560, 735]];
+  let n = 0;
+  for (const [from, to] of zones) {
+    for (let d = from; d < to; d += 9) {
+      if (blocking.some((e) => Math.abs(e.d - d) < 7)) continue;
+      const x = LANES[Math.floor(random() * 3)];
+      if (n % 4 === 3) out.push({ d, type: "collapse", x, kind: random() < 0.5 ? "beam" : "glass" });
+      else out.push({ d, type: "hazard", x, kind: kinds[Math.floor(random() * kinds.length)] });
+      blocking.push({ d });
+      n += 1;
+    }
+  }
+  return out.sort((a, b) => a.d - b.d);
 }
 
 export function themeAt(d, mode = "story") {
@@ -270,7 +307,7 @@ export class EndlessGenerator {
         out.push({ d, type: "tank", x: -4.4 }, { d: d + 6, type: "tank", x: 4.4 });
         out.push({ d: d + 3, type: "pane", x: lane });
       } else if (r < 0.88) {
-        out.push({ d, type: "serum", x: lane, y: 1.6, serum: this.pick(["prism", "thermal", "shield", "overdrive"]) });
+        out.push({ d, type: "serum", x: lane, y: 1.6, serum: this.pick(["prism", "thermal", "shield", "overdrive", "infinite", "restore"]) });
         length = 12;
       } else if (r < 0.94) {
         out.push({ d, type: "fire", x: lane, width: 3.2 }, { d: d + 1, type: "fire", x: this.pick(others), width: 3.2 });

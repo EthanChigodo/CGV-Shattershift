@@ -16,6 +16,7 @@
  */
 
 import { installSimulator } from "../lib/simulate.js";
+import { DIFFICULTIES } from "../../../src/systems/difficulty.js";
 
 export const name = "balance";
 
@@ -74,6 +75,18 @@ export async function run(page, { url }) {
       `a skilled run finishes with ${skilled.escapeLeft}s spare - the countdown is decoration rather than a loss condition`
     );
   }
+
+  /* -- Hard (the story's difficulty): denser, faster, slag carts ---------- */
+  // Still finishable by a good player, with a hit or two to spare at most.
+  const H = DIFFICULTIES.hard;
+  const hard = await freshRun(page, `${url}?hard`, {
+    shootCells: true, useInputs: true, rechargeSeconds: H.recharge,
+    zones: [{ until: 0.5, speed: 7.8 * H.speed }, { until: 0.75, speed: 10.2 * H.speed }, { until: 1.01, speed: 12.6 * H.speed }],
+  });
+  notes.hard = hard;
+  if (!hard.complete) failures.push(`a skilled run cannot finish on Hard (reached ${hard.reached}m, ${hard.hits} hits: ${hard.hitList.join(", ")})`);
+  if (hard.hits > 2) failures.push(`a skilled run takes ${hard.hits} hits on Hard (${hard.hitList.join(", ")}) - it should be clearable with at most two`);
+  if (hard.escapeLeft <= 0) failures.push("a skilled run runs out of containment time on Hard");
 
   return { failures, notes };
 }

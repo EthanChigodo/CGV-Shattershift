@@ -1036,7 +1036,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
 
   /** A serum capsule - the Skyline's, in that serum's own colour (src/systems/spheres.js). */
   function powerup({ kind = "coolant" } = {}) {
-    const serum = VIAL_SERUM[kind] ?? "thermal";
+    // A vial kind, or a serum by its own name (unlimited spheres, restoration).
+    const serum = VIAL_SERUM[kind] ?? (SERUMS[kind] ? kind : "thermal");
     const group = new THREE.Group();
     group.name = `Serum_${serum}`;
     const pickup = serumPickup(serum, { scale: 1.1 });

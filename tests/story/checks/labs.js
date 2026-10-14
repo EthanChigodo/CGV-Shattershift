@@ -153,7 +153,9 @@ export async function run(page, { shots }) {
     const g = __t.d.guide;
     const startBreaks = r.breaks;
     const startDowns = r.downs;
-    const alive = () => m.level.breakables.filter((b) => b.userData.alive !== false).length;
+    // Pickups (sphere crystals, serums) you run into are yours to take; the
+    // pistol must leave everything else standing.
+    const alive = () => m.level.breakables.filter((b) => b.userData.alive !== false && b.userData.kind !== "sack" && b.userData.kind !== "powerup").length;
     const before = alive();
     const violations = [];
     let guard = 0;

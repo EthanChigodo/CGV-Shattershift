@@ -6,11 +6,12 @@ export class AmmoRecovery {
 
   reset() { this.elapsed = 0; }
 
-  update(dt, ammunition, playing = true) {
+  /** `seconds`: how long empty before the one sphere comes back (the story's difficulty sets it). */
+  update(dt, ammunition, playing = true, seconds = EMERGENCY_RECHARGE_SECONDS) {
     if (ammunition > 0) this.reset();
     if (!playing || ammunition > 0) return ammunition;
     this.elapsed += Math.max(0, dt);
-    if (this.elapsed + 1e-9 < EMERGENCY_RECHARGE_SECONDS) return ammunition;
+    if (this.elapsed + 1e-9 < seconds) return ammunition;
     this.reset();
     // Never bank time or award multiple rounds after a long frame.
     return 1;

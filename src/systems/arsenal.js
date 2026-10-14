@@ -12,6 +12,9 @@
  *
  * Serums are single-use experimental compounds found in the lab. Each one is a
  * visible transformation - a post-processing "look" and a gameplay rule.
+ * Restoration is the one that works at once (`instant`): the host refills
+ * the spheres and the integrity (onInstant); it shows for a moment, then
+ * it's gone.
  */
 
 export const BALLS = {
@@ -28,11 +31,14 @@ export const BALL_ORDER = ["glass", "cryo", "shock"];
  */
 export const SERUMS = {
   prism: { key: "prism", name: "Prism split", duration: 10, colour: "#ffd23f", text: "Every throw splits into three spheres." },
-  thermal: { key: "thermal", name: "Thermal sight", duration: 12, colour: "#ff6a1a", text: "See through smoke and the dark. Heat glows white." },
+  // Sight and skin: heat glows white, and fire can't burn you.
+  thermal: { key: "thermal", name: "Thermal Aegis", duration: 12, colour: "#ff6a1a", text: "See through smoke and the dark - and fire can't burn you." },
   shield: { key: "shield", name: "Kinetic shield", duration: 25, charges: 2, colour: "#3dff7a", text: "Absorbs the next two impacts." },
   overdrive: { key: "overdrive", name: "Overdrive", duration: 8, colour: "#ff2f8e", text: "Free throws, faster running, heavier hits." },
+  infinite: { key: "infinite", name: "Unlimited spheres", duration: 10, colour: "#4f7dff", text: "Every throw is free - cryo and shock too." },
+  restore: { key: "restore", name: "Restoration", duration: 1.6, instant: true, spheres: 20, heal: true, colour: "#1fe0b0", text: "+20 spheres, and your integrity back to full - at once." },
 };
-export const SERUM_ORDER = ["prism", "thermal", "shield", "overdrive"];
+export const SERUM_ORDER = ["prism", "thermal", "shield", "overdrive", "infinite", "restore"];
 
 export class Arsenal {
   constructor() {
@@ -67,7 +73,7 @@ export class Arsenal {
 
   /** Cost of the next throw, after serums. */
   cost() {
-    return this.isActive("overdrive") ? 0 : this.current.cost;
+    return this.isActive("overdrive") || this.isActive("infinite") ? 0 : this.current.cost;
   }
 
   activate(type) {
@@ -78,6 +84,8 @@ export class Arsenal {
     this.serial = (this.serial ?? 0) + 1;
     this.active.set(type, { remaining: def.duration, duration: def.duration, serial: this.serial });
     if (type === "shield") this.shieldCharges = def.charges;
+    // Works at once (the host adds the spheres).
+    if (def.instant) this.onInstant?.(type, def);
     // The host shows it (src/ui/powerup-banner.js).
     this.onActivate?.(type);
   }

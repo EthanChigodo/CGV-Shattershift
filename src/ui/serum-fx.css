@@ -33,7 +33,7 @@
 }
 @keyframes sxSpin { to { filter: hue-rotate(360deg); } }
 
-/* Thermal sight: a heat grade, scan lines, a slow sweep. */
+/* Thermal Aegis: a heat grade, scan lines, a slow sweep. */
 .sx-thermal .sx-look {
   background:
     linear-gradient(180deg, transparent 0%, rgba(255, 240, 200, 0.10) 48%, transparent 52%) 0 0 / 100% 220% no-repeat,
@@ -65,6 +65,29 @@
   background: radial-gradient(ellipse 80% 70% at 50% 48%, transparent 50%, rgba(var(--rgb), calc(var(--a) * 0.16)) 100%);
 }
 .sx-lines { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; }
+
+/* Unlimited spheres: a blue rim, and six spheres circling the screen's edge. */
+.sx-infinite .sx-look { opacity: var(--a); }
+.sx-infinite .sx-look b {
+  position: absolute; left: 0; top: 0; width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff, var(--c) 55%, rgba(var(--rgb), 0) 72%);
+  box-shadow: 0 0 18px var(--c);
+  offset-path: ellipse(47% 44% at 50% 50%); offset-rotate: 0deg;
+  animation: sxOrbit 7s linear infinite; animation-delay: calc(var(--i) * -7s / 6);
+}
+.sx-infinite .sx-look b:nth-child(1) { --i: 0; } .sx-infinite .sx-look b:nth-child(2) { --i: 1; }
+.sx-infinite .sx-look b:nth-child(3) { --i: 2; } .sx-infinite .sx-look b:nth-child(4) { --i: 3; }
+.sx-infinite .sx-look b:nth-child(5) { --i: 4; } .sx-infinite .sx-look b:nth-child(6) { --i: 5; }
+@keyframes sxOrbit { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+
+/* Restoration: one ring of light out from the middle. */
+.sx-restore .sx-look {
+  background: radial-gradient(circle at 50% 50%, transparent 0 calc(var(--ring, 0%) - 6%), rgba(var(--rgb), 0.55) var(--ring, 0%), transparent calc(var(--ring, 0%) + 4%));
+  opacity: var(--a);
+}
+.sx-restore.flash .sx-look { animation: sxRing 0.9s ease-out; }
+@property --ring { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+@keyframes sxRing { from { --ring: 0%; } to { --ring: 90%; } }
 
 /* The banner: which serum, what it does, for how long. */
 .sx-banner {
@@ -116,7 +139,7 @@ body.hud-off-serums .sx-chips { display: none; }
 body.sx-announcing .cw-title { top: calc(17% + 130px); }
 body.sx-announcing .mlt-banner { top: calc(11% + 128px) !important; }
 @media (prefers-reduced-motion: reduce) {
-  .sx-prism .sx-look, .sx-thermal .sx-look, .sx-layer.ending .sx-edge, .sx-chip.ending { animation: none; }
+  .sx-prism .sx-look, .sx-thermal .sx-look, .sx-infinite .sx-look b, .sx-restore .sx-look, .sx-layer.ending .sx-edge, .sx-chip.ending { animation: none; }
 }
 
 /* Between levels and in the films the serums' screen looks stand down

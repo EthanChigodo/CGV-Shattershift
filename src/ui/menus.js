@@ -118,9 +118,9 @@ export function buildSerumCards() {
     holder.innerHTML = SERUM_ORDER.map((k) => {
       const s = SERUMS[k];
       const art = pictures.get(k) ? `<img src="${pictures.get(k)}" alt="">` : `<i class="serum-art" aria-hidden="true"></i>`;
-      const lasts = s.charges ? `${s.charges} hits or ${s.duration} s` : `${s.duration} s`;
+      const lasts = s.instant ? "Works at once" : `Lasts ${s.charges ? `${s.charges} hits or ${s.duration} s` : `${s.duration} s`}`;
       return `<article class="serum-card" style="--c:${s.colour}">${art}
-        <div><b>${s.name}</b><p>${s.text}</p><small>Lasts ${lasts}</small></div></article>`;
+        <div><b>${s.name}</b><p>${s.text}</p><small>${lasts}</small></div></article>`;
     }).join("");
   }
 }

@@ -62,8 +62,10 @@ def remove_tree(path):
 
 
 def copy():
-    if os.path.isdir(DIST):
-        remove_tree(DIST)
+    # Only this build's own output: dist/ holds other things too (the trailer).
+    remove_tree(OUT)
+    if os.path.exists(ZIP):
+        os.remove(ZIP)
     os.makedirs(OUT)
     for name in FILES:
         shutil.copy2(os.path.join(ROOT, name), os.path.join(OUT, name))

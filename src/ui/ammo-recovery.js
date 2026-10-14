@@ -19,12 +19,12 @@ export class AmmoRecoveryHint {
 
   hide() { this.status.hidden = true; this.marker.visible = false; }
 
-  update({ active, ammunition, cost, contact = false, targets = [], player, routeDistance = null, filter = () => true, solids = [] }) {
+  update({ active, ammunition, cost, seconds = EMERGENCY_RECHARGE_SECONDS, contact = false, targets = [], player, routeDistance = null, filter = () => true, solids = [] }) {
     this.hide();
     if (!active || ammunition > 0 && ammunition >= cost) return;
     const instruction = contact ? "RUN THROUGH A SACK OR SHOOT IT" : "SHOOT A SPHERE CACHE";
     const text = ammunition < 1
-      ? `NO SPHERES — ${instruction}. +1 AFTER ${EMERGENCY_RECHARGE_SECONDS}s EMPTY IN PLAY. ${cost === 0 ? "OVERDRIVE: THROWS ARE FREE." : "USE GLASS (Q/E)."}`
+      ? `NO SPHERES — ${instruction}. +1 AFTER ${seconds}s EMPTY IN PLAY. ${cost === 0 ? "OVERDRIVE: THROWS ARE FREE." : "USE GLASS (Q/E)."}`
       : "NOT ENOUGH SPHERES — SWITCH TO GLASS (Q/E), OR COLLECT A CACHE.";
     if (this.status.textContent !== text) this.status.textContent = text;
     this.status.hidden = false;

@@ -176,23 +176,18 @@ test("Roof existing pickup reward path remains single-use and respects its cap",
   assert.equal(game.roof.breakables.length, 0);
 });
 
-test("checkpoint retry resets only recovery state and restarts charging from zero", () => {
+// The Labs' checkpoint is now one per level, resumed through resumeAt (main.js
+// offers it on the death screen) - the per-section respawn is gone.
+test("checkpoint resume resets only recovery state and restarts charging from zero", () => {
   const game = updateHarness("run");
-  game.checkpoint = { distance: 100, balls: 0, name: "CORRIDOR" };
-  game.runner.vitality = 50;
   game.fade = {};
-  game.hud.showBanner = noop;
   game.projectiles = { clear: noop };
-  let resume;
-  game._after = (_delay, callback) => { resume = callback; };
+  game.hud.vitals = { style: {} };
   game.ammoRecovery.update(2, 0);
-  game._respawnAtCheckpoint("DOWN");
+  game.resumeAt(100, 0);
   assert.equal(game.ammoRecovery.elapsed, 0);
-  assert.equal(game.phase, "respawn");
-  resume();
   assert.equal(game.phase, "run");
   assert.equal(game.runner.balls, 0);
-  assert.equal(game.runner.vitality, 70);
   for (let i = 0; i < 49; i++) game.update(0.05, i);
   assert.equal(game.runner.balls, 0);
   game.update(0.05, 0);
@@ -307,7 +302,7 @@ test("nearest-supply hint excludes behind, blocked, dead and distant targets, th
 
 test("Foundry/Skyline host wiring shares recovery, passes gate ammo and removes old recharge", async () => {
   const source = await readFile(new URL("../main.js", import.meta.url), "utf8");
-  assert.match(source, /ammo = ammoRecovery\.update\(simDt, ammo\)/);
+  assert.match(source, /ammo = ammoRecovery\.update\(simDt, ammo[,)]/); // (plus the story difficulty's pace)
   assert.match(source, /ammunition: ammo, throwCost: arsenal\.cost\(\)/);
   assert.match(source, /function resetRun\(\) \{\s*ammoRecovery\.reset\(\)/);
   assert.ok(!source.includes("run.recharge"));
