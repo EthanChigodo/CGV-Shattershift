@@ -109,7 +109,10 @@ RADIO_FIT = {"quietRideRadio": 3.9}  # the lift's radio has a beat to fit
 SAY = {"The lift's at the far end of the labs. Go!": "The lift is at the far end of the labs. Go!",
        "You'll want to know what you are. You were Subject Seven. Project Ascension.":
            "You will want to know what you are. You were... Subject Seven. Project Ascension.",
-       "Every floor is wired, Seven. I signed the order myself.": "Every floor is wired, Seven. I signed the order... myself."}
+       "Every floor is wired, Seven. I signed the order myself.": "Every floor is wired, Seven. I signed the order... myself.",
+       # (Okoro says "Vale's" as "Velle's" at the start of a sentence: spelt as it sounds.)
+       "Vale's answer is to bury it. Charges on every floor. The subjects still in their beds. Thirty minutes, and this tower comes down.":
+           "Vail's answer is to bury it. Charges on every floor. The subjects still in their beds. Thirty minutes, and this tower comes down."}
 
 
 def spoken(text):
@@ -411,6 +414,8 @@ def install(order_from):
     new = json.load(open(os.path.join(OUT, "voice-lines.json")))
     merged = {**{k: v for k, v in old.items() if k.startswith("halcyon|")}, **new}
     order = {l["key"]: i for i, l in enumerate(json.load(open(order_from)))}
+    # Only what the game still says (a line reworded or recast leaves its old recording behind).
+    merged = {k: v for k, v in merged.items() if k in order or k.startswith("#")}
     merged = dict(sorted(merged.items(), key=lambda kv: (order.get(kv[0], -1 if kv[0].startswith("#") else 9999), kv[0])))
     vdir = os.path.join(work.ASSETS, "voice")
     wanted = set()

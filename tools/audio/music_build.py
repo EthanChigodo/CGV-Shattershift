@@ -161,8 +161,13 @@ def briefing():
                         [-40, -11, -9, -4, 0, 0, -60])
     gain_db[t >= last] = -80
     out *= (10 ** (gain_db / 20))[:, None]
-    # A last hit as the title comes up: the piece's own final chord.
-    tail = y[-int(4.0 * SR):]
+    # A last hit as the title comes up: the piece's own final chord (from its
+    # last strong attack in the closing eight seconds, ringing out).
+    end8 = mono[-8 * SR:]
+    env = librosa.onset.onset_strength(y=end8, sr=SR)
+    hits = librosa.onset.onset_detect(onset_envelope=env, sr=SR, units="samples", backtrack=True)
+    strong = [h for h in hits if env[librosa.samples_to_frames(h)] > 0.5 * env.max()]
+    tail = y[len(y) - 8 * SR + (strong[-1] if strong else 0):]
     at = int((end + 0.4) * SR)
     m = min(len(tail), n - at)
     out[at: at + m] += tail[:m] * np.linspace(1, 0, m)[:, None] ** 0.5

@@ -103,7 +103,13 @@ choose:
 - **Talking, not reading**: how far the pitch moves in a line (semitones,
   10th to 90th percentile) and how fast the syllables come. A flat read moves
   about 6-7; directed takes move more, and win - as long as they don't
-  gabble (over about 7 syllables a second).
+  gabble (over about 7 syllables a second). A line whose best take moved
+  less than 6 got another take. Against the earlier OmniVoice recordings of
+  the same lines, Okoro's pitch moves 8.4 semitones on average (was 6.4), his
+  lines come about 40% quicker (no breaths laid between his sentences, long
+  pauses tightened), with more energy (0.63, was 0.49) and a stronger accent
+  score (+0.24, was +0.18); Vale moves 11.0 (was 8.6), calmer and colder
+  (energy 0.59, was 0.78).
 - **Accent**: a take's accent fingerprint (CommonAccent's ECAPA embedding) is
   compared with OpenSLR 70's other Nigerian speakers and an American speaker.
   Okoro's lines score +0.2 to +0.5 towards Nigerian; the earlier Kokoro Okoro
