@@ -171,7 +171,10 @@ export class CityAtNight {
     const crowns = [];
     const masts = [];
     for (const f of withTowers ? finishes : []) {
-      const material = own(new THREE.MeshStandardMaterial({ color: f.colour, metalness: f.metal, roughness: f.rough, emissive: 0xffffff, emissiveMap: f.tile, emissiveIntensity: f.glow }));
+      // Lambert, not standard: the towers are a night backdrop (dark facades,
+      // lit windows), and the physically-based shading of every one of the
+      // scene's lights on every distant pixel was most of the roof's frame.
+      const material = own(new THREE.MeshLambertMaterial({ color: f.colour, emissive: 0xffffff, emissiveMap: f.tile, emissiveIntensity: f.glow }));
       worldWindows(material);
       const pieces = [];
       for (let i = 0; i < f.count; i += 1) {
@@ -256,7 +259,7 @@ export class CityAtNight {
     })();
     this.beacons = own(new THREE.SpriteMaterial({ map: glow, color: 0xff2a1a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }));
     if (masts.length) {
-      const mastMat = own(new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.7, roughness: 0.5 }));
+      const mastMat = own(new THREE.MeshLambertMaterial({ color: 0x2a2c30 }));
       const mastMesh = new THREE.InstancedMesh(unit, mastMat, masts.length);
       masts.forEach(([x, y, z, h], i) => {
         m.compose(p.set(x, y, z), q.identity(), s.set(0.6, h, 0.6));

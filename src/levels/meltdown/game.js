@@ -65,6 +65,7 @@ import { latchReaction } from "../../story/reaction.js";
 import { EndingDirector } from "../../story/ending-director.js";
 import { SCENES as STORY_LINES } from "../../story/script.js";
 import { Arsenal, BALLS, SERUMS } from "../../systems/arsenal.js";
+import { DIFFICULTIES } from "../../systems/difficulty.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
 
 /* ------------------------------------------------------------------ */
@@ -109,6 +110,8 @@ const SLIDE_SECONDS = 0.7;
  * make a charging patient miss and carry on over the ledge.
  */
 const ROOF_SPEED = 6.4;
+/** How far from the player the roof's aim point may go (m). */
+const ROOF_AIM_REACH = 22;
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
 const ROOF_NAMES = [
@@ -210,10 +213,14 @@ export class MeltdownGame {
     /** Sharing the game's arsenal means the game's HUD shows the serums. */
     this.arsenalShared = !!arsenal;
     this._ownArsenal = !arsenal;
+    // Restoration (a serum that works at once): on its own, the game applies it itself.
+    if (this._ownArsenal) this.arsenal.onInstant = (type, def) => this.restore(def);
     /** "full" | "corridor" | "endless-labs" | "endless-roof" - see the header. */
     this.mode = mode;
     this.endless = { laps: 0, distance: 0 };
     this.speedScale = 1;
+    /** The story's difficulty (src/systems/difficulty.js); the host sets it before setMode. */
+    this.difficulty = DIFFICULTIES.normal;
     this.renderer = renderer;
     this.assetBase = assetBase;
     this.character = CHARACTERS[character] ? character : DEFAULT_CHARACTER;
@@ -256,7 +263,8 @@ export class MeltdownGame {
     this.ao = new AOPass(this.camera);
     this.ao.enabled = false;
     this.composer.addPass(this.ao);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.6, 0.45, 0.92);
+    // A third of the screen: the glow is soft anyway, and it is a full chain of blur passes.
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 3, size.y / 3), 0.6, 0.45, 0.92);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = createGradePass();
@@ -303,7 +311,9 @@ export class MeltdownGame {
       container.append(node);
       return node;
     };
-    this.ui = { reticle: el("mlt-reticle"), fade: el("mlt-fade"), letterbox: el("mlt-letterbox") };
+    // The crosshair: the same one as the Foundry's and the Skyline's.
+    this.ui = { reticle: el("reticle mlt-reticle"), fade: el("mlt-fade"), letterbox: el("mlt-letterbox") };
+    this.ui.reticle.innerHTML = "<i></i><b></b>";
     this.ui.fade.hidden = false;
     this.ui.letterbox.hidden = false;
     this.fade = { value: 0, target: 0, rate: 1.6, override: null };
@@ -359,7 +369,7 @@ export class MeltdownGame {
     this.director = null;
 
     this._v = {
-      desired: new THREE.Vector3(), look: new THREE.Vector3(), smoothedLook: new THREE.Vector3(),
+      desired: new THREE.Vector3(), look: new THREE.Vector3(), smoothedLook: new THREE.Vector3(), walkIn: new THREE.Vector3(),
       behind: new THREE.Vector3(), camVelocity: new THREE.Vector3(), warpUp: new THREE.Vector3(),
       aim: new THREE.Vector3(), muzzle: new THREE.Vector3(), fireDir: new THREE.Vector3(), forwardVel: new THREE.Vector3(),
       laneRight: new THREE.Vector3(), beamTarget: new THREE.Vector3(),
@@ -374,8 +384,6 @@ export class MeltdownGame {
   /* ================================================================ */
 
   _resetRunner() {
-    // A new run (or lap): no checkpoint reached yet.
-    this.checkpoint = null;
     Object.assign(this.runner, {
       distance: 0, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
       jumpBuffer: 0, slideBuffer: 0, landed: 0,
@@ -414,7 +422,8 @@ export class MeltdownGame {
   setMode(mode) {
     this.mode = mode;
     this.endless = { laps: 0, distance: 0 };
-    this.speedScale = 1;
+    // Endless speeds up lap by lap instead.
+    this.speedScale = mode.startsWith("endless") ? 1 : this.difficulty.speed;
   }
 
   /** The story's cutscenes for the next load() (mode "corridor" only), or null. */
@@ -454,7 +463,13 @@ export class MeltdownGame {
     this.assetsReady = false;
     if (!carry) this.clock = 0;
 
-    const level = new MeltdownLevel({ origin: new THREE.Vector3(0, 0, 0), seed });
+    // High keeps the full pool; otherwise six lights (measured: the light pool
+    // is most of the corridor's cost).
+    const level = new MeltdownLevel({
+      origin: new THREE.Vector3(0, 0, 0), seed, lightPoints: this.quality?.shadows ? 9 : 6,
+      // The story's difficulty: obstacle spacing; Hard's fire waves and stalkers.
+      density: this.difficulty.density, extras: this.difficulty.extras,
+    });
     this.level = level;
     level.addTo(this.scene);
     // The patient records (src/systems/collectibles.js): five along the
@@ -601,7 +616,7 @@ export class MeltdownGame {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.composer.setSize(width, height);
-    this.bloom.resolution.set(width / 2, height / 2);
+    this.bloom.resolution.set(width / 3, height / 3);
     this.grade.uniforms.uResolution.value.set(width, height);
   }
 
@@ -807,12 +822,6 @@ export class MeltdownGame {
     on("patient-seen", () => audio.stinger());
     on("beat", ({ key }) => {
       const beat = BEATS.find((b) => b.key === key);
-      // Each section after the first is a checkpoint: die past here and you
-      // start again here, not at the top of the Labs (Endless has no checkpoints).
-      if (beat && beat.start > 0 && this.mode !== "endless-labs" && this.phase !== "over" && (this.checkpoint?.distance ?? 0) < beat.start) {
-        this.checkpoint = { distance: beat.start + 3, balls: this.runner.balls, name: beat.name };
-        hud.toast("CHECKPOINT", beat.name, "", 2400);
-      }
       if (beat?.dark) {
         audio.powerDown();
         this._after(0.9, () => {
@@ -838,6 +847,10 @@ export class MeltdownGame {
 
   onPointerMove(clientX, clientY) {
     const size = this.renderer.domElement.getBoundingClientRect();
+    // Held inside the window: dragging off it (fire held) keeps reporting
+    // positions beyond the edge.
+    clientX = THREE.MathUtils.clamp(clientX, size.left, size.right);
+    clientY = THREE.MathUtils.clamp(clientY, size.top, size.bottom);
     this.pointer.x = ((clientX - size.left) / size.width) * 2 - 1;
     this.pointer.y = -((clientY - size.top) / size.height) * 2 + 1;
     this.ui.reticle.style.left = `${clientX}px`;
@@ -954,6 +967,16 @@ export class MeltdownGame {
     const phase = this.phase;
     const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
     const playing = onRoof ? phase === "roof" && this.runner.alive : phase === "run" && this.runner.alive && !this.runner.finished;
+    // Out of spheres: one comes back every 2.5 s (the Skyline's resonance
+    // recharge, now in every level) - you are never left with no way to shoot.
+    if (playing && this.runner.balls <= 0) {
+      this._recharge = (this._recharge ?? 0) + dt;
+      if (this._recharge > this.difficulty.recharge) {
+        this._recharge = 0;
+        this.runner.balls += 1;
+        this.hud.toast("+1 SPHERE", "RESONANCE RECHARGE", "power", 1400);
+      }
+    } else this._recharge = 0;
     // Thermal sight: patients show as heat (kit.js heatSignature). On the
     // roof a faint warm rim stays on regardless, so the enemies read against
     // the dark deck from the high camera.
@@ -1048,7 +1071,9 @@ export class MeltdownGame {
     // behind you is that vitality made visible.
     // Overdrive (a serum) holds the fire off, as adrenaline used to.
     if (playing && !this.arsenal.isActive("overdrive")) {
-      r.vitality = Math.max(0, r.vitality - level.drainRateAt(r.distance) * dt);
+      // Thermal Aegis (a serum): heat-proof - the fire behind barely gains on you.
+      const heat = this.arsenal.isActive("thermal") ? 0.25 : 1;
+      r.vitality = Math.max(0, r.vitality - level.drainRateAt(r.distance) * this.difficulty.damage * heat * dt);
       if (r.vitality <= 0) {
         r.alive = false;
         this._finishRun(false, "CAUGHT BY THE FIRE");
@@ -1080,7 +1105,8 @@ export class MeltdownGame {
       });
       // Blink through the mercy window after a hit (not the long
       // "invulnerable" a test or demo teleport sets).
-      const blinking = r.invulnerable > 0 && r.invulnerable < 2 && Math.floor(time * 14) % 2 === 0;
+      // (Not in trailer mode's god mode: the player has to stay in shot.)
+      const blinking = !this.noBlink && r.invulnerable > 0 && r.invulnerable < 2 && Math.floor(time * 14) % 2 === 0;
       avatar.setVisible(!firstPerson && !blinking);
       avatar.shadow.visible = !firstPerson;
     }
@@ -1103,6 +1129,20 @@ export class MeltdownGame {
     this.debris.update(dt);
     this.shatter.update(dt);
     this.sphereImpact.update(dt);
+    // Run into a sphere crystal (or a serum) to take it - so being out of
+    // spheres never leaves you unable to get more.
+    if (playing) {
+      for (const target of level.breakables) {
+        const kind = target.userData.kind;
+        if ((kind !== "sack" && kind !== "powerup") || !target.userData.alive) continue;
+        if (Math.abs((target.userData.routeDistance ?? -99) - r.distance) > 1.2) continue;
+        target.getWorldPosition(V.sfxPos);
+        // Your body has to meet it: same lane, right at it.
+        if (V.sfxPos.setY(0).distanceTo(this._v.walkIn.copy(avatar.root.position).setY(0)) < 1.0) {
+          this._onBallHit(target, V.sfxPos.clone().setY(1.2), { power: 99, velocity: new THREE.Vector3(), kind: "glass", walkIn: true });
+        }
+      }
+    }
     if (this.sfx) {
       level.route.sample(r.distance, r.lateral, 0, V.sfxPos);
       this.sfx.updateBrokenGlass(V.sfxPos, playing && r.speed > 1 && r.height < 0.12);
@@ -1164,7 +1204,7 @@ export class MeltdownGame {
 
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
-    this.hud.setPrompt(this.phase !== "run" ? null : level.ductAhead(r.distance, 7) && r.height < 0.5 ? "SPACE - JUMP THE DUCT" : r.balls <= 0 && playing ? "NO SPHERES" : null);
+    this.hud.setPrompt(this.phase !== "run" ? null : level.ductAhead(r.distance, 7) && r.height < 0.5 ? "SPACE - JUMP THE DUCT" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 
@@ -1492,6 +1532,8 @@ export class MeltdownGame {
       if (at.distanceTo(point) > def.splash) continue;
       const person = target.userData.kind === "patient" || target.userData.kind === "enemy" || !!target.userData.enemy;
       if (ball.kind === "cryo" && !person) continue;
+      // Power-ups (serum capsules) take a direct hit, never a splash.
+      if (target.userData.kind === "powerup") continue;
       this._onBallBreakable(target, at.clone(), { power: ball.kind === "shock" ? 99 : 2, velocity: ball.velocity.clone(), kind: "glass" });
     }
     if (ball.kind === "cryo" && this.level && !this.roof) this.runner.fireDistance -= 6;
@@ -1520,7 +1562,8 @@ export class MeltdownGame {
       }
       return true;
     }
-    r.breaks += 1;
+    // A crystal or serum you ran into is a pickup, not a shot breaking it.
+    if (!ball.walkIn) r.breaks += 1;
     if (result.kind === "glass") {
       const sample = level.route.sample(object.userData.routeDistance ?? r.distance);
       this._v.laneRight.set(Math.cos(sample.heading), 0, -Math.sin(sample.heading));
@@ -1633,7 +1676,9 @@ export class MeltdownGame {
     level.route.sample(r.distance, r.lateral, r.height, centre);
     centre.y += 0.18 + height / 2;
     this.playerBox.setFromCenterAndSize(centre, this._v.boxSize.set(0.9, height, 0.9));
-    const hits = level.collide(this.playerBox, r.distance);
+    // Thermal Aegis (a serum): a fire vent's flames pass over you.
+    const fireproof = this.arsenal.isActive("thermal");
+    const hits = level.collide(this.playerBox, r.distance).filter((h) => !(fireproof && h.userData.fireVent));
     // A fallen duct is solid even through the mercy window: up and over.
     const duct = hits.find((h) => h.userData.duct);
     if (duct && r.invulnerable > 0) {
@@ -1676,7 +1721,8 @@ export class MeltdownGame {
       return;
     }
 
-    r.vitality = Math.max(0, r.vitality - HIT_VITALITY - HIT_FIRE_BURST);
+    // Thermal Aegis: the knock still hurts, the burn doesn't.
+    r.vitality = Math.max(0, r.vitality - (HIT_VITALITY + (fireproof ? 0 : HIT_FIRE_BURST)) * this.difficulty.damage);
     const dropped = Math.min(r.balls, Math.max(r.balls > 0 ? 1 : 0, Math.round(r.balls * HIT_BALL_DROP_RATIO)));
     r.balls -= dropped;
     r.hits += 1;
@@ -1803,10 +1849,6 @@ export class MeltdownGame {
   _finishRun(survived, title) {
     const r = this.runner;
     if (r.finished && this.phase !== "run") return;
-    if (!survived && this.checkpoint && this.phase === "run" && this.mode !== "endless-labs") {
-      this._respawnAtCheckpoint(title);
-      return;
-    }
     r.finished = true;
     r.alive = false;
     r.firing = false;
@@ -1822,33 +1864,37 @@ export class MeltdownGame {
   }
 
   /**
-   * Caught past a checkpoint: a moment of black, then back at the start of
-   * that section - some vitality back, the fire pushed back behind you, the
-   * spheres you had there - and a short grace before anything can hurt you.
+   * Restoration (a serum): spheres, up to the most you can carry, and
+   * vitality back to full.
    */
-  _respawnAtCheckpoint(title) {
+  restore({ spheres = 0, heal = false } = {}) {
     const r = this.runner;
-    const cp = this.checkpoint;
-    r.alive = false;
-    r.firing = false;
-    this.phase = "respawn";
-    this.hud.showBanner(title ?? "DOWN", `BACK TO THE CHECKPOINT // ${cp.name}`, 2200);
-    this.fade.target = 1;
-    this.fade.rate = 3;
-    this._after(0.6, () => {
-      if (this.phase !== "respawn") return;
-      Object.assign(r, {
-        distance: cp.distance, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
-        jumpBuffer: 0, slideBuffer: 0, landed: 0, pushing: false, lookBack: 0, heat: 0, lockout: 0, slow: 0,
-        vitality: Math.max(r.vitality, 70), balls: Math.max(r.balls, cp.balls), alive: true, finished: false,
-        invulnerable: 2.5, fireDistance: cp.distance - 40, speed: this.level.speedAt(cp.distance),
-      });
-      this.projectiles.clear?.();
-      this.snapCamera = true;
-      this.phase = "run";
-      this.fade.target = 0;
-      this.fade.rate = 1.5;
+    r.balls = Math.min(MAX_BALLS + SUPPLY_SPHERES, r.balls + spheres);
+    if (heal && r.alive) r.vitality = START_VITALITY;
+    this.sfx?.sphereCollected();
+    this.audio.pickup();
+  }
+
+  /**
+   * Back into the run at a checkpoint after a death (the host's death screen
+   * offers it): the level as it was, the runner at `distance`, vitality full,
+   * the fire well behind, a moment of grace. The host counts you back in.
+   */
+  resumeAt(distance, balls = 0) {
+    const r = this.runner;
+    Object.assign(r, {
+      distance, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
+      jumpBuffer: 0, slideBuffer: 0, landed: 0, pushing: false, lookBack: 0, heat: 0, lockout: 0, slow: 0,
+      vitality: START_VITALITY, balls: Math.max(r.balls, balls), alive: true, finished: false, firing: false,
+      invulnerable: 2.5, fireDistance: distance - 45, speed: this.level.speedAt(distance),
     });
+    this.projectiles.clear?.();
+    this.phase = "run";
+    this.fade.override = null;
+    this.fade.target = 0;
+    this.fade.value = 0;
+    this.snapCamera = true;
+    this.hud.vitals.style.visibility = "";
   }
 
   /** The run is over, one way or the other. */
@@ -1890,7 +1936,11 @@ export class MeltdownGame {
     this.projectiles.clear();
     this.debris.clear();
     this.roof?.dispose();
-    const roof = new RoofLevel({ assets: this.roofAssets, endless: this.mode === "endless-roof", assetBase: this.assetBase, ...this.roofOptions });
+    const roof = new RoofLevel({
+      assets: this.roofAssets, endless: this.mode === "endless-roof", assetBase: this.assetBase,
+      difficulty: { ...this.difficulty.roof, extras: this.difficulty.extras },
+      ...this.roofOptions,
+    });
     this.roof = roof;
     roof.addTo(this.scene);
     // The flight records: three round the roof, clear of the cover.
@@ -1989,7 +2039,9 @@ export class MeltdownGame {
       if (downs > 1) hud.toast("CHAIN BLAST", `${downs} DOWN`, "power");
       // Too close to it yourself.
       const d = this.hero.position.distanceTo(position.clone().setY(0));
-      if (d < CANISTER_RADIUS) this._roofHit({ damage: Math.round(24 * (1 - d / CANISTER_RADIUS)) + 6, from: position.clone(), knock: 8, source: "blast" });
+      // Thermal Aegis (a serum): the fireball washes over you - only the shove hurts.
+      const fireproof = this.arsenal.isActive("thermal") ? 0.3 : 1;
+      if (d < CANISTER_RADIUS) this._roofHit({ damage: Math.round((Math.round(24 * (1 - d / CANISTER_RADIUS)) + 6) * fireproof), from: position.clone(), knock: 8, source: "blast" });
     });
     on("drop-incoming", () => {
       hud.toast("SUPPLY DROP", "INBOUND - WATCH FOR THE FLARE", "power", 3000);
@@ -2210,7 +2262,7 @@ export class MeltdownGame {
       this.hud.toast(this.arsenal.shieldCharges > 0 ? "SHIELD ABSORBED" : "SHIELD BROKEN", "", "power", 1400);
       return;
     }
-    r.vitality = Math.max(0, r.vitality - hit.damage);
+    r.vitality = Math.max(0, r.vitality - hit.damage * this.difficulty.roof.damage);
     r.hits += 1;
     r.invulnerable = 1.0;
     hero.knock.subVectors(hero.position, hit.from).setY(0).normalize().multiplyScalar(hit.knock);
@@ -2300,7 +2352,18 @@ export class MeltdownGame {
       this.raycaster.setFromCamera(this.pointer, this.camera);
       const hit = this.raycaster.intersectObjects(roof.breakables, false)[0];
       if (hit) hero.aim.copy(hit.point);
-      else if (!this.raycaster.ray.intersectPlane(this.aimPlane, hero.aim)) hero.aim.copy(hero.position).add(_ahead);
+      else if (!this.raycaster.ray.intersectPlane(this.aimPlane, hero.aim)) {
+        // At (or above) the horizon: straight out that way instead.
+        _face.copy(this.raycaster.ray.direction).setY(0);
+        if (_face.lengthSq() < 1e-6) _face.set(0, 0, -1);
+        hero.aim.copy(hero.position).addScaledVector(_face.normalize(), ROOF_AIM_REACH).setY(hero.position.y + 1.15);
+      }
+      // Never further than across the roof: near the horizon the aim plane
+      // runs off for kilometres, and the camera (which leans toward the aim)
+      // would swing after it, move the aim again and shake (the cursor at
+      // the top of the screen or off it).
+      _face.subVectors(hero.aim, hero.position).setY(0);
+      if (!hit && _face.length() > ROOF_AIM_REACH) hero.aim.copy(hero.position).addScaledVector(_face.normalize(), ROOF_AIM_REACH).setY(hero.position.y + 1.15);
       this.ui.reticle.classList.toggle("hot", Boolean(hit));
 
       // Face the aim while shooting, otherwise the way you move.
@@ -2385,7 +2448,7 @@ export class MeltdownGame {
         const kind = target.userData.kind;
         if ((kind !== "sack" && kind !== "powerup") || !target.userData.alive) continue;
         target.getWorldPosition(this._v.sfxPos);
-        if (this._v.sfxPos.setY(0).distanceTo(this.hero.position) < 1.4) {
+        if (this._v.sfxPos.setY(0).distanceTo(this.hero.position) < 1.0) {
           this._onRoofBreakable(target, this._v.sfxPos.clone().setY(1), { power: 99, velocity: new THREE.Vector3(), kind: "glass" });
         }
       }
@@ -2421,7 +2484,7 @@ export class MeltdownGame {
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
     const hint = this.phase === "roof" ? roof?.extractionHint(this.hero.position) : null;
-    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO SPHERES" : null);
+    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 

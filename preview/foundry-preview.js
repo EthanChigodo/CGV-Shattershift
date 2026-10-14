@@ -13,6 +13,7 @@
 
 import * as THREE from "../src/three.js";
 import { FoundryLevel, BEATS } from "../src/levels/foundry/index.js";
+import { DIFFICULTIES } from "../src/systems/difficulty.js";
 import { FoundryHud } from "../src/ui/foundry-hud.js";
 
 /* ------------------------------------------------------------------ */
@@ -547,13 +548,17 @@ function loadLevel() {
     level.dispose();
   }
 
+  // ?hard: the story's Hard layout (denser, slag carts) - the balance check plays it.
+  const difficulty = DIFFICULTIES[new URLSearchParams(location.search).has("hard") ? "hard" : "normal"];
   level = new FoundryLevel({
     origin: new THREE.Vector3(0, 0, 0),
     shadows: true,
     brightness, // tune live with [ and ]
     // The escape countdown is derived from this. Beat C sits in the final
     // speed zone, so that is the speed the timer has to be fair against.
-    runSpeed: SPEED_ZONES[SPEED_ZONES.length - 1].speed,
+    runSpeed: SPEED_ZONES[SPEED_ZONES.length - 1].speed * difficulty.speed,
+    density: difficulty.density,
+    extras: difficulty.extras,
   });
   level.addTo(scene);
   hud.bind(level);

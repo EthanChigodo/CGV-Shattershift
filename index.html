@@ -25,6 +25,7 @@
   </head>
   <body>
     <canvas id="game" aria-label="Fracture Run game canvas"></canvas>
+    <div id="countdown" class="countdown" hidden aria-live="assertive"></div>
 
     <header class="topbar">
       <div class="brand">
@@ -112,12 +113,25 @@
           <button id="replayStoryButton" class="menu-button" type="button">
             <i class="menu-glyph" aria-hidden="true">&#9673;</i><span><b>Replay the briefing</b><small>Why the tower is coming down</small></span>
           </button>
+          <button id="lastReportButton" class="menu-button" type="button" hidden>
+            <i class="menu-glyph" aria-hidden="true">&#9776;</i><span><b>Last run report</b><small>Your deaths, hits and quick-time events, level by level</small></span>
+          </button>
+          <button id="creditsButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9733;</i><span><b>Credits</b><small>The team, and every asset we did not make</small></span>
+          </button>
         </nav>
         <p id="progressLine" class="progress-line"></p>
       </div>
 
       <aside class="menu-card loadout" aria-label="Loadout">
         <p class="eyebrow">SUBJECT 07 // LOADOUT</p>
+        <p class="card-label">Difficulty <span class="card-note">the story and chapters (Endless gets harder on its own)</span></p>
+        <div class="segmented" role="group" aria-label="Choose the difficulty">
+          <button type="button" class="subject-button difficulty-button" data-difficulty="easy">Easy</button>
+          <button type="button" class="subject-button difficulty-button" data-difficulty="normal">Normal</button>
+          <button type="button" class="subject-button difficulty-button" data-difficulty="hard">Hard</button>
+        </div>
+        <p id="difficultyNote" class="card-note difficulty-note"></p>
         <p class="card-label">Play as</p>
         <div class="segmented" role="group" aria-label="Choose your character">
           <button type="button" class="subject-button" data-character="playerFemale">Female</button>
@@ -212,6 +226,10 @@
             <span>Power-up tips (each serum is explained the first time you pick it up)</span>
             <button type="button" id="resetPowerupTipsButton" class="text-button">Show them again</button>
           </div>
+          <div class="setting-row">
+            <span>Credits: the team, models, music and sound, libraries</span>
+            <button type="button" id="settingsCreditsButton" class="text-button">View credits</button>
+          </div>
         </div>
 
         <div class="settings-group">
@@ -226,6 +244,23 @@
             </select>
           </label>
           <p class="setting-note" id="qualityNote" aria-live="polite"></p>
+          <label class="setting-row">
+            <span>Shadows (off is faster)</span>
+            <input type="checkbox" id="shadowsToggle" checked />
+          </label>
+          <label class="setting-row">
+            <span>Visual effects: bloom, screen glow and grading (off is faster)</span>
+            <input type="checkbox" id="effectsToggle" checked />
+          </label>
+          <label class="setting-row">
+            <span>Resolution (lower is faster)</span>
+            <select id="resolutionSelect">
+              <option value="1">100%</option>
+              <option value="0.85">85%</option>
+              <option value="0.7">70%</option>
+              <option value="0.5">50%</option>
+            </select>
+          </label>
         </div>
 
         <div class="settings-group">
@@ -278,18 +313,27 @@
       </div>
     </section>
 
-    <section id="endScreen" class="screen">
-      <div class="screen-copy compact">
-        <p id="endEyebrow" class="eyebrow">SECTOR COMPLETE</p>
-        <h2 id="endTitle">CALIBRATION LIFT REACHED</h2>
-        <p id="endText" class="intro">All three tower sectors are stable.</p>
-        <div class="result"><span>FINAL SCORE</span><strong id="finalScore">000000</strong></div>
-        <p id="endStats" class="end-stats"></p>
-        <div class="button-row">
-          <button id="restartButton" class="primary-button">RUN AGAIN</button>
-          <button id="endMenuButton" class="text-button">Back to menu</button>
+    <section id="endScreen" class="screen end-screen">
+      <div class="end-bg" aria-hidden="true"><i class="end-scan"></i><i class="end-glow"></i></div>
+      <div class="screen-copy compact end-card">
+        <div class="end-main">
+          <p id="endEyebrow" class="eyebrow end-eyebrow">SECTOR COMPLETE</p>
+          <h2 id="endTitle" class="end-title">CALIBRATION LIFT REACHED</h2>
+          <p id="endText" class="intro end-text">All three tower sectors are stable.</p>
+          <div class="end-score"><span>FINAL SCORE</span><strong id="finalScore">000000</strong></div>
+          <p id="endStats" class="end-stats" hidden></p>
+          <ul id="endChips" class="end-chips"></ul>
+          <div class="button-row end-actions">
+            <button id="restartButton" class="primary-button">RUN AGAIN</button>
+            <button id="restartSectorButton" class="text-button" hidden>Restart sector</button>
+            <button id="endMenuButton" class="text-button">Back to menu</button>
+          </div>
+          <p class="hint-inline end-keys"><kbd>R</kbd> retry &nbsp; <kbd>Esc</kbd> menu</p>
         </div>
-        <p class="hint-inline">Press R to run again</p>
+        <div class="end-side">
+          <div id="endProgress" class="end-progress" hidden></div>
+          <div id="endReport" class="end-report" hidden></div>
+        </div>
       </div>
     </section>
 
@@ -307,6 +351,27 @@
         <div class="button-row">
           <button id="endlessBackButton" class="primary-button">BACK</button>
         </div>
+      </div>
+    </section>
+
+    <section id="reportScreen" class="screen credits-screen" aria-label="Last run report">
+      <div class="screen-copy credits-copy">
+        <div class="manual-head">
+          <h2>Last run report</h2>
+          <button id="reportBackButton" type="button" class="primary-button">BACK</button>
+        </div>
+        <p id="reportScreenMeta" class="intro"></p>
+        <div id="reportScreenBody" class="end-report report-page"></div>
+      </div>
+    </section>
+
+    <section id="creditsScreen" class="screen credits-screen" aria-label="Credits">
+      <div class="screen-copy credits-copy">
+        <div class="manual-head">
+          <h2>Credits</h2>
+          <button id="creditsBackButton" type="button" class="primary-button">BACK</button>
+        </div>
+        <div id="creditsBody" class="credits-body"></div>
       </div>
     </section>
 
@@ -332,9 +397,11 @@
             <article data-tone="violet" data-act="tool"><h3>Shock sphere // 3</h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
             <article data-tone="cyan" data-act="collect"><h3>Sphere cache</h3><p>The floating cyan crystal. Shoot it or run into it for spheres.</p></article>
             <article data-tone="prism" data-act="collect"><h3>Prism split</h3><p>Gold capsule. Every throw splits into three spheres. 10 s.</p></article>
-            <article data-tone="fire" data-act="collect"><h3>Thermal sight</h3><p>Orange capsule. See through smoke and the dark. 12 s.</p></article>
+            <article data-tone="fire" data-act="collect"><h3>Thermal Aegis</h3><p>Orange capsule. See through smoke and the dark, and fire can't burn you: walk through flames and fire vents, the fire behind you in the Labs barely gains, a canister's blast only shoves you. 12 s.</p></article>
             <article data-tone="green" data-act="collect"><h3>Kinetic shield</h3><p>Green capsule. Absorbs the next two impacts. 25 s.</p></article>
             <article data-tone="serum" data-act="collect"><h3>Overdrive</h3><p>Pink capsule. Free throws, faster running, heavier hits. 8 s.</p></article>
+            <article data-tone="serum" data-act="collect"><h3>Unlimited spheres</h3><p>Blue capsule, a figure of eight inside. Every throw is free - cryo and shock too. 10 s.</p></article>
+            <article data-tone="serum" data-act="collect"><h3>Restoration</h3><p>Green capsule, a ring of spheres inside. +20 spheres and your integrity back to full, at once.</p></article>
             <article data-tone="amber" data-act="collect"><h3>Records</h3><p>Gold holograms in light beams, in every sector: plant logs, patient records, case files, flight records. Run through one to read it.</p></article>
           </div>
         </div>
@@ -344,17 +411,18 @@
             <article data-tone="cyan" data-act="break"><h3>Pressure cells</h3><p>Small glass cells everywhere: score, and three spheres back each.</p></article>
             <article data-tone="hazard" data-act="avoid"><h3>Pistons and presses</h3><p>Slam down on a rhythm. Read the timing or change lanes; cryo freezes them for a few seconds.</p></article>
             <article data-tone="hazard" data-act="avoid"><h3>Barriers</h3><p>Low ones you jump (Space or W), high ones you slide under (Shift or S).</p></article>
+            <article data-tone="hazard" data-act="avoid"><h3>Slag carts (Hard)</h3><p>A tub of molten metal rolling to and fro across all three lanes. Take the lane it is leaving, or jump it.</p></article>
             <article data-tone="fire" data-act="break"><h3>Plant charges</h3><p>Near the end Vale's charges arm and the shutters start sealing: a clock to the lift. Break the extraction valve.</p></article>
           </div>
         </div>
         <div class="tab-panel" data-panel="m-labs" hidden>
           <div class="manual-grid">
             <article data-tone="fire" data-act="avoid"><h3>The fire front</h3><p>It's behind you the whole way. Slow down and it catches you.</p></article>
-            <article data-tone="amber" data-act="collect"><h3>Checkpoints</h3><p>Each new section of the Labs (the corridor, the blackout, the stairwell) is a checkpoint. Caught after one, you start again there, not at the top.</p></article>
             <article data-tone="hazard" data-act="avoid"><h3>Fallen ducts</h3><p>Jump onto them and off the far side - running into one is a hit. At the fire crossings, the duct is the only bridge.</p></article>
             <article data-tone="hazard" data-act="break"><h3>Patients</h3><p>Lurch out into your lane. In the dark they stalk you, following your lane until the last moment: shoot them (two hits) or sidestep late.</p></article>
             <article data-tone="blue" data-act="tool"><h3>The launcher's light</h3><p>When the power dies, your beam is the only light. Spheres glow - firing ahead is scouting.</p></article>
             <article data-tone="glass" data-act="break"><h3>Glass and lasers</h3><p>Panes break (glass spheres go straight through); laser grids you jump or slide.</p></article>
+            <article data-tone="hazard" data-act="avoid"><h3>Fire waves (Hard)</h3><p>Three floor vents erupting one after another, so the fire rolls across the corridor. Be in the lane it has just left.</p></article>
           </div>
         </div>
         <div class="tab-panel" data-panel="m-skyline" hidden>
@@ -368,7 +436,7 @@
           <article data-tone="green" data-act="break"><h3>Air vent</h3><p>A round frosted cover in the wall with a glowing cyan ring and a SMOKE VENT sign, angled toward you. The ring pulses when the air is smoky. Throw a sphere at it to pull the smoke out; the ring turns green.</p></article>
           <article data-tone="hazard" data-act="avoid"><h3>Ceiling collapse</h3><p>A red ring on the floor means something is about to fall there. Beams block the lane. Falling glass can be shot mid-air.</p></article>
           <article data-tone="glass" data-act="break"><h3>Rotating sculpture</h3><p>A steel pole blocks the centre lane; glass blades sweep the outer lanes. Shoot the blades or time your lane.</p></article>
-          <article data-tone="serum" data-act="collect"><h3>Serum capsules</h3><p>Prism split (triple throw), thermal sight (see through smoke), kinetic shield (absorbs two hits), overdrive (free throws, faster).</p></article>
+          <article data-tone="serum" data-act="collect"><h3>Serum capsules</h3><p>Prism split (triple throw), Thermal Aegis (see through smoke, fireproof), kinetic shield (absorbs two hits), overdrive (free throws, faster), unlimited spheres (every throw free), restoration (+20 spheres and full integrity).</p></article>
           <article data-tone="amber" data-act="collect"><h3>Case files</h3><p>Five gold holograms, each standing in a column of light: two in the ward, one on the skybridge, two in the atrium. Run through one or shoot it to read what happened here.</p></article>
           <article data-tone="white" data-act="break"><h3>Specimen tanks</h3><p>Glass tanks along the walls. Optional score.</p></article>
           <article data-tone="amber" data-act="break"><h3>Lift gate</h3><p>Break locks I, II, III in order. Wrong order is rejected. You have seven seconds once you reach the gate.</p></article>
@@ -382,7 +450,7 @@
             <article data-tone="serum" data-act="break"><h3>Scientists</h3><p>Fire slow orbs from their gadgets - dodge them (Space). Three hits each.</p></article>
             <article data-tone="fire" data-act="break"><h3>Gas canisters</h3><p>Red, by the cover. Shoot one and everyone near it goes down - chains into the next. Not too close yourself.</p></article>
             <article data-tone="cyan" data-act="collect"><h3>Supply drop</h3><p>A flare, a crate under a parachute: spheres and a serum. Walk into them or shoot them.</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>The brute</h3><p>The last wave's big one: six hits, charges harder. Use a canister or the ledge.</p></article>
+            <article data-tone="hazard" data-act="avoid"><h3>The brute</h3><p>The last wave's big one: six hits, charges harder (on Hard, the second wave brings one too). Use a canister or the ledge.</p></article>
             <article data-tone="amber" data-act="collect"><h3>The helicopter</h3><p>Clear the roof and it lands; still fighting when it comes and it hangs off the ledge - jump for the ladder.</p></article>
           </div>
         </div>

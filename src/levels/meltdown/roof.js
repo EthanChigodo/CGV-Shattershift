@@ -381,7 +381,10 @@ class Enemy {
 class Patient extends Enemy {
   constructor(level, opts) {
     super(level, { ...opts, kind: "patient", hp: (opts.brute ? BRUTE : PATIENT).hp });
-    this.stats = opts.brute ? BRUTE : PATIENT;
+    const base = opts.brute ? BRUTE : PATIENT;
+    // The story's difficulty: slower on Easy, faster on Hard.
+    const k = level.difficulty?.enemySpeed ?? 1;
+    this.stats = k === 1 ? base : { ...base, stalk: base.stalk * k, charge: base.charge * k };
     if (opts.brute) {
       // Bigger, and harder to stop.
       this.root.scale.setScalar(1.3);
@@ -658,10 +661,14 @@ export class RoofLevel {
    * @param {object} [o]
    * @param {boolean} [o.endless]  survival: no helicopter, waves keep coming,
    *   the roof comes apart over two minutes; it ends when you go down.
+   * @param {object} [o.difficulty]  the story's difficulty for the fight
+   *   (src/systems/difficulty.js `roof`, plus `extras` for Hard): time
+   *   between waves, patients' speed, the helicopter's wait
    */
-  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null } = {}) {
+  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null } = {}) {
     this.assets = assets;
     this.endless = endless;
+    this.difficulty = { waves: 1, damage: 1, enemySpeed: 1, heli: 1, extras: false, ...difficulty };
     this.events = createEmitter();
     this.root = new THREE.Group();
     this.root.name = "RoofRoot";
@@ -690,7 +697,7 @@ export class RoofLevel {
     this.state = {
       time: 0,
       wave: 0,
-      heliAt: endless ? Infinity : heliSeconds ?? 40 + this.random() * 18,
+      heliAt: endless ? Infinity : heliSeconds ?? (40 + this.random() * 18) * this.difficulty.heli,
       nextWaveAt: 0,
       heliSeen: false,
       heliArrived: false,
@@ -1254,7 +1261,7 @@ export class RoofLevel {
         d.glow.visible = false;
         this.cover.push(new THREE.Box3().setFromCenterAndSize(d.at.clone().setY(0.45), new THREE.Vector3(1.3, 0.9, 1.0)));
         // What it brought: spheres, and a serum.
-        const kinds = ["coolant", "adrenaline", "overcharge", "barrier"];
+        const kinds = ["coolant", "adrenaline", "overcharge", "barrier", "infinite", "restore"];
         const cache = this.kit.sack({ hp: 1, spheres: 10 });
         cache.position.copy(d.at).add(new THREE.Vector3(-1.2, 0, 0));
         const serum = this.kit.powerup({ kind: kinds[Math.floor(this.random() * kinds.length)] });
@@ -1423,13 +1430,15 @@ export class RoofLevel {
       seed: index * 17 + 3,
     });
     this._addEnemy(scientist);
-    for (const [i, hatch] of spec.hatches.entries()) {
+    // Hard: one more patient out of a hatch in the first two waves.
+    const hatches = this.difficulty.extras && index < 3 ? [...spec.hatches, index === 1 ? 3 : 0] : spec.hatches;
+    for (const [i, hatch] of hatches.entries()) {
       const patient = new Patient(this, { model: this._character("patient"), position: HATCHES[hatch], delay: 0.6 + i * 0.8 });
       this._addEnemy(patient);
     }
     // The last wave brings the brute out of the far hatch (and endless, every
-    // third wave after it).
-    if (index === 3 || (index > 3 && index % 3 === 0)) {
+    // third wave after it; Hard, the second wave too).
+    if (index === 3 || (index > 3 && index % 3 === 0) || (index === 2 && this.difficulty.extras)) {
       const brute = new Patient(this, { model: this._character("patient"), position: HATCHES[2], delay: 2.2, brute: true });
       this._addEnemy(brute);
       this.events.emit("brute", { position: HATCHES[2].clone() });
@@ -1594,12 +1603,17 @@ export class RoofLevel {
     const frozen = s.ending === "victory" || s.ending === "survive" || s.ending === "left";
     const ctx = { player, playerVelocity, hits, frozen };
 
+    // The waves come sooner on Hard, later on Easy.
+    const w = this.difficulty.waves;
     if (!frozen && s.wave === 0 && s.time > 1.2) this._spawnWave(1);
-    if (!frozen && s.wave === 1 && (s.time > 19 || (s.time > 4 && this.enemiesAlive === 0))) this._spawnWave(2);
-    if (!frozen && s.wave === 2 && (s.time > 36 || (s.time > 24 && this.enemiesAlive === 0))) this._spawnWave(3);
+    if (!frozen && s.wave === 1 && (s.time > 19 * w || (s.time > 4 && this.enemiesAlive === 0))) this._spawnWave(2);
+    if (!frozen && s.wave === 2 && (s.time > 36 * w || (s.time > 24 * w && this.enemiesAlive === 0))) this._spawnWave(3);
     // Mid-wave, more of them come up the outside of the tower and over the
-    // open ledges - the fight is not only at the hatches.
-    s.climbers ??= [{ wave: 1, at: 9, side: -1 }, { wave: 2, at: 27, side: 1 }, { wave: 2, at: 29.5, side: -1 }, { wave: 3, at: 44, side: 1 }];
+    // open ledges - the fight is not only at the hatches (more of them on Hard).
+    s.climbers ??= [
+      { wave: 1, at: 9, side: -1 }, { wave: 2, at: 27, side: 1 }, { wave: 2, at: 29.5, side: -1 }, { wave: 3, at: 44, side: 1 },
+      ...(this.difficulty.extras ? [{ wave: 3, at: 46, side: -1 }, { wave: 3, at: 52, side: 1 }] : []),
+    ].map((c) => ({ ...c, at: c.at * w }));
     if (!frozen && s.climbers.length && s.wave >= s.climbers[0].wave && s.time > s.climbers[0].at) {
       const { side } = s.climbers.shift();
       const z = THREE.MathUtils.clamp(player.z + (this.random() - 0.5) * 8, -EDGE + 3, EDGE - 4);

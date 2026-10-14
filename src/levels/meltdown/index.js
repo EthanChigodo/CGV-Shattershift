@@ -166,6 +166,10 @@ export class MeltdownLevel {
    * @param {number} [options.brightness]
    * @param {number} [options.seed]  0 = the authored layout; anything else
    *   reshuffles every pattern (endless laps)
+   * @param {number} [options.density]  filler patterns per metre, x1 = as
+   *   designed (the story's difficulty)
+   * @param {boolean} [options.extras]  Hard: fire waves among the patterns,
+   *   and patients that stalk you in every section, not only the dark
    */
   constructor({
     origin = new THREE.Vector3(0, 0, 0),
@@ -177,8 +181,13 @@ export class MeltdownLevel {
     phaseSeconds = 124,
     brightness = 1.5,
     seed = 0,
+    // Pooled point lights bound to the nearest emitters - each one is shader
+    // work on every lit pixel, so fewer below High.
+    lightPoints = 9,
+    density = 1,
+    extras = false,
   } = {}) {
-    this.options = { halfWidth: CORRIDOR_HALF, lanes: LANES, shadows, brightness, straightRoute, seed };
+    this.options = { halfWidth: CORRIDOR_HALF, lanes: LANES, shadows, brightness, straightRoute, seed, density, extras };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -207,7 +216,7 @@ export class MeltdownLevel {
     this.root.add(this.ambience);
     // No kit piece registers a spot emitter, so the pool carries none: an
     // unused spot light still costs shading work on every lit pixel.
-    this.lights = new LightPool({ points: 9, spots: 0, shadows, brightness });
+    this.lights = new LightPool({ points: lightPoints, spots: 0, shadows, brightness });
     this.root.add(this.lights.group);
 
     /** Meshes a projectile can hit: sacks, power-ups, glass panes. */
@@ -732,7 +741,8 @@ export class MeltdownLevel {
     this._lurcher(at(0.2), 0, -1, { stalk: true });
     this._pickup(this.kit.sack({ hp: 2, spheres: 6 }), at(0.26), 3.2, 0);
     this._crossing(at(0.33));
-    this._pickup(this.kit.powerup({ kind: "adrenaline" }), at(0.45), 0, 0);
+    // In the dark, where the spheres go fastest: a refill.
+    this._pickup(this.kit.powerup({ kind: "restore" }), at(0.45), 0, 0);
     this._lurcher(at(0.53), 3.2, 1, { stalk: true });
     this._lurcher(at(0.56), -3.2, -1, { stalk: true });
     this._falling(this.kit.ceilingChunk({ seed: 8 }), at(0.63), 0, "chunk");
@@ -769,6 +779,7 @@ export class MeltdownLevel {
     this._falling(this.kit.ceilingChunk({ seed: 5 }), at(0.05), -3.2, "chunk");
     this._falling(this.kit.airDuct({ mode: "blocker", halfWidth: hw }), at(0.12), 0, "duct");
     this._hazard(this.kit.floorGap({ mandatory: false }), at(0.18), 3.2);
+    this._pickup(this.kit.powerup({ kind: "infinite" }), at(0.3), 0, 0);
     this._crossing(at(0.48));
     this._pickup(this.kit.powerup({ kind: "barrier" }), at(0.53), 0, 0);
     this._falling(this.kit.ceilingChunk({ seed: 7 }), at(0.58), -3.2, "chunk");
@@ -1025,9 +1036,17 @@ export class MeltdownLevel {
         const lane = LANES[Math.floor(r() * 3)];
         // Step out from the nearer wall, so the walk crosses as few lanes as possible.
         const side = lane === 0 ? (r() < 0.5 ? -1 : 1) : Math.sign(lane);
-        this._lurcher(d, lane, side);
+        // Hard: they stalk you in every section, as they do in the dark.
+        this._lurcher(d, lane, side, { stalk: this.options.extras });
         const others = lanesExcept(lane);
         this._hazard(k.rubbleWall({ burning: false }), d + 1.5, others[Math.floor(r() * 2)]);
+      },
+      // Hard only: three vents erupting one after another, so the fire rolls
+      // across the corridor - be in the lane it has just left.
+      fireWave: (d, r) => {
+        const order = r() < 0.5 ? LANES : [...LANES].reverse();
+        const period = 2.7;
+        order.forEach((lane, i) => this._hazard(k.fireVent({ lanes: [lane], period, duty: 0.3, phase: -i * period / 3 }), d, 0));
       },
       highAndGap: (d, r) => {
         const [a, b, c] = shuffle(LANES, r);
@@ -1046,6 +1065,7 @@ export class MeltdownLevel {
       blackout: ["rubblePair", "laserLow", "lurcher", "glassGate", "laserHigh", "barrierMix", "vents", "lurcher"],
     };
     const SPACING = { 1: 17, 2: 13.5, 3: 11.5, blackout: 15 };
+    if (this.options.extras) for (const set of [2, 3, "blackout"]) TIERS[set] = [...TIERS[set], "fireWave"];
 
     const clear = (d) => !this._setPieces.some((s) => Math.abs(s - d) < 9) && !this._isArc(d) && !this._isArc(d - 5) && !this._isArc(d + 5);
 
@@ -1067,7 +1087,8 @@ export class MeltdownLevel {
             d += 6;
           }
         }
-        d += SPACING[set] * (0.85 + random() * 0.3);
+        // Easy spaces them out, Hard packs them in.
+        d += (SPACING[set] / this.options.density) * (0.85 + random() * 0.3);
       }
     }
   }

@@ -34,6 +34,40 @@ import { applyPhotoSet, PHOTO_SETS } from "../meltdown/photo-textures.js";
  * subdivided unit box whose vertices are pushed out onto the rounded shape;
  * the box's own UVs are kept.
  */
+/** Molten slag seen from above: hot metal through a broken dark crust. */
+function slagTexture() {
+  const S = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  const hot = g.createRadialGradient(S / 2, S / 2, 4, S / 2, S / 2, S * 0.7);
+  hot.addColorStop(0, "#fff2a0");
+  hot.addColorStop(0.45, "#ffb02e");
+  hot.addColorStop(1, "#ff5a10");
+  g.fillStyle = hot;
+  g.fillRect(0, 0, S, S);
+  // Crust plates, seeded so every cart's slag is the same texture.
+  let seed = 3;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 26; i += 1) {
+    const x = rand() * S;
+    const y = rand() * S;
+    const r = 6 + rand() * 16;
+    g.fillStyle = `rgba(${40 + rand() * 30}, ${14 + rand() * 10}, 8, ${0.75 + rand() * 0.2})`;
+    g.beginPath();
+    for (let k = 0; k < 7; k += 1) {
+      const a = (k / 7) * Math.PI * 2;
+      const rr = r * (0.6 + rand() * 0.5);
+      g[k ? "lineTo" : "moveTo"](x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 export function bevelledBox(width, height, depth, r = 0.06, segments = 2) {
   const n = segments * 2 + 1;
   const g = new THREE.BoxGeometry(1, 1, 1, n, n, n);
@@ -95,16 +129,19 @@ export function createFoundryKit({ shadows = false } = {}) {
     }),
     belt: new THREE.MeshStandardMaterial({ color: 0x15191d, metalness: 0.35, roughness: 0.82 }),
     // Breakable objects share the recognisable cyan glass language of Level 1.
+    // No transmission: any transmissive object makes Three.js render the whole
+    // scene a second time each frame (measured: about half the Foundry's frame).
+    // Clear-coated, see-through, glowing glass reads the same at running speed.
     switchGlass: new THREE.MeshPhysicalMaterial({
       color: 0x7ef4f1,
-      transmission: 0.45,
       transparent: true,
-      opacity: 0.62,
+      opacity: 0.58,
       roughness: 0.08,
       metalness: 0.06,
-      thickness: 0.4,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
       emissive: 0x1b6d74,
-      emissiveIntensity: 1.1,
+      emissiveIntensity: 1.25,
     }),
     switchHousing: new THREE.MeshStandardMaterial({ color: 0x202a30, metalness: 0.92, roughness: 0.28 }),
     warning: new THREE.MeshStandardMaterial({
@@ -127,6 +164,9 @@ export function createFoundryKit({ shadows = false } = {}) {
       depthWrite: false,
       sizeAttenuation: true,
     }),
+    // The slag cart's load: molten, lit from inside (no light needed) - a
+    // dark crust cracked over yellow-hot metal, drawn once.
+    slag: new THREE.MeshBasicMaterial({ map: slagTexture() }),
     spark: new THREE.PointsMaterial({
       map: textures.spark,
       color: 0xffb765,
@@ -170,6 +210,11 @@ export function createFoundryKit({ shadows = false } = {}) {
     cellGlass: new THREE.OctahedronGeometry(0.46, 0),
     cellCage: new THREE.TorusGeometry(0.52, 0.06, 6, 12),
     cellMount: new THREE.CylinderGeometry(0.08, 0.08, 0.8, 6),
+    slagBody: bevelledBox(2.2, 0.8, 1.9, 0.08),
+    slagLip: bevelledBox(2.3, 0.28, 2.0, 0.05),
+    slagMelt: new THREE.BoxGeometry(1.9, 0.06, 1.6),
+    slagWheel: new THREE.CylinderGeometry(0.24, 0.24, 0.2, 12),
+    slagRail: new THREE.BoxGeometry(11, 0.08, 0.16),
   };
 
   // Cloned materials and cloned textures are tracked here too - disposing a
@@ -178,7 +223,7 @@ export function createFoundryKit({ shadows = false } = {}) {
   const tracked = {
     materials: Object.values(materials),
     geometries: Object.values(geometries),
-    textures: [],
+    textures: [materials.slag.map],
   };
 
   // The plating, photographed (Poly Haven's metal plates, CC0 -
@@ -778,6 +823,51 @@ export function createFoundryKit({ shadows = false } = {}) {
     return group;
   }
 
+  /**
+   * Hard only: a slag cart, a low tub of molten metal rolling to and fro
+   * across all three lanes on rails set into the floor. Read where it is
+   * going and take the lane it is leaving - or jump it (1.05 m, a low
+   * barrier's height). Solid, never breakable.
+   */
+  function slagCart({ speed = 1.1, phase = 0, range = 3.4 } = {}) {
+    const group = new THREE.Group();
+    group.name = "SlagCart";
+    for (const z of [-1.04, 1.04]) {
+      const rail = mesh(geometries.slagRail, materials.trim, { cast: false });
+      rail.position.set(0, 0.04, z);
+      group.add(rail);
+    }
+    const cart = new THREE.Group();
+    group.add(cart);
+    // The hazard box is the body: 0.22 - 1.02 m, cleared by a jump.
+    const body = mesh(geometries.slagBody, materials.hazard);
+    body.position.y = 0.62;
+    body.userData = { kind: "hazard", solid: true, barrier: "low", slag: true };
+    cart.add(body);
+    const lip = mesh(geometries.slagLip, materials.trim);
+    lip.position.y = 0.92;
+    cart.add(lip);
+    const melt = mesh(geometries.slagMelt, materials.slag, { cast: false, receive: false });
+    melt.position.y = 1.07;
+    cart.add(melt);
+    for (const x of [-0.75, 0.75]) for (const z of [-1.04, 1.04]) {
+      const wheel = mesh(geometries.slagWheel, materials.trim);
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(x, 0.24, z);
+      cart.add(wheel);
+    }
+    group.userData.tick = (dt, time) => {
+      // Lingers a moment at each end, so it can be read.
+      const s = Math.sin(time * speed + phase);
+      cart.position.x = Math.sign(s) * Math.pow(Math.abs(s), 0.7) * range;
+      // The melt churning.
+      materials.slag.map.offset.set(time * 0.02, time * 0.013);
+    };
+    group.userData.tick(0, 0);
+    group.userData.hazardMesh = body;
+    return group;
+  }
+
   function warningStrobe({ x = 0, y = 5.4, speed = 3.4, phase = 0 } = {}) {
     const group = new THREE.Group();
     group.name = "WarningStrobe";
@@ -866,6 +956,7 @@ export function createFoundryKit({ shadows = false } = {}) {
     switchNode,
     pressureCell,
     barrier,
+    slagCart,
     warningStrobe,
     turnChevrons,
     sparkBurst,

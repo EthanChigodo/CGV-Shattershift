@@ -11,6 +11,8 @@
  *   thermal    an orange heat grade, scan lines, a white-hot core
  *   shield     a green honeycomb rim - and a ripple when it takes a hit
  *   overdrive  pink speed lines streaking out from the centre
+ *   infinite   a blue rim with spheres circling the edge of the screen
+ *   restore    Restoration: one green pulse out from the middle (it works at once)
  *
  * In the last three seconds the glow blinks, so you know it's ending.
  * All DOM and one small 2D canvas (the speed lines): no level has to know
@@ -44,6 +46,8 @@ export class SerumFx {
       layer.style.setProperty("--c", def.colour);
       layer.style.setProperty("--rgb", rgb(def.colour));
       layer.append(el("i", "sx-edge"), el("i", "sx-look"));
+      // Unlimited spheres: spheres orbiting round the edge of the screen.
+      if (key === "infinite") layer.lastChild.innerHTML = "<b></b><b></b><b></b><b></b><b></b><b></b>";
       this.root.append(layer);
       this.layers[key] = layer;
     }
@@ -84,9 +88,9 @@ export class SerumFx {
     this.banner.querySelector("strong").textContent = def.name;
     this.banner.querySelector("p").textContent = def.text;
     const seconds = Math.ceil(state?.remaining ?? def.duration);
-    this.banner.querySelector(".sx-duration").textContent = def.charges
-      ? `${def.charges} hits or ${seconds} seconds`
-      : `${seconds} seconds`;
+    this.banner.querySelector(".sx-duration").textContent = def.instant
+      ? `+${def.spheres} spheres${def.heal ? " // full integrity" : ""}`
+      : def.charges ? `${def.charges} hits or ${seconds} seconds` : `${seconds} seconds`;
     this.banner.classList.remove("show");
     void this.banner.offsetWidth; // restart the entrance
     this.banner.classList.add("show");
@@ -146,7 +150,8 @@ export class SerumFx {
     this.announceLeft = Math.max(0, this.announceLeft - dt);
     if (this.announceLeft <= 0) this.banner.classList.remove("show");
 
-    const html = list.map((s) => {
+    // Instant serums have no countdown to show.
+    const html = list.filter((s) => !SERUMS[s.key].instant).map((s) => {
       const def = SERUMS[s.key];
       const extra = s.key === "shield" && charges ? `<small>${charges} hit${charges > 1 ? "s" : ""}</small>` : "";
       return `<div class="sx-chip${s.remaining < 3 ? " ending" : ""}" style="--c:${def.colour};--rgb:${rgb(def.colour)};--r:${s.ratio.toFixed(3)}">

@@ -78,7 +78,7 @@ export const BEATS = [
  * The serums a Foundry capsule can hold (the Skyline's power-ups; thermal
  * sight is left out - there's no smoke down here to see through).
  */
-const FOUNDRY_SERUMS = [{ key: "prism" }, { key: "shield" }, { key: "overdrive" }];
+const FOUNDRY_SERUMS = [{ key: "prism" }, { key: "restore" }, { key: "shield" }, { key: "infinite" }, { key: "overdrive" }];
 
 /** Roughly one hazard every this many metres in the filler stretches. */
 const HAZARD_SPACING = 14;
@@ -120,6 +120,9 @@ export class FoundryLevel {
    *                                           fraction of the route (the story
    *                                           opening, so the player can listen
    *                                           to Dr. Okoro); set pieces stay
+   * @param {number} [options.density]         filler obstacles per metre, x1 =
+   *                                           as designed (the story's difficulty)
+   * @param {boolean} [options.extras]         Hard: slag carts among the filler
    */
   constructor({
     origin = new THREE.Vector3(0, 0, -146),
@@ -133,11 +136,15 @@ export class FoundryLevel {
     brightness = 1.6,
     variant = 0,
     gentleStart = 0,
+    density = 1,
+    extras = false,
+    // Dynamic lights bound to the nearest emitters; fewer is cheaper on every lit pixel.
+    lightBudget = { points: 8, spots: 3 },
   } = {}) {
     // The escape timer is derived from how far the player actually has to run,
     // not hard-coded. At 194m the old fixed 26s could never expire, which made
     // the countdown decoration rather than a loss condition.
-    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness, variant, gentleStart };
+    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness, variant, gentleStart, density, extras };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -176,7 +183,7 @@ export class FoundryLevel {
     this.ambience = createFoundryAmbience({ brightness });
     this.root.add(this.ambience);
 
-    this.lights = new LightPool({ points: 8, spots: 3, shadows, brightness });
+    this.lights = new LightPool({ points: lightBudget.points, spots: lightBudget.spots, shadows, brightness });
     this.root.add(this.lights.group);
 
     /** Meshes a projectile can destroy. Push these into the host's breakables. */
@@ -754,31 +761,55 @@ export class FoundryLevel {
   _fillHazards(from, to, { seed = 1, spacing = HAZARD_SPACING, avoid = [], lanes = [-3.2, 0, 3.2] } = {}) {
     const random = this._rng(seed);
     const clear = (d) => !avoid.some((a) => Math.abs(a - d) < 9);
+    // Easy spaces them out, Hard packs them in.
+    spacing /= this.options.density;
     let at = from + spacing * 0.5;
     let index = 0;
 
+    const place = (lane, barriersOnly = false) => {
+      const roll = barriersOnly ? random() * 0.62 : random();
+      if (roll < 0.34) {
+        this._hazard(this.kit.barrier({ kind: "low" }), at, lane);
+      } else if (roll < 0.62) {
+        this._hazard(this.kit.barrier({ kind: "high" }), at, lane);
+      } else {
+        this._hazard(
+          this.kit.pistonBank({
+            speed: 1.3 + random() * 0.8,
+            phase: random() * Math.PI * 2,
+            reach: roll > 0.86 ? 4.4 : 5.2,
+            fromCeiling: roll <= 0.86,
+          }),
+          at,
+          lane
+        );
+      }
+      index += 1;
+    };
+    const centre = 0;
+    const sides = lanes.filter((l) => l !== centre);
+
     while (at < to) {
       if (clear(at)) {
-        const roll = random();
-        const lane = lanes[Math.floor(random() * lanes.length)];
-
-        if (roll < 0.34) {
-          this._hazard(this.kit.barrier({ kind: "low" }), at, lane);
-        } else if (roll < 0.62) {
-          this._hazard(this.kit.barrier({ kind: "high" }), at, lane);
+        // Playtest feedback: one obstacle in a random lane let you sit in the
+        // middle lane for hundreds of metres. Now most steps are a pair that
+        // leaves one lane open - usually a side lane, so the middle is
+        // usually the lane you have to leave - and lone obstacles favour the
+        // middle. There is always one lane with nothing in it.
+        if (!lanes.includes(centre) || lanes.length < 3) {
+          place(lanes[Math.floor(random() * lanes.length)]);
+        } else if (this.options.extras && random() < 0.2) {
+          // Hard: a slag cart rolling across all three lanes, on its own.
+          this._hazard(this.kit.slagCart({ speed: 0.95 + random() * 0.5, phase: random() * Math.PI * 2 }), at, 0);
+          index += 1;
+        } else if (random() < 0.62) {
+          const open = random() < 0.75 ? sides[Math.floor(random() * sides.length)] : centre;
+          // Pairs are barriers (jump / slide / step round); pistons come alone,
+          // so one is never slamming between you and the open lane.
+          for (const lane of lanes) if (lane !== open) place(lane, true);
         } else {
-          this._hazard(
-            this.kit.pistonBank({
-              speed: 1.3 + random() * 0.8,
-              phase: random() * Math.PI * 2,
-              reach: roll > 0.86 ? 4.4 : 5.2,
-              fromCeiling: roll <= 0.86,
-            }),
-            at,
-            lane
-          );
+          place(random() < 0.55 ? centre : sides[Math.floor(random() * sides.length)]);
         }
-        index += 1;
       }
       // Vary the gap so the rhythm never becomes metronomic.
       at += spacing * (0.82 + random() * 0.42);
@@ -1040,6 +1071,17 @@ export class FoundryLevel {
       lanes: [-3.2, 3.2],
       avoid: gateFractions.map(at),
     });
+    // The middle is where the gates push you - so it gets things to jump or
+    // slide (never a lane block, which with the gates closing would be a
+    // trap): staying central is still work, not a free ride.
+    {
+      const random = this._rng(9137);
+      const gates = gateFractions.map(at);
+      for (let d = at(0.12); d < at(0.9); d += 38 + random() * 14) {
+        if (gates.some((g) => Math.abs(g - d) < 12)) continue;
+        this._hazard(this.kit.barrier({ kind: random() < 0.5 ? "low" : "high" }), d, 0);
+      }
+    }
 
     const finalSwitch = at(0.96);
     // 1.5x the time a clean run needs, so the countdown is a real loss
@@ -1438,6 +1480,20 @@ export class FoundryLevel {
     }
 
     return this.state;
+  }
+
+  /**
+   * Back before the escape (a checkpoint resume after a death in it): the
+   * gates open, the clock reset, ready to trigger again as you come through.
+   */
+  resetEscape() {
+    Object.assign(this.state.escape, { active: false, armed: false, remaining: 0, failed: false });
+    for (const gate of this._escapeGates) {
+      gate.triggered = false;
+      gate.elapsed = 0;
+      gate.progress = 0;
+      for (const slab of gate.pair) slab.userData.setProgress(0, true);
+    }
   }
 
   _updateEscape(dt, distance) {

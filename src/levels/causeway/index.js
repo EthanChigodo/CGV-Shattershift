@@ -43,7 +43,7 @@ import {
   EmberSystem, WaterSystem, SmokeSystem, SootSystem, VentFlowSystem, createBurst,
 } from "./shaders/particles.js";
 import {
-  authoredLayout, EndlessGenerator, BEATS, ROUTE, SMOKE_ZONES, RADIO,
+  authoredLayout, hardenLayout, EndlessGenerator, BEATS, ROUTE, SMOKE_ZONES, RADIO,
   themeAt, beatAt, ceilingAt, LANES,
 } from "./layout.js";
 
@@ -92,9 +92,15 @@ export class CausewayLevel {
    * @param {"story"|"endless"} options.mode
    * @param {"high"|"medium"|"low"} options.quality
    */
-  constructor({ origin = new THREE.Vector3(0, 0, 4000), mode = "story", quality = "high", seed } = {}) {
+  /**
+   * @param {object} [o]
+   * @param {boolean} [o.hard]        the story on Hard (layout.js hardenLayout)
+   * @param {number} [o.chaseScale]   the bridge collapse's speed, x the designed one
+   */
+  constructor({ origin = new THREE.Vector3(0, 0, 4000), mode = "story", quality = "high", seed, hard = false, chaseScale = 1 } = {}) {
     this.origin = origin.clone();
     this.mode = mode;
+    this.chaseScale = chaseScale;
     this.quality = quality;
     this.events = createEmitter();
     this.route = { totalLength: mode === "endless" ? Infinity : ROUTE.length, ...ROUTE };
@@ -152,8 +158,9 @@ export class CausewayLevel {
     this.groups.playerFx.add(this.shield);
 
     // Streaming state.
-    this.entries = mode === "endless" ? [] : authoredLayout().filter((e) => e.type !== "event");
-    this.pendingEvents = mode === "endless" ? [] : authoredLayout().filter((e) => e.type === "event");
+    const layout = mode === "endless" ? [] : hard ? hardenLayout(authoredLayout()) : authoredLayout();
+    this.entries = layout.filter((e) => e.type !== "event");
+    this.pendingEvents = layout.filter((e) => e.type === "event");
     this.generator = mode === "endless" ? new EndlessGenerator(seed ?? Date.now()) : null;
     this.nextEntry = 0;
     this.live = [];
@@ -1003,7 +1010,7 @@ export class CausewayLevel {
     this._stream(distance);
     const chase = s.chase;
     if (chase.active && playing) {
-      chase.front += ROUTE.chase.speed * dt;
+      chase.front += ROUTE.chase.speed * this.chaseScale * dt;
       chase.front = Math.max(chase.front, distance - 70);
       chase.gap = distance - chase.front;
       if (Math.random() < dt * 1.6) {

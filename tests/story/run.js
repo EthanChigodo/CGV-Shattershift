@@ -67,6 +67,11 @@ async function main() {
     const tab = await openPage(browser, check.page === "game" ? { width: 960, height: 540 } : undefined);
     const page = tab.page;
     page.setDefaultTimeout(180000);
+    // The checks' players have "seen" every serum: the first-pickup card pauses
+    // the game until someone dismisses it (src/ui/powerup-banner.js).
+    await page.addInitScript(() => {
+      localStorage.setItem("fractureRun.serumsSeen", JSON.stringify(["prism", "thermal", "shield", "overdrive", "infinite", "restore"]));
+    });
     try {
       await page.goto(`${server.origin}${target.path}`, { waitUntil: "load", timeout: 180000 });
       await page.waitForFunction(target.ready, null, { timeout: 180000 });

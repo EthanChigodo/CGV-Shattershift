@@ -28,9 +28,11 @@ const SEEN_KEY = "fractureRun.serumsSeen";
 /** What the player can do with each serum, in a few words. */
 export const SERUM_ACTIONS = {
   prism: "Throw or fire now - every shot becomes three",
-  thermal: "Look through the smoke - heat glows white",
+  thermal: "See through the smoke - and walk through the fire",
   shield: "Run through it - hits are absorbed",
   overdrive: "Throw freely - shots are free, and you run faster",
+  infinite: "Throw anything - every sphere is free, even shock",
+  restore: "Patched up and reloaded - keep going",
 };
 
 function el(tag, className, parent) {
@@ -81,7 +83,7 @@ export class PowerupBanner {
     this.cardArt = el("img", "pu-card-img", art);
     this.cardArt.alt = "";
     const info = el("div", "pu-card-info", box);
-    el("p", "pu-card-eyebrow", info).innerHTML = "<i class=\"pu-dot\"></i>NEW SERUM ACQUIRED <span>// TIME HELD</span>";
+    this.cardEyebrow = el("p", "pu-card-eyebrow", info);
     this.cardName = el("h2", "pu-card-name", info);
     this.cardText = el("p", "pu-card-text", info);
     this.cardTime = el("div", "pu-card-stats", info);
@@ -123,9 +125,11 @@ export class PowerupBanner {
     this.cardText.textContent = def.text;
     this.cardAction.textContent = SERUM_ACTIONS[def.key] ?? "";
     const stat = (label, value) => `<div><small>${label}</small><b>${value}</b></div>`;
-    this.cardTime.innerHTML = stat("LASTS", `${def.duration} s`) +
-      (def.charges ? stat("OR", `${def.charges} hits`) : "") +
-      stat("TIMER", "Top of screen");
+    // Restoration works at once: nothing to time.
+    this.cardEyebrow.innerHTML = `<i class="pu-dot"></i>NEW SERUM ACQUIRED <span>// ${def.instant ? "WORKS AT ONCE" : "TIME HELD"}</span>`;
+    this.cardTime.innerHTML = def.instant
+      ? stat("GIVES", `+${def.spheres} spheres`) + (def.heal ? stat("AND", "Full integrity") : "") + stat("LASTS", "Instant")
+      : stat("LASTS", `${def.duration} s`) + (def.charges ? stat("OR", `${def.charges} hits`) : "") + stat("TIMER", "Top of screen");
     const picture = serumPicture(def.key);
     this.cardArt.hidden = !picture;
     if (picture) this.cardArt.src = picture;
