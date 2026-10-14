@@ -153,8 +153,10 @@ def prosody(path, text):
     f0, voiced, _ = librosa.pyin(y, fmin=60, fmax=400, sr=16000, frame_length=1024)
     f0 = f0[voiced & ~np.isnan(f0)]
     st = 12 * np.log2(f0 / np.median(f0)) if len(f0) > 10 else np.zeros(1)
-    rms = librosa.feature.rms(y=y, frame_length=512, hop_length=160)[0]
-    speech = float(np.mean(rms > 0.1 * rms.max()) * len(y) / 16000)
+    # Speech time: from the first word to the last (a quiet word still counts).
+    db = 20 * np.log10(librosa.feature.rms(y=y, frame_length=512, hop_length=160)[0] + 1e-9)
+    on = np.flatnonzero(db > db.max() - 35)
+    speech = float((on[-1] - on[0] + 1) * 160 / 16000) if len(on) else 0.1
     syl = sum(max(1, len(re.findall(r"[aeiouy]+", w)) - (w.endswith("e") and not w.endswith("le") and len(w) > 2))
               for w in re.findall(r"[a-z']+", text.lower()))
     return {"spread": round(float(np.percentile(st, 90) - np.percentile(st, 10)), 2),
