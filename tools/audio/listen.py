@@ -145,6 +145,22 @@ def nigerian(path, exclude="07049"):
     return float(e @ ng) - float(e @ c["us"])
 
 
+def prosody(path, text):
+    """Talking or reading: how far the pitch moves (semitones between the 10th
+    and 90th percentile - a flat read moves about 6, talk 10 or more) and how
+    fast the syllables come (per second of speech)."""
+    y = load(path)
+    f0, voiced, _ = librosa.pyin(y, fmin=60, fmax=400, sr=16000, frame_length=1024)
+    f0 = f0[voiced & ~np.isnan(f0)]
+    st = 12 * np.log2(f0 / np.median(f0)) if len(f0) > 10 else np.zeros(1)
+    rms = librosa.feature.rms(y=y, frame_length=512, hop_length=160)[0]
+    speech = float(np.mean(rms > 0.1 * rms.max()) * len(y) / 16000)
+    syl = sum(max(1, len(re.findall(r"[aeiouy]+", w)) - (w.endswith("e") and not w.endswith("le") and len(w) > 2))
+              for w in re.findall(r"[a-z']+", text.lower()))
+    return {"spread": round(float(np.percentile(st, 90) - np.percentile(st, 10)), 2),
+            "rate": round(syl / max(speech, 0.1), 2)}
+
+
 def tags(path, top=5):
     global _ast
     if _ast is None:

@@ -104,6 +104,19 @@ def breathe(y, kind="man", lead=2, between=1, gain=0.5, min_pause=0.18):
     return np.concatenate(out)
 
 
+def tighten(y, longest=0.42, keep=0.3):
+    """Shorten the long silences inside a line: people talking don't stop that
+    long between sentences, people reading do."""
+    out, last = [], 0
+    for a, b in pauses(y, longest):
+        cut = (b - a) - int(keep * SR)
+        mid = (a + b) // 2
+        out.append(y[last: mid - cut // 2])
+        last = mid + (cut - cut // 2)
+    out.append(y[last:])
+    return np.concatenate(out)
+
+
 def loud(y, lufs=-18.0, peak=0.89):
     meter = pyloudnorm.Meter(SR)
     l = meter.integrated_loudness(y.astype(np.float64)) if len(y) > SR * 0.4 else None

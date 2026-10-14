@@ -1,7 +1,7 @@
 """Download everything the audio tools use into the work folder (work.py).
 
     python sources.py                 recordings, music, the Nigerian speech set
-    python sources.py engines         VoiceStudio and IndexTTS 2.5 (+ weights)
+    python sources.py engines         VoiceStudio (OmniVoice) and VoxCPM2 (+ weights)
 
 All of it is free to use - the licences are in docs/credits.md. Nothing here
 is committed: re-run this on a new machine.
@@ -34,8 +34,7 @@ OGA = ["100-cc0-metal-and-wood-sfx", "metal-impact-sounds", "rumbling-sound-effe
 LAUGHS = ["maniacal-laughter-pack-1", "evil-laughter", "evil-cackle-laugh-1"]
 
 # Kevin MacLeod (incompetech.com, CC BY 4.0).
-MUSIC = ["Hitman", "The Complex", "SCP-x3x",  # (the file of "SCP-x3x (I am Not OK)")
-          "Movement Proposition", "Volatile Reaction", "Constance", "Lost Time"]
+MUSIC = ["Nerves", "Big Mojo", "Darkness is Coming", "Rocket", "Black Vortex", "Space Fighter Loop", "Lost Time"]
 
 
 def get(url):
@@ -160,20 +159,15 @@ def breaths():
 
 
 def engines():
-    """VoiceStudio (its OmniVoice package) and the IndexTTS revision VoiceStudio pins, with their weights."""
+    """VoiceStudio (its OmniVoice package) and the VoxCPM2 weights (its VoxCPM2 engine)."""
     from huggingface_hub import snapshot_download
     os.makedirs(work.EXT, exist_ok=True)
     vs = os.path.join(work.EXT, "VoiceStudio")
     if not os.path.isdir(vs):
         subprocess.run(["git", "clone", "--depth", "1", "https://github.com/debpalash/VoiceStudio", vs], check=True)
     snapshot_download("k2-fsa/OmniVoice")
-    it = os.path.join(work.EXT, "index-tts")
-    if not os.path.isdir(it):
-        subprocess.run(["git", "clone", "https://github.com/index-tts/index-tts.git", it], check=True)
-        subprocess.run(["git", "-C", it, "checkout", "bf2e967fac7933197143b017a60820b1ad40c448"], check=True)
-    snapshot_download("IndexTeam/IndexTTS-2.5", revision="d0aa86e75bb6f3437f3831e95056fa72842d89ef",
-                      local_dir=os.path.join(it, "checkpoints"))
-    print("engines: done - now make the IndexTTS venv (README)")
+    snapshot_download("openbmb/VoxCPM2", local_dir=os.path.join(work.EXT, "VoxCPM2"))
+    print("engines: done")
 
 
 if __name__ == "__main__":

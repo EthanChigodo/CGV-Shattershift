@@ -1598,6 +1598,12 @@ export class MeltdownLevel {
       // shuffling across to stay in your lane - until the last few metres;
       // then it's committed, and a late sidestep (or two spheres) beats it.
       if (gap > STALK.commit) {
+        // ...and you hear it coming: a growl every couple of seconds.
+        entry.growlIn = (entry.growlIn ?? 0.8) - dt;
+        if (entry.growlIn <= 0) {
+          entry.growlIn = 1.6 + Math.random() * 1.6;
+          this.events.emit("patient-stalk", { gap, position: entry.group.userData.worldPosition() });
+        }
         playerLateral ??= locateOnRoute(this.route, player).lateral;
         entry.group.userData.chase(THREE.MathUtils.clamp(playerLateral, -CORRIDOR_HALF + 1.2, CORRIDOR_HALF - 1.2));
         if (state !== "lurch") this._moveLurcher(entry, entry.offset + dt * runSpeed * STALK.pace);

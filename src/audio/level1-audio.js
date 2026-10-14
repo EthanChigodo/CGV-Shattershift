@@ -2,7 +2,8 @@
  * The game's recorded and rendered sounds, sharing the music manager's
  * unlocked AudioContext. Started for Level 1 (the Skyline's fire, water and
  * glass), now every level's: the patients (growls, moans, what is left of
- * their speech), the tower's fire alarm, the player's breathing and voice,
+ * their speech), the tower's fire alarm, the player's voice (pain, and a
+ * breath in the cutscenes that call for one - none while you run),
  * explosions and the building coming down, and the cutscenes' sound cues.
  *
  * The sets in assets/audio/creatures and assets/audio/sfx are real
@@ -10,7 +11,7 @@
  * tools/audio/README.md (and docs/credits.md for who recorded them).
  *
  * Sounds load lazily: the first click fetches the original Level 1 set and
- * the player's breath; each stage preloads its own (`preloadStage`).
+ * the player's voice; each stage preloads its own (`preloadStage`).
  */
 
 import { outputFor } from "./output.js";
@@ -19,7 +20,7 @@ export const LEVEL1_SFX_VOLUME = Object.freeze({
   /*
    * Balanced by measured loudness (EBU R128) against the dialogue, which
    * plays at about -19 LUFS: one-shots land around -20 to -24, the beds
-   * (fire, water, wind, the alarm, your breath) around -25 to -29, the music
+   * (fire, water, wind, the alarm) around -25 to -29, the music
    * under it all. The supplied recordings vary by 30 dB between files, hence
    * gains above 1 for the quiet ones (the glass, the wind, the ricochet).
    */
@@ -38,9 +39,8 @@ export const LEVEL1_SFX_VOLUME = Object.freeze({
   wall: 4.0,
   ui: 0.22,
   alarm: 0.38,
-  breath: 1.3,
   // The built sets are mastered to a common loudness: one gain each.
-  patient: 0.85,
+  patient: 1.3,
   player: 1.0,
   blast: 0.5,
   cue: 0.75,
@@ -107,14 +107,14 @@ for (const name of [
   "monitor-beep", "pistol", "clatter", "brake", "cable-snap", "lift-chime", "lift-doors", "body-hit", "clank", "spark",
 ]) ASSETS[name] = url(`sfx/${name}.mp3`);
 for (const g of ["f", "m"]) {
-  for (const kind of ["run", "pant", "scared", "recover"]) ASSETS[`breath-${kind}-${g}`] = url(`sfx/breath-${kind}-${g}.mp3`);
+  for (const kind of ["pant", "scared", "recover"]) ASSETS[`breath-${kind}-${g}`] = url(`sfx/breath-${kind}-${g}.mp3`);
   for (const kind of ["grunt", "scream"]) ASSETS[`${kind}-${g}`] = url(`sfx/${kind}-${g}.mp3`);
 }
 
 /** What each stage will want, fetched as it starts. */
 const STAGE_SETS = {
   common: ["fire-alarm", "explosion", "distant-collapse", "debris", "glass-cascade", "clank"],
-  player: ["breath-run", "breath-pant", "hurt", "grunt", "scream"],
+  player: ["breath-pant", "hurt", "grunt", "scream"],
   foundry: ["metal-groan", "spark"],
   lift: ["cable-snap", "brake", "clatter", "lift-chime", "lift-doors", "metal-groan", "spark", "breath-scared", "breath-recover"],
   labs: ["patient-growl", "patient-moan", "patient-speech", "patient-shriek", "patient-pain", "patient-death", "patient-horde", "pistol", "body-hit", "breath-scared", "monitor-beep"],
@@ -304,14 +304,15 @@ export class Level1Audio {
   patient(kind, { strength = 1, distance = 0, pan = 0, cooldown = 0.25 } = {}) {
     const group = `patient-${kind}`;
     if (!GROUPS[group]) return null;
-    const far = smoothstep(6, 45, distance);
+    // Far off they are quieter and duller, but never lost under the music.
+    const far = smoothstep(10, 60, distance);
     return this._play(this._pick(group), {
-      volume: LEVEL1_SFX_VOLUME.patient * clamp(strength, 0.2, 1.4) * (1 - far * 0.75),
+      volume: LEVEL1_SFX_VOLUME.patient * clamp(strength, 0.2, 1.4) * (1 - far * 0.55),
       cooldown,
       cooldownKey: group,
       playbackRate: 0.9 + Math.random() * 0.18,
       pan,
-      lowpass: far > 0.05 ? 9000 - far * 7600 : 0,
+      lowpass: far > 0.1 ? 10000 - far * 6500 : 0,
     });
   }
 
@@ -335,17 +336,6 @@ export class Level1Audio {
   /** A breath one-shot: "pant" (out of breath), "scared" (hiding), "recover" (slowing down). */
   breath(kind) {
     this._play(`breath-${kind}-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 1.5, cooldownKey: `breath-${kind}` });
-  }
-
-  /**
-   * Huffing and puffing while you run: 0 (not running) .. 1 (sprinting, hurt).
-   * A loop under everything, in the character's voice.
-   */
-  updateBreath(level) {
-    const want = `breath-run-${this.gender}`;
-    const other = `breath-run-${this.gender === "f" ? "m" : "f"}`;
-    if (this.ambient.has(other)) this._setAmbient(other, 0, 0);
-    this._setAmbient(want, clamp(level) * LEVEL1_SFX_VOLUME.breath, 0, { rate: 0.92 + clamp(level) * 0.16 });
   }
 
   /* ---- The building ------------------------------------------------- */
@@ -525,7 +515,7 @@ export class Level1Audio {
     for (const channel of this.ambient.values()) this._rampAmbient(channel, 0.18);
   }
 
-  /** Someone is talking: the beds (fire, alarm, breath) step back a little. */
+  /** Someone is talking: the beds (fire, alarm, wind) step back a little. */
   duckForVoice(on) {
     if (!this.buses || on === this.voiceDucked) return;
     this.voiceDucked = on;

@@ -6,11 +6,11 @@
  * wrap directly at the PCM boundary, while tracks configured for overlap have
  * their tail and opening blended once before the looping source starts.
  *
- * Each stage has its own score (assets/audio/music/ - Kevin MacLeod's
- * tracks, cut into seamless loops by tools/audio/music_build.py):
+ * Each stage has its own score (assets/audio/music/ - Kevin MacLeod's hybrid
+ * orchestral tracks, cut into seamless loops by tools/audio/music_build.py):
  * playStage("foundry" | "labs" | "skyline" | "roof" | "tension" | "grief").
- * The briefing plays "Hitman" under the trailer voice. While someone speaks
- * the music steps back (voiceDuck).
+ * The briefing's score is cut to the film (it starts with it: startStory).
+ * While someone speaks the music steps back (voiceDuck).
  */
 
 import { outputFor } from "./output.js";
@@ -37,21 +37,26 @@ export const MUSIC_TIMING = Object.freeze({
 /** Each stage's score, and how loud it sits under the game. */
 export const STAGE_MUSIC = Object.freeze({
   // (Gains set by measured loudness: the scores sit about 4 dB under the dialogue.)
-  foundry: 0.42,  // "The Complex": mechanical, electronic, building
-  labs: 0.48,     // "SCP-x3x (I am Not OK)": horror with machinery in it
-  skyline: 0.42,  // "Movement Proposition": the chase
-  roof: 0.42,     // "Volatile Reaction": brass and drums, the last stand
-  tension: 0.48,  // "Constance": the wake-up and the failing lift
+  foundry: 0.42,  // "Big Mojo": huge drums, electronics and strings - the machines
+  labs: 0.48,     // "Darkness is Coming": synths, choir, processed drums - horror that drives
+  skyline: 0.42,  // "Rocket": euro-tech guitar and symphony - the escape
+  roof: 0.42,     // "Black Vortex": a hybrid orchestra in 7/8 - the last stand
+  tension: 0.48,  // "Space Fighter Loop": synths, drums, low brass - the wake-up, the failing lift
   grief: 0.55,    // "Lost Time": the quiet ride up, after Okoro
 });
 
 /** How far the music steps back while someone speaks. */
 export const VOICE_DUCK = 0.5;
+/**
+ * ...less in the briefing: Okoro talks over nearly all of it, and its score
+ * is mixed around him (quiet under the confession, erupting at the order).
+ */
+export const STORY_VOICE_DUCK = 0.8;
 
 const stage = (name) => new URL(`../../assets/audio/music/${name}.mp3`, import.meta.url).href;
 
 const TRACKS = Object.freeze({
-  // The briefing: "Hitman" (Kevin MacLeod) under the trailer voice.
+  // The briefing: "Nerves" (Kevin MacLeod), cut to the film - under Okoro's confession.
   story: stage("briefing"),
   menu: new URL("../../assets/audio/soundtracks/852268__holizna__trap-melody-loop-5-ebmin-165-bpm.wav", import.meta.url).href,
   round1: new URL("../../assets/audio/soundtracks/GalacticTemple.ogg", import.meta.url).href,
@@ -104,8 +109,20 @@ export class MusicManager {
     this._setIntent("menu", MUSIC_VOLUME.menu, null, MUSIC_TIMING.crossfade);
   }
 
-  showStory() {
-    this._setIntent("story", MUSIC_VOLUME.story, null, MUSIC_TIMING.crossfade);
+  /**
+   * The briefing is loading: the menu's music goes, and the briefing's score
+   * waits (silent) for the film - it is cut to the film, chapter by chapter.
+   */
+  holdStory() {
+    this._setIntent("story", 0, null, MUSIC_TIMING.crossfade);
+  }
+
+  /** The film starts: its score from the first bar. */
+  startStory() {
+    const held = this.active?.track === "story" ? this.active : null;
+    if (held) this.active = null;
+    this._setIntent("story", MUSIC_VOLUME.story, null, 0.25);
+    if (held) this._retire(held, 0.25);
   }
 
   playRound1() {
@@ -197,7 +214,7 @@ export class MusicManager {
     }
     if (this.duck === "paused") return MUSIC_VOLUME.paused;
     if (this.duck === "gameOver") return MUSIC_VOLUME.gameOver;
-    return this.baseVolume * (this.voiceDucked ? VOICE_DUCK : 1);
+    return this.baseVolume * (this.voiceDucked ? (this.wantedTrack === "story" ? STORY_VOICE_DUCK : VOICE_DUCK) : 1);
   }
 
   _duckFactor() {

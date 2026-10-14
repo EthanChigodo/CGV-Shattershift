@@ -6,7 +6,7 @@
  * Sources: the story script (src/story/script.js), the Skyline's intercom
  * (src/levels/causeway/layout.js), the radio in the quiet ride
  * (src/elevators/quiet-ride.js) and the briefing film's narration
- * (src/story/prologue.js) - the last two read as text, they import Three.js.
+ * (src/story/prologue.js, Okoro's confession) - the last two read as text, they import Three.js.
  * Stage directions ([square brackets]) and "..." are not voiced here: they
  * are sound cues (src/story/voice.js).
  */
@@ -41,11 +41,11 @@ for (const [, , , text] of block.matchAll(/(\w+): \["(\w+)", "((?:[^"\\]|\\.)*)"
   add("pilot", text.replace(/\\"/g, '"'), "quietRideRadio", 3.6);
 }
 
-// The briefing film: the trailer voice reads each chapter's caption.
+// The briefing film: Okoro's confession, each chapter's caption in his voice.
 const film = await readFile(new URL("../../src/story/prologue.js", import.meta.url), "utf8");
 const chapters = film.match(/const FILM = \[([\s\S]*?)\n\];/)[1];
 for (const [, text] of chapters.matchAll(/text: "((?:[^"\\]|\\.)*)"/g)) {
-  add("trailer", text.replace(/\\"/g, '"'), "briefing", 30);
+  add("okoro", text.replace(/\\"/g, '"'), "briefing", 30);
 }
 
 process.stdout.write(JSON.stringify(lines, null, 2));

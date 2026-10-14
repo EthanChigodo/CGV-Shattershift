@@ -189,18 +189,18 @@ The voices are acted with VoiceStudio's engines; every other sound is a real rec
 
 | Who | Made with | Licence | Used in |
 | --- | --- | --- | --- |
-| Dr. Okoro, Subject 07, the patients' broken speech | **VoiceStudio** (debpalash, https://github.com/debpalash/VoiceStudio, AGPL-3.0) - its default engine **OmniVoice** (k2-fsa, https://huggingface.co/k2-fsa/OmniVoice: code Apache-2.0, weights CC BY-NC 4.0; its audio tokenizer carries the Higgs Audio 2 and Llama community terms) | The weights' NC terms: the generated speech is for this non-commercial university project | Okoro in every cutscene, the Foundry and the lift; Seven in the ending; the Labs' patients |
+| Dr. Okoro (every line, and his confession in the briefing), Dr. Vale, the pilot | **VoiceStudio** (debpalash, https://github.com/debpalash/VoiceStudio, AGPL-3.0) - its **VoxCPM2** engine (OpenBMB, https://huggingface.co/openbmb/VoxCPM2): controllable cloning, the reference giving the voice and a written direction per scene giving the delivery, so they talk rather than read | **Apache-2.0** | Okoro in the briefing, every cutscene, the Foundry and the lift; every Vale line (PA, intercom, the ending); the pilot's radio |
+| Subject 07, the patients' broken speech, Dr. Vale's voice itself | VoiceStudio's default engine **OmniVoice** (k2-fsa, https://huggingface.co/k2-fsa/OmniVoice: code Apache-2.0, weights CC BY-NC 4.0; its audio tokenizer carries the Higgs Audio 2 and Llama community terms) - Seven's voices and Vale's (`tools/audio/refs/vale.flac`) designed from a description, no human speaker | The weights' NC terms: the generated speech is for this non-commercial university project | Seven in the ending; the Labs' patients; the voice Vale's lines are cloned from |
 | Dr. Okoro's voice and accent | Cloned from speaker 07049 of Google's **Crowdsourced high-quality Nigerian English speech data set** (OpenSLR 70, https://www.openslr.org/70/ - Guevara-Rukoz et al., 2020), a 8 s reference made from four of his recordings (`tools/audio/refs/ng_07049_hot.flac`) | **CC BY-SA 4.0** (the reference clip, and the lines made from it, are shared under the same licence) | Dr. Okoro |
-| Dr. Vale, the pilot, the briefing's trailer voice | **IndexTTS 2.5** (IndexTeam/bilibili, https://huggingface.co/IndexTeam/IndexTTS-2.5, run as VoiceStudio runs it), each speaker from an OmniVoice-designed voice, the emotion set per line (Vale cold or gleeful; the trailer intense) | The **bilibili Model Use License Agreement** (royalty-free); it treats the model's outputs as derivative works, so a copy of it ships with them: `assets/audio/voice/INDEXTTS-LICENSE.txt`. As it asks (4.1 a): *Any modifications made to the original model in this Derivative Work are not endorsed, warranted, or guaranteed by the original right-holder of the original model, and the original right-holder disclaims all liability related to this Derivative Work.* | Every Vale line (PA, intercom, the ending), the pilot's radio, the briefing film |
 | HALCYON | Kokoro-82M (hexgrad, Apache-2.0) via kokoro-onnx (MIT), voice `bf_emma`, kept from the earlier recording (one line re-read so "Subject 07" is said "Subject Seven") | Apache-2.0 / MIT | The tower's PA |
 | Dr. Vale's laughter | "Maniacal Laughter Pack 1" and "Evil Cackle Laugh 1" by **Nocturnal_Vanguard (AuraVoice)**, https://opengameart.org/content/maniacal-laughter-pack-1, https://opengameart.org/content/evil-cackle-laugh-1; "Evil laughter" by **qubodup**, https://opengameart.org/content/evil-laughter - lowered 1-3 semitones | **CC0** | After his taunts, the roof, the ending |
-| The breaths in Okoro's lines | "Breathless Man" (#1103) and "Man Breathing" (#2195), **BigSoundBank** - Joseph Sardin, https://bigsoundbank.com | **CC0** | Okoro running, waking Seven, hiding |
+| The breath before some of Okoro's lines | "Breathless Man" (#1103), **BigSoundBank** - Joseph Sardin, https://bigsoundbank.com | **CC0** | Okoro out of breath: running through the Foundry, after the lift, after the bend |
 
 **Effects** (`assets/audio/sfx/`): real recordings, cut, layered and mastered (`tools/audio/sounds_build.py`)
 
 | Source | Licence | Became |
 | --- | --- | --- |
-| **BigSoundBank** (Joseph Sardin, https://bigsoundbank.com): Smoke Detector Alarm #3 (#1153); Breathless Man (#1103), Breathless Woman (#1345), Man Breathing (#2195); Glass Burst (#0148), A Mirror Explodes (#0387), Recycling bin glass #2 (#2681), Broken Christmas Ball #1 (#1121); Fall of Stone (#1022); Explosion #1 (#1807), Explosion far Away #1 (#1023); Creaking metallic door (#0616); Falling sheet steel bars (#1774, #1776); Heavy chain (#0359); Small metal grinding (#0322); Pneumatic brake released (#1490); Exploding bang-snaps (#0550); Electrocardiogram 60 Hz (#0457); Shot Beretta M12 9mm (#0437); Short welds (#0952), Neon or transformer (#2118); Watering #1 (#1302); Punch #5 (#2460), Body Fall #1 (#2452) | **CC0** | The fire alarm, Seven's breathing, the glass cascade, debris, the building collapsing, distant collapses, demolition charges, steel groaning, the lift's brakes and cable, the sprinkler, the monitor, Okoro's pistol, the spark, body hits |
+| **BigSoundBank** (Joseph Sardin, https://bigsoundbank.com): Smoke Detector Alarm #3 (#1153); Breathless Man (#1103), Breathless Woman (#1345), Man Breathing (#2195); Glass Burst (#0148), A Mirror Explodes (#0387), Recycling bin glass #2 (#2681), Broken Christmas Ball #1 (#1121); Fall of Stone (#1022); Explosion #1 (#1807), Explosion far Away #1 (#1023); Creaking metallic door (#0616); Falling sheet steel bars (#1774, #1776); Heavy chain (#0359); Small metal grinding (#0322); Pneumatic brake released (#1490); Exploding bang-snaps (#0550); Electrocardiogram 60 Hz (#0457); Shot Beretta M12 9mm (#0437); Short welds (#0952), Neon or transformer (#2118); Watering #1 (#1302); Punch #5 (#2460), Body Fall #1 (#2452) | **CC0** | The fire alarm, Seven's breathing in the cutscenes, the glass cascade, debris, the building collapsing, distant collapses, demolition charges, steel groaning, the lift's brakes and cable, the sprinkler, the monitor, Okoro's pistol, the spark, body hits |
 | "2 High Quality Explosions" by **qubodup**, https://opengameart.org/content/2-high-quality-explosions | **CC BY 3.0** | Explosions, demolition charges, the collapse |
 | "Rumbling Sound Effects" by **bretbernhoft**, https://opengameart.org/content/rumbling-sound-effects | CC0 | Explosions' tails |
 | "Metal Impact Sounds" by **BMacZero**; "100 CC0 metal and wood SFX" by **rubberduck** (opengameart.org) | CC0 | Clank, clatter, cable snap, brakes, steel groaning |
@@ -220,16 +220,16 @@ The voices are acted with VoiceStudio's engines; every other sound is a real rec
 
 All of these are pitched, layered, given a room and mastered; the horde is fourteen of them at once.
 
-**Music** (`assets/audio/music/`): tracks by **Kevin MacLeod** (incompetech.com), each cut into a seamless loop (`tools/audio/music_build.py`), licensed under **Creative Commons: By Attribution 4.0** (http://creativecommons.org/licenses/by/4.0/):
+**Music** (`assets/audio/music/`): hybrid orchestral tracks by **Kevin MacLeod** (incompetech.com), each cut into a seamless loop - the briefing's cut to the film (`tools/audio/music_build.py`) - licensed under **Creative Commons: By Attribution 4.0** (http://creativecommons.org/licenses/by/4.0/):
 
 | Where | Track |
 | --- | --- |
-| The briefing | "Hitman" (the whole track) |
-| The Foundry | "The Complex" |
-| The Labs | "SCP-x3x (I am Not OK)" |
-| The Skyline | "Movement Proposition" |
-| The Roof | "Volatile Reaction" |
-| The wake-up, the Gravity Fault lift | "Constance" |
+| The briefing | "Nerves" (cut to the film: low under Okoro's confession, erupting at the order) |
+| The Foundry | "Big Mojo" |
+| The Labs | "Darkness is Coming" |
+| The Skyline | "Rocket" |
+| The Roof | "Black Vortex" |
+| The wake-up, the Gravity Fault lift | "Space Fighter Loop" |
 | The quiet ride, after Okoro | "Lost Time" |
 
 The team's own `leberch-piano-story-601906.mp3` (the briefing's earlier track) is kept in the repository but no longer plays.
