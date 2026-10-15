@@ -4,6 +4,7 @@
     python record.py gen     --lines lines.json [--only REGEX]   the takes (OmniVoice, then VoxCPM2)
     python record.py judge   --lines lines.json [--only REGEX]   measure every take (listen.py)
     python record.py perfect --lines lines.json [--only REGEX]   more takes where no take has every word right
+    python record.py more    --lines lines.json [--only REGEX]   another take where the best is flat or calm
     python record.py pick    --lines lines.json [--only REGEX]   choose, finish -> work/vs/out
     python record.py laughs                                       Vale's laughs, from real laughter
     python record.py install                                      into assets/ and src/audio/voice-lines.js
@@ -53,32 +54,37 @@ YOU_REF = {g: (REF(f"you-{g}.flac"), open(REF(f"you-{g}.txt")).read().strip()) f
 
 # Okoro, scene by scene: the direction (how he says it - the reference only
 # gives his voice), and a breath before he speaks where he is out of breath
-# (which breathing, how many, how loud). No breaths between his sentences:
-# they talk, they don't pause to breathe.
+# (which breathing, how many, how loud). Short tags, the way VoxCPM2 is
+# directed - a pilot measured them against long descriptions of the scene:
+# more energy (0.46-0.67 -> 0.68-0.73) and more command in every line; the
+# long ones made him sound calm, like one fluid sentence. "Nigerian accent"
+# first, so the urgency doesn't take the accent with it. (The briefing - his
+# recorded confession - keeps its earlier, quieter direction.)
 OKORO = {
     "briefing":    dict(direction="a Nigerian doctor recording a secret confession late at night, low, tired and urgent, "
                                   "speaking naturally and personally to one listener, not reading"),
-    "wake":        dict(direction="a Nigerian doctor, worried and gentle, speaking softly but urgently to a patient "
-                                  "who is waking up, natural and conversational"),
-    "walkOut":     dict(direction="a Nigerian doctor, tense and low-voiced, leading someone down a dark corridor"),
-    "foundryTalk": dict(direction="a Nigerian doctor, out of breath, talking to the person running beside him, "
-                                  "urgent, natural conversation", breath=("man", 1, 0.45)),
-    "liftFault":   dict(direction="a Nigerian doctor, panicking, shouting over screeching machinery"),
-    "liftBreaks":  dict(direction="a Nigerian doctor, shouting urgent orders over screeching machinery"),
-    "liftSaved":   dict(direction="a Nigerian doctor, breathless and relieved, quietly amazed", breath=("man", 2, 0.45)),
-    "breach":      dict(direction="a Nigerian doctor, horrified and frightened, talking fast"),
-    "bendAttack":  dict(direction="a Nigerian doctor, screaming in panic"),
-    "bendSaved":   dict(direction="a Nigerian doctor, breathless and worried, checking on someone", breath=("man", 1, 0.45)),
-    "hide":        dict(direction="a Nigerian doctor, whispering, terrified, hiding behind a desk, speaking tenderly "
-                                  "to someone he cares about"),
+    "wake":        dict(direction="Nigerian accent, worried, urgent, emphatic"),
+    "walkOut":     dict(direction="Nigerian accent, tense, urgent, low voice"),
+    "foundryTalk": dict(direction="Nigerian accent, out of breath, urgent, emphatic", breath=("man", 1, 0.45)),
+    "liftFault":   dict(direction="Nigerian accent, panicking, shouting, loud"),
+    "liftBreaks":  dict(direction="Nigerian accent, shouting, desperate, loud"),
+    "liftSaved":   dict(direction="Nigerian accent, breathless, relieved, amazed", breath=("man", 2, 0.45)),
+    "breach":      dict(direction="Nigerian accent, horrified, panicking, voice breaking, loud"),
+    "bendAttack":  dict(direction="Nigerian accent, screaming, panicking, loud"),
+    "bendSaved":   dict(direction="Nigerian accent, breathless, worried, urgent", breath=("man", 1, 0.45)),
+    "hide":        dict(direction="Nigerian accent, whispering, terrified, trembling"),
 }
 HIDE_SHOUTS = {"Now - GO!", "OVER HERE! COME ON, OVER HERE!"}
-SHOUTING = "a Nigerian doctor, shouting as loud as he can to draw the monsters away from someone"
+SHOUTING = "Nigerian accent, shouting as loud as possible, desperate"
+OKORO_LINE = {  # lines that want their own direction
+    "You were never a subject to me. You were a patient. My patient.": "Nigerian accent, whispering, emotional, tender",
+    "Take the bag. Everything I found is in it. You'll need it on the roof.": "Nigerian accent, whispering, urgent, emotional",
+}
 
-VALE_COLD = "a calm, cold, menacing British man speaking over a building's intercom, relaxed and conversational, quietly amused"
-VALE_GLEE = "a British man over an intercom, gleeful and mocking, enjoying himself, conversational"
-VALE_CLOSE = "a calm British man, quietly triumphant and menacing, speaking face to face, conversational"
-VALE_CLOSE_GLEE = "a British man, smug and delighted with himself, speaking face to face, conversational"
+VALE_COLD = "cold, menacing, mocking, slow, emphatic"
+VALE_GLEE = "gleeful, mocking, menacing, emphatic"
+VALE_CLOSE = "quiet, triumphant, menacing, slow"
+VALE_CLOSE_GLEE = "smug, delighted, menacing, slow"
 VALE_GLEEFUL = {  # the rest are cold
     "He was right. Anaesthesia to the roof in thirty minutes. I couldn't have designed a better field test.",
     "Don't worry about the tower. Fire is very good at keeping secrets.",
@@ -132,7 +138,9 @@ def direction(line):
     """How the line is said - VoxCPM2 reads it from the (brackets) before the words."""
     who, scene, text = line["who"], line["scene"], line["text"]
     if who == "okoro":
-        return SHOUTING if text in HIDE_SHOUTS else OKORO.get(scene, OKORO["breach"])["direction"]
+        if text in HIDE_SHOUTS:
+            return SHOUTING
+        return OKORO_LINE.get(text) or OKORO.get(scene, OKORO["breach"])["direction"]
     if who == "vale":
         if scene == "ending":
             return VALE_CLOSE_GLEE if text in VALE_GLEEFUL else VALE_CLOSE
@@ -147,8 +155,10 @@ def recipe(line):
     s = spoken(text)
     if who in ("okoro", "vale", "pilot"):
         ref = NG_REF[0] if who == "okoro" else VALE_REF
-        # The briefing's long speeches: one take first (more where a word is missed).
-        return "vox", 1 if scene == "briefing" else 2, {"text": s, "prompt": f"({direction(line)}){s}", "ref": ref}
+        if who == "okoro":  # he says "Vale" as "Valle" - spelt as it sounds
+            s = re.sub(r"\bVale\b", "Vail", s)
+        # One take first ("more" adds takes where a line is flat, "perfect" where a word is missed).
+        return "vox", 1, {"text": s, "prompt": f"({direction(line)}){s}", "ref": ref}
     if who.startswith("you-"):
         ref, rtext = YOU_REF[who[-1]]
         return "omni", 2, {"text": s, "ref_audio": ref, "ref_text": rtext, "speed": 0.92}
@@ -168,8 +178,11 @@ def all_lines(path):
 
 
 def take_path(line, i):
-    # (VoxCPM2's takes apart from the earlier engines' takes of the same lines.)
-    sub = "vox" if line["who"] in ("okoro", "vale", "pilot") else ""
+    # (VoxCPM2's takes apart from the earlier engines' takes of the same lines;
+    # "vox2": Okoro and Vale directed with emotion tags, in the game.)
+    sub = ""
+    if line["who"] in ("okoro", "vale", "pilot"):
+        sub = "vox2" if line["who"] != "pilot" and line["scene"] != "briefing" else "vox"
     return os.path.join(TAKES, line["who"], sub, f"{file_id(line['key'])}-{i}.wav")
 
 
@@ -279,6 +292,37 @@ def perfect(lines, extra=6):
                 break
 
 
+def best_take(line, scores):
+    """The take pick() would keep: a word-perfect one if there is one, then the best score."""
+    takes = takes_on_disk(line)
+    perfect = [p for p in takes if scores.get(os.path.relpath(p, TAKES), {}).get("wer", 1) == 0]
+    return max(perfect or takes, key=lambda p: score(line["who"], scores.get(os.path.relpath(p, TAKES))), default=None)
+
+
+# A line whose best take is flatter or calmer than this gets another take ("more").
+MORE = {"okoro": dict(arousal=0.6, spread=6.0), "vale": dict(arousal=0.45, spread=6.0)}
+
+
+def more(lines, most=3):
+    """Another take of each line whose best take is flat or calm - up to `most` takes - in one batch."""
+    scores = json.load(open(os.path.join(TAKES, "scores.json")))
+    jobs = []
+    for line in lines:
+        bar = MORE.get(line["who"])
+        best = best_take(line, scores)
+        row = scores.get(os.path.relpath(best, TAKES)) if best else None
+        if not bar or not row or len(takes_on_disk(line)) >= most:
+            continue
+        if row["arousal"] >= bar["arousal"] and row.get("spread", 0) >= bar["spread"]:
+            continue
+        engine, _, job = recipe(line)
+        i = next(i for i in range(12) if not os.path.exists(take_path(line, i)))
+        jobs.append({**job, "out": take_path(line, i), "seed": 100 + i})
+        print(f"more: {line['who']} {line['text'][:60]} (energy {row['arousal']:.2f}, pitch {row.get('spread', 0):.1f})")
+    if jobs:
+        vox_jobs(jobs, procs=1)
+
+
 def score(who, row):
     """Every word heard first; then what the character needs. A voice that
     moves (pitch range, in semitones) talks; a flat one reads - but not
@@ -287,10 +331,10 @@ def score(who, row):
         return -9
     s = -2.0 * row["wer"]
     talk = 0.03 * min(row.get("spread", 0), 14) - 0.15 * max(0, row.get("rate", 0) - 7)
-    if who == "okoro":  # frightened, Nigerian, talking
-        s += row["arousal"] + 0.8 * max(-0.2, min(0.6, row.get("ng", 0))) + talk
-    elif who == "vale":  # in command, not kind, talking
-        s += row["dominance"] - 0.3 * row["valence"] + talk
+    if who == "okoro":  # frightened - intensity first - Nigerian, talking
+        s += 1.5 * row["arousal"] + 0.8 * max(-0.2, min(0.6, row.get("ng", 0))) + talk
+    elif who == "vale":  # in command, not kind, and meaning it
+        s += row["dominance"] - 0.3 * row["valence"] + 0.5 * row["arousal"] + talk
     elif who == "pilot":
         s += talk
     return s
@@ -447,9 +491,10 @@ def install(order_from):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("stage", choices=["gen", "judge", "perfect", "pick", "laughs", "install"])
+    ap.add_argument("stage", choices=["gen", "judge", "perfect", "more", "pick", "laughs", "install"])
     ap.add_argument("--lines", default=os.path.join(work.VS, "lines.json"))
     ap.add_argument("--only")
+    ap.add_argument("--skip-scene", action="append", default=[], help="leave a scene's lines alone (e.g. briefing)")
     a = ap.parse_args()
     if a.stage == "laughs":
         laughs()
@@ -457,5 +502,6 @@ if __name__ == "__main__":
         install(a.lines)
     else:
         rx = re.compile(a.only) if a.only else None
-        sel = [l for l in all_lines(a.lines) if not rx or rx.search(f"{l['who']}|{l['text']}")]
-        {"gen": gen, "judge": judge, "perfect": perfect, "pick": pick}[a.stage](sel)
+        sel = [l for l in all_lines(a.lines)
+               if (not rx or rx.search(f"{l['who']}|{l['text']}")) and l["scene"] not in a.skip_scene]
+        {"gen": gen, "judge": judge, "perfect": perfect, "more": more, "pick": pick}[a.stage](sel)
