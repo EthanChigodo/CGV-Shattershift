@@ -110,6 +110,15 @@ choose:
   pauses tightened), with more energy (0.63, was 0.49) and a stronger accent
   score (+0.24, was +0.18); Vale moves 11.0 (was 8.6), calmer and colder
   (energy 0.59, was 0.78).
+- **Intensity**: playtesters heard those as one fluid sentence, not people
+  in danger. Directed with short emotion tags instead of descriptions of the
+  scene (`OKORO`, `VALE_*` in `record.py`), the lines punched up in the
+  script, and energy weighted higher in the pick (with more takes, `record.py
+  more`, for any line still flat or calm): Okoro's energy 0.75 (was 0.58),
+  command 0.77 (was 0.64); Vale's energy 0.45 (was 0.36), command 0.56 (was
+  0.49), pitch movement 15.0 (was 13.0). Okoro's accent score is +0.18 (was
+  +0.28): still on the Nigerian side - urgency pulls it a little towards
+  neutral.
 - **Accent**: a take's accent fingerprint (CommonAccent's ECAPA embedding) is
   compared with OpenSLR 70's other Nigerian speakers and an American speaker.
   Okoro's lines score +0.2 to +0.5 towards Nigerian; the earlier Kokoro Okoro
