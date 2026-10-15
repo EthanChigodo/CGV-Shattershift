@@ -26,7 +26,7 @@ import { StoryUI } from "./story-ui.js";
 import { ReactionHits } from "./reaction.js";
 import { CutscenePlayer } from "./cutscene.js";
 import { StoryVoice } from "./voice.js";
-import { lineHold } from "./script.js";
+import { lineHold, subtitleTime } from "./script.js";
 
 export class StoryLayer {
   /**
@@ -223,6 +223,8 @@ export class StoryLayer {
     const t = this._talk;
     t.line = line;
     t.left = lineHold(line);
+    // (The subtitle goes when the line has been said; the next line still waits its turn.)
+    t.shown = subtitleTime(line, t.left);
     this.ui.show();
     this.ui.setGameplay(true);
     this.ui.say(line.who, line.text);
@@ -234,6 +236,7 @@ export class StoryLayer {
     const t = this._talk;
     if (!t.line || this.player.active) return;
     t.left -= dt;
+    if (t.shown > 0 && (t.shown -= dt) <= 0 && t.left > 0) this.ui.say(null);
     if (t.left > 0) return;
     t.line = null;
     this.ui.say(null);

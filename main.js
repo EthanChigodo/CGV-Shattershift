@@ -870,7 +870,12 @@ function buildCauseway(mode = "story") {
 function wireCausewayEvents(level) {
   const on = (name, fn) => level.events.on(name, (payload) => { if (level === causeway) fn(payload); });
   // HALCYON and Dr. Vale over the intercom: the panel shows it, and they say it.
-  on("radio", (p) => { causewayHud.radio(p); story.voice.say({ who: p.speaker, text: p.text }); });
+  on("radio", (p) => {
+    // Up while it is said, and a beat after.
+    const clip = story.voice.clipFor({ who: p.speaker, text: p.text });
+    causewayHud.radio({ ...p, seconds: clip ? Math.max(clip.speech + 0.8, 2) : undefined });
+    story.voice.say({ who: p.speaker, text: p.text });
+  });
   on("title", (p) => causewayHud.title(`Sector 03 // Beat ${p.index + 1} of 3`, p.name));
   on("hint", (p) => causewayHud.hint(p.text));
   on("file", (p) => causewayHud.caseFile(p.lines, p.found, p.total));
