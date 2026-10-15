@@ -79,7 +79,7 @@ that doesn't stop is cut short and taken again.
 | Dr. Vale | VoxCPM2, a designed deep British voice | Cold, relaxed and amused - or gleeful when he wins; the tower's PA; real laughter after his taunts, lowered into his register |
 | The pilot | VoxCPM2, Vale's voice | Calm and pleasant over the radio (it is Vale) |
 | HALCYON | Kokoro (kept from the earlier version) | The building's PA, after a chime |
-| Subject 07 | OmniVoice, a designed voice per character | Tired, clear; pain and effort are real recordings |
+| Subject 07 | OmniVoice, a designed voice per character | Tired, clear; pain and effort are kept from the earlier version (Kokoro, a held strained vowel - clearer than real recordings were), the fall a real scream |
 | The patients | Real recordings; their broken speech from OmniVoice, made monstrous | Growls, moans, shrieks, pain, deaths, the brute's roar, the horde |
 
 Lines are said as an actor would say them: "Subject 07" is "Subject Seven",

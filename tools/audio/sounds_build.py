@@ -82,14 +82,6 @@ LOUDNESS = {  # name: [LUFS, seconds] - the loudness the game's mix was balanced
     "sfx/explosion-2": [-12.3, 7.8],
     "sfx/fire-alarm": [-16.2, 8.0],
     "sfx/glass-cascade": [-13.6, 5.72],
-    "sfx/grunt-f": [-18.7, 1.55],
-    "sfx/grunt-m": [-20.8, 1.3],
-    "sfx/hurt-1-f": [-19.7, 0.86],
-    "sfx/hurt-1-m": [-20.7, 0.86],
-    "sfx/hurt-2-f": [-20.4, 0.91],
-    "sfx/hurt-2-m": [-20.3, 0.91],
-    "sfx/hurt-3-f": [-19.8, 0.85],
-    "sfx/hurt-3-m": [-20.3, 0.85],
     "sfx/lift-chime": [-21.5, 2.27],
     "sfx/lift-doors": [-18.2, 2.05],
     "sfx/metal-groan-1": [-16.0, 5.64],
@@ -358,22 +350,11 @@ def sprinkler_burst():
 
 
 # ------------------------------------------------------------------ Seven (by character)
-
-MALE_YELLS = sorted(glob.glob(os.path.join(OGA, "male-gruntyelling-sounds", "x", "**", "*.wav"), recursive=True))
-FEMALE_HURT = os.path.join(OGA, "female-hurt-grunts-groans", "female_hurt_grunts_groans_1.ogg")
-FEMALE_RPG = os.path.join(OGA, "female-rpg-voice-starter-pack", "x", "RPG Voice Starter Pack")
-
-
-def hurt(k, g):
-    if g == "f":
-        return L(os.path.join(FEMALE_RPG, "Type 2", f"damaged{k}.wav"))
-    return L(src("male-gruntyelling-sounds", "x", "*", ["3yell11.wav", "3yell15.wav", "3yell7.wav"][k - 1]))
-
-
-def grunt(g):
-    if g == "f":
-        return L(os.path.join(FEMALE_RPG, "Type 2", "attack1.wav"))
-    return L(src("male-gruntyelling-sounds", "x", "*", "3yell10.wav"))
+#
+# Her (and his) pain and effort - sfx/hurt-1..3-f/m, sfx/grunt-f/m - are not
+# built here: they are kept from the earlier version (Kokoro's af_heart and
+# am_puck, a held, strained vowel - clearer than the recordings that replaced
+# them for a while). Only the fall's scream is built.
 
 
 def scream(g):
@@ -481,9 +462,6 @@ def recipes():
     for g in "fm":
         for kind in ("pant", "recover", "scared"):
             r[f"sfx/breath-{kind}-{g}"] = lambda kind=kind, g=g: breath(kind, g)
-        for k in (1, 2, 3):
-            r[f"sfx/hurt-{k}-{g}"] = lambda k=k, g=g: hurt(k, g)
-        r[f"sfx/grunt-{g}"] = lambda g=g: grunt(g)
         r[f"sfx/scream-{g}"] = lambda g=g: scream(g)
     for name, fns, semis in (("growl", GROWL, -2), ("moan", MOAN, -2), ("shriek", SHRIEK, 0), ("pain", PAIN, -1), ("death", DEATH, -2)):
         for i, fn in enumerate(fns):

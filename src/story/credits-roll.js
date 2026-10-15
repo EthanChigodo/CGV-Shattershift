@@ -25,7 +25,7 @@ export const AUDIO_CREDITS = [
   ["The patients", "Little Robot Sound Factory (CC BY 3.0); BigSoundBank; rubberduck; Darsycho; qubodup; thebardofblasphemy"],
   ["Explosions", "qubodup - CC BY 3.0"],
   ["Screams", "congusbongus - CC BY 3.0"],
-  ["Subject 07's voice", "cicifyre; HaelDB"],
+  ["Subject 07's pain and effort", "Kokoro-82M (hexgrad); the fall: congusbongus, HaelDB"],
   ["Metal, the lift's chime and doors", "BMacZero; rubberduck; fvcalderan; sinny; bretbernhoft"],
   ["Main menu music", "Holizna - trap melody loop 5"],
   ["Sector 03 music", "GalacticTemple (source pending)"],
