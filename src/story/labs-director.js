@@ -39,24 +39,76 @@ const CROWD = 7;
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 
-/** A small pistol for Okoro (a stand-in prop, like the preview's). */
+/**
+ * Okoro's pistol: a compact service pistol, built to scale (~19 cm long).
+ * Its origin is the grip, where the hand closes; the barrel points down -Z.
+ * A blued steel slide with rear serrations and sights over a dark polymer
+ * frame: dust cover, trigger guard and trigger, a stippled grip with a
+ * beavertail and the magazine's base plate; a muzzle flash with its light.
+ */
 function buildPistol() {
   const group = new THREE.Group();
   group.name = "Pistol";
-  const mat = new THREE.MeshStandardMaterial({ color: 0x1c1f22, metalness: 0.6, roughness: 0.4 });
-  const slide = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.2), mat);
-  slide.position.set(0, 0.03, -0.06);
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.045), mat);
-  grip.rotation.x = 0.25;
-  group.add(slide, grip);
-  // Muzzle flash: a small additive star, shown for a frame or two.
-  const flash = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.32, 0.32),
-    new THREE.MeshBasicMaterial({ color: 0xffd38a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
-  );
-  flash.position.set(0, 0.03, -0.2);
-  group.add(flash);
+  const steel = new THREE.MeshStandardMaterial({ color: 0x23272b, metalness: 0.85, roughness: 0.32 });
+  const polymer = new THREE.MeshStandardMaterial({ color: 0x15171a, metalness: 0.1, roughness: 0.72 });
+  const stipple = new THREE.MeshStandardMaterial({ color: 0x0f1012, roughness: 0.95 });
+  const bore = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 });
+  const dot = new THREE.MeshBasicMaterial({ color: 0x9dffb0 });
+  const box = (w, h, d, mat, x, y, z, rx = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.rotation.x = rx;
+    group.add(m);
+    return m;
+  };
+  // The slide, its front chamfer, the ejection port, the serrations at the back.
+  box(0.028, 0.032, 0.188, steel, 0, 0.052, -0.058);
+  box(0.024, 0.02, 0.02, steel, 0, 0.046, -0.158, 0.5);
+  box(0.029, 0.008, 0.04, bore, 0.0005, 0.065, -0.035);
+  for (let i = 0; i < 6; i += 1) box(0.0295, 0.026, 0.003, polymer, 0, 0.052, 0.012 + i * 0.0055);
+  // Sights: the rear notch, the front post, three dots.
+  box(0.024, 0.008, 0.008, steel, 0, 0.072, 0.03);
+  box(0.004, 0.008, 0.006, steel, 0, 0.072, -0.145);
+  for (const [x, z] of [[-0.007, 0.03], [0.007, 0.03], [0, -0.145]]) box(0.002, 0.002, 0.002, dot, x, 0.077, z);
+  // The barrel's muzzle under the slide's nose.
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.012, 12), steel);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.set(0, 0.05, -0.155);
+  const hole = new THREE.Mesh(new THREE.CircleGeometry(0.0045, 12), bore);
+  hole.position.set(0, 0.05, -0.1615);
+  hole.rotation.y = Math.PI;
+  group.add(muzzle, hole);
+  // The frame: dust cover under the slide, the rail, the trigger guard.
+  box(0.026, 0.016, 0.12, polymer, 0, 0.028, -0.07);
+  box(0.02, 0.004, 0.06, steel, 0, 0.019, -0.095);
+  const guard = new THREE.Mesh(new THREE.TorusGeometry(0.019, 0.0035, 6, 16, Math.PI * 1.1), polymer);
+  guard.rotation.set(0, Math.PI / 2, Math.PI);
+  guard.position.set(0, 0.012, -0.03);
+  group.add(guard);
+  box(0.005, 0.02, 0.006, steel, 0, 0.004, -0.027, 0.3);
+  // The grip: raked back, stippled panels either side, a beavertail over the hand.
+  box(0.026, 0.1, 0.045, polymer, 0, -0.028, 0.012, 0.28);
+  for (const x of [-0.0135, 0.0135]) box(0.002, 0.07, 0.034, stipple, x, -0.03, 0.013, 0.28);
+  box(0.024, 0.008, 0.024, polymer, 0, 0.022, 0.04, -0.4);
+  box(0.03, 0.01, 0.05, polymer, 0, -0.077, 0.027, 0.28);
+  // Muzzle flash: two crossed additive stars and a quick light, a frame or two.
+  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffd38a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const flash = new THREE.Group();
+  for (const r of [0, Math.PI / 2]) {
+    const star = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), flashMat);
+    star.rotation.y = r;
+    flash.add(star);
+  }
+  flash.position.set(0, 0.05, -0.27);
+  const light = new THREE.PointLight(0xffb86a, 0, 6, 2);
+  light.position.set(0, 0.05, -0.2);
+  group.add(flash, light);
   group.userData.flash = flash;
+  group.userData.flashMaterial = flashMat;
+  group.userData.light = light;
+  group.traverse((o) => {
+    if (o.isMesh) o.castShadow = true;
+  });
   return group;
 }
 
@@ -84,8 +136,12 @@ export class LabsDirector {
     this.okoro = new Companion({ bag: true });
     this.okoro.setModel(story.okoroTemplate);
     this.root.add(this.okoro.root);
+    // Unseen until he is first placed and posed (a frame drawn before that
+    // showed him out in the corridor, arms out in his rest pose).
+    this.okoro.root.visible = false;
     this.pistol = buildPistol();
-    this.okoro.hold(this.pistol, { hand: "R", offset: [0, 0, -0.04] });
+    // In his right hand, kept upright (not rolled round the forearm).
+    this.okoro.hold(this.pistol, { hand: "R", offset: [0, -0.02, -0.03], upright: true });
     this.guide = new FoundryGuide({
       okoro: this.okoro,
       level: this.level,
@@ -186,6 +242,7 @@ export class LabsDirector {
   updateArrival(cut, dt) {
     if (!cut) return;
     const o = this.okoro;
+    o.root.visible = true;
     _v.set(-Math.cos(cut.playerYaw), 0, Math.sin(cut.playerYaw)); // the player's left
     o.root.position.copy(cut.player).addScaledVector(_v, 1.3);
     o.root.rotation.y = cut.playerYaw;
@@ -202,6 +259,7 @@ export class LabsDirector {
       return false;
     }
     this.stage = "breach";
+    this.okoro.root.visible = true;
     const game = this.game;
     const route = this.level.route;
     const r = game.runner;
@@ -268,6 +326,8 @@ export class LabsDirector {
     game.debris.burst(at, { kind: "glass", count: 24, speed: 5 });
     game.audio.glassShatter(true);
     game.sfx?.glassBreak();
+    // And what was inside, awake.
+    game._patientSound?.(this.tanks.indexOf(t) % 2 ? "growl" : "shriek", at, 0.85);
     game.trauma = Math.min(1, game.trauma + 0.25);
     t.walk = 0.001;
     this.log.push(["burst", this.tanks.indexOf(t)]);
@@ -307,6 +367,7 @@ export class LabsDirector {
 
   _startRun(d) {
     this.stage = "run";
+    this.okoro.root.visible = true;
     this.game.snapCamera = true;
     this.guide.start(d, { lateral: -3.2 });
     this.okoro.act("run");
@@ -349,14 +410,21 @@ export class LabsDirector {
   _pistol(dt) {
     const flash = this.pistol.userData.flash;
     this.flash = Math.max(0, this.flash - dt * 12);
-    flash.material.opacity = this.flash;
+    this.pistol.userData.flashMaterial.opacity = this.flash;
     flash.rotation.z += 1.7;
+    this.pistol.userData.light.intensity = this.flash * 6;
     this.shotTimer -= dt;
     const o = this.okoro;
     if (this.aimTimer > 0) {
+      // Up into a two-handed grip, the left hand under the right.
       this.aimTimer -= dt;
       o.adjust.aimR = 1;
-    } else o.adjust.aimR += (0 - o.adjust.aimR) * Math.min(1, dt * 6);
+      o.adjust.aimL = Math.max(o.adjust.aimL, 0.85);
+    } else {
+      // Low ready on the run: the pistol forward and down, not swinging.
+      o.adjust.aimR += (0.4 - o.adjust.aimR) * Math.min(1, dt * 6);
+      o.adjust.aimR = Math.max(o.adjust.aimR, 0.38);
+    }
     if (this.shotTimer > 0) return;
     const r = this.game.runner;
     const target = this.level._lurchers?.find((e) => {
@@ -370,8 +438,11 @@ export class LabsDirector {
     this.aimTimer = 0.45;
     this.flash = 1;
     o.lookAt(target.group.userData.worldPosition().setY(1.5), 1);
+    // His pistol, and the patient it hits.
+    this.game.sfx?.play("pistol", { volume: 0.55, cooldown: 0.3 });
     this.game.audio.thud?.();
     this.game.sfx?.impact(0.25);
+    this.game._patientSound?.("pain", target.group.userData.worldPosition(), 0.8);
     // The patient staggers (and is still there - the player's to deal with).
     target.group.userData.stagger?.();
     this.log.push(["pistol", Math.round(target.distance)]);
@@ -410,13 +481,16 @@ export class LabsDirector {
     });
     this.layer.play(scene, {
       camera: game.camera,
-      deathSeconds: 1.3,
+      // A miss: it wins - pinned, it comes down on you (_bendDeath), claws across the screen.
+      deathSeconds: 2.2,
+      deathFx: "mauled",
       on: {
         event: (name) => {
           this.log.push(["event", name]);
           if (name === "hit") {
-            game.audio.growl?.();
+            game._patientSound?.("shriek", null, 1.3);
             game.audio.stumble?.();
+            game.sfx?.hurt(1.2);
             game.trauma = 1;
           } else if (name === "shot") {
             this.flash = 1;
@@ -424,6 +498,7 @@ export class LabsDirector {
             game.audio.thud?.();
             game.sfx?.impact(0.9);
             game.audio.bodyFall?.();
+            game._patientSound?.("death", null, 1);
           }
         },
         fail: () => {
@@ -569,7 +644,7 @@ export class LabsDirector {
   _hideEvent(name) {
     const game = this.game;
     this.log.push(["event", name]);
-    if (name === "crowd-turn") game.audio.groan?.(0.8);
+    if (name === "crowd-turn") game._patientSound?.("growl", null, 0.9);
     else if (name === "bag") {
       // Into your hands: his bag is gone from him; the HUD says you have it.
       if (this.okoro.bag) this.okoro.bag.visible = false;
@@ -579,11 +654,13 @@ export class LabsDirector {
     } else if (name === "okoro-run") {
       this.hide.okoroRunning = true;
       for (const c of this.crowd) c.chasing = true;
-      game.audio.groan?.(1);
+      // All of them, after him.
+      game._patientSound?.("horde", null, 1.1);
     } else if (name === "doors") {
       // The doors close on it.
       this._doors = 0;
       game.audio.clang?.();
+      game.sfx?.play("clank");
     } else if (name === "silence") {
       // His death is heard, not seen: the shouting cuts off.
       game.audio.bodyFall?.();
@@ -601,6 +678,9 @@ export class LabsDirector {
       this.bendPatient?.update(dt);
       this.vale.update(dt);
       if (this.stage === "bend") this._pistol(dt);
+      const dying = this.stage === "bend" ? this.layer.deathTime : 0;
+      if (dying > 0) this._bendDeath(dying);
+      else this._bendDeathFrom = null;
     } else if (this.stage === "hide") {
       this._updateHide(dt);
     }
@@ -608,6 +688,38 @@ export class LabsDirector {
       this._doors = Math.min(1, this._doors + dt / 0.9);
       this.level.endLift.setDoorsOpen(1 - this._doors);
     }
+  }
+
+  /**
+   * The struggle lost: it gets through. The view sinks to the floor and
+   * rolls as it comes down onto you, its face filling the frame (the scene
+   * itself is held while the story layer plays the death - this moves the
+   * camera and the patient over it; a retry puts both back).
+   */
+  _bendDeath(t) {
+    const game = this.game;
+    const cam = game.camera;
+    const p = this.bendPatient;
+    if (!p) return;
+    if (!this._bendDeathFrom) {
+      this._bendDeathFrom = { pos: cam.position.clone(), patient: p.root.position.clone() };
+      game._patientSound?.("roar", null, 1.3);
+      game.sfx?.hurt(1.3);
+      game.trauma = 1;
+    }
+    const from = this._bendDeathFrom;
+    const k = THREE.MathUtils.smoothstep(t, 0, 0.9);
+    // It comes down: most of the way onto where you lie.
+    p.root.position.lerpVectors(from.patient, _w.copy(from.pos).setY(0), 0.55 * k);
+    Object.assign(p.adjust, { lean: 0.45 + 0.35 * k, aimR: 1, aimL: 1, headNod: 0.35 * k });
+    // Pinned: lower, shaking, rolled over, looking up into its face.
+    cam.position.copy(from.pos);
+    cam.position.y -= 0.45 * k;
+    const shake = 0.05 * (1 - 0.6 * k);
+    cam.position.x += (Math.random() - 0.5) * shake;
+    cam.position.z += (Math.random() - 0.5) * shake;
+    cam.lookAt(p.headPosition(_v));
+    cam.rotateZ(0.45 + 0.5 * k);
   }
 
   _updateHide(dt) {

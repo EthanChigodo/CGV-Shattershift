@@ -148,7 +148,6 @@ const MOVES = [
   [k("C"), "Change camera"],
   [k("P"), "Photo mode", ["foundry", "skyline"]],
   [k("V"), "Choose what the HUD shows; " + k("H") + " hides it all"],
-  [k("M"), "Minimap"],
   [k("Esc"), "Pause; hold it to skip a cutscene"],
 ];
 

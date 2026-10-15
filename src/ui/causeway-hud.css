@@ -289,7 +289,8 @@ body.hud-hidden .reticle-hint { display: none !important; }
 
 /* ---- a quieter HUD ---------------------------------------------------- */
 .cw-radio {
-  top: auto; left: 50%; bottom: 104px; width: auto; max-width: min(620px, 80vw);
+  /* Above the sphere wheel (bottom right), so the two never overlap. */
+  top: auto; left: 50%; bottom: 284px; width: auto; max-width: min(620px, 80vw);
   padding: 7px 14px; transform: translate(-50%, 8px);
   border-left: 0; border-radius: 4px; background: rgba(2, 8, 11, 0.62); text-align: center;
 }
@@ -314,3 +315,24 @@ body.hud-hidden .reticle-hint { display: none !important; }
 .cw-spheres b { font-size: 28px; }
 .cw-core b { font-size: 17px; }
 .cw-cam { display: none !important; }
+
+/* ---- health at the top left, and bigger (playtest feedback) ----------- */
+.cw-vitals { top: 84px; bottom: auto; left: 22px; width: 340px; padding: 12px 16px; }
+.cw-vitals-head { font-size: 13px; }
+.cw-vitals canvas { height: 54px; }
+.cw-meters label { grid-template-columns: 78px 1fr 64px; font-size: 13px; }
+.cw-meters i { height: 10px; border-radius: 2px; }
+.cw-missions { top: 280px; width: 260px; }
+.cw-missions h4 { font-size: 12px; }
+.cw-missions li { font-size: 13px; }
+.cw-serums { top: 420px; }
+.cw-serum { width: 230px; font-size: 13px; }
+.cw-core { gap: 32px; padding: 12px 28px; }
+.cw-core span { font-size: 11px; }
+.cw-core b { font-size: 27px; }
+.cw-spheres b { font-size: 48px; }
+.cw-tools { width: 300px; }
+.cw-gauges label { font-size: 12px; }
+@media (max-width: 650px) {
+  .cw-vitals { top: 66px; bottom: auto; width: 56vw; }
+}

@@ -604,3 +604,103 @@ body.trailer-clean, body.trailer-clean * { cursor: none !important; }
 }
 .trailer-toast.show { animation: trailerToast 1.6s ease both; }
 @keyframes trailerToast { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* New game: the difficulty, three big cards. Chapters: the difficulty above the grid. */
+.difficulty-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.difficulty-card { min-height: 128px; }
+.difficulty-card b { font-size: 20px; }
+.difficulty-card[data-new-game="hard"] em { color: #ff5a4e; }
+.difficulty-card[data-new-game="easy"] em { color: #7dffb0; }
+.new-game-warning { margin-top: 10px; color: #ffb547; }
+.chapters-difficulty { max-width: 360px; margin-top: 6px; }
+
+/* ==== Field manual and run report, redesigned (playtest feedback) ======== */
+
+/* The manual: glass cards with a medallion in the thing's own colour, the
+   "what to do with it" tag as a pill, a lift and glow on hover. */
+.manual-screen { background: radial-gradient(ellipse at 20% 0%, rgba(255, 138, 66, .1), transparent 55%), radial-gradient(ellipse at 90% 100%, rgba(94, 240, 255, .07), transparent 50%), rgba(8, 5, 4, .92); }
+.manual-copy h2 { letter-spacing: -.01em; text-wrap: balance; }
+.manual-tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 0; max-width: none; }
+.manual-tabs .tab {
+  flex: none; height: 34px; padding: 0 16px; border: 1px solid var(--accent-border-soft); border-radius: 999px;
+  background: rgba(255, 255, 255, .03); letter-spacing: .12em;
+}
+.manual-tabs .tab.on { border-color: var(--accent); background: linear-gradient(90deg, rgba(255, 138, 66, .28), rgba(255, 138, 66, .1)); color: var(--text); box-shadow: 0 0 18px rgba(255, 138, 66, .25); }
+.manual-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.manual-grid article {
+  display: grid; grid-template-columns: 38px 1fr; grid-template-rows: auto auto 1fr; column-gap: 12px; row-gap: 4px;
+  padding: 16px 16px 16px 14px; border: 1px solid rgba(255, 255, 255, .07); border-left: 0; border-radius: 6px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .015) 60%), rgba(12, 9, 8, .78);
+  box-shadow: inset 3px 0 0 var(--tone), 0 10px 26px rgba(0, 0, 0, .25);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.manual-grid article:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--tone) 45%, transparent); box-shadow: inset 3px 0 0 var(--tone), 0 14px 32px rgba(0, 0, 0, .35), 0 0 22px color-mix(in srgb, var(--tone) 22%, transparent); }
+/* The medallion: a ring and a lit core in the thing's colour. */
+.manual-grid article::after {
+  content: ""; grid-column: 1; grid-row: 1 / span 3; align-self: start; width: 34px; height: 34px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #fff 0 9%, var(--tone) 34%, color-mix(in srgb, var(--tone) 35%, #000) 64%, transparent 66%);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--tone) 60%, transparent), 0 0 16px color-mix(in srgb, var(--tone) 45%, transparent);
+}
+.manual-grid article[data-act]::before {
+  float: none; grid-column: 2; grid-row: 1; justify-self: start; margin: 0 0 2px;
+  padding: 3px 8px; border-radius: 999px; font-size: 9px; letter-spacing: .16em;
+}
+.manual-grid article h3 { grid-column: 2; grid-row: 2; font-size: 15px; }
+.manual-grid article p { grid-column: 2; grid-row: 3; font-size: 13px; line-height: 1.55; }
+.manual-legend { padding: 10px 14px; border: 1px solid rgba(255, 255, 255, .06); border-radius: 6px; background: rgba(255, 255, 255, .025); }
+
+/* The run report: tiles, a timeline of the levels, then the deaths. */
+.report-page { border-radius: 8px; background: linear-gradient(160deg, rgba(255, 255, 255, .05), rgba(0, 0, 0, .35)); }
+.rr-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 6px 0 18px; }
+.rr-tile { display: grid; gap: 4px; padding: 14px 16px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .08); background: rgba(0, 0, 0, .3); }
+.rr-tile b { font-size: clamp(22px, 2.6vw, 32px); font-weight: 900; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.rr-tile span { font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--text-dim); }
+.rr-tile.bad { border-color: rgba(255, 90, 78, .4); background: rgba(255, 90, 78, .08); }
+.rr-tile.bad b { color: #ff8a80; }
+.rr-tile.good { border-color: rgba(125, 255, 154, .35); background: rgba(125, 255, 154, .06); }
+.rr-tile.good b { color: #b8ffcb; }
+.rr-levels { margin: 0 0 18px; padding: 0; list-style: none; display: grid; gap: 6px; }
+.rr-levels li {
+  display: grid; grid-template-columns: 34px minmax(130px, 1.1fr) 2fr auto auto; align-items: center; gap: 14px;
+  padding: 10px 14px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .06); background: rgba(0, 0, 0, .25);
+}
+.rr-levels li.unplayed { opacity: .45; }
+.rr-num { font-size: 18px; font-weight: 900; color: var(--accent); }
+.rr-name { display: grid; line-height: 1.2; }
+.rr-name b { font-size: 14px; color: var(--text); }
+.rr-name small { font-size: 10px; letter-spacing: .12em; color: var(--text-dim); text-transform: uppercase; }
+.rr-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.rr-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #ffd27a); }
+.rr-levels li.clean .rr-bar i { background: linear-gradient(90deg, #5ef0ff, #b8ffcb); }
+.rr-time { font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.rr-tags { display: flex; gap: 6px; }
+.rr-tags em { padding: 3px 8px; border-radius: 999px; font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .06em; color: var(--text-dim); background: rgba(255, 255, 255, .06); white-space: nowrap; }
+.rr-levels li.hurt .rr-tags em.d { color: #ffb0a8; background: rgba(255, 90, 78, .16); }
+.rr-deaths { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.rr-deaths li { border-left: 0; border-radius: 6px; box-shadow: inset 3px 0 0 #ff5a4e; padding: 9px 12px; }
+.rr-deaths li.none { box-shadow: inset 3px 0 0 #b8ffcb; }
+/* On the end screen, beside the verdict: a little tighter. */
+.end-side .rr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
+.end-side .rr-tile { padding: 9px 12px; }
+.end-side .rr-tile b { font-size: 22px; }
+.end-side .rr-levels li { grid-template-columns: 26px 1fr 1fr auto; gap: 10px; padding: 7px 10px; }
+.end-side .rr-levels .rr-tags { display: none; }
+.end-side .rr-deaths { max-height: 130px; overflow-y: auto; }
+@media (max-width: 760px) {
+  .rr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rr-levels li { grid-template-columns: 26px 1fr auto; }
+  .rr-levels .rr-bar, .rr-levels .rr-tags { display: none; }
+}
+
+#reportScreen .credits-copy { width: min(960px, 100%); }
+#reportScreen .report-page { max-width: none; }
+.manual-grid article[data-tone="indigo"] { --tone: #7a5cff; }
+
+/* Chapters: the difficulty they are played on, plain to see. */
+.chapters-difficulty-label { margin-top: 18px; font-size: 11px; letter-spacing: .24em; }
+.chapters-difficulty { max-width: 480px; gap: 8px; margin-top: 8px; }
+.chapters-difficulty .difficulty-button { height: 44px; font-size: 13px; letter-spacing: .16em; border-radius: 6px; }
+.chapters-difficulty [data-difficulty="easy"].picked { border-color: #7dffb0; background: rgba(125, 255, 176, .14); color: #d8ffe8; box-shadow: 0 0 16px rgba(125, 255, 176, .25); }
+.chapters-difficulty [data-difficulty="normal"].picked { border-color: #ffb547; background: rgba(255, 181, 71, .14); color: #ffe6c0; box-shadow: 0 0 16px rgba(255, 181, 71, .25); }
+.chapters-difficulty [data-difficulty="hard"].picked { border-color: #ff5a4e; background: rgba(255, 90, 78, .16); color: #ffd6d2; box-shadow: 0 0 16px rgba(255, 90, 78, .3); }
+.chapters-copy .difficulty-note { margin-top: 8px; font-size: 13px; }

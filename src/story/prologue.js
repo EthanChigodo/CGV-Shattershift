@@ -1,11 +1,14 @@
 /**
  * The prologue: everything before the game, as a short in-engine film - the
- * start screen's "briefing". No voice: chapter cards and typed captions over
- * staged shots, with the story track under it. It explains what Project
- * Ascension was for, why the patients were taken, who ran it, what went wrong,
- * how it was found out, and why the tower is coming down tonight.
+ * start screen's "briefing". Chapter cards and typed captions over staged
+ * shots: Dr. Okoro's confession - the recording he sends the police tonight -
+ * each caption in his own voice (recorded with VoiceStudio -
+ * tools/audio/record.py), over a score that builds to the order and drops out
+ * for his last line. It explains what Project Ascension was for, why the
+ * patients were taken, who ran it, what went wrong, how it was found out, and
+ * why the tower is coming down tonight.
  *
- *   const prologue = new Prologue({ renderer, assetBase, character });
+ *   const prologue = new Prologue({ renderer, assetBase, character, voice });
  *   await prologue.load();                 // the models it stages
  *   prologue.start(() => backToTheMenu());
  *   // each frame while it runs:
@@ -30,42 +33,44 @@ import { Companion, loadStoryCharacter } from "./companion.js";
 import { WardStage } from "./stages/ward.js";
 import { PoliceHelicopters } from "../fx/police-helicopters.js";
 import { createPropKit } from "./stages/props.js";
+import { createMedicalProps } from "./stages/medical-props.js";
 import { CityAtNight } from "../levels/meltdown/city.js";
+import { VOICE_LINES } from "../audio/voice-lines.js";
 
 /**
  * The film, chapter by chapter: which set, how long, the card and the
  * caption, and the camera's move (from -> to, each { pos, look }, in the set's
  * own coordinates). Edit the words here.
  */
-export const CHAPTERS = [
+const FILM = [
   {
     set: "city", seconds: 10, tag: "01", title: "Ascension Tower",
-    text: "The Meridian Institute owned the top forty floors of Ascension Tower. The city thought it was a hospital.",
+    text: "My name is Elias Okoro. The Meridian Institute owns the top forty floors of Ascension Tower. The city thinks it's a hospital.",
     from: { pos: [150, 22, 210], look: [0, 60, 0] }, to: { pos: [70, 120, 120], look: [0, 175, 0] },
   },
   {
     set: "office", seconds: 11, tag: "02", title: "Project Ascension",
-    text: "Its director, Dr. Adrian Vale, sold the board a resonance field that could rebuild a body cell by cell. \"Fixed\" people, he called them. No more illness. No more age.",
+    text: "Our director, Dr. Adrian Vale, sold the board a resonance field that could rebuild a body, cell by cell. \"Fixed\" people, he called them. No more illness. No more age.",
     from: { pos: [4.5, 1.7, 5.5], look: [-1, 1.5, -1.5] }, to: { pos: [1.6, 1.6, 2.6], look: [-1.4, 1.55, -1] },
   },
   {
     set: "theatre", seconds: 11, tag: "03", title: "The subjects",
-    text: "Trials need subjects. Meridian found them at the city's free clinics - the homeless, the uninsured, the ones nobody would come looking for. They signed up for a sleep study.",
+    text: "Trials need subjects. We found them at the city's free clinics - the homeless, the uninsured. People nobody would come looking for. They thought they were signing up for a sleep study.",
     from: { pos: [2.6, 2.1, 2.6], look: [0, 1.0, 0] }, to: { pos: [1.2, 2.6, 1.0], look: [0, 0.95, -0.2] },
   },
   {
     set: "labs", seconds: 11, tag: "04", title: "Trials one to six",
-    text: "Six trials failed. The subjects lived - and kept changing. Meridian sedated them, catalogued them, and kept them in the labs below the observation decks.",
+    text: "Six trials failed. The subjects lived... and kept changing. So we sedated them, catalogued them, and kept them in the labs below the observation decks.",
     from: { pos: [0, 1.7, 9], look: [0, 1.6, -6] }, to: { pos: [0.6, 1.5, 1.5], look: [-2.6, 1.7, -2.5] },
   },
   {
     set: "ward", seconds: 11, tag: "05", title: "Subject 07",
-    text: "Trial seven was different. Subject 07 came through the field changed in a way none of their instruments could measure. Vale wanted to know how - before anyone else did.",
+    text: "Trial seven was different. Subject 07 came through the field changed - in a way none of our instruments could measure. And Vale wanted to know how, before anyone else did.",
     from: { pos: [1.8, 2.4, -1.4], look: [-1.4, 0.8, 1.6] }, to: { pos: [-0.4, 1.7, 0.0], look: [-1.4, 0.75, 1.9] },
   },
   {
     set: "leak", seconds: 11, tag: "06", title: "The leak",
-    text: "Dr. Elias Okoro had run the trials' anaesthesia for two years. He kept a copy of everything. Tonight he sent it to the city police.",
+    text: "I ran the anaesthesia on those trials for two years. I kept a copy of everything. Tonight, I sent it to the city police.",
     from: { pos: [-2.4, 1.9, 2.8], look: [0.3, 1.1, -0.6] }, to: { pos: [-0.9, 1.55, 1.2], look: [0.4, 1.15, -0.8] },
   },
   {
@@ -78,16 +83,29 @@ export const CHAPTERS = [
   },
   {
     set: "control", seconds: 11, tag: "08", title: "The order",
-    text: "Vale's answer was to bury it. Charges on every floor. The subjects still in their beds. Thirty minutes - and Ascension Tower comes down.",
+    text: "Vale's answer is to bury it. Charges on every floor. The subjects still in their beds. Thirty minutes - and this tower comes down.",
     from: { pos: [-1.6, 1.8, 3.8], look: [0.45, 1.5, -1] }, to: { pos: [-0.7, 1.65, 2.5], look: [0.5, 1.5, -1] },
   },
   {
     set: "ward", seconds: 8, tag: "09", title: "Tonight",
-    text: "Okoro went back for one of them.",
+    text: "I'm going back for one of them.",
     okoroArrives: true,
     from: { pos: [0.8, 1.7, -3.8], look: [-0.6, 1.1, 2] }, to: { pos: [0.2, 1.6, -2.4], look: [-1.2, 1.0, 1.8] },
   },
 ];
+
+/** Seconds into a chapter when Okoro starts speaking (after the fade from black). */
+const NARRATION_AT = 0.7;
+
+/**
+ * The film as it plays: each chapter at least as long as its narration takes
+ * (the recordings are listed in src/audio/voice-lines.js), so no line is cut
+ * off by the next chapter.
+ */
+export const CHAPTERS = FILM.map((c) => {
+  const spoken = VOICE_LINES[`okoro|${c.text}`]?.[1] ?? 0;
+  return { ...c, seconds: Math.max(c.seconds, spoken ? NARRATION_AT + spoken + 1.1 : 0) };
+});
 
 const STYLE = `
 .prologue { position: fixed; inset: 0; z-index: 40; pointer-events: none; font-family: Inter, "Segoe UI", Arial, sans-serif; color: #eef4f6; }
@@ -107,7 +125,64 @@ const STYLE = `
 .prologue .pl-endtitle.show { opacity: 1; }
 .prologue .pl-skip { position: absolute; right: 4vw; top: calc(11vh + 18px); z-index: 2; pointer-events: auto; padding: 8px 14px; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.45); color: #eef4f6; font: 700 11px/1 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: .2em; cursor: pointer; }
 .prologue .pl-skip:hover { border-color: #ff9a52; color: #ff9a52; }
+
+/* It is Okoro's recording - the evidence he sends tonight: a camera's
+   overlay (REC, the timecode, the case number, the corner marks), film
+   grain and a vignette over the shots. */
+.prologue .pl-grain { position: absolute; inset: -50%; opacity: .11; mix-blend-mode: overlay; background-size: 220px 220px; animation: plGrain .5s steps(4) infinite; }
+@keyframes plGrain { 0% { transform: translate(0, 0); } 25% { transform: translate(-7%, 4%); } 50% { transform: translate(5%, -6%); } 75% { transform: translate(-3%, -2%); } 100% { transform: translate(6%, 5%); } }
+.prologue .pl-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%); }
+.prologue .pl-rec { position: absolute; left: 4vw; top: calc(11vh + 18px); display: flex; gap: 18px; align-items: center; font: 800 12px/1 "Consolas", "Courier New", monospace; letter-spacing: .14em; color: rgba(238,244,246,.85); text-shadow: 0 0 8px rgba(0,0,0,.8); }
+.prologue .pl-rec b { display: flex; align-items: center; gap: 8px; color: #ff4a3d; }
+.prologue .pl-rec b::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #ff3a2a; box-shadow: 0 0 10px #ff3a2a; animation: plRec 1s steps(1) infinite; }
+@keyframes plRec { 50% { opacity: 0; } }
+.prologue .pl-rec span { opacity: .8; }
+.prologue .pl-corners { position: absolute; left: 3vw; right: 3vw; top: calc(11vh + 8px); bottom: calc(11vh + 8px); }
+.prologue .pl-corners i { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(238,244,246,.55); }
+.prologue .pl-corners i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; }
+.prologue .pl-corners i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+.prologue .pl-corners i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; }
+.prologue .pl-corners i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+
+/* Each chapter opens on its title, big across the middle, glitching in -
+   then it settles into the card at the bottom. */
+.prologue .pl-splash { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; opacity: 0; }
+.prologue .pl-splash em { display: block; font-style: normal; font: 900 12px/1 Inter, sans-serif; letter-spacing: .6em; color: #ff9a52; margin-bottom: 14px; }
+.prologue .pl-splash strong { position: relative; display: inline-block; font-size: clamp(34px, 6vw, 84px); font-weight: 900; letter-spacing: .06em; text-transform: uppercase; text-shadow: 0 0 40px rgba(255,154,82,.35); }
+.prologue .pl-splash strong::before, .prologue .pl-splash strong::after { content: attr(data-text); position: absolute; inset: 0; }
+.prologue .pl-splash strong::before { color: #7ef4f1; clip-path: inset(0 0 60% 0); transform: translateX(-6px); opacity: .8; }
+.prologue .pl-splash strong::after { color: #ff5a3c; clip-path: inset(62% 0 0 0); transform: translateX(6px); opacity: .8; }
+.prologue .pl-splash.show { animation: plSplash 2.6s ease forwards; }
+.prologue .pl-splash.show strong::before, .prologue .pl-splash.show strong::after { animation: plSlice 2.6s steps(1) forwards; }
+@keyframes plSplash { 0% { opacity: 0; letter-spacing: .5em; filter: blur(8px); } 14% { opacity: 1; letter-spacing: .06em; filter: none; } 72% { opacity: 1; } 100% { opacity: 0; transform: translateY(-50%) scale(1.04); } }
+@keyframes plSlice { 0% { opacity: .9; } 8% { transform: translateX(10px); } 12% { transform: translateX(-4px); } 18% { opacity: 0; } 100% { opacity: 0; } }
+
+/* The end title cracks into place: a white flash, slices that settle. */
+.prologue .pl-endtitle.show { animation: plEnd 3s ease forwards; text-shadow: 0 0 60px rgba(126,244,241,.45); }
+@keyframes plEnd { 0% { opacity: 0; letter-spacing: .6em; } 6% { opacity: 1; color: #fff; text-shadow: 0 0 120px #fff; } 20% { letter-spacing: .12em; color: #eef4f6; } 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .prologue .pl-grain, .prologue .pl-splash.show, .prologue .pl-splash.show strong::before, .prologue .pl-splash.show strong::after { animation: none; }
+  .prologue .pl-splash.show { opacity: 0; }
+}
 `;
+
+/** A tile of film grain (a data URL, made once). */
+let grainUrl = null;
+function grainTexture() {
+  if (grainUrl) return grainUrl;
+  const c = document.createElement("canvas");
+  c.width = c.height = 220;
+  const g = c.getContext("2d");
+  const image = g.createImageData(220, 220);
+  for (let i = 0; i < image.data.length; i += 4) {
+    const v = Math.random() * 255;
+    image.data[i] = image.data[i + 1] = image.data[i + 2] = v;
+    image.data[i + 3] = 255;
+  }
+  g.putImageData(image, 0, 0);
+  grainUrl = c.toDataURL("image/png");
+  return grainUrl;
+}
 
 function ensureStyle() {
   if (document.querySelector("style[data-prologue]")) return;
@@ -213,11 +288,14 @@ export class Prologue {
    * @param {THREE.WebGLRenderer} o.renderer
    * @param {string} o.assetBase     URL of assets/meltdown/
    * @param {string} [o.character]   the player character's asset key
+   * @param {{say(line:object):void, stop():void, preload(lines:object[]):void}} [o.voice]  Okoro's voice (story/voice.js)
    */
-  constructor({ renderer, assetBase, character = "playerFemale" }) {
+  constructor({ renderer, assetBase, character = "playerFemale", voice = null }) {
     this.renderer = renderer;
     this.assetBase = assetBase;
     this.character = character;
+    this.voice = voice;
+    this.narrated = new Set();
     this.active = false;
     this.loaded = false;
     this.owned = [];
@@ -254,7 +332,14 @@ export class Prologue {
     this.ui.skipButton = el("button", "pl-skip", "SKIP (ESC)");
     this.ui.skipButton.type = "button";
     this.ui.skipButton.addEventListener("click", () => this.skip());
-    this.ui.root.append(el("div", "pl-bar top"), el("div", "pl-bar bottom"), this.ui.card, this.ui.dots, this.ui.end, this.ui.fade, this.ui.skipButton);
+    // The recording's look: grain, vignette, the camera overlay, the chapter splash.
+    this.ui.grain = el("div", "pl-grain");
+    this.ui.grain.style.backgroundImage = `url(${grainTexture()})`;
+    this.ui.rec = el("div", "pl-rec", `<b>REC</b><span class="pl-time">00:00:00:00</span><span>EVIDENCE // MERIDIAN-07</span>`);
+    this.ui.time = this.ui.rec.querySelector(".pl-time");
+    this.ui.splash = el("div", "pl-splash", `<em></em><strong></strong>`);
+    this.ui.root.append(this.ui.grain, el("div", "pl-vignette"), el("div", "pl-corners", "<i></i><i></i><i></i><i></i>"), this.ui.rec,
+      el("div", "pl-bar top"), el("div", "pl-bar bottom"), this.ui.splash, this.ui.card, this.ui.dots, this.ui.end, this.ui.fade, this.ui.skipButton);
     document.body.appendChild(this.ui.root);
   }
 
@@ -264,7 +349,7 @@ export class Prologue {
     this._loading ??= (async () => {
       const base = this.assetBase;
       const [assets, okoro, vale] = await Promise.all([
-        loadMeltdownAssets(base, { names: ["cityNight", "operatingRoom", "patient", "officeDesk", this.character, "scientistRust"], onProgress }),
+        loadMeltdownAssets(base, { names: ["cityNight", "operatingRoom", "patient", "officeDesk", this.character, "scientistRust", "microscope"], onProgress }),
         loadStoryCharacter(base, "scientistGood"),
         loadStoryCharacter(base, "scientistEvil"),
       ]);
@@ -272,6 +357,8 @@ export class Prologue {
       this.templates = { okoro, vale };
       // The sets' furniture (src/story/stages/props.js).
       this.kit = createPropKit((x) => this._own(x));
+      // The theatre's and the labs' equipment (stages/medical-props.js).
+      this.med = createMedicalProps(this.kit, (x) => this._own(x));
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.env = this._own(pmrem.fromScene(new RoomEnvironment(this.renderer), 0.04).texture);
       pmrem.dispose();
@@ -344,7 +431,9 @@ export class Prologue {
     const city = this.assets.get("cityNight");
     if (city) {
       const model = city.template.clone(true);
-      // Its own little sky dome goes: the set has a sky. And the one facade
+      // Its own little sky dome goes: the set has a sky. So does its ground
+      // sheet - a flat white plate that covered the glowing streets below
+      // (the streets are the ground now). And the one facade
       // with a shop shutter's foreign lettering on it takes the plain lit
       // windows the other towers have (it's an American city).
       let windowsMap = null;
@@ -355,7 +444,7 @@ export class Prologue {
           o.material.map = windowsMap;
         }
         if (o.isMesh && o.geometry.boundingSphere === null) o.geometry.computeBoundingSphere();
-        if (o.isMesh && /Sphere/.test(o.name)) o.visible = false;
+        if (o.isMesh && /Sphere|^Plane/.test(o.name)) o.visible = false;
         if (o.isMesh && o.material && "emissive" in o.material) {
           o.material = this._own(o.material.clone());
           o.material.emissiveMap = o.material.map;
@@ -498,6 +587,37 @@ export class Prologue {
     place(kit.plant({ height: 1.3, seed: 2 }), -5.4, 0, -2.4);
     place(kit.plant({ height: 1.1, seed: 5 }), 5.4, 0, 5.2);
     place(kit.bookshelf({ width: 1.6, height: 2.2, seed: 4 }), -5.88, 0, 1.8, Math.PI / 2);
+    // What a director's boardroom keeps: a second shelf, the filing
+    // cabinets, a credenza with water for the board, a clock, the project on
+    // a whiteboard, and the institute's pictures of itself on the walls.
+    place(kit.bookshelf({ width: 1.6, height: 2.2, seed: 9 }), -5.88, 0, 4.0, Math.PI / 2);
+    for (const x of [-3.9, -3.4]) place(kit.filingCabinet(), x, 0, -2.6);
+    const clock = kit.wallClock();
+    place(clock, -4.5, 2.6, -2.88);
+    const credenza = new THREE.Group();
+    kit.part(credenza, kit.M.darkWood, 2.0, 0.78, 0.5, 0, 0.39, 0, { r: 0.02 });
+    for (const x of [-0.5, 0.5]) kit.part(credenza, kit.M.chrome, 0.3, 0.015, 0.02, x, 0.55, 0.255);
+    kit.rod(credenza, kit.M.glass, 0.07, 0.26, -0.55, 0.91, 0, { seg: 16 });
+    kit.rod(credenza, kit.M.water, 0.06, 0.16, -0.55, 0.86, 0, { seg: 16 });
+    for (let i = 0; i < 4; i += 1) kit.rod(credenza, kit.M.glass, 0.035, 0.1, -0.25 + i * 0.1, 0.83, 0.05, { seg: 12 });
+    kit.part(credenza, kit.M.black, 0.28, 0.22, 0.02, 0.55, 0.9, -0.05, { rx: -0.15 });
+    place(credenza, 2.6, 0, -2.62);
+    const board = kit.sign([["RESONANCE FIELD", 34], ["cell repair  >  re-growth  >  ???", 22], ["T1  T2  T3  T4  T5  T6  -  FAILED", 22], ["T7  ->  ?", 30]],
+      { width: 1.8, height: 1.0, bg: "#f4f6f4", fg: "#1d3d6b", stripe: "#c23a2a" });
+    place(board, -5.86, 1.65, -1.1, Math.PI / 2);
+    kit.part(s, kit.M.chrome, 0.04, 0.03, 1.8, -5.82, 1.12, -1.1);
+    // Framed photographs: the tower at night, the board, the first trial.
+    const photo = (lines, bg, x, y, z, ry) => {
+      const frame = new THREE.Group();
+      kit.part(frame, kit.M.black, 0.72, 0.52, 0.03, 0, 0, 0);
+      const pic = kit.sign(lines, { width: 0.64, height: 0.44, bg, fg: "#e8dcc4" });
+      pic.position.z = 0.02;
+      frame.add(pic);
+      place(frame, x, y, z, ry);
+    };
+    photo([["ASCENSION", 36], ["TOWER // 2031", 22]], "#22303e", -4.5, 1.65, -2.88, 0);
+    photo([["THE BOARD", 34], ["MERIDIAN INSTITUTE", 18]], "#3a2c22", 4.0, 1.75, -2.88, 0);
+    photo([["TRIAL 01", 38], ["DR. A. VALE", 20]], "#1e2a24", -5.86, 1.7, 2.9, Math.PI / 2);
     // Vale, presenting.
     const vale = this._person(this.templates.vale, { position: new THREE.Vector3(-2.6, 0, -1.8), heading: -0.9, action: "talk" });
     s.add(vale.root);
@@ -565,6 +685,51 @@ export class Prologue {
     const surgeon = this._person(surgeonT, { position: new THREE.Vector3(-0.85, 0, -0.2), heading: -Math.PI / 2, action: "hold" });
     s.add(surgeon.root);
     this.updaters.push((dt) => surgeon.update(dt));
+
+    // The room's equipment, so it reads as a working theatre: the surgical
+    // light over the table, the anaesthesia machine at the head with its
+    // monitor running, the instruments laid out, an IV, the crash cart, the
+    // gas, the films on the lightbox, the waste.
+    const med = this.med;
+    // Where the scanned room's walls are (the lightbox goes on one).
+    const bounds = room ? new THREE.Box3().setFromObject(s) : null;
+    const wallX = Math.max(-3.2, (bounds && Number.isFinite(bounds.min.x) ? bounds.min.x : -3.2) + 0.12);
+    // (Its heads over the far side of the table: the camera comes in high
+    // from the near side and must see the patient past them.)
+    s.add(med.surgicalLight({ heads: [[-0.62, 2.35, -0.35, 0.5], [-0.5, 2.45, 0.6, 0.4]] }));
+    const vitals = med.vitalsMonitor();
+    const machine = med.anaesthesiaMachine(vitals.root);
+    machine.position.set(0.15, 0, -1.75);
+    machine.rotation.y = 0.35;
+    s.add(machine);
+    const tray = med.instrumentTray();
+    tray.position.set(0.72, 0, 0.55);
+    tray.rotation.y = -Math.PI / 2;
+    s.add(tray);
+    const iv = kit.ivStand();
+    iv.root.position.set(-0.55, 0, -1.2);
+    s.add(iv.root);
+    kit.tube(s, kit.M.glass, [[-0.45, 1.62, -1.2], [-0.4, 1.3, -0.9], [-0.42, 1.0, -0.55], [-0.3, 0.98, -0.42]], 0.006);
+    const cart = med.crashCart();
+    cart.position.set(wallX + 0.45, 0, 1.5);
+    cart.rotation.y = Math.PI / 2;
+    s.add(cart);
+    const gas = med.cylinderRack(3);
+    gas.position.set(wallX + 0.25, 0, -1.7);
+    gas.rotation.y = Math.PI / 2;
+    s.add(gas);
+    const films = med.lightbox();
+    films.position.set(wallX + 0.05, 1.55, 0.1);
+    films.rotation.y = Math.PI / 2;
+    s.add(films);
+    const bin = med.wasteBin();
+    bin.position.set(1.35, 0, -1.4);
+    bin.rotation.y = -0.6;
+    s.add(bin);
+    this.updaters.push((dt, time) => {
+      vitals.update(time);
+      cart.userData.update(time);
+    });
   }
 
   /** The labs below the decks: tanks, and what's in them. */
@@ -667,8 +832,35 @@ export class Prologue {
     gurney.position.set(0.4, 0, -7.6);
     gurney.rotation.y = 0.3;
     s.add(gurney);
+    // Along the walls behind the tanks: what a lab keeps - specimens in
+    // jars, benches with the centrifuge, the monitors, a microscope; a fume
+    // hood at the far end.
+    const med = this.med;
+    const labScreens = [];
+    for (const side of [-1, 1]) {
+      for (const [z, seed] of [[0, 3 + side], [-4, 7 + side]]) {
+        const shelf = med.specimenShelf({ width: 1.8, seed });
+        shelf.position.set(side * 4.7, 0, z);
+        shelf.rotation.y = -side * Math.PI / 2;
+        s.add(shelf);
+      }
+      const scope = side < 0 ? this.assets.get("microscope")?.template?.clone(true) ?? null : null;
+      if (scope) {
+        const size = new THREE.Box3().setFromObject(scope).getSize(new THREE.Vector3());
+        scope.scale.setScalar(0.42 / Math.max(0.001, size.y));
+      }
+      const bench = med.labBench({ width: 2.4, microscope: scope });
+      bench.position.set(side * 4.5, 0, 4.2);
+      bench.rotation.y = -side * Math.PI / 2;
+      s.add(bench);
+      labScreens.push(bench);
+    }
+    const hood = med.fumeHood();
+    hood.position.set(3.2, 0, -9.4);
+    s.add(hood);
     // They float, barely moving; the bubbles rise.
     this.updaters.push((dt, time) => {
+      for (const b of labScreens) b.userData.update(time);
       for (const b of bodies) {
         b.body.position.y = 0.35 + Math.sin(time * 0.6 + b.phase) * 0.06;
         b.body.rotation.z = Math.sin(time * 0.4 + b.phase) * 0.04;
@@ -1018,6 +1210,8 @@ export class Prologue {
     this.active = true;
     this.t = 0;
     this.chapter = -1;
+    this.narrated.clear();
+    this.voice?.preload(CHAPTERS.map((c) => ({ who: "okoro", text: c.text })));
     this.ended = false;
     this.ui.root.hidden = false;
     this.ui.end.classList.remove("show");
@@ -1033,6 +1227,7 @@ export class Prologue {
 
   _finish() {
     this.active = false;
+    this.voice?.stop();
     this.ui.root.hidden = true;
     this.ui.card.classList.remove("show");
     const done = this.onDone;
@@ -1075,6 +1270,15 @@ export class Prologue {
     }
     const { index, chapter, local, k } = at;
     if (index !== this.chapter) this._enterChapter(index, chapter);
+    // The recording's timecode (it was made tonight, at 23:41).
+    const tc = 23 * 3600 + 41 * 60 + this.t;
+    const two = (n) => String(Math.floor(n)).padStart(2, "0");
+    this.ui.time.textContent = `${two(tc / 3600)}:${two((tc / 60) % 60)}:${two(tc % 60)}:${two((this.t * 24) % 24)}`;
+    // Okoro says the caption as it types out.
+    if (local >= NARRATION_AT && !this.narrated.has(index)) {
+      this.narrated.add(index);
+      this.voice?.say({ who: "okoro", text: chapter.text });
+    }
     // Fade through black between chapters.
     const fade = Math.max(1 - smooth(local, 0, 0.7), smooth(local, chapter.seconds - 0.6, chapter.seconds));
     this.ui.fade.style.opacity = fade.toFixed(3);
@@ -1121,6 +1325,13 @@ export class Prologue {
     this.ui.card.classList.remove("show");
     void this.ui.card.offsetWidth;
     this.ui.card.classList.add("show");
+    this.ui.splash.querySelector("em").textContent = `CHAPTER ${chapter.tag}`;
+    const big = this.ui.splash.querySelector("strong");
+    big.textContent = chapter.title;
+    big.dataset.text = chapter.title;
+    this.ui.splash.classList.remove("show");
+    void this.ui.splash.offsetWidth;
+    this.ui.splash.classList.add("show");
     [...this.ui.dots.children].forEach((d, i) => d.classList.toggle("on", i <= index));
     this.camera.fov = chapter.set === "city" ? 38 : 50;
     this.camera.updateProjectionMatrix();

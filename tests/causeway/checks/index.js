@@ -150,9 +150,13 @@ export const mechanics = {
       d.shatter(serum.targets[0], {});
       if (!d.arsenal.isActive("prism")) failures.push("prism serum did not activate");
 
-      // Corridor contacts reflect the real projectile without losing speed or
-      // leaving its centre embedded. Repeated wall contacts and a ceiling hit
-      // exercise the same calculated-normal path.
+      // Corridor contacts reflect the real projectile - losing the share of
+      // its speed every hit takes (SPHERE_FLIGHT.wall), and slowing in the air
+      // once it has hit something (.drag) - without leaving its centre
+      // embedded. Repeated wall contacts and a ceiling hit exercise the same
+      // calculated-normal path.
+      const F = d.sphereFlight;
+      const after = Math.exp(-F.drag * 0.03) * F.wall;
       d.setCausewayDistance(116); d.step(3);
       const ball = new T.Mesh(new T.SphereGeometry(1, 8, 6), new T.MeshBasicMaterial());
       ball.scale.setScalar(0.18);
@@ -172,16 +176,16 @@ export const mechanics = {
       d.projectiles.push(projectile);
       const speed = projectile.velocity.length();
       d.step(1, 0.03);
-      if (projectile.velocity.x >= 0 || Math.abs(projectile.velocity.length() - speed) > 1e-6) {
-        failures.push("right-wall ricochet did not reflect the angle while preserving speed");
+      if (projectile.velocity.x >= 0 || Math.abs(projectile.velocity.length() - speed * F.wall) > 1e-6) {
+        failures.push("right-wall ricochet did not reflect the angle, losing the wall's share of its speed");
       }
       if (ball.position.x > 5.62 || projectile.wallBounces !== 1) failures.push("right-wall ricochet did not resolve penetration exactly once");
 
       ball.position.x = -5.4;
       projectile.velocity.set(-20, 0, -10);
       d.step(1, 0.03);
-      if (projectile.velocity.x <= 0 || Math.abs(projectile.velocity.length() - speed) > 1e-6) {
-        failures.push("left-wall ricochet did not reflect the angle while preserving speed");
+      if (projectile.velocity.x <= 0 || Math.abs(projectile.velocity.length() - speed * after) > 1e-6) {
+        failures.push("left-wall ricochet did not reflect the angle, losing the wall's share of its speed");
       }
       if (ball.position.x < -5.62 || projectile.wallBounces !== 2) failures.push("the projectile could not make a second clean wall ricochet");
 
@@ -190,10 +194,10 @@ export const mechanics = {
       const ceilingSpeed = projectile.velocity.length();
       d.step(1, 0.03);
       if (projectile.velocity.y >= 0
-        || Math.abs(projectile.velocity.x - 4) > 1e-6
-        || Math.abs(projectile.velocity.z + 10) > 1e-6
-        || Math.abs(projectile.velocity.length() - ceilingSpeed) > 1e-6) {
-        failures.push("ceiling ricochet did not reflect the angle while preserving speed");
+        || Math.abs(projectile.velocity.x - 4 * after) > 1e-6
+        || Math.abs(projectile.velocity.z + 10 * after) > 1e-6
+        || Math.abs(projectile.velocity.length() - ceilingSpeed * after) > 1e-6) {
+        failures.push("ceiling ricochet did not reflect the angle, losing the ceiling's share of its speed");
       }
       if (ball.position.y > 5.02 || projectile.ceilingBounces !== 1) failures.push("ceiling ricochet did not resolve penetration exactly once");
       d.step(1, 0.03);

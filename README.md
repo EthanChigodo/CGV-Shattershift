@@ -33,10 +33,9 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | Right mouse (hold) | Focus - slow time to aim |
 | `A` / `D` or left / right | Change lane |
 | `W` / `S` or up / down | Sprint / brake (the Skyline); jump / slide (the Foundry, the Labs) |
-| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock (picked in the main menu's loadout and the pause menu too) |
+| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock, gravity (picked in the main menu's loadout and the pause menu too) |
 | `Space` / `Shift` | Jump / slide |
 | `C` | First-person / chase camera |
-| `M` | Minimap |
 | `V` / VIEW button | Choose which HUD panels show |
 | `H` | Hide the whole HUD |
 | `P` | Photo mode (filters, save photo, save 360° panorama) |
@@ -67,8 +66,8 @@ A research wing 212 floors up, burning at 03:47 in the morning, in three beats: 
 - **Five case files:** gold holograms standing in columns of light - run through one or shoot it to piece together what happened.
 - **From sedated to running for your life:** the run starts slow and blurred as Subject 07 staggers out of the pod, and builds to full pace as the adrenaline kicks in; explosions scare you into a sprint.
 - **The building coming down:** telegraphed ceiling collapses, a distant tower falling, the skybridge collapsing behind you, the atrium detonating below the lift.
-- **Tools:** three sphere types, six serum power-ups (prism split, Thermal Aegis, kinetic shield, overdrive, unlimited spheres, restoration), sprint/brake, bullet-time focus.
-- **Extras:** orthographic minimap, field manual, three missions per run, five collectible case files, photo mode with 360° export, and an endless mode of randomised chunks (Endless -> The Skyline).
+- **Tools:** four sphere types, six serum power-ups (prism split, Thermal Aegis, kinetic shield, overdrive, unlimited spheres, restoration), sprint/brake, bullet-time focus.
+- **Extras:** an orthographic tactical map of the roof, field manual, three missions per run, five collectible case files, photo mode with 360° export, and an endless mode of randomised chunks (Endless -> The Skyline).
 - **The hardest sector:** it comes after the Labs, so it runs faster (11.4 m/s), hits, fire and smoke hurt more, the collapse behind you is quicker (9.6 m/s) and the sealed gate gives you seven seconds.
 - **In the story** it is Sector 03: you arrive by the glass lift (no pod, no sedated start) and its lift goes up to the Roof.
 - **Graphics pipeline:** custom multi-pass post-processing (screen-space refraction, bloom, FXAA, heat haze, thermal vision, power-up looks), dynamic ray-marched sky, reflection probe, sun shadows, wet reflective floors, and Auto quality with dynamic resolution for lab machines.
@@ -83,7 +82,19 @@ Beside it, the **Loadout** card: who you play as (female or male), skin tone, an
 
 The **pause menu** has the same buttons (resume, settings, restart, quit) and a guide with three tabs: the **moves** for the sector you are in (highlighted) and everywhere, the **spheres** (change type mid-run), and the **power-ups**, each with a picture of its capsule, what it does and how long it lasts.
 
-**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally. The story briefing, menu and Level 1 have looping background music; Level 3 retains its generated Web Audio effects.
+**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally.
+
+## Sound
+
+Every line is **voice acted** with [VoiceStudio](https://github.com/debpalash/VoiceStudio)'s engines - Dr. Okoro's voice cloned from a real Nigerian English speaker, Dr. Vale cold and gleeful, both directed scene by scene so they talk rather than read - the patients and the effects are **real recordings**, and every stage has **its own score** (Kevin MacLeod's hybrid orchestral tracks, cut into loops). The scripts in `tools/audio/` make all of it - see [`tools/audio/README.md`](./tools/audio/README.md) - and every source and licence is in [`docs/credits.md`](./docs/credits.md).
+
+- **Dr. Okoro** is a Nigerian doctor, terrified: he speaks Nigerian English, talks to Seven as he runs through the Foundry (out of breath), whispers behind the desk and shouts in the lift. The briefing film is his confession - the recording he sends the police tonight - in his own voice.
+- **Dr. Vale** is deep, cold and in command - gleeful when he wins - over the tower's intercom (the Labs when the lights die, the Skyline, the roof as he lets them out), with laughter after his taunts and a mad laugh in the helicopter. The pilot on the radio is his own voice, undisguised.
+- **HALCYON**, the building's automatic system, makes its announcements to all personnel after a chime - it is on nobody's side; the **patients** growl, shriek, moan and beg ("help me", "it hurts") from wherever they are - the ones stalking you through the dark growl as they close in - and gurgle as they go down.
+- **Subject 07** speaks in the voice of the character picked (female or male), and cries out without words when hit.
+- **The tower:** the fire alarm (it dies with the power in the Labs), pain when you're hit (in the voice of the character you picked), demolition charges and the whole tower coming down on the Skyline, explosions, steel groaning, sprinklers bursting, glass everywhere.
+- **Music:** hybrid orchestral - big drums, brass and strings with synths. The Foundry plays "Big Mojo", the Labs "Darkness is Coming", the Skyline "Rocket", the Roof "Black Vortex"; the wake-up and the failing lift "Space Fighter Loop", the quiet ride after Okoro "Lost Time". The briefing's score ("Nerves") is cut to the film: low under Okoro's confession, erupting as Vale's order is given, gone for his last line. The ending plays the main theme. Inside the lifts their own music plays (except in the story's two scored rides). The music steps back whenever someone speaks.
+- Stage directions in the subtitles are heard too: `[a pistol shot]`, `[breathing hard]`, `[laughs]`.
 
 ## Play locally
 
@@ -177,7 +188,7 @@ Three.js r160 is kept in the repository (`lib/three/`) rather than loaded from a
 
 ## Current status
 
-The whole story is playable from start to finish: the briefing film, the wake-up and the Foundry with Dr. Okoro, the Gravity Fault lift (its brake clamps as reaction prompts), the Labs with the breach, the bend attack and Okoro's sacrifice, the quiet ride up, the Skyline's demolition and bridge jump, the Roof, and the ending in the helicopter with the credits - over the main theme. A death restarts the sector you were in. The character and skin tone picked on the start screen are the player in every level. Endless runs each environment on its own. Music is managed by `src/audio/music-manager.js`. The Skyline's recorded sounds (fire, glass, wind) play in every level; the Foundry adds a synthesized machinery bed (`src/audio/foundry-ambience.js`), and the Labs its own synthesized effects - no siren, but the building collapsing somewhere above and the patients' growls. Each module has its own checks (`node tests/<story|meltdown|causeway|foundry|elevators>/run.js`). Frame rates still need to be measured on lab hardware (Chrome DevTools > Rendering > FPS meter).
+The whole story is playable from start to finish: the briefing film, the wake-up and the Foundry with Dr. Okoro, the Gravity Fault lift (its brake clamps as reaction prompts), the Labs with the breach, the bend attack and Okoro's sacrifice, the quiet ride up, the Skyline's demolition and bridge jump, the Roof, and the ending in the helicopter with the credits - over the main theme. A death restarts the sector you were in. The character and skin tone picked on the start screen are the player in every level. Endless runs each environment on its own. Music is managed by `src/audio/music-manager.js` (a track per stage, and the briefing's score, which starts with the film), the voices by `src/story/voice.js`, and the recorded effects - the patients, the alarm, your pain, the building coming down - by `src/audio/level1-audio.js`, in every level; the Foundry adds a synthesized machinery bed (`src/audio/foundry-ambience.js`), and the Labs their own synthesized effects. Everything goes through one limiter (`src/audio/output.js`). Each module has its own checks (`node tests/<story|meltdown|causeway|foundry|elevators>/run.js`). Frame rates still need to be measured on lab hardware (Chrome DevTools > Rendering > FPS meter).
 
 ## Technology
 

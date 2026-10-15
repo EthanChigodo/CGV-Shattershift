@@ -146,12 +146,16 @@ export function blastScene(a) {
       }
       pose.position.copy(a.at(d, 0, y));
       pose.look.copy(look);
-      // A miss: down past the edge, the city coming up, the wind.
+      // A miss: down past the edge. A beat looking down at the city coming
+      // up, then turned over, looking back up at the lip you missed as it
+      // goes away overhead - tumbling, the wind.
       if (dying > 0) {
         pose.position.y -= 4.9 * dying * dying;
-        pose.look.copy(pose.position).add(v().set(0, -10, -3));
-        pose.roll = dying * 0.6;
-        pose.shake = 0.4;
+        const down = v().copy(pose.position).add(v().set(0, -10, -3));
+        const edge = a.at(lip, 0, 0.3);
+        pose.look.copy(down).lerp(edge, THREE.MathUtils.smoothstep(dying, 0.2, 0.75));
+        pose.roll = Math.sin(dying * 2.3) * 0.4 + dying * 0.25;
+        pose.shake = 0.55;
       }
     },
     events: [

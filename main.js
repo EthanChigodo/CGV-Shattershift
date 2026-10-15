@@ -6,12 +6,11 @@ import { FoundryHud } from "./src/ui/foundry-hud.js";
 import { CausewayLevel, LAYERS, ROUTE as CAUSEWAY_ROUTE, BEATS as SKYLINE_BEATS } from "./src/levels/causeway/index.js";
 import { CausewayHud, HUD_PANELS, applyHudPanels } from "./src/ui/causeway-hud.js";
 import { PostFX } from "./src/fx/postfx.js";
-import { Minimap } from "./src/fx/minimap.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
 import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
 import { AmmoRecovery, canAffordThrow, gateRecoveryWaiting } from "./src/systems/ammo-recovery.js";
 import { AmmoRecoveryHint } from "./src/ui/ammo-recovery.js";
-import { SPHERE_GEOMETRY, sphereMaterial, sphereHalo } from "./src/systems/spheres.js";
+import { SPHERE_GEOMETRY, SPHERE_FLIGHT, sphereMaterial, sphereHalo } from "./src/systems/spheres.js";
 import { buildBallPickers, buildTabs, showMoves, savedBall } from "./src/ui/menus.js";
 import { PowerupBanner } from "./src/ui/powerup-banner.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
@@ -23,9 +22,12 @@ import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { FoundryAmbience } from "./src/audio/foundry-ambience.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
-import { QuietRide } from "./src/elevators/quiet-ride.js";
+import { QuietRide, LINES as RADIO_LINES } from "./src/elevators/quiet-ride.js";
 import { ShatterFX } from "./src/fx/shatter.js";
 import { SphereImpactFX } from "./src/fx/sphere-impact.js";
+import { LoadingScreen } from "./src/ui/loading-screen.js";
+import { DeathFX } from "./src/ui/death-fx.js";
+import { SphereWheel } from "./src/ui/sphere-wheel.js";
 import { CollectibleSet, foundSummary } from "./src/systems/collectibles.js";
 import { StoryLayer } from "./src/story/story-layer.js";
 import { Companion, loadStoryCharacter } from "./src/story/companion.js";
@@ -42,6 +44,7 @@ import { blastScene } from "./src/story/scenes-skyline.js";
 import { SCENES as STORY_LINES } from "./src/story/script.js";
 import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone } from "./src/figure/look.js";
 import { DIFFICULTIES, loadDifficulty, saveDifficulty } from "./src/systems/difficulty.js";
+import { loadSave, writeSave, clearSave, SAVE_STAGE_NAMES } from "./src/systems/story-save.js";
 import { TrailerDirector } from "./src/trailer/director.js";
 
 const canvas = document.querySelector("#game");
@@ -52,7 +55,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 // Shadows: one map, rendered once per frame by the post pipeline rather than
-// once per render call (the reflection probe and minimap render too).
+// once per render call (the reflection probe renders too).
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
@@ -182,6 +185,14 @@ let countdownLeft = 0;
  * not the whole run. { stage: "foundry"|"labs"|"skyline"|"roof", score, ammo, balls }
  */
 let storyCheckpoint = null;
+/** This run keeps the saved game up to date (a New game or a Continue - not a chapter). */
+let saveProgress = false;
+
+/** The story reached a sector: its checkpoint, and the saved game. */
+function setStoryCheckpoint(cp) {
+  storyCheckpoint = cp;
+  if (saveProgress && storyRun && runKind === "story") writeSave({ ...cp, difficulty: runDifficulty });
+}
 /** The last run ended in a story death (the end screen offers the sector again). */
 let storyDeath = false;
 
@@ -195,6 +206,8 @@ const settingsDefaults = {
   // Subtitle size (there are no voiceovers, so they must be easy to read):
   // "normal", "large" or "xl" - see --sub-scale in styles.css.
   subtitleSize: "large",
+  // The characters' recorded voices (off: only HALCYON, the intercom, speaks).
+  voices: true,
   // Which HUD panels are shown. See HUD_PANELS in src/ui/causeway-hud.js.
   hud: Object.fromEntries(HUD_PANELS.map((p) => [p.key, p.on])),
 };
@@ -215,6 +228,8 @@ document.body.classList.toggle("reduced-motion", !!settings.reducedMotion);
 // Level 3's existing synthesized effects remain independent.
 const music = new MusicManager();
 const level1Audio = new Level1Audio(() => music.context);
+// The player's breath, grunts and screams are the character's own.
+level1Audio.setCharacter(savedCharacter());
 // The Foundry's machinery, heard (synthesized on the same context).
 const foundryAmbience = new FoundryAmbience(() => (music.context?.state === "running" ? music.context : null));
 // Level 1's GPU glass shards, for the Foundry (the Causeway has its own; the
@@ -226,8 +241,8 @@ const sphereImpact = new SphereImpactFX(scene);
 music.showMenu();
 const unlockMusic = async (event) => {
   // Set the briefing intent before unlocking on the same pointer/key gesture,
-  // so the menu track cannot briefly start while the piano is loading.
-  if (event.target?.closest?.("#storyBeginButton, #replayStoryButton")) music.showStory();
+  // so the menu track cannot briefly start while the briefing's track is loading.
+  if (event.target?.closest?.("#storyBeginButton, #replayStoryButton")) music.holdStory();
   const ready = music.unlock(); // Creates the shared context synchronously.
   level1Audio.unlock();
   if (await ready) level1Audio.unlock();
@@ -242,6 +257,8 @@ addEventListener("keydown", unlockMusic);
  */
 const story = new StoryLayer({
   getAudioContext: () => music.context,
+  // The stage directions' sounds ([breathing hard], [a pistol shot]...).
+  sfx: level1Audio,
   blurTargets: [canvas],
   options: { longWindows: settings.longReactions, holdInsteadOfMash: settings.holdInsteadOfMash, reducedMotion: settings.reducedMotion },
 });
@@ -275,6 +292,7 @@ const ui = {
   aimAssistToggle: $("#aimAssistToggle"),
   longReactionsToggle: $("#longReactionsToggle"), holdInsteadOfMashToggle: $("#holdInsteadOfMashToggle"),
   subtitleSizeSelect: $("#subtitleSizeSelect"),
+  voicesToggle: $("#voicesToggle"),
   viewButton: $("#viewButton"), viewMenu: $("#viewMenu"), briefing: $("#briefingMissions"),
   qualitySelect: $("#qualitySelect"),
   qualityNote: $("#qualityNote"),
@@ -284,7 +302,7 @@ const ui = {
   endProgress: $("#endProgress"),
   endReport: $("#endReport"),
   countdown: $("#countdown"),
-  manual: $("#manualScreen"), chapters: $("#chaptersScreen"), fade: $("#fadeOverlay"),
+  manual: $("#manualScreen"), chapters: $("#chaptersScreen"), newGame: $("#newGameScreen"), fade: $("#fadeOverlay"),
   endlessButton: $("#endlessButton"), progressLine: $("#progressLine"), endless: $("#endlessScreen"),
 };
 
@@ -301,6 +319,8 @@ function applySettingsToControls() {
   ui.resolutionSelect.value = String(settings.resolution);
   ui.subtitleSizeSelect.value = settings.subtitleSize;
   applySubtitleSize();
+  if (ui.voicesToggle) ui.voicesToggle.checked = settings.voices;
+  story.voice.characterVoices = settings.voices;
   for (const input of document.querySelectorAll("[data-hud-key]")) input.checked = !!settings.hud[input.dataset.hudKey];
   applyHudPanels(settings.hud);
 }
@@ -580,6 +600,8 @@ function buildFoundry(variant = 0) {
     brightness: 1.6,
     // The escape clock is as tight at every difficulty's pace.
     runSpeed: FOUNDRY_SPEED_ZONES[2].speed * diff().speed,
+    // Harder is longer too (src/systems/difficulty.js).
+    length: storyRun ? diff().length : 1,
     variant,
     gentleStart: storyRun ? STORY_GENTLE_START : 0,
     // The story's difficulty: obstacle spacing, and Hard's slag carts.
@@ -711,7 +733,12 @@ function updateFoundry(dt, time) {
   // (Audio may only have been unlocked since the Foundry came up.)
   if (!foundryAmbience.running && foundry.root.visible) foundryAmbience.start();
 
-  if (state !== "playing" || paused) return;
+  if (state !== "playing" || paused) {
+    level1Audio.updateAlarm(0);
+    return;
+  }
+  // The tower's fire alarm a few floors up, through the concrete.
+  level1Audio.updateAlarm(0.6, 0.78);
 
   const { hits, grazes } = foundry.probe(foundryBox, distance);
 
@@ -743,6 +770,7 @@ function updateFoundry(dt, time) {
     combo = 1; comboTimer = 0;
     foundry.impact(1);
     level1Audio.impact(1);
+    level1Audio.hurt();
     foundryHud.setIntegrity(Math.max(0, health));
     triggerShake(0.45);
     showMessage(hazard.userData.barrier === "high" ? "LOW CLEARANCE" : "INTEGRITY DAMAGED");
@@ -845,8 +873,6 @@ arsenal.onInstant = (type, def) => {
 const progress = loadProgress();
 const missions = new MissionTracker(progress);
 const postfx = new PostFX(renderer, { quality: resolvedQuality() });
-const minimap = new Minimap(renderer, causewayHud.mapFrame);
-minimap.attach(scene);
 const photo = new PhotoMode({ renderer, root: causewayHud.photoEl });
 
 /** Per-run state for Level 1. Reset by resetRun(). */
@@ -886,7 +912,6 @@ function applyQuality() {
   if (!settings.effects) postfx.enabled = false;
   // Shadows off: the Skyline's sun stops casting (the Foundry has none; the Labs only on High).
   if (causeway?.sun) causeway.sun.castShadow = q !== "low" && settings.shadows;
-  minimap.measure();
   if (meltdown) {
     meltdown.setBloom(q !== "low" && settings.effects);
     meltdownQuality();
@@ -931,30 +956,48 @@ function buildCauseway(mode = "story") {
 
 function wireCausewayEvents(level) {
   const on = (name, fn) => level.events.on(name, (payload) => { if (level === causeway) fn(payload); });
-  on("radio", (p) => { causewayHud.radio(p); });
-  on("title", (p) => causewayHud.title(`Sector 03 // Beat ${p.index + 1} of 3`, p.name));
+  // HALCYON and Dr. Vale over the intercom: the panel shows it, and they say it.
+  on("radio", (p) => {
+    // Up while it is said, and a beat after.
+    const clip = story.voice.clipFor({ who: p.speaker, text: p.text });
+    causewayHud.radio({ ...p, seconds: clip ? Math.max(clip.speech + 0.4, 1.6) : undefined });
+    story.voice.say({ who: p.speaker, text: p.text });
+  });
+  // (No beat titles - "CONTAINMENT WARD" and the rest - popping up at the top: the playtesters found them noise.)
   on("hint", (p) => causewayHud.hint(p.text));
   on("file", (p) => causewayHud.caseFile(p.lines, p.found, p.total));
-  on("sprinkler", () => causewayHud.hint("Sprinkler open: fires below are going out"));
+  on("sprinkler", () => { causewayHud.hint("Sprinkler open: fires below are going out"); level1Audio.sprinklerBurst(); });
   on("serum", () => level1Audio.serumCollected());
   on("sphere-cache", () => level1Audio.sphereCollected());
   on("vent", () => causewayHud.hint("Vent clear: the smoke is thinning"));
   on("extinguish", (p) => { if (p.by === "cryo") showMessage(`CRYO // ${p.count} FIRE${p.count > 1 ? "S" : ""} OUT`); });
   on("collapse-warning", () => causewayHud.hint("Ceiling giving way: watch the red ring"));
   on("collapse-start", (p) => level1Audio.startFalling(p.id));
-  on("collapse-landed", (p) => { level1Audio.stopFalling(p.id); level1Audio.impact(0.9); triggerShake(0.25); });
+  on("collapse-landed", (p) => { level1Audio.stopFalling(p.id); level1Audio.impact(0.9); level1Audio.debrisFall(0.8); triggerShake(0.25); });
   on("glass-break", (p) => { level1Audio.glassBreak(); level1Audio.addGlassDebris(p.position, p.radius); });
   on("pod-break", () => level1Audio.podBreak());
   on("explosion", (p) => {
+    level1Audio.explosion(p.strength ?? 1);
     triggerShake(0.55 * p.strength);
     run.flash = Math.max(run.flash, 0.35 * p.strength);
     // Fright: a blast behind you makes you run.
     if (state === "playing") run.surge = Math.min(1.5, run.surge + 0.9 * p.strength);
   });
-  on("tower-collapse", () => { if (state === "playing") run.surge = Math.min(1.5, run.surge + 0.5); });
+  on("tower-collapse", () => {
+    level1Audio.buildingCollapse(0.85);
+    if (state === "playing") run.surge = Math.min(1.5, run.surge + 0.5);
+  });
   on("pod-break", () => triggerShake(0.3));
-  on("tremor", (p) => { run.rumble = { t: 0, duration: p.duration, strength: p.strength * (settings.reducedMotion ? 0.25 : 1) }; });
-  on("chase-start", () => causewayHud.title("Structural failure", "Keep moving", 2.4));
+  on("tremor", (p) => {
+    level1Audio.distantCollapse(0.5 + (p.strength ?? 0.5) * 0.5);
+    run.rumble = { t: 0, duration: p.duration, strength: p.strength * (settings.reducedMotion ? 0.25 : 1) };
+  });
+  on("chase-start", () => {
+    causewayHud.title("Structural failure", "Keep moving", 2.4);
+    // The bridge behind you: steel giving way, and the slabs going down.
+    level1Audio.metalGroan(1.1);
+    level1Audio.distantCollapse(1);
+  });
   on("chase-end", () => { causewayHud.warning(null); causewayHud.hint("Bridge section secured behind you"); });
   on("gate-armed", () => causewayHud.hint("Lift gate ahead: locks I, II, III", 3.2));
   on("lock", (p) => showMessage(`LOCK ${["I", "II", "III"][p.index]} // NEXT: ${["II", "III", ""][p.index]}`));
@@ -997,6 +1040,7 @@ function damage(amount, label) {
   run.damage = 1;
   run.slow = 0.6;
   causeway?.impact(1);
+  level1Audio.hurt(Math.min(1.2, 0.6 + amount / 40));
   triggerShake(0.45);
   showMessage(label);
   updateUI();
@@ -1115,6 +1159,8 @@ function updateCauseway(dt, time) {
   if (health <= 0) { updateUI(); endRun(false, exposure > 0 ? "fire" : "smoke"); return; }
   level1Audio.updateEnvironment(causeway.audioEnvironment(_playerPos));
   level1Audio.updateBrokenGlass(_playerPos, run.speed > 1 && jumpHeight < 0.12);
+  // The research wing's fire alarm.
+  level1Audio.updateAlarm(causewayMode === "story" ? 0.85 : 0.55, 0.1);
 
   // ---- Bridge collapse chase -------------------------------------------
   const chase = causeway.state.chase;
@@ -1212,7 +1258,7 @@ function updateCausewayLift(dt) {
   avatar.position.set(0, result.cabinY, causeway.worldZ(CAUSEWAY_ROUTE.lift));
   const end = settings.reducedMotion ? 6.2 : 7.4;
   ui.fade.style.opacity = THREE.MathUtils.clamp((result.t - (end - 0.9)) / 0.9, 0, 1).toFixed(3);
-  if (result.done) finishCausewayLift();
+  if (result.done && !pendingTransition) queueTransition(["THE ROOF", "HOLD OUT"], () => finishCausewayLift());
 }
 
 /** The Skyline's lift reaches the top: on to the Roof, the finale. */
@@ -1347,6 +1393,8 @@ function updateCausewayPresentation(dt) {
   // Shield bubble.
   const shieldOn = arsenal.isActive("shield");
   causeway.shield.visible = shieldOn && (cameraThird || state === "lift");
+  // In the lift it rides up with you (the level puts it where the run is).
+  if (state === "lift") causeway.shield.position.copy(avatar.position).sub(causeway.origin);
   run.ripple = Math.max(0, run.ripple - dt * 1.5);
   causeway.shield.material.uniforms.uStrength.value = arsenal.level("shield");
   causeway.shield.material.uniforms.uRipple.value = run.ripple;
@@ -1419,7 +1467,40 @@ function updateUnifiedHud(dt) {
 }
 
 
+/** The main menu's Continue: shown with where, and at what difficulty, when there is a save. */
+function refreshContinue() {
+  const save = loadSave();
+  $("#continueButton").hidden = !save;
+  $("#startButton").classList.toggle("primary", !save);
+  $("#newGameWarning").hidden = !save;
+  if (save) $("#continueNote").textContent = `${SAVE_STAGE_NAMES[save.stage]} // ${DIFFICULTIES[save.difficulty]?.name ?? "Normal"}`;
+}
+
+/** Continue: back into the sector the saved game reached, at its difficulty. */
+function continueStory() {
+  const save = loadSave();
+  if (!save) return;
+  ui.start.classList.remove("active");
+  if (DIFFICULTIES[save.difficulty]) difficultyKey = save.difficulty;
+  showDifficultyChoice();
+  story.forgetSeen();
+  newRunReport();
+  saveProgress = true;
+  if (save.stage === "foundry") { startCampaign(); return; }
+  // Set up as a story run at that difficulty (without saving the Foundry
+  // over the save on the way), then into the sector as it was.
+  saveProgress = false;
+  story.markSeen("wake");
+  startCampaign();
+  endStoryStage();
+  saveProgress = true;
+  runFromStart = false;
+  if (save.stage === "skyline" && (!causeway || causeway.builtFor !== runDifficulty)) buildCauseway("story");
+  restartStage({ stage: save.stage, score: save.score ?? 0, ammo: save.ammo ?? 0, balls: save.balls ?? null });
+}
+
 function refreshMenuProgress() {
+  refreshContinue();
   const p = missions.progress;
   const bits = [];
   if (runTimes.story) bits.push(`Best run ${hms(runTimes.story)}${p.best.story ? ` (${String(p.best.story).padStart(6, "0")})` : ""}`);
@@ -1561,7 +1642,8 @@ function prepareMeltdown() {
 async function enterMeltdown() {
   if (meltdownEntering) return;
   meltdownEntering = true;
-  if (storyRun && runKind === "story") storyCheckpoint = { stage: "labs", score, ammo, balls: null };
+  holdLoading(["SECTOR 02", "THE LABS"]);
+  if (storyRun && runKind === "story") setStoryCheckpoint({ stage: "labs", score, ammo, balls: null });
   const game = getMeltdown();
   // Built during the lift ride? Then the mode and story were set for that load.
   if (!meltdownPrepared) setMeltdownRun(game);
@@ -1577,6 +1659,10 @@ async function enterMeltdown() {
   foundryLift = null;
   currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
   health = 100; shake = 0;
+  music.playStage("labs");
+  level1Audio.preloadStage("labs");
+  level1Audio.preloadStage("common");
+  story.voice.preload(STORY_LINES.valeBlackout);
   // Spheres left over from the foundry become a few extra balls.
   const balls = meltdownBalls();
   // Built during the lift ride? Then it is ready (or nearly).
@@ -1591,6 +1677,8 @@ async function enterMeltdown() {
     meltdownEntering = false;
   }
   if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return; // quit while loading
+  await releaseLoading([game.scene, game.camera]);
+  if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return;
   state = "playing";
   run.fadeOut = 1;
   game.begin();
@@ -1618,7 +1706,7 @@ function updateMeltdownFrame(dt, time) {
   if (pendingSkyline) {
     pendingSkyline = false;
     // The scientist's sacrifice at the lift, then the quiet ride up.
-    startQuietRide();
+    queueTransition(["ASCENSION TOWER", "GOING UP"], () => startQuietRide());
     return;
   }
   // Mirror Level 3's numbers into the game's own (pause screen, end screen).
@@ -1630,7 +1718,7 @@ function updateMeltdownFrame(dt, time) {
 
 function meltdownScore(s, escaped) {
   let points = s.breaks * 100 + s.downs * 150 + s.falls * 250;
-  if (escaped) points += 5000 + Math.round(s.vitality) * 20 + s.balls * 25 + (s.ending === "victory" ? 2500 : 0);
+  if (escaped) points += 5000 + Math.round(s.vitality) * 20 + s.balls * 25 + (s.ending === "victory" || s.cleared ? 2500 : 0);
   return points;
 }
 
@@ -1681,7 +1769,7 @@ const _aim = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _segment = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
-const BALL_CORRIDOR_RESTITUTION = 1.0;
+const BALL_CORRIDOR_RESTITUTION = SPHERE_FLIGHT.wall;
 
 function aliveTargets() {
   if (currentLevel === 1 && causeway) return causeway.breakables;
@@ -1886,14 +1974,15 @@ function updatePendingThrows(dt) {
     // A target that moved in the meantime is led from where it is now.
     const target = p.target?.userData.alive ? p.target : null;
     const point = target ? worldSphere(target).center.clone() : p.point;
-    launchSpheres(playerBody.releasePoint(_origin), target, point, p.ball, p.count, true);
+    launchSpheres(playerBody.releasePoint(_origin), target, point, p.ball, p.count, true, true);
   }
 }
 
 /** Spheres away from `origin` toward an aim point (leading a moving target). */
-function launchSpheres(origin, target, point, ball, count, physical) {
-  const speed = ball?.speed ?? 34;
-  const gravity = physical ? ball.gravity : 0;
+function launchSpheres(origin, target, point, ball, count, physical, hand = false) {
+  // By hand: slower, and a real arc (the launcher fires them flat and fast).
+  const speed = (ball?.speed ?? 34) * (hand ? SPHERE_FLIGHT.handSpeed : 1);
+  const gravity = physical ? (ball?.gravity ?? 3.2) * (hand ? SPHERE_FLIGHT.handGravity : 1) : 0;
   if (target) leadTarget(target, point, origin, speed, _aim);
   else _aim.copy(point);
   for (let i = 0; i < count; i += 1) {
@@ -1918,22 +2007,41 @@ function launchSpheres(origin, target, point, ball, count, physical) {
   if (physical) level1Audio.throwBall();
 }
 
-/** A special sphere going off: cryo puts out fires, shock breaks everything nearby. */
-function detonate(p, point) {
+/**
+ * A special sphere going off. Both break everything breakable within reach
+ * (shock even reinforced glass in one hit); cryo does it in ice - and puts
+ * out fires and freezes falling debris. `ground`: it burst on the floor
+ * (cryo only frosts the floor then).
+ */
+function detonate(p, point, ground = false) {
   if (p.ball === "glass") return;
-  if (currentLevel === 2 && foundry) { detonateFoundry(p, point); return; }
+  if (currentLevel === 2 && foundry) { detonateFoundry(p, point, ground); return; }
   if (!causeway) return;
   const def = BALLS[p.ball];
   causeway.splash(point, def.splash, p.ball);
-  if (p.ball === "shock") {
+  // (The Skyline draws shock's burst itself; cryo's ice and gravity's black hole are the shared ones.)
+  if (p.ball === "cryo" || p.ball === "gravity") sphereImpact.splash(point, p.ball, def.splash, null, { ground });
+  if (p.ball === "gravity") {
+    // It breaks nothing: it drags in every cache and serum in reach, yours.
+    let pulled = 0;
     for (const target of causeway.targetsNear(point, def.splash)) {
-      // Power-ups take a direct hit, never a splash.
-      if (target.userData.kind === "serum" || target.userData.serum) continue;
-      const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: "shock" });
-      if (r && !r.rejected) p.scored = true;
+      const type = target.userData.record?.entry.type;
+      if (type !== "cache" && type !== "serum") continue;
+      const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: "glass" });
+      if (r && !r.rejected) pulled += 1;
     }
-    triggerShake(0.25);
+    if (pulled) { showMessage(`GRAVITY // ${pulled} PULLED IN`); p.scored = true; }
+    triggerShake(0.2);
+    level1Audio.whoosh?.();
+    return;
   }
+  for (const target of causeway.targetsNear(point, def.splash)) {
+    // Power-ups take a direct hit, never a splash.
+    if (target.userData.kind === "serum" || target.userData.serum) continue;
+    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: p.ball });
+    if (r && !r.rejected) p.scored = true;
+  }
+  triggerShake(p.ball === "shock" ? 0.25 : 0.18);
   if (p.ball === "cryo") p.scored = true;
 }
 
@@ -1942,20 +2050,33 @@ function detonate(p, point) {
  * within reach; cryo freezes the machinery around it for a few seconds
  * (pistons stop where they are - still solid, but no longer moving).
  */
-function detonateFoundry(p, point) {
+function detonateFoundry(p, point, ground = false) {
   const def = BALLS[p.ball];
-  sphereImpact.splash(point, p.ball, def.splash);
-  shatterFX.chunks(point, 26, { tint: p.ball === "cryo" ? 0xbff4ff : 0xd9a6ff, speed: 5, radius: def.splash * 0.3, size: 0.08 });
-  if (p.ball === "shock") {
+  sphereImpact.splash(point, p.ball, def.splash, null, { ground });
+  if (p.ball === "gravity") {
+    // The pressure cells that hold spheres or a serum, pulled in - not the switches.
+    let pulled = 0;
     for (const target of foundry.breakables.slice()) {
-      if (!target.userData.alive || target.getWorldPosition(_sv).distanceTo(point) > def.splash) continue;
-      // Serum cells are power-ups: a direct hit, never a splash.
-      if (target.userData.serum) continue;
-      const r = shatter(target, { point: _sv.clone(), direction: p.velocity, ball: "shock" });
-      if (r) p.scored = true;
+      const data = target.userData;
+      if (!data.alive || data.isSwitch || !(data.serum || data.spheres > 0)) continue;
+      if (target.getWorldPosition(_sv).distanceTo(point) > def.splash) continue;
+      const r = shatter(target, { point: _sv.clone(), direction: p.velocity, ball: "glass" });
+      if (r) pulled += 1;
     }
-    triggerShake(0.25);
-  } else if (p.ball === "cryo") {
+    if (pulled) { showMessage(`GRAVITY // ${pulled} PULLED IN`); p.scored = true; }
+    triggerShake(0.2);
+    return;
+  }
+  shatterFX.chunks(point, 26, { tint: p.ball === "cryo" ? 0xbff4ff : 0xd9a6ff, speed: 5, radius: def.splash * 0.3, size: 0.08 });
+  for (const target of foundry.breakables.slice()) {
+    if (!target.userData.alive || target.getWorldPosition(_sv).distanceTo(point) > def.splash) continue;
+    // Serum cells are power-ups: a direct hit, never a splash.
+    if (target.userData.serum) continue;
+    const r = shatter(target, { point: _sv.clone(), direction: p.velocity, ball: p.ball });
+    if (r) p.scored = true;
+  }
+  triggerShake(p.ball === "shock" ? 0.25 : 0.18);
+  if (p.ball === "cryo") {
     const frozen = foundry.freezeNear(point, def.splash, 4);
     if (frozen) { showMessage(`CRYO // ${frozen} MACHINE${frozen > 1 ? "S" : ""} FROZEN`); p.scored = true; }
   }
@@ -1982,6 +2103,13 @@ function grazeTarget(targets, a, b, tolerance) {
   return best;
 }
 
+/** A sphere hit something: it slows from now on, and is spent within SPHERE_FLIGHT.afterHit seconds. */
+function touchSphere(p) {
+  if (p.touched) return;
+  p.touched = true;
+  p.life = Math.min(p.life, SPHERE_FLIGHT.afterHit);
+}
+
 function updateProjectiles(dt) {
   const targets = aliveTargets();
   const solids = currentLevel === 1 && causeway ? causeway.solids : currentLevel === 2 && foundry ? foundry.obstacles : [];
@@ -1990,6 +2118,7 @@ function updateProjectiles(dt) {
     const p = projectiles[i];
     const old = p.mesh.position.clone();
     p.velocity.y -= p.gravity * dt;
+    if (p.touched) p.velocity.multiplyScalar(Math.exp(-SPHERE_FLIGHT.drag * dt));
     p.mesh.position.addScaledVector(p.velocity, dt);
     p.life -= dt;
     _segment.copy(p.mesh.position).sub(old);
@@ -2011,13 +2140,14 @@ function updateProjectiles(dt) {
         if (result && !result.rejected) { p.scored = true; run.hits += 1; }
         if (p.ball !== "glass") { detonate(p, hit.point); p.life = 0; }
         else if (!result || result.cracked || result.rejected || !(currentLevel === 1 ? ["pane", "blade", "falling", "tank", "door"] : currentLevel === 2 ? ["cell"] : []).includes(result.kind)) p.life = 0;
-        else p.velocity.multiplyScalar(0.82); // glass spheres punch through and keep going
+        else { p.velocity.multiplyScalar(SPHERE_FLIGHT.punch); touchSphere(p); } // glass spheres punch through, slower
       } else if (surface && (!solid || surface.distance <= solid.distance)) {
         const speed = p.velocity.length();
         p.velocity.reflect(surface.normal).normalize().multiplyScalar(speed * BALL_CORRIDOR_RESTITUTION);
         p.mesh.position.copy(surface.position);
         if (surface.surface === "ceiling") p.ceilingBounces += 1;
         else p.wallBounces += 1;
+        touchSphere(p);
         level1Audio.surfaceRicochet();
         if (causeway && currentLevel === 1) causeway.ricochet(surface.point);
         else shatterFX.chunks(surface.point, 8, { tint: 0xffd9a0, speed: 3, radius: 0.05, size: 0.04, life: 0.9 });
@@ -2026,7 +2156,8 @@ function updateProjectiles(dt) {
         else {
           // Ricochet off solid hazards: reflect about the face normal.
           const n = solid.face ? solid.face.normal.clone().transformDirection(solid.object.matrixWorld) : _forward.clone().negate();
-          p.velocity.reflect(n).multiplyScalar(0.45);
+          p.velocity.reflect(n).multiplyScalar(SPHERE_FLIGHT.solid);
+          touchSphere(p);
           p.mesh.position.copy(solid.point).addScaledVector(n, 0.2);
           if (causeway && currentLevel === 1) causeway.ricochet(solid.point);
           else { shatterFX.chunks(solid.point, 5, { tint: 0xffd9a0, speed: 2.5, radius: 0.05, size: 0.04, life: 0.9 }); level1Audio.surfaceRicochet(); }
@@ -2036,8 +2167,12 @@ function updateProjectiles(dt) {
     }
     // Floor bounce in Level 1 and the Foundry.
     if (physical && p.life > 0 && p.mesh.position.y < p.mesh.scale.x && p.velocity.y < 0) {
-      if (p.ball !== "glass") { detonate(p, p.mesh.position); p.life = 0; }
-      else { p.velocity.y *= -0.42; p.velocity.x *= 0.75; p.velocity.z *= 0.75; p.mesh.position.y = p.mesh.scale.x; }
+      if (p.ball !== "glass") { detonate(p, p.mesh.position, true); p.life = 0; }
+      else {
+        p.velocity.y *= -SPHERE_FLIGHT.floor; p.velocity.x *= SPHERE_FLIGHT.floorFriction; p.velocity.z *= SPHERE_FLIGHT.floorFriction;
+        p.mesh.position.y = p.mesh.scale.x;
+        touchSphere(p);
+      }
     }
     if (p.life <= 0) {
       if (!p.scored && (currentLevel === 2 || currentLevel === 1)) { combo = 1; comboTimer = 0; }
@@ -2067,6 +2202,7 @@ const FOUNDRY_LIFT_HANDOFF = 2.2;
  */
 function startGravityLift({ boarded = false } = {}) {
   if (gravityLift) return;
+  holdLoading(["SECTOR 01 -> 02", "THE GRAVITY FAULT"]);
   music.enterElevator();
   currentLevel = 2; state = "lift"; transitionTarget = 3; liftTimer = 0;
   // Okoro leaves the main scene with the Foundry (the ride has its own scene).
@@ -2081,6 +2217,9 @@ function startGravityLift({ boarded = false } = {}) {
   // Build Level 3 now, behind the black, so it is ready when the ride ends.
   prepareMeltdown();
   rideNext = "labs";
+  music.playStage("tension");
+  level1Audio.preloadStage("lift");
+  story.voice.preload([...STORY_LINES.liftFault, ...STORY_LINES.liftBreaks, ...STORY_LINES.liftSaved]);
   gravityLift = new GravityFaultRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion, boarded,
     // The same character as in the Foundry (null while it is still loading),
@@ -2093,9 +2232,11 @@ function startGravityLift({ boarded = false } = {}) {
     story: storyRun && runKind === "story" ? { layer: story, okoroTemplate } : null,
   });
   gravityLift.onPointerMove(pointer.x, pointer.y);
+  bindRideSounds(gravityLift);
   // The ride has its own alerts; clear the game's message line for them.
   ui.message.classList.remove("show"); messageTimer = 0;
   updateUI();
+  releaseLoading([gravityLift.scene, gravityLift.camera]);
 }
 
 function updateGravityLiftFrame(dt, time) {
@@ -2106,7 +2247,9 @@ function updateGravityLiftFrame(dt, time) {
   document.body.classList.toggle("cutscene", !!gravityLift.cutscene);
   ui.reticle.classList.toggle("hot", !!gravityLift.aimTarget);
   ui.reticle.classList.toggle("assist", !!gravityLift.aimTarget);
-  if (gravityLift.result.done) finishGravityLift();
+  if (gravityLift.result.done && !pendingTransition) {
+    queueTransition(rideNext === "skyline" ? ["SECTOR 03", "THE SKYLINE"] : ["SECTOR 02", "THE LABS"], () => finishGravityLift());
+  }
 }
 
 /**
@@ -2118,6 +2261,7 @@ function updateGravityLiftFrame(dt, time) {
  */
 function startQuietRide() {
   if (gravityLift) return;
+  holdLoading(["ASCENSION TOWER", "GOING UP"]);
   if (currentLevel === 3) leaveMeltdown(1);
   setFoundryActive(false);
   state = "lift"; transitionTarget = 0; liftTimer = 0;
@@ -2126,16 +2270,53 @@ function startQuietRide() {
   if (!causeway || causeway.builtFor !== runDifficulty) buildCauseway("story");
   if (causeway) setCausewayActive(false);
   rideNext = "skyline";
+  // Alone, after Okoro: the grief, and the pilot on his radio.
+  music.playStage("grief");
+  level1Audio.preloadStage("lift");
+  level1Audio.preloadStage("skyline");
+  story.voice.preload(Object.values(RADIO_LINES).map(([, text]) => ({ who: "pilot", text })));
+  // Through Subject 07's own eyes, in the Gravity Fault's glass lift: his
+  // radio in their hand, the launcher leaning on the glass until they take it.
   gravityLift = new QuietRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion,
-    character: playerBodyTemplate,
-    // Bloodied from the Labs, in the scientist's vest with his radio.
-    figure: { ...figureStage(3), skinTone: savedSkinTone() },
-    // The launcher leans on the lift wall until they pick it up.
     assetBase: MELTDOWN_ASSET_BASE,
   });
+  bindRideSounds(gravityLift);
   ui.message.classList.remove("show"); messageTimer = 0;
   updateUI();
+  // The ride, and the Skyline built for after it, warmed behind the screen.
+  releaseLoading([gravityLift.scene, gravityLift.camera], [scene, camera]);
+}
+
+/**
+ * The lifts' sounds: the rides emit what happens (src/elevators/), this
+ * plays it. The story's Gravity Fault says some of it in stage directions
+ * instead ([the launcher clatters...], [the last cable snaps]), so those
+ * are left to the cues.
+ */
+function bindRideSounds(ride) {
+  const on = (name, fn) => ride.events.on(name, (p) => { if (gravityLift === ride) fn(p ?? {}); });
+  const told = !!ride.director;
+  on("tremor", () => level1Audio.distantCollapse(0.8));
+  on("cable-snap", (p) => { if (!p.story) level1Audio.play("cable-snap"); });
+  on("brake", () => level1Audio.play("brake"));
+  on("brake-slam", () => { level1Audio.impact(1); level1Audio.play("clank"); });
+  on("flicker", () => level1Audio.play("spark", { cooldown: 0.8, volume: 0.5 }));
+  on("launcher-land", () => { if (!told) level1Audio.play("clatter"); });
+  on("launcher-thud", () => level1Audio.impact(0.6));
+  on("clamp-shot", () => level1Audio.throwBall());
+  on("clamp-lock", () => level1Audio.play("clank"));
+  on("glass-crack", () => level1Audio.play("glassStep", { volume: 0.5, cooldown: 0.1 }));
+  on("glass-break", () => level1Audio.glassBreak());
+  on("depart", () => { level1Audio.play("lift-doors", { volume: 0.6 }); });
+  on("arrive", () => level1Audio.play("lift-chime"));
+  on("chime", () => level1Audio.play("lift-chime"));
+  on("doors", () => level1Audio.play("lift-doors"));
+  // The quiet ride's radio: Kestrel One, calling for the doctor.
+  on("radio", ({ line }) => {
+    const entry = RADIO_LINES[`radio${line}`];
+    if (entry) story.voice.say({ who: "pilot", text: entry[1] });
+  });
 }
 
 /** Where the ride in `gravityLift` goes when it is done: "labs" or "skyline". */
@@ -2255,13 +2436,15 @@ function updatePolice(dt, time, active) {
  * through startCampaign() / startEndless().
  */
 function resetGame(mode = causewayMode) {
+  cancelLoadingHold();
+  deathFx.clear();
   storyRun = false;
   runDifficulty = "normal";
   runKind = mode === "endless" ? "endless" : "story";
   endlessEnv = mode === "endless" ? "skyline" : null;
   resetStats(mode); state = "playing";
   level1Audio.startLevel();
-  music.playRound1();
+  music.playStage("skyline");
   causewayHud.show();
   if (mode === "endless") causewayHud.title("Endless lab", "Randomised. Faster every 250 m.", 2.2);
 }
@@ -2290,6 +2473,7 @@ function resetRunner() {
 
 /** Start pressed: the story, from the basement up. */
 function startCampaign() {
+  deathFx.clear();
   storyRun = true;
   // Played at the menu's difficulty (set before resetStats builds the Foundry).
   runDifficulty = difficultyKey;
@@ -2301,12 +2485,11 @@ function startCampaign() {
   runRecordable = true;
   resetStats("story");
   runKind = "story"; endlessEnv = null; storyBalls = null;
-  music.playRound1();
   enterFoundry();
   // Okoro brings the spheres: none until he hands over the bag.
   ammo = 0;
   wearSphereBag(false);
-  storyCheckpoint = { stage: "foundry", score: 0, ammo: 0, balls: null };
+  setStoryCheckpoint({ stage: "foundry", score: 0, ammo: 0, balls: null });
   updateUI();
   if (!story.hasSeen("wake")) beginOpening();
   else startFoundryGuide();
@@ -2333,12 +2516,11 @@ function beginOpening() {
   setWardLight(1);
   ui.fade.style.opacity = "0";
   run.fadeOut = 0;
+  // Waking up to the countdown (the monitor's beep is the scene's own cue).
+  music.playStage("tension");
   story.play(wakeScene({ ...ward.anchors, okoro }), {
     camera,
     on: {
-      event: (name) => {
-        if (name === "monitor") level1Audio.uiClick?.();
-      },
       done: ({ skipped }) => {
         // Holding Esc skips the whole opening, straight to the run.
         if (skipped || !ward) finishOpening();
@@ -2368,6 +2550,7 @@ function finishOpening() {
   cutsceneShowsPlayer = false;
   if (state !== "cutscene") return;
   state = "playing";
+  music.playStage("foundry");
   snapCamera = true;
   camera.fov = 68; camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
   startFoundryGuide();
@@ -2501,6 +2684,8 @@ function updateFoundryGuide(dt) {
     lane,
     exiting: foundryExit,
     riding: !!foundryLift?.state.riding,
+    // (So that, catching up after a missed switch, he passes you in another lane.)
+    playerLateral: playerX,
   });
   for (const line of out.lines) {
     story.talk(line);
@@ -2613,6 +2798,8 @@ function beginSkylineBlast() {
   tower.onWhole = () => {
     s.flash = 1;
     s.sky.setVisible(true);
+    // The whole tower going: the sound of it arrives with the dust.
+    level1Audio.buildingCollapse(1);
     level1Audio.impact(1);
     level1Audio.glassBreak();
     level1Audio.podBreak?.();
@@ -2646,23 +2833,27 @@ function beginSkylineBlast() {
   });
   story.play(scene, {
     camera,
-    deathSeconds: 1.9,
+    // A miss: the fall, seen through your eyes, and the edges closing in.
+    deathSeconds: 2.6,
+    deathFx: "fall",
     deathLine: STORY_LINES.fallen[0],
     on: {
       event: (name) => {
         if (name === "detonate") {
           if (!tower.started) tower.detonate();
           level1Audio.impact(0.6);
+          level1Audio.demolitionCharges(1);
         } else if (name === "tilt") {
           level1Audio.impact(0.9);
+          level1Audio.metalGroan(1.2);
           triggerShake(0.4);
-        } else if (name === "jump") level1Audio.throwBall?.();
-        else if (name === "caught") { level1Audio.impact(0.7); s.flash = 0.3; s.hands.visible = true; }
+        } else if (name === "jump") { level1Audio.throwBall?.(); level1Audio.grunt(); }
+        else if (name === "caught") { level1Audio.impact(0.7); level1Audio.grunt(); s.caught = true; s.flash = 0.3; s.hands.visible = true; }
         else if (name === "up") s.hands.visible = false;
       },
       // A miss: no hands on anything.
-      retry: () => { s.hands.visible = false; },
-      fail: () => level1Audio.impact(0.5),
+      retry: () => { s.hands.visible = false; s.caught = false; },
+      fail: () => { level1Audio.impact(0.5); level1Audio.fallScream(); },
       done: () => finishSkylineBlast(),
     },
   });
@@ -2806,6 +2997,10 @@ function enterFoundry() {
   shatterFX.clear();
   sphereImpact.clear();
   level1Audio.startLevel();
+  music.playStage("foundry");
+  level1Audio.preloadStage("foundry");
+  level1Audio.preloadStage("common");
+  story.voice.preload(STORY_LINES.foundryTalk);
   ui.fade.style.opacity = "1";
   run.fadeOut = 1;
   // (The Foundry's own section title says where you are: no second line over it.)
@@ -2852,21 +3047,28 @@ function enterSkyline() {
   // The story's blast, sprint and latch near the end of the bridge.
   if (storyRun && runKind === "story") {
     buildSkylineStory();
-    storyCheckpoint = { stage: "skyline", score, ammo, balls: storyBalls };
+    setStoryCheckpoint({ stage: "skyline", score, ammo, balls: storyBalls });
   } else disposeSkylineStory();
   state = "launch"; launchTimer = 0;
   music.enterElevator();
   level1Audio.startLevel();
+  music.playStage("skyline");
+  level1Audio.preloadStage("skyline");
+  level1Audio.preloadStage("common");
+  story.voice.preloadSpeakers(["halcyon", "vale"]);
   ui.fade.style.opacity = "1";
   run.fadeOut = 1;
   updateUI();
+  // (Arriving from a ride: the Skyline warmed behind the loading screen.)
+  releaseLoading([scene, camera]);
 }
 
 /** The Roof - the finale (and endless Roof). */
 async function enterRoof() {
   if (meltdownEntering) return;
   meltdownEntering = true;
-  if (storyRun && runKind === "story") storyCheckpoint = { stage: "roof", score, ammo, balls: storyBalls };
+  holdLoading(["THE ROOF", "HOLD OUT"]);
+  if (storyRun && runKind === "story") setStoryCheckpoint({ stage: "roof", score, ammo, balls: storyBalls });
   const game = getMeltdown();
   game.difficulty = diff();
   game.setMode(runKind === "endless" ? "endless-roof" : "full");
@@ -2885,6 +3087,10 @@ async function enterRoof() {
   setFoundryActive(false);
   currentLevel = 3; state = "lift"; transitionTarget = 3; liftTimer = 0;
   health = 100; shake = 0;
+  music.playStage("roof");
+  level1Audio.preloadStage("roof");
+  level1Audio.preloadStage("common");
+  story.voice.preload(STORY_LINES.valeRoof);
   applyQuality();
   game.show();
   updateUI();
@@ -2894,6 +3100,8 @@ async function enterRoof() {
     meltdownEntering = false;
   }
   if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return; // quit while loading
+  await releaseLoading([game.scene, game.camera]);
+  if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return;
   state = "playing";
   run.fadeOut = 1;
   updateUI();
@@ -2901,6 +3109,7 @@ async function enterRoof() {
 
 /** Endless: one environment, until you go down. */
 function startEndless(env) {
+  deathFx.clear();
   storyRun = false;
   runDifficulty = "normal";
   runReport = null;
@@ -2913,10 +3122,12 @@ function startEndless(env) {
   endlessRun.laps = 0; endlessRun.distance = 0; foundrySpeedScale = 1;
   ui.start.classList.remove("active");
   ui.endless.classList.remove("active");
-  music.playRound1();
   if (env === "skyline") {
     state = "playing";
     level1Audio.startLevel();
+    music.playStage("skyline");
+    level1Audio.preloadStage("skyline");
+    level1Audio.preloadStage("common");
     causewayHud.show();
     causewayHud.title("Endless // The Skyline", "Randomised. Faster every 250 m.", 2.2);
     return;
@@ -2933,6 +3144,7 @@ function startEndless(env) {
  * the top ("Restart run" on the pause menu always starts the run over).
  */
 function restartRun({ fromTop = false, fromCheckpoint = true } = {}) {
+  deathFx.clear();
   // Died past this level's checkpoint: back in there, counted in (3, 2, 1, GO).
   if (!fromTop && fromCheckpoint && storyDeath && levelCheckpoint && resumeFromCheckpoint()) return;
   levelCheckpoint = null;
@@ -2975,7 +3187,6 @@ function restartStage(cp) {
   score = checkpoint.score;
   ammo = checkpoint.ammo;
   storyBalls = checkpoint.balls;
-  music.playRound1();
   if (checkpoint.stage === "labs") {
     setCausewayActive(false);
     enterMeltdown();
@@ -3048,9 +3259,23 @@ function refreshLastReportButton() {
 
 function runReportHTML(r) {
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
-  const rows = REPORT_LEVELS.map(([key, name]) => {
+  const played = Object.values(r.time).reduce((a, b) => a + b, 0);
+  const hits = Object.values(r.hits).reduce((a, b) => a + b, 0);
+  const qte = r.qtePassed + r.qteFailed;
+  const qtePct = qte ? Math.round((r.qtePassed / qte) * 100) : null;
+  const longest = Math.max(1, ...REPORT_LEVELS.map(([key]) => r.time[key] ?? 0));
+  // Level by level: a bar for the time spent there, and what it cost you.
+  const levels = REPORT_LEVELS.map(([key, name], i) => {
     const deaths = r.deaths.filter((d) => d.level === key).length;
-    return `<tr><td>${name}</td><td>${hms(r.time[key] ?? 0)}</td><td>${deaths}</td><td>${r.hits[key] ?? 0}</td></tr>`;
+    const t = r.time[key] ?? 0;
+    const [sector, place] = name.split(" // ");
+    return `<li class="${deaths ? "hurt" : t ? "clean" : "unplayed"}">
+      <span class="rr-num">${String(i + 1).padStart(2, "0")}</span>
+      <span class="rr-name"><b>${esc(place ?? sector)}</b><small>${place ? esc(sector) : ""}</small></span>
+      <span class="rr-bar"><i style="width:${((t / longest) * 100).toFixed(1)}%"></i></span>
+      <span class="rr-time">${hms(t)}</span>
+      <span class="rr-tags"><em class="d">${deaths} death${deaths === 1 ? "" : "s"}</em><em>${r.hits[key] ?? 0} hits</em></span>
+    </li>`;
   }).join("");
   const causes = new Map();
   for (const d of r.deaths) {
@@ -3061,19 +3286,19 @@ function runReportHTML(r) {
   const deathList = causes.size
     ? [...causes].sort((a, b) => b[1] - a[1]).map(([k, n]) => { const [cause, level] = k.split("|"); return `<li><b>${esc(cause)}</b><span>${names[level] ?? level}</span><em>x${n}</em></li>`; }).join("")
     : `<li class="none"><b>Not once.</b><span>A deathless run.</span></li>`;
-  const qte = r.qtePassed + r.qteFailed;
+  const tile = (value, label, tone = "") => `<div class="rr-tile ${tone}"><b>${value}</b><span>${label}</span></div>`;
   return `
     <p class="rr-eyebrow">RUN REPORT${r.difficulty ? ` // ${DIFFICULTIES[r.difficulty]?.name.toUpperCase() ?? ""}` : ""}</p>
-    <table class="rr-table"><thead><tr><th>Level</th><th>Time</th><th>Deaths</th><th>Hits</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="rr-cols">
-      <div><p class="rr-label">How you died</p><ul class="rr-deaths">${deathList}</ul></div>
-      <div><p class="rr-label">Quick-time events</p>
-        <p class="rr-big">${r.qteFailed}<small> failed</small></p>
-        <p class="rr-sub">${r.qtePassed} passed of ${qte}${qte ? ` (${Math.round((r.qtePassed / qte) * 100)}%)` : ""}</p>
-        <p class="rr-label">Total</p>
-        <p class="rr-sub">${r.deaths.length} death${r.deaths.length === 1 ? "" : "s"} &middot; ${Object.values(r.hits).reduce((a, b) => a + b, 0)} hits &middot; ${hms(Object.values(r.time).reduce((a, b) => a + b, 0))} played</p>
-      </div>
-    </div>`;
+    <div class="rr-tiles">
+      ${tile(hms(played), "Played")}
+      ${tile(r.deaths.length, `Death${r.deaths.length === 1 ? "" : "s"}`, r.deaths.length ? "bad" : "good")}
+      ${tile(hits, "Hits taken", hits > 10 ? "bad" : "")}
+      ${tile(qtePct === null ? "-" : `${qtePct}%`, `Quick-time events ${r.qtePassed}/${qte}`, qtePct === null ? "" : qtePct >= 80 ? "good" : qtePct < 50 ? "bad" : "")}
+    </div>
+    <p class="rr-label">Level by level</p>
+    <ol class="rr-levels">${levels}</ol>
+    <p class="rr-label">How you died</p>
+    <ul class="rr-deaths">${deathList}</ul>`;
 }
 
 /* ---- One checkpoint per runner level (story runs) ------------------------- */
@@ -3420,6 +3645,8 @@ function endRun(won, reason = null, detail = null) {
   level1Audio.updateElevator(0, false);
   // A death in the story: the end screen offers that sector again.
   storyDeath = !won && storyRun && runKind === "story" && !!storyCheckpoint;
+  // The whole story done: nothing left to continue.
+  if (won && saveProgress && storyRun && runKind === "story") { clearSave(); saveProgress = false; }
   restartButtonLabel();
   if (currentLevel === 1) music.gameOverDuck();
   // Level 3 plays it itself (the MeltdownGame shares level1Audio).
@@ -3455,8 +3682,36 @@ function endRun(won, reason = null, detail = null) {
     missions.commit({ mode: causewayMode, score: Math.floor(score), distance, files: s.files });
     refreshMenuProgress();
   }
-  dressEndScreen(won);
-  ui.end.classList.add("active");
+  // A death plays out first (src/ui/death-fx.js), made of the last frame.
+  const kind = won ? null : deathKind(reason, detail);
+  const reveal = () => {
+    if (state !== "ended") return;
+    dressEndScreen(won);
+    ui.end.classList.add("active");
+  };
+  if (kind) {
+    renderFrame();
+    deathFx.play(kind, renderer.domElement, reveal);
+  } else reveal();
+}
+
+/** How each place kills you, on screen: see src/ui/death-fx.js. */
+function deathKind(reason, detail) {
+  const title = detail?.title ?? "";
+  if (currentLevel === 3) {
+    if (title === "LEFT BEHIND") return null;
+    if (title === "THEY GOT YOU") return "mauled";
+    if (title === "YOU FELL" || title === "DOWN A HATCH") return "fall";
+    return "burn";
+  }
+  if (currentLevel === 2) return "crush";
+  if (currentLevel === 1) {
+    if (reason === "fire" || reason === "smoke") return "burn";
+    if (reason === "fell") return "fall";
+    if (reason === "crushed") return "crush";
+    return "shatter";
+  }
+  return null;
 }
 
 /**
@@ -3585,6 +3840,10 @@ function updateGame(dt, time) {
   ammoHint.hide();
   if (paused || photoActive || state !== "playing" || currentLevel !== 3) meltdown?.ammoHint?.hide();
   if ((state === "playing" || state === "lift") && !paused) runClock += dt;
+  // Someone is talking: the music and the beds step back so the words carry.
+  const speaking = story.voice.speaking;
+  music.voiceDuck(speaking);
+  level1Audio.duckForVoice(speaking);
   const inCauseway = currentLevel === 1 && causeway && causeway.root.visible;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
   document.body.classList.toggle("paused", paused);
@@ -3745,13 +4004,13 @@ function updateGame(dt, time) {
     updateFoundryGuide(dt);
     const handoff = THREE.MathUtils.clamp((ride.t - FOUNDRY_LIFT_HANDOFF) / 0.5, 0, 1);
     ui.fade.style.opacity = Math.max(ride.fade, handoff).toFixed(3);
-    if (handoff >= 1 || ride.done) { level1Audio.updateElevator(0, false); startGravityLift({ boarded: true }); }
+    if ((handoff >= 1 || ride.done) && !pendingTransition) { level1Audio.updateElevator(0, false); queueTransition(["SECTOR 01 -> 02", "THE GRAVITY FAULT"], () => startGravityLift({ boarded: true })); }
   } else if (state === "lift" && transitionTarget === 3) {
     // No Calibration Lift to board (e.g. it failed to build): fade straight
     // into the Gravity Fault ride.
     liftTimer += dt;
     ui.fade.style.opacity = Math.min(1, liftTimer / 0.6).toFixed(3);
-    if (liftTimer > 0.7) startGravityLift();
+    if (liftTimer > 0.7 && !pendingTransition) queueTransition(["SECTOR 01 -> 02", "THE GRAVITY FAULT"], () => startGravityLift());
   } else if (state === "ended" && inCauseway) {
     // Keep the world alive behind the end screen.
     causeway.update({ dt, time: simTime, distance: causewayDistance(), player: playerWorld(_playerPos), playing: false });
@@ -3852,16 +4111,158 @@ function renderFrame() {
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
   postfx.render(scene, camera, glass);
-  if (glass && settings.hud.minimap && causewayHud.visible && !photoActive && state === "playing") {
-    const chase = causeway.state.chase;
-    minimap.render(scene, playerWorld(_playerPos), chase.active ? causeway.worldZ(chase.front) : null);
-  }
   if (glass) causeway.renderProbe(renderer, scene);
+}
+
+/* ---- The loading screen --------------------------------------------------- */
+
+/**
+ * Instead of a black screen while a level is built or its models stream in:
+ * src/ui/loading-screen.js. It comes up when the screen has been black for a
+ * moment and something is actually loading or being built - never over a
+ * cutscene's own fade to black, nor over a menu - and goes when the picture
+ * comes back. Progress: three.js's loading manager (every model and texture).
+ */
+const loadingScreen = new LoadingScreen({ reducedMotion: settings.reducedMotion });
+const deathFx = new DeathFX({ reducedMotion: settings.reducedMotion });
+// A missed quick-time event's own death, over the live scene (story-layer.js).
+story.deathFx = {
+  play: (kind, seconds) => deathFx.play(kind, null, null, { live: true, seconds }),
+  clear: () => deathFx.clear(),
+};
+/** The sphere in use, bottom right (src/ui/sphere-wheel.js). */
+const sphereWheel = new SphereWheel();
+function updateSphereWheel() {
+  const visible = state === "playing" && !paused && !gravityLift && !photoActive && [1, 2, 3].includes(currentLevel)
+    && !(currentLevel === 2 && awaitingBag);
+  sphereWheel.update({ ball: arsenal.ball, spheres: ammo, cost: arsenal.cost(), visible });
+}
+const loads = { loaded: 0, total: 0 };
+THREE.DefaultLoadingManager.onStart = (url, loaded, total) => { loads.loaded = loaded; loads.total = total; };
+THREE.DefaultLoadingManager.onProgress = (url, loaded, total) => {
+  loads.loaded = loaded;
+  loads.total = total;
+  loadingScreen.setProgress(loaded, total);
+};
+THREE.DefaultLoadingManager.onLoad = () => { loads.loaded = loads.total; };
+let blackFor = 0;
+function screenBlack() {
+  let black = 0;
+  for (const el of [ui.fade, document.querySelector(".story-fade"), document.querySelector(".mlt-fade")]) {
+    if (el && el.isConnected) black = Math.max(black, parseFloat(el.style.opacity || "0") || 0);
+  }
+  return black;
+}
+/** Where the game is headed, for the loading screen's title. */
+function loadingLabel() {
+  if (currentLevel === 3) return meltdown?.phase?.startsWith("roof") || meltdown?.roof ? ["THE ROOF", "HOLD OUT"] : ["SECTOR 02", "THE LABS"];
+  if (currentLevel === 1) return ["SECTOR 03", "THE SKYLINE"];
+  if (currentLevel === 2) return ["SECTOR 01", "THE FOUNDRY"];
+  return ["ASCENSION TOWER", "LOADING"];
+}
+function updateLoadingScreen(dt) {
+  // Between levels it is held up on purpose (below) - not judged by the fades.
+  if (loadingHold) return;
+  const menu = document.querySelector(".screen.active");
+  const cutscene = story.layer?.player?.active;
+  const streaming = loads.total > loads.loaded || (currentLevel === 3 && meltdown && !meltdown.assetsReady);
+  const black = screenBlack() > 0.97 && !menu && state !== "menu";
+  // A cutscene's fade to black is part of it: only if it is waiting on a load.
+  const waiting = black && (streaming || !cutscene);
+  blackFor = waiting ? blackFor + dt : 0;
+  if (blackFor > (streaming ? 0.25 : 0.6)) loadingScreen.show(...loadingLabel());
+  else if (!waiting) loadingScreen.hide();
+}
+
+/* ---- Between levels: the loading screen holds the screen ------------------ */
+
+/**
+ * A level's end, and the next one's start: the loading screen goes up first,
+ * then - a couple of frames later, so it is already drawn - the switch runs
+ * (building the next level and freeing the last is the long, frozen part).
+ * When the next level is in, its shaders are compiled and its textures
+ * uploaded behind the screen, a couple of frames are drawn, and only then
+ * does it come down: the next scene starts smoothly instead of stuttering
+ * through its first seconds. Meanwhile the game holds still.
+ */
+let loadingHold = null;
+let pendingTransition = null;
+function holdLoading(label) {
+  if (!loadingHold) loadingHold = { since: performance.now() };
+  loadingScreen.show(...label, { instant: true });
+}
+/** The switch `fn`, behind the loading screen (it runs a couple of frames from now). */
+function queueTransition(label, fn) {
+  holdLoading(label);
+  pendingTransition = { fn, frames: 0 };
+}
+/** Run a queued switch once the screen has been drawn (or now: `force`, the checks' stepping). */
+function runPendingTransition(force = false) {
+  if (!pendingTransition) return false;
+  if (!force && pendingTransition.frames++ < 2) return true;
+  const { fn } = pendingTransition;
+  pendingTransition = null;
+  fn();
+  return true;
+}
+const nextFrames = (n = 2) => new Promise((resolve) => {
+  let k = 0;
+  const tick = () => (++k >= n ? resolve() : requestAnimationFrame(tick));
+  requestAnimationFrame(tick);
+  // (A hidden tab draws no frames: don't wait on them for ever.)
+  setTimeout(resolve, 200 * n);
+});
+/**
+ * The next level is in: compile and upload it behind the screen, then let it
+ * be seen. `targets`: [scene, camera] pairs (a ride and the level after it).
+ */
+async function releaseLoading(...targets) {
+  const hold = loadingHold;
+  if (!hold) return;
+  if (!targets.length) targets = [[scene, camera]];
+  try {
+    for (const [targetScene, targetCamera] of targets) {
+      if (renderer.compileAsync) await renderer.compileAsync(targetScene, targetCamera);
+      else renderer.compile(targetScene, targetCamera);
+    }
+    const textures = new Set();
+    for (const [targetScene] of targets) targetScene.traverse((o) => {
+      for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) {
+        for (const key of ["map", "normalMap", "emissiveMap", "roughnessMap", "metalnessMap", "alphaMap"]) if (m[key]) textures.add(m[key]);
+      }
+    });
+    let n = 0;
+    for (const t of textures) {
+      renderer.initTexture(t);
+      if (++n % 6 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  } catch (error) {
+    console.warn("[loading] warm-up failed", error);
+  }
+  await nextFrames(2);
+  const left = 650 - (performance.now() - hold.since);
+  if (left > 0) await new Promise((resolve) => setTimeout(resolve, left));
+  if (loadingHold !== hold) return;
+  loadingHold = null;
+  loadingScreen.hide();
+}
+/** A restart or a quit: nothing to wait for any more. */
+function cancelLoadingHold() {
+  loadingHold = null;
+  pendingTransition = null;
+  loadingScreen.hide();
 }
 
 function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
+  updateLoadingScreen(Math.min(0.1, rawDt));
+  // A level change behind the loading screen: the switch, then the world
+  // holds still (nothing to see, the GPU busy warming the next level).
+  if (runPendingTransition() || loadingHold) {
+    updatePerformance(0.016);
+    return;
+  }
   // Trailer mode's slow motion scales the whole simulation.
   const dt = Math.min(.033, rawDt) * (trailer.enabled ? trailer.timeScale : 1);
   renderer.info.reset();
@@ -3872,6 +4273,7 @@ function animate() {
   else if (!manualStep) { trailerTime += dt; updateGame(dt, trailer.enabled ? trailerTime : clock.elapsedTime); trackRunReport(dt); trackCheckpoint(); }
   if (countdownPending) maybeStartCountdown();
   updateCursor();
+  updateSphereWheel();
   if (!manualStep) trailerAfterUpdate(dt);
   // A trailer capture draws each frame itself (and reads it back): no second draw in between.
   if (!(manualStep && trailer.holdRender)) renderFrame();
@@ -4180,6 +4582,7 @@ function closeSettings() {
  */
 function startChapter(name) {
   ui.chapters.classList.remove("active");
+  saveProgress = false;
   // A chapter is not a whole run: no run report.
   runReport = null;
   if (name === "briefing") { startStory(); return; }
@@ -4275,6 +4678,8 @@ function togglePhoto() {
 }
 
 function quitToMenu() {
+  cancelLoadingHold();
+  deathFx.clear();
   // Leaving an Endless run part-way still sets the records it earned.
   if (runKind === "endless" && endlessEnv && (state === "playing" || state === "lift")) {
     if (endlessEnv === "skyline") recordEndlessRun("skyline", causeway ? Math.max(0, Math.floor(causewayDistance())) : 0, runClock);
@@ -4285,6 +4690,8 @@ function quitToMenu() {
   countdownPending = false; countdownLeft = 0; if (ui.countdown) ui.countdown.hidden = true;
   document.body.classList.remove("finale-film");
   storyRun = false;
+  // Nobody keeps talking over the menu (the intercom, a line mid-sentence).
+  story.voice.stop();
   level1Audio.cleanupLevel();
   if (photoActive) togglePhoto();
   ui.caption.classList.remove("show"); ui.launchControls.classList.remove("show");
@@ -4300,7 +4707,7 @@ function quitToMenu() {
  * The briefing: the prologue film (src/story/prologue.js) - what Project
  * Ascension was, why the patients were taken, who ran it, how it was found
  * out, and why the tower is coming down tonight. Staged in the engine, told
- * in captions (no voice), over the story track. Esc, Space or SKIP ends it.
+ * as Okoro's confession, in his voice, over a score cut to it. Esc, Space or SKIP ends it.
  */
 let storyPlaying = false;
 let prologue = null;
@@ -4315,7 +4722,7 @@ function cancelStory() {
 
 async function startStory() {
   cancelStory();
-  music.showStory();
+  music.holdStory();
   storyPlaying = true;
   ui.story.classList.add("active");
   ui.start.classList.remove("active");
@@ -4326,7 +4733,7 @@ async function startStory() {
   ui.storyLine.classList.add("show");
   // The sleeping Subject 07 in it is whoever you play as.
   if (prologue && prologue.character !== savedCharacter()) { prologue.dispose(); prologue = null; }
-  prologue ??= new Prologue({ renderer, assetBase: MELTDOWN_ASSET_BASE, character: savedCharacter() });
+  prologue ??= new Prologue({ renderer, assetBase: MELTDOWN_ASSET_BASE, character: savedCharacter(), voice: story.voice });
   try {
     await prologue.load();
   } catch (error) {
@@ -4336,6 +4743,8 @@ async function startStory() {
   }
   if (!storyPlaying) return;
   ui.story.classList.remove("active");
+  // The score is cut to the film: it starts with it.
+  music.startStory();
   prologue.start(() => finishStory());
 }
 
@@ -4399,6 +4808,7 @@ for (const button of characterButtons) {
   button.addEventListener("click", () => {
     if (!CHARACTERS[button.dataset.character]) return;
     saveCharacter(button.dataset.character);
+    level1Audio.setCharacter(button.dataset.character);
     loadPlayerBody(button.dataset.character);
     meltdown?.setCharacter(button.dataset.character);
     showCharacterChoice();
@@ -4478,7 +4888,25 @@ const ballPickers = buildBallPickers((key) => {
 buildTabs();
 
 // A new story from the menu plays every scene again ("Run again" after a death does not).
-$("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); story.forgetSeen(); newRunReport(); startCampaign(); });
+// New game: the difficulty first, on its own screen; then from the ward.
+$("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.newGame.classList.add("active"); });
+$("#newGameBackButton").addEventListener("click", () => { ui.newGame.classList.remove("active"); ui.start.classList.add("active"); });
+for (const card of document.querySelectorAll("[data-new-game]")) {
+  card.addEventListener("click", () => {
+    if (!DIFFICULTIES[card.dataset.newGame]) return;
+    difficultyKey = card.dataset.newGame;
+    saveDifficulty(difficultyKey);
+    showDifficultyChoice();
+    level1Audio.uiClick();
+    ui.newGame.classList.remove("active");
+    clearSave();
+    saveProgress = true;
+    story.forgetSeen();
+    newRunReport();
+    startCampaign();
+  });
+}
+$("#continueButton").addEventListener("click", () => continueStory());
 // Every quick-time event's outcome, for the run report.
 story.reactions.onResult = (result) => {
   if (!runReport || runKind !== "story") return;
@@ -4528,6 +4956,13 @@ $("#resetPowerupTipsButton").addEventListener("click", (event) => {
 powerups.card.addEventListener("click", closePowerupIntro);
 ui.reducedMotionToggle.addEventListener("change", (event) => { settings.reducedMotion = event.target.checked; saveSettings(); document.body.classList.toggle("reduced-motion", settings.reducedMotion); meltdown?.setReducedMotion(settings.reducedMotion); story.setOptions({ reducedMotion: settings.reducedMotion }); });
 ui.subtitleSizeSelect.addEventListener("change", (event) => { settings.subtitleSize = event.target.value; saveSettings(); applySubtitleSize(); });
+ui.voicesToggle?.addEventListener("change", (event) => {
+  settings.voices = event.target.checked;
+  saveSettings();
+  story.voice.characterVoices = settings.voices;
+  // Off mid-line: that line stops too (unless it is the intercom).
+  if (!settings.voices && story.voice.speakingWho !== "halcyon") story.voice.stop();
+});
 ui.longReactionsToggle.addEventListener("change", (event) => { settings.longReactions = event.target.checked; saveSettings(); story.setOptions({ longWindows: settings.longReactions }); });
 ui.holdInsteadOfMashToggle.addEventListener("change", (event) => { settings.holdInsteadOfMash = event.target.checked; saveSettings(); story.setOptions({ holdInsteadOfMash: settings.holdInsteadOfMash }); });
 ui.shadowsToggle.addEventListener("change", (event) => { settings.shadows = event.target.checked; saveSettings(); applyQuality(); });
@@ -4640,6 +5075,7 @@ addEventListener("keydown", (event) => {
     if (photoActive) togglePhoto();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.chapters.classList.contains("active")) { ui.chapters.classList.remove("active"); ui.start.classList.add("active"); }
+    else if (ui.newGame.classList.contains("active")) { ui.newGame.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.endless.classList.contains("active")) { ui.endless.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.settings.classList.contains("active")) closeSettings();
     else if ($("#creditsScreen").classList.contains("active")) $("#creditsBackButton").click();
@@ -4666,7 +5102,6 @@ addEventListener("keydown", (event) => {
   // A reaction prompt on screen owns the letter keys (Q E R F Z X C V):
   // no shortcut fires underneath it.
   const reacting = story.reactions?.state === "running";
-  if (event.code === "KeyM" && !event.repeat && !reacting) { settings.hud.minimap = !settings.hud.minimap; saveSettings(); applySettingsToControls(); }
   if (event.code === "KeyH" && !event.repeat && !reacting) document.body.classList.toggle("hud-hidden");
   if (event.code === "KeyV" && !event.repeat && !reacting) ui.viewMenu.hidden = !ui.viewMenu.hidden;
   if (event.code === "Space" && state === "playing" && !paused) {
@@ -4704,7 +5139,6 @@ addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight);
   prologue?._resize();
   postfx.resize();
-  minimap.measure();
   placeReticle();
   meltdown?.resize(innerWidth, innerHeight);
 });
@@ -4714,7 +5148,6 @@ resetStats("story");
 refreshMenuProgress();
 updateUI();
 camera.position.set(0, 1.8, CAUSEWAY_ORIGIN_Z + 8);
-requestAnimationFrame(() => minimap.measure());
 animate();
 
 /**
@@ -4744,10 +5177,15 @@ globalThis.__dbg = {
   get meltdown() { return meltdown; },
   enterMeltdown,
   get gravityLift() { return gravityLift; },
+  get loadingScreen() { return loadingScreen; },
+  get deathFx() { return deathFx; },
+  /** How spheres lose speed (src/systems/spheres.js), for the checks. */
+  sphereFlight: SPHERE_FLIGHT,
   get playerBodyTemplate() { return playerBodyTemplate; },
   get playerBody() { return playerBody; },
   demoGravityLift,
   demoQuietRide,
+  startFoundryLift,
   get run() { return run; },
   causewayPace,
   resolveAim: () => resolveAim(aliveTargets(), currentLevel === 1 && causeway ? causeway.solids : []),
@@ -4785,6 +5223,7 @@ globalThis.__dbg = {
     // One frame as animate() runs it: the restart countdown holds the world.
     // (Trailer mode: its slow motion, shot, god mode and autopilot too.)
     for (let i = 0; i < frames; i += 1) {
+      runPendingTransition(true);
       const sdt = dt * (trailer.enabled ? trailer.timeScale : 1);
       trailerBeforeUpdate(sdt);
       stepTime += sdt;

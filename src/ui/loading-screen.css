@@ -1,0 +1,69 @@
+/*
+ * The loading screen (src/ui/loading-screen.js): above the fades and the
+ * level HUDs, below the trailer's bars. The tower is the canvas; the words
+ * sit to its right on a wide screen, under it on a narrow one.
+ */
+
+.ld-root {
+  position: fixed; inset: 0; z-index: 40; overflow: hidden; pointer-events: none;
+  font-family: Inter, "Segoe UI", Arial, sans-serif; color: #eef6f8;
+  background: #05070b;
+  opacity: 0; transition: opacity 0.4s ease;
+}
+.ld-root.show { opacity: 1; }
+.ld-root[hidden] { display: none; }
+
+.ld-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.ld-copy {
+  position: absolute; left: calc(50% + min(8vw, 9.4vh) + 40px); top: 50%; width: min(440px, 36vw);
+  transform: translateY(-50%);
+}
+.ld-kicker {
+  margin: 0 0 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.42em; color: #7ef4f1;
+  text-shadow: 0 0 16px rgba(126, 244, 241, 0.6);
+}
+.ld-title {
+  position: relative; margin: 0; font-size: clamp(32px, 4.6vw, 64px); line-height: 0.95; font-weight: 900; letter-spacing: 0.02em;
+  text-shadow: 0 0 28px rgba(255, 138, 66, 0.35);
+}
+/* A glitch slice across the title, now and then. */
+.ld-title::before, .ld-title::after {
+  content: attr(data-text); position: absolute; inset: 0; pointer-events: none;
+}
+.ld-title::before { color: #7ef4f1; clip-path: inset(0 0 62% 0); animation: ldGlitchA 3.2s steps(1) infinite; }
+.ld-title::after { color: #ff8a42; clip-path: inset(58% 0 0 0); animation: ldGlitchB 2.7s steps(1) infinite; }
+@keyframes ldGlitchA { 0%, 91%, 100% { transform: none; opacity: 0; } 92% { transform: translateX(-5px); opacity: 0.9; } 95% { transform: translateX(3px); opacity: 0.9; } }
+@keyframes ldGlitchB { 0%, 86%, 100% { transform: none; opacity: 0; } 87% { transform: translateX(6px); opacity: 0.85; } 90% { transform: translateX(-2px); opacity: 0.85; } }
+
+.ld-meter { position: relative; height: 4px; margin: 22px 0 10px; background: rgba(126, 244, 241, 0.12); overflow: hidden; }
+.ld-bar {
+  position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, #ff8a42, #7ef4f1); box-shadow: 0 0 18px rgba(126, 244, 241, 0.7);
+}
+/* A highlight running along the bar, so it always reads as working. */
+.ld-meter::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 22%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: ldRun 1.3s linear infinite;
+}
+@keyframes ldRun { from { left: -25%; } to { left: 105%; } }
+
+.ld-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; letter-spacing: 0.24em; color: #8fa4ab; font-variant-numeric: tabular-nums; }
+.ld-pct { color: #eef6f8; letter-spacing: 0.08em; }
+
+.ld-tip {
+  margin: 26px 0 0; padding-left: 12px; border-left: 2px solid #ff8a42;
+  font-size: 14px; line-height: 1.5; color: #c8d4d8;
+}
+.ld-tip::before { content: "TIP // "; font-size: 10px; font-weight: 900; letter-spacing: 0.2em; color: #ff8a42; }
+.ld-tip.in { animation: ldTip 0.5s ease; }
+@keyframes ldTip { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 760px) {
+  .ld-copy { left: 16px; right: 16px; top: auto; bottom: 28px; width: auto; transform: none; }
+  .ld-title { font-size: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-title::before, .ld-title::after, .ld-meter::after { animation: none; display: none; }
+}

@@ -44,6 +44,12 @@ const skyline = `
 const blast = `${jump("skyline", playing)} __cap.until(() => __dbg.state === "cutscene", 20);`;
 
 export const SHOTS = [
+  /* ---- The briefing film --------------------------------------------- */
+  // Chapter 01, "Ascension Tower": the camera rising up the tower over the city.
+  // The film's titles, captions and fades are page elements, not in the picture.
+  { name: "briefing-tower", camera: "game", autopilot: false, god: false, seconds: 10,
+    setup: `__dbg.manual = false; __dbg.startBriefing(); await __cap.wait(() => __dbg.prologue?.active, 30000); await __cap.sleep(8000); __dbg.manual = true; __dbg.prologue.t = 0; __dbg.prologue.chapter = -1;` },
+
   /* ---- The opening, and who's who --------------------------------------- */
   // The Gravity Fault: the glass lift outside the tower, Okoro with the launcher, the glass going.
   { name: "lift-ride", camera: "game", seconds: 20, scoutAt: [2, 5, 8, 11, 14, 17, 20],

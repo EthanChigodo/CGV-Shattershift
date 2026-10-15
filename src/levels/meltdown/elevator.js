@@ -1,5 +1,7 @@
 /**
- * Level 3's lifts - PLACEHOLDERS.
+ * Level 3's lifts: glass, like every lift in the tower (the Calibration
+ * Lift's look - glass doors with a lit edge, glass walls between steel posts
+ * carrying cyan conduits; frosted, standing in from the walls around it).
  *
  * Level 3 opens with the player stepping out of a freight lift (arriving from
  * Level 2), ends Phase A by running into another one as the fire catches up,
@@ -92,8 +94,11 @@ export function createLift(kit, { width, height, depth, wallHalfWidth = 0, wallH
 
   const owned = [];
   const own = (m) => (owned.push(m), m);
-  const cabinWall = own(new THREE.MeshStandardMaterial({ color: 0x3a3e3d, metalness: 0.25, roughness: 0.7, emissive: 0x0a0b0b, emissiveIntensity: 1, envMapIntensity: 0.3 }));
-  const doorMat = own(new THREE.MeshStandardMaterial({ color: 0x353a3b, metalness: 0.45, roughness: 0.5, envMapIntensity: 0.5 }));
+  // Glass, as the Calibration Lift's (src/levels/common/calibration-lift.js).
+  const cabinWall = own(new THREE.MeshStandardMaterial({ color: 0xe8fbff, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide, emissive: 0x0b2a30, emissiveIntensity: 1, envMapIntensity: 0.4 }));
+  const doorMat = own(new THREE.MeshStandardMaterial({ color: 0xdff8ff, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.26, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 0.5 }));
+  const steel = own(new THREE.MeshStandardMaterial({ color: 0x737c80, metalness: 0.75, roughness: 0.4, envMapIntensity: 0.45 }));
+  const conduit = own(new THREE.MeshBasicMaterial({ color: 0x7ef4f1 }));
   const lamp = own(new THREE.MeshBasicMaterial({ color: 0xfff0d6 }));
   const indicator = indicatorTexture(label);
   const indicatorMat = own(new THREE.MeshBasicMaterial({ map: indicator }));
@@ -128,21 +133,43 @@ export function createLift(kit, { width, height, depth, wallHalfWidth = 0, wallH
   panel.rotation.y = Math.PI;
   group.add(panel);
 
-  // Doors: two leaves meeting in the middle, sliding into the wall.
+  // Doors: two glass leaves meeting in the middle, a lit inner edge on each.
   const leaves = [-1, 1].map((s) => {
-    const leaf = box(W / 2 + 0.02, H, 0.12, doorMat, (s * W) / 4, H / 2, 0);
+    const leaf = box(W / 2 + 0.02, H, 0.06, doorMat, (s * W) / 4, H / 2, 0);
+    box(0.05 / (W / 2 + 0.02), 1, 1.4, conduit, -s * 0.49, 0, 0, leaf);
     leaf.userData.side = s;
     return leaf;
   });
 
-  // The cabin.
-  box(W, 0.2, D, mat.darkMetal, 0, -0.1, D / 2 + T / 2);
-  box(W, 0.2, D, cabinWall, 0, H + 0.1, D / 2 + T / 2);
+  // The cabin: a steel floor and roof, glass walls between steel posts with
+  // conduits. The glass stands in from whatever is around the lift (the
+  // Labs' start room, the roof's hut) - flush against those walls, the two
+  // surfaces flickered through each other - and is frosted, so it reads as
+  // a cabin rather than as the room's own wall.
+  const Z = D / 2 + T / 2;
+  const IN = W / 2 - 0.18;
+  const BACK = D + T / 2 - 0.18;
+  box(W, 0.2, D, steel, 0, -0.1, Z);
+  box(W, 0.2, D, steel, 0, H + 0.1, Z);
   for (const s of [-1, 1]) {
-    box(0.2, H, D, cabinWall, s * (W / 2 + 0.1), H / 2, D / 2 + T / 2);
-    box(0.06, 0.06, D * 0.8, mat.trim, s * (W / 2 - 0.05), 1.0, D / 2 + T / 2);
+    box(0.03, H, D - 0.36, cabinWall, s * IN, H / 2, Z - 0.18);
+    box(0.06, 0.06, D * 0.8, mat.trim, s * (IN - 0.07), 1.0, Z);
+    for (const z of [T / 2 + 0.1, BACK]) {
+      box(0.16, H, 0.16, steel, s * IN, H / 2, z);
+      box(0.06, H - 0.1, 0.06, conduit, s * (IN - 0.14), H / 2, z + (z < Z ? 0.12 : -0.12));
+    }
   }
-  box(W, H, 0.2, cabinWall, 0, H / 2, D + T / 2 + 0.1);
+  box(2 * IN, H, 0.03, cabinWall, 0, H / 2, BACK);
+  // Mullions: the glass in panels, so it reads as glass.
+  const panels = Math.max(1, Math.round(D / 2));
+  for (const s of [-1, 1]) {
+    box(0.05, 0.07, D - 0.36, steel, s * IN, H * 0.68, Z - 0.18);
+    for (let i = 1; i < panels; i += 1) box(0.05, H, 0.07, steel, s * IN, H / 2, T / 2 + ((D - 0.36) * i) / panels);
+  }
+  for (let i = 1; i < Math.round(W / 2); i += 1) box(0.07, H, 0.05, steel, -IN + (2 * IN * i) / Math.round(W / 2), H / 2, BACK);
+  box(2 * IN, 0.07, 0.05, steel, 0, H * 0.68, BACK);
+  box(2 * IN - 0.2, 0.05, 0.08, conduit, 0, H - 0.03, Z);
+  box(0.08, 0.05, D - 0.4, conduit, 0, H - 0.03, Z);
   const light = new THREE.Mesh(geo.unitPlane, lamp);
   light.scale.set(W * 0.3, D * 0.5, 1);
   light.rotation.x = Math.PI / 2;
@@ -167,6 +194,7 @@ export function createLift(kit, { width, height, depth, wallHalfWidth = 0, wallH
     setLight(v) {
       lamp.color.setRGB(0.78, 0.73, 0.65).multiplyScalar(0.15 + 0.85 * THREE.MathUtils.clamp(v, 0, 1));
       cabinWall.emissiveIntensity = 0.2 + 0.8 * v;
+      conduit.color.setHex(0x7ef4f1).multiplyScalar(0.25 + 0.75 * THREE.MathUtils.clamp(v, 0, 1));
     },
     setIndicator(text, arrow = true) {
       indicator.userData.draw(text, arrow);

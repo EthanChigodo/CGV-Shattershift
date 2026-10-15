@@ -229,6 +229,9 @@
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
+/* (The countdown panel at the top is gone - playtest: clutter. The red
+   vignette round the screen still says the charges are armed.) */
+.fdy-escape { display: none !important; }
 .fdy-escape.show {
   opacity: 1;
   transform: translate(-50%, 0);
@@ -610,4 +613,15 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* ---- health at the top left (the vitals panel), the route under it ---- */
+.fdy-systems { top: 262px; left: 22px; min-width: 220px; }
+.fdy-systems > span { font-size: 11px; }
+.fdy-system { font-size: 12px; }
+.fdy-stat { min-width: 112px; padding: 10px 18px; }
+.fdy-stat span { font-size: 10px; }
+.fdy-stat strong { font-size: 26px; }
+@media (max-width: 650px) {
+  .fdy-systems { display: none; }
 }

@@ -61,8 +61,9 @@ export const quietRide = {
       ride.events.on("shot", ({ shot }) => seen.shots.push(shot));
       for (const name of ["depart", "radio", "tremor", "chime", "doors", "arrive"]) ride.events.on(name, () => seen.events.push(name));
       const figure = {
-        character: !!ride._avatar?.model,
-        gear: ride._avatar?.look?.uniforms.uGear.value,
+        firstPerson: !ride._avatar && ride.camera.parent === ride.scene,
+        glass: !!ride.cabin.panes?.front,
+        hung: !!ride.cabin.cables,
         launcherAtStart: ride.launcher.state,
         letterbox: !!document.querySelector(".elv-bar.on"),
       };
@@ -77,7 +78,7 @@ export const quietRide = {
         if (caption && caption !== lastCaption) seen.captions.push(caption);
         lastCaption = caption;
         if (d.gravityLift) {
-          doorsOpen = Math.max(doorsOpen, ride.cabin.open);
+          doorsOpen = Math.max(doorsOpen, ride.fired.has("doors") ? ride.doors : 0);
           maxSit = Math.max(maxSit, ride.sit);
           launcherAtEnd = ride.launcher.state;
         }
@@ -106,11 +107,11 @@ export const quietRide = {
       };
     });
     const failures = [];
-    for (const shot of ["corner", "low", "radio", "side", "shoulder"]) if (!r.seen.shots.includes(shot)) failures.push(`shot "${shot}" never played`);
+    for (const shot of ["doors", "city", "radio", "launcher", "arrival"]) if (!r.seen.shots.includes(shot)) failures.push(`shot "${shot}" never played`);
     for (const event of ["depart", "radio", "tremor", "chime", "doors", "arrive"]) if (!r.seen.events.includes(event)) failures.push(`"${event}" never happened`);
     if (r.seen.captions.filter((c) => /RADIO/.test(c)).length < 2) failures.push(`the pilot's two radio lines were not captioned (${JSON.stringify(r.seen.captions)})`);
-    if (!r.figure.character) failures.push("the cutscene does not show the chosen character");
-    if (r.figure.gear !== 1) failures.push("the character is not wearing the scientist's gear");
+    if (!r.figure.firstPerson) failures.push("the cutscene is not seen through Subject 07's eyes");
+    if (!r.figure.glass || !r.figure.hung) failures.push("not the glass cabin on its hoist ropes (the Gravity Fault's)");
     if (r.figure.launcherAtStart !== "resting") failures.push(`the launcher does not start leaning on the wall (${r.figure.launcherAtStart})`);
     if (r.launcherAtEnd !== "held") failures.push(`they did not pick the launcher up (${r.launcherAtEnd})`);
     if (!r.figure.letterbox) failures.push("no letterbox bars during the cutscene");

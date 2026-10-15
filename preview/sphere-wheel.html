@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sphere wheel preview</title>
+  <style>
+    body { margin: 0; height: 100vh; background: radial-gradient(circle at 30% 40%, #3a2a22, #0b0807); }
+    nav { position: fixed; left: 16px; top: 16px; display: flex; gap: 8px; font: 12px Inter, sans-serif; }
+    nav button { padding: 6px 10px; }
+  </style>
+</head>
+<body>
+  <!-- The HUD's sphere wheel on its own: ?ball=glass|cryo|shock|gravity&spheres=N -->
+  <nav><button data-b="glass">Glass</button><button data-b="cryo">Cryo</button><button data-b="shock">Shock</button><button data-b="gravity">Gravity</button></nav>
+  <script type="importmap">{ "imports": { "three": "../lib/three/build/three.module.js" } }</script>
+  <script type="module">
+    import { SphereWheel } from "../src/ui/sphere-wheel.js";
+    import { BALLS } from "../src/systems/arsenal.js";
+    const q = new URLSearchParams(location.search);
+    const wheel = new SphereWheel();
+    let ball = q.get("ball") ?? "glass";
+    const spheres = Number(q.get("spheres") ?? 18);
+    const draw = () => wheel.update({ ball, spheres, cost: BALLS[ball].cost, visible: true });
+    draw();
+    for (const b of document.querySelectorAll("[data-b]")) b.onclick = () => { ball = b.dataset.b; draw(); };
+    window.wheel = wheel;
+  </script>
+</body>
+</html>

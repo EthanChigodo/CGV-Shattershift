@@ -26,19 +26,20 @@ import { StoryUI } from "./story-ui.js";
 import { ReactionHits } from "./reaction.js";
 import { CutscenePlayer } from "./cutscene.js";
 import { StoryVoice } from "./voice.js";
-import { readTime } from "./script.js";
+import { lineHold, subtitleTime } from "./script.js";
 
 export class StoryLayer {
   /**
    * @param {object} o
    * @param {() => AudioContext|null} [o.getAudioContext]
+   * @param {object} [o.sfx]  the game's sound set (level1-audio.js): the stage directions' sounds
    * @param {HTMLElement[]} [o.blurTargets]
    * @param {object} [o.options]  { longWindows, holdInsteadOfMash, reducedMotion }
    */
-  constructor({ getAudioContext = () => null, blurTargets = [], options = {} } = {}) {
+  constructor({ getAudioContext = () => null, sfx = null, blurTargets = [], options = {} } = {}) {
     this.ui = new StoryUI({ blurTargets });
     this.reactions = new ReactionHits(this.ui);
-    this.voice = new StoryVoice(getAudioContext);
+    this.voice = new StoryVoice(getAudioContext, { sfx });
     this.player = new CutscenePlayer({ ui: this.ui, reactions: this.reactions, voice: this.voice });
     this.reactions.listen();
     this.player.listen();
@@ -102,14 +103,19 @@ export class StoryLayer {
    *   (red, then black) before the retry; 0 = the host handles it and calls retry()
    * @param {string} [o.deathLine]  a subtitle over the death
    */
-  play(scene, { camera = null, ctx = {}, on = {}, deathSeconds = 1.8, deathLine = null } = {}) {
+  play(scene, { camera = null, ctx = {}, on = {}, deathSeconds = 1.8, deathLine = null, deathFx = null } = {}) {
     this._unbind();
     this._death = null;
+    // A line said during play is cut off by the scene (its subtitle goes too).
+    if (this._talk.line) this.voice.stop();
     this.stopTalk();
     this._scene = scene;
     this._deathSeconds = deathSeconds;
     this._deathLine = deathLine;
+    /** A missed reaction's own death on screen ("fall", "mauled": src/ui/death-fx.js), over the live scene. */
+    this._deathFx = deathFx;
     this.player.camera = camera;
+    this.voice.preload(scene.lines ?? []);
     const p = this.player;
     const bind = (name, fn) => fn && this._off.push(p.on(name, fn));
     bind("event", on.event);
@@ -133,6 +139,7 @@ export class StoryLayer {
   /** After a failed reaction (when a host plays its own death): try again. */
   retry() {
     this._death = null;
+    this.deathFx?.clear();
     this.ui.setTint(0);
     this.ui.setFade(0);
     this.ui.say(null);
@@ -143,7 +150,9 @@ export class StoryLayer {
   stop() {
     this._unbind();
     this._death = null;
+    this.deathFx?.clear();
     this.stopTalk();
+    this.voice.stop();
     this.player.stop();
     this.ui.reset();
     this.ui.hide();
@@ -153,6 +162,7 @@ export class StoryLayer {
     this.paused = paused;
     this.player.paused = paused;
     this.reactions.paused = paused;
+    this.voice.setPaused(paused);
     if (paused) {
       this.player.skipHeld = false;
       this.player.skipProgress = 0;
@@ -168,10 +178,18 @@ export class StoryLayer {
     if (this._death) {
       // The default death: red, then black, a beat, then the retry.
       const d = this._death;
-      d.t += dt;
       const total = this._deathSeconds;
-      this.ui.setTint(Math.min(0.85, d.t * 3));
-      this.ui.setFade(Math.min(1, Math.max(0, (d.t - 0.35) / 0.6)));
+      if (this._deathFx && this.deathFx) {
+        // Its own: the effect over the scene as it plays out (the host moves
+        // the camera and the bodies), black only at the very end.
+        if (d.t === 0) this.deathFx.play(this._deathFx, total);
+        d.t += dt;
+        this.ui.setFade(Math.min(1, Math.max(0, (d.t - total * 0.8) / (total * 0.2))));
+      } else {
+        d.t += dt;
+        this.ui.setTint(Math.min(0.85, d.t * 3));
+        this.ui.setFade(Math.min(1, Math.max(0, (d.t - 0.35) / 0.6)));
+      }
       if (this._deathLine && d.t > 0.4) this.ui.say(this._deathLine.who, this._deathLine.text);
       if (d.t >= total) this.retry();
       return { state: "failed", t: this.player.t, timeScale: 0 };
@@ -216,11 +234,13 @@ export class StoryLayer {
   _showTalk(line) {
     const t = this._talk;
     t.line = line;
-    t.left = line.hold ?? readTime(line.text);
+    t.left = lineHold(line);
+    // (The subtitle goes when the line has been said; the next line still waits its turn.)
+    t.shown = subtitleTime(line, t.left);
     this.ui.show();
     this.ui.setGameplay(true);
     this.ui.say(line.who, line.text);
-    if (!/^\[.*\]$/.test(line.text.trim())) this.voice.blip(line.who);
+    this.voice.say(line);
     this.log.push(["talk", line.who, line.text]);
   }
 
@@ -228,6 +248,7 @@ export class StoryLayer {
     const t = this._talk;
     if (!t.line || this.player.active) return;
     t.left -= dt;
+    if (t.shown > 0 && (t.shown -= dt) <= 0 && t.left > 0) this.ui.say(null);
     if (t.left > 0) return;
     t.line = null;
     this.ui.say(null);
