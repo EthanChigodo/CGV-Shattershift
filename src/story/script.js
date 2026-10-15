@@ -67,13 +67,15 @@ export function readTime(text) {
 }
 
 /**
- * Seconds a line is on screen: its own hold, or long enough to read - and
- * never shorter than its recording takes to say (or Vale takes to laugh).
+ * Seconds a line takes: a recorded line as long as it is said (and a breath),
+ * so the next one follows straight on; one nobody says (a sound cue, or not
+ * recorded yet) long enough to read. An authored hold is kept, but never
+ * shorter than the recording.
  */
 export function lineHold(line) {
-  const base = line.hold ?? readTime(line.text);
   const spoken = spokenTime(line);
-  return spoken ? Math.max(base, spoken + 0.35) : base;
+  if (!spoken) return line.hold ?? readTime(line.text);
+  return Math.max(line.hold ?? 0, spoken + 0.3);
 }
 
 /** Seconds the line's recording speaks for (0: it has none). */
@@ -89,7 +91,7 @@ function spokenTime(line) {
  */
 export function subtitleTime(line, hold = lineHold(line)) {
   const spoken = spokenTime(line);
-  return spoken ? Math.min(hold, Math.max(spoken + 0.5, 1.2)) : hold;
+  return spoken ? Math.min(hold, Math.max(spoken + 0.25, 1)) : hold;
 }
 
 /** Lay out a scene's untimed lines one after another. Returns new objects. */

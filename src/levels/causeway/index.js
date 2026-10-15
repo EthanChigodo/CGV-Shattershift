@@ -32,6 +32,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { gateRecoveryWaiting } from "../../systems/ammo-recovery.js";
 import { CausewayKit, CASE_FILES } from "./kit.js";
 import { ShellTreadmill } from "./shell.js";
 import { ReflectionProbe } from "./probe.js";
@@ -43,7 +44,7 @@ import {
   EmberSystem, WaterSystem, SmokeSystem, SootSystem, VentFlowSystem, createBurst,
 } from "./shaders/particles.js";
 import {
-  authoredLayout, EndlessGenerator, BEATS, ROUTE, SMOKE_ZONES, RADIO,
+  authoredLayout, hardenLayout, EndlessGenerator, BEATS, ROUTE, SMOKE_ZONES, RADIO,
   themeAt, beatAt, ceilingAt, LANES,
 } from "./layout.js";
 
@@ -92,9 +93,15 @@ export class CausewayLevel {
    * @param {"story"|"endless"} options.mode
    * @param {"high"|"medium"|"low"} options.quality
    */
-  constructor({ origin = new THREE.Vector3(0, 0, 4000), mode = "story", quality = "high", seed } = {}) {
+  /**
+   * @param {object} [o]
+   * @param {boolean} [o.hard]        the story on Hard (layout.js hardenLayout)
+   * @param {number} [o.chaseScale]   the bridge collapse's speed, x the designed one
+   */
+  constructor({ origin = new THREE.Vector3(0, 0, 4000), mode = "story", quality = "high", seed, hard = false, chaseScale = 1 } = {}) {
     this.origin = origin.clone();
     this.mode = mode;
+    this.chaseScale = chaseScale;
     this.quality = quality;
     this.events = createEmitter();
     this.route = { totalLength: mode === "endless" ? Infinity : ROUTE.length, ...ROUTE };
@@ -152,8 +159,9 @@ export class CausewayLevel {
     this.groups.playerFx.add(this.shield);
 
     // Streaming state.
-    this.entries = mode === "endless" ? [] : authoredLayout().filter((e) => e.type !== "event");
-    this.pendingEvents = mode === "endless" ? [] : authoredLayout().filter((e) => e.type === "event");
+    const layout = mode === "endless" ? [] : hard ? hardenLayout(authoredLayout()) : authoredLayout();
+    this.entries = layout.filter((e) => e.type !== "event");
+    this.pendingEvents = layout.filter((e) => e.type === "event");
     this.generator = mode === "endless" ? new EndlessGenerator(seed ?? Date.now()) : null;
     this.nextEntry = 0;
     this.live = [];
@@ -854,6 +862,8 @@ export class CausewayLevel {
         this.stats.extinguished += extinguished;
         this.events.emit("extinguish", { count: extinguished, by: "cryo" });
       }
+    } else if (ball === "gravity") {
+      this._ring(point, 0x7a5cff, radius * 0.6);
     } else if (ball === "shock") {
       this._burst("shock", point);
       this._ring(point, 0xd28bff, radius);
@@ -986,9 +996,9 @@ export class CausewayLevel {
   /* ================================================================ */
 
   /**
-   * @param {{dt:number, time:number, distance:number, player?:THREE.Vector3, playing?:boolean}} args
+   * @param {{dt:number, time:number, distance:number, player?:THREE.Vector3, playing?:boolean, ammunition?:number, throwCost?:number}} args
    */
-  update({ dt, time, distance, player, playing = true }) {
+  update({ dt, time, distance, player, playing = true, ammunition = Infinity, throwCost = 1 }) {
     this.distance = distance;
     this.time.value = time;
     this.glassShared.uTime.value = time;
@@ -1003,7 +1013,7 @@ export class CausewayLevel {
     this._stream(distance);
     const chase = s.chase;
     if (chase.active && playing) {
-      chase.front += ROUTE.chase.speed * dt;
+      chase.front += ROUTE.chase.speed * this.chaseScale * dt;
       chase.front = Math.max(chase.front, distance - 70);
       chase.gap = distance - chase.front;
       if (Math.random() < dt * 1.6) {
@@ -1043,7 +1053,7 @@ export class CausewayLevel {
     this._updateLights(dt, time, distance);
     this._updateEffects(dt, time);
     if (this._towerFall) this._updateTower(dt);
-    this._updateFinale(dt, distance, playing);
+    this._updateFinale(dt, distance, playing, ammunition, throwCost);
 
     this.shield.position.copy(this._player).sub(this.origin);
     this.probe.position.set(this._player.x * 0.5, 1.8, this._player.z - 7);
@@ -1330,7 +1340,7 @@ export class CausewayLevel {
     }
   }
 
-  _updateFinale(dt, distance, playing) {
+  _updateFinale(dt, distance, playing, ammunition = Infinity, throwCost = 1) {
     const finale = this.state.finale;
     if (!this.gate) return;
     const slab = this.gate.parts.slab;
@@ -1346,7 +1356,9 @@ export class CausewayLevel {
         finale.sealedTime = 7;
         this.events.emit("gate-sealed", { seconds: finale.sealedTime });
       }
-      finale.sealedTime -= dt;
+      // The seven-second challenge measures usable aiming time, not the
+      // emergency recharge delay. Free Overdrive throws need no exemption.
+      if (!gateRecoveryWaiting(ammunition, throwCost, finale.sealed, finale.open)) finale.sealedTime -= dt;
       if (Math.random() < dt * 4) {
         this._burst("dust", new THREE.Vector3((Math.random() - 0.5) * 10, 9, this.worldZ(distance - 6 - Math.random() * 20)), { count: 40, gravity: 6, scale: 900 });
       }

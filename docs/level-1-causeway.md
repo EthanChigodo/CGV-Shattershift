@@ -125,7 +125,7 @@ Shoot the capsule or run through it. Each one is a visible transformation driven
 | Serum | Duration | Rule | Look |
 | --- | --- | --- | --- |
 | Prism split | 10 s | Every throw fires three spheres in a fan | Rainbow dispersion fringe around the frame |
-| Thermal sight | 12 s | Smoke and fog thin by 70-80% | Iron-bow thermal palette; fire burns white |
+| Thermal Aegis (was Thermal sight) | 12 s | Smoke and fog thin by 70-80%; fire does not burn | Iron-bow thermal palette; fire burns white |
 | Kinetic shield | 25 s | Absorbs the next two impacts (solid, glass, fire) | Hex-cell Fresnel bubble with impact ripple |
 | Overdrive | 8 s | Free throws, +3 m/s | Saturated, pulsing magenta edges, speed streaks |
 

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trailer cards</title>
+<!--
+  The trailer's title cards, one per ?card=<id>, drawn at 1920x1080 on a
+  transparent background (cards.mjs screenshots each into a PNG that
+  assemble.mjs lays over the footage). The game's own colours and type.
+-->
+<style>
+  :root { --accent: #ff8a42; --hot: #ff5a3c; --gold: #ffcc4d; --text: #fff2e9; --dim: #cba28f; }
+  html, body { margin: 0; width: 1920px; height: 1080px; background: transparent; overflow: hidden; }
+  body { font-family: "Segoe UI", Inter, Arial, sans-serif; color: var(--text); }
+  .card { position: absolute; inset: 0; display: none; }
+  .card.on { display: block; }
+  .shadow { text-shadow: 0 4px 30px rgba(0, 0, 0, .85), 0 2px 6px rgba(0, 0, 0, .9); }
+
+  /* Eyebrow + line, lower left. */
+  .lower { position: absolute; left: 150px; bottom: 210px; }
+  .eyebrow { margin: 0 0 14px; color: var(--accent); font-weight: 800; font-size: 26px; letter-spacing: .32em; }
+  .big { margin: 0; font-weight: 900; font-size: 104px; line-height: .95; letter-spacing: .01em; text-transform: uppercase; }
+
+  /* Intercom lines, as the game's subtitles. */
+  .vo { position: absolute; left: 50%; bottom: 190px; transform: translateX(-50%); width: 1400px; text-align: center; }
+  .vo b { display: block; margin-bottom: 10px; font-size: 26px; font-weight: 900; letter-spacing: .3em; }
+  .vo p { margin: 0; font-size: 48px; font-weight: 700; line-height: 1.25; }
+
+  /* Character cards: big, slanted, outlined, a stamp of colour behind. */
+  .name { position: absolute; right: 150px; bottom: 200px; text-align: right; transform: rotate(-4deg); }
+  .name .stamp { position: absolute; right: -30px; bottom: 30px; width: 860px; height: 120px; background: var(--c); transform: skewX(-14deg); opacity: .92; }
+  .name h1 { position: relative; margin: 0; font-family: Impact, "Arial Black", sans-serif; font-weight: 400; font-size: 190px; line-height: .9;
+    color: #fff; -webkit-text-stroke: 7px #000; paint-order: stroke fill; letter-spacing: .02em; text-shadow: 10px 10px 0 #000; }
+  .name p { position: relative; margin: 18px 6px 0 0; font-family: Impact, "Arial Black", sans-serif; font-size: 50px; color: var(--c);
+    -webkit-text-stroke: 3px #000; paint-order: stroke fill; letter-spacing: .06em; text-transform: uppercase; }
+
+  /* The title. */
+  .title { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .title h1 { margin: 0; font-weight: 900; font-size: 250px; line-height: .86; letter-spacing: .02em; text-transform: uppercase; color: #fff;
+    text-shadow: -9px 0 rgba(255, 40, 40, .8), 9px 0 rgba(60, 200, 255, .55), 0 0 80px rgba(255, 110, 40, .45); }
+  .title h1 span { color: var(--accent); }
+  .title p { margin: 34px 0 0; color: var(--dim); font-size: 34px; font-weight: 800; letter-spacing: .5em; }
+
+  /* Sector cards, lower left with a rail. */
+  .sector { position: absolute; left: 150px; bottom: 200px; padding-left: 34px; border-left: 10px solid var(--accent); }
+  .sector small { display: block; color: var(--accent); font-size: 30px; font-weight: 900; letter-spacing: .4em; }
+  .sector h2 { margin: 6px 0 10px; font-size: 128px; font-weight: 900; line-height: .92; text-transform: uppercase; }
+  .sector p { margin: 0; color: var(--text); font-size: 40px; font-weight: 700; font-style: italic; }
+
+  /* Feature line, centred. */
+  .feature { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .feature h2 { margin: 0; font-family: Impact, "Arial Black", sans-serif; font-weight: 400; font-size: 150px; letter-spacing: .03em; color: #fff;
+    -webkit-text-stroke: 6px #000; paint-order: stroke fill; text-shadow: 8px 8px 0 #000; transform: rotate(-3deg); }
+  .feature h2 em { font-style: normal; color: var(--accent); }
+
+  /* The end card. */
+  .end { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: radial-gradient(ellipse at 50% 45%, #2a120a 0%, #0b0504 70%); }
+  .end h1 { margin: 0; font-weight: 900; font-size: 210px; line-height: .86; text-transform: uppercase; color: #fff;
+    text-shadow: -7px 0 rgba(255, 40, 40, .75), 7px 0 rgba(60, 200, 255, .5), 0 0 70px rgba(255, 110, 40, .4); }
+  .end h1 span { color: var(--accent); }
+  .end .tag { margin: 30px 0 70px; color: var(--text); font-size: 46px; font-weight: 800; letter-spacing: .12em; }
+  .end .play { display: inline-block; margin: 0 auto; padding: 22px 54px; background: var(--accent); color: #1a0a04; font-size: 40px; font-weight: 900; letter-spacing: .24em;
+    clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px); }
+  .end .credit { margin: 54px 0 0; color: var(--dim); font-size: 26px; font-weight: 700; letter-spacing: .3em; }
+</style>
+</head>
+<body>
+  <section class="card shadow" id="tower"><div class="lower"><p class="eyebrow">ASCENSION TOWER // LEVEL 212</p><h2 class="big">Demolition<br>armed.</h2></div></section>
+
+  <section class="card shadow" id="vo-halcyon"><div class="vo"><b style="color:#ffb547">HALCYON</b><p>Demolition sequence armed. Ascension Tower will be cleared in thirty minutes.</p></div></section>
+  <section class="card shadow" id="vo-okoro"><div class="vo"><b style="color:#7fe0c4">DR. OKORO</b><p>Dr. Vale ran the programme. When the board came asking, he armed the charges.</p></div></section>
+  <section class="card shadow" id="vo-vale"><div class="vo"><b style="color:#ff5a4e">DR. VALE</b><p>Don't worry about the tower. Fire is very good at keeping secrets.</p></div></section>
+  <section class="card shadow" id="vo-vale2"><div class="vo"><b style="color:#ff5a4e">DR. VALE</b><p>Hello, Seven. I couldn't have designed a better field test.</p></div></section>
+
+  <section class="card" id="name-07" style="--c:#3fc8ba"><div class="name"><i class="stamp"></i><h1>SUBJECT 07</h1><p>The experiment that woke up</p></div></section>
+  <section class="card" id="name-okoro" style="--c:#7fe0c4"><div class="name"><i class="stamp"></i><h1>DR. OKORO</h1><p>Opened the door</p></div></section>
+  <section class="card" id="name-vale" style="--c:#ff5a4e"><div class="name"><i class="stamp"></i><h1>DR. VALE</h1><p>Armed the charges</p></div></section>
+
+  <section class="card" id="title"><div class="title"><h1>FRACTURE<br><span>RUN</span></h1><p>WAKE UP. GET TO THE ROOF.</p></div></section>
+
+  <section class="card shadow" id="sector-1"><div class="sector"><small>SECTOR 01</small><h2>The Foundry</h2><p>The machines don't stop for you.</p></div></section>
+  <section class="card shadow" id="sector-2"><div class="sector"><small>SECTOR 02</small><h2>The Labs</h2><p>The fire is right behind you.</p></div></section>
+  <section class="card shadow" id="sector-3"><div class="sector"><small>SECTOR 03</small><h2>The Skyline</h2><p>The bridge won't wait.</p></div></section>
+  <section class="card shadow" id="sector-4"><div class="sector"><small>THE ROOF</small><h2>Hold on.</h2><p>Until the helicopter comes.</p></div></section>
+
+  <section class="card" id="feat-spheres"><div class="feature"><h2>THREE SPHERES.<br><em>SIX SERUMS.</em></h2></div></section>
+  <section class="card" id="feat-difficulty"><div class="feature"><h2>EASY. NORMAL.<br><em>HARD.</em></h2></div></section>
+  <section class="card" id="feat-break"><div class="feature"><h2>BREAK<br><em>EVERYTHING.</em></h2></div></section>
+
+  <section class="card" id="end"><div class="end"><h1>FRACTURE<br><span>RUN</span></h1><p class="tag">Wake up. Get to the roof.</p><div><span class="play">PLAY IT IN YOUR BROWSER</span></div><p class="credit">COMS3006A // COMPUTER GRAPHICS AND VISUALISATION</p></div></section>
+
+<script>
+  const id = new URLSearchParams(location.search).get("card");
+  document.getElementById(id)?.classList.add("on");
+</script>
+</body>
+</html>

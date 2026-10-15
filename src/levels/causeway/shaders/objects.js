@@ -40,7 +40,7 @@ const serumFragment = /* glsl */ `
 ${FOG_FADE_GLSL}
 uniform float uTime;
 uniform vec3 uColor;
-uniform float uMode;      // 0 prism, 1 thermal, 2 shield, 3 overdrive
+uniform float uMode;      // 0 prism, 1 thermal, 2 shield, 3 overdrive, 4 infinite, 5 restore
 varying vec3 vObj;
 varying vec3 vCamObj;
 
@@ -68,10 +68,23 @@ float serum(vec3 p) {
     d = min(d, max(g, length(p) - 0.3));
   } else if (uMode < 2.5) {                           // shield: hollow shell
     d = min(d, abs(length(p) - 0.27) - 0.012);
-  } else {                                            // overdrive: spikes
+  } else if (uMode < 3.5) {                           // overdrive: spikes
     vec3 q = normalize(p + 1e-4);
     float spikes = pow(abs(sin(q.x * 9.0 + uTime * 3.0) * sin(q.y * 9.0) * sin(q.z * 9.0)), 2.0);
     d = smin(d, length(p) - 0.16 - spikes * 0.12, 0.05);
+  } else if (uMode < 4.5) {                           // infinite: a figure of eight, rocking (it always faces out)
+    float a = sin(uTime * 0.9) * 0.55;
+    vec3 q = vec3(p.x * cos(a) - p.z * sin(a), p.y, p.x * sin(a) + p.z * cos(a));
+    vec2 l = vec2(length(q.xy - vec2(0.1, 0.0)) - 0.1, q.z);
+    vec2 r = vec2(length(q.xy + vec2(0.1, 0.0)) - 0.1, q.z);
+    d = min(length(l), length(r)) - 0.042;
+  } else {                                            // restore: a ring of spheres round a core
+    float ring = 1e5;
+    for (int i = 0; i < 6; i++) {
+      float a = uTime * 1.6 + float(i) * 1.0472;
+      ring = min(ring, length(p - vec3(cos(a) * 0.22, sin(a * 2.0) * 0.03, sin(a) * 0.22)) - 0.06);
+    }
+    d = min(length(p) - 0.11, ring);
   }
   return d;
 }
@@ -131,7 +144,7 @@ void main() {
 /** Each serum's own colour (arsenal.js SERUMS), in linear space: saturated once lit. */
 const rawColour = (hex) => new THREE.Color(hex);
 export const SERUM_COLOURS = Object.fromEntries(Object.values(SERUMS).map((s) => [s.key, rawColour(s.colour)]));
-const SERUM_MODES = { prism: 0, thermal: 1, shield: 2, overdrive: 3 };
+const SERUM_MODES = { prism: 0, thermal: 1, shield: 2, overdrive: 3, infinite: 4, restore: 5 };
 
 export function createSerumMaterial(type, time) {
   const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog]);

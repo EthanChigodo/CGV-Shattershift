@@ -77,7 +77,10 @@ export class CalibrationLift {
 
     // Cabin: floor and roof, glass wall, posts with conduits, a lit trim ring.
     const R = LIFT_RADIUS;
-    mesh(octagon, steel, 9, 0.4, 9, 0, -0.15, 0).rotation.y = Math.PI / 8;
+    // A matte, ribbed deck (polished steel mirrored the whole level's sky -
+    // a bright blue slab across the bottom of the view inside).
+    const deck = own(new THREE.MeshStandardMaterial({ color: 0x23272b, metalness: 0.3, roughness: 0.82, envMapIntensity: 0.25 }));
+    mesh(octagon, deck, 9, 0.4, 9, 0, -0.15, 0).rotation.y = Math.PI / 8;
     mesh(octagon, steel, 9, 0.4, 9, 0, 5.6, 0).rotation.y = Math.PI / 8;
     mesh(wall, glass, 8.6, 5.4, 8.6, 0, 2.75, 0);
     for (let i = 0; i < 8; i += 1) {
@@ -112,6 +115,24 @@ export class CalibrationLift {
       for (const s of [-1, 1]) mesh(box, strip, 0.08, 0.04, landing, s * (landingWidth / 2 - 0.1), 0.02, R + landing / 2, this.root);
     }
     if (core) this._buildCore({ own, mesh, box, darkSteel, strip, shaftHeight, ceiling: core.ceiling ?? 8 });
+
+    // What it hangs from: a crosshead and sheave on the cabin's roof, the
+    // hoist ropes up the shaft, and the machine at the top of the tube - so
+    // it rides on something, not up into the dark.
+    mesh(box, darkSteel, 4.2, 0.35, 0.5, 0, 5.95, 0);
+    const sheave = mesh(own(new THREE.CylinderGeometry(0.55, 0.55, 0.24, 24)), steel, 1, 1, 1, 0, 6.5, 0);
+    sheave.rotation.z = Math.PI / 2;
+    this.ropeTop = shaftHeight - 1.2;
+    this.ropes = [-0.18, -0.06, 0.06, 0.18].map((x) => {
+      const rope = mesh(own(new THREE.CylinderGeometry(0.035, 0.035, 1, 6, 1, true)), darkSteel, 1, 1, 1, x, 0, 0, this.root);
+      rope.frustumCulled = false;
+      return rope;
+    });
+    mesh(box, darkSteel, 6.4, 1.6, 6.4, 0, shaftHeight + 0.2, 0, this.root);
+    mesh(box, strip, 6.5, 0.06, 6.5, 0, shaftHeight - 0.62, 0, this.root);
+    const drum = mesh(own(new THREE.CylinderGeometry(0.9, 0.9, 1.8, 24)), steel, 1, 1, 1, 0, shaftHeight - 1.3, 0, this.root);
+    drum.rotation.z = Math.PI / 2;
+    this._drum = drum;
 
     this.state = { t: 0, cabinY: 0, velocity: 0, riding: false };
     this._v = new THREE.Vector3();
@@ -209,6 +230,7 @@ export class CalibrationLift {
   reset() {
     Object.assign(this.state, { t: 0, cabinY: 0, velocity: 0, riding: false });
     this.cabin.position.y = 0;
+    this._placeRopes();
     for (const leaf of this.doors) leaf.position.x = leaf.userData.openX;
   }
 
@@ -246,8 +268,20 @@ export class CalibrationLift {
     s.velocity = Math.min(11, rideT * 4.5);
     s.cabinY += s.velocity * dt;
     this.cabin.position.y = s.cabinY;
+    this._placeRopes();
+    this._drum.rotation.x += s.velocity * dt / 0.9;
     const end = reduced ? RIDE_SECONDS_REDUCED : RIDE_SECONDS;
     return { t, cabinY: s.cabinY, velocity: s.velocity, fade: THREE.MathUtils.clamp((t - (end - 0.9)) / 0.9, 0, 1), done: t >= end };
+  }
+
+  /** The ropes run from the sheave on the cabin to the drum at the top. */
+  _placeRopes() {
+    const from = this.cabin.position.y + 6.5;
+    const length = Math.max(0.1, this.ropeTop - from);
+    for (const r of this.ropes) {
+      r.scale.y = length;
+      r.position.y = from + length / 2;
+    }
   }
 
   /** Where the player stands in the cabin, in world space. */

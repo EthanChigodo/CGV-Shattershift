@@ -23,7 +23,7 @@ window.__sim = function (options) {
     maxSpheres = 25,
     rechargeSeconds = 4,
     comboWindow = 2.6,
-    zones = [{ until: 0.5, speed: 6.8 }, { until: 0.75, speed: 9.0 }, { until: 1.01, speed: 11.6 }],
+    zones = [{ until: 0.5, speed: 7.8 }, { until: 0.75, speed: 10.2 }, { until: 1.01, speed: 12.6 }],
   } = options || {};
 
   const f = globalThis.__foundry;
@@ -48,6 +48,39 @@ window.__sim = function (options) {
 
   const escapeFrom = L._escapeTrigger ?? Infinity;
 
+  // A player chooses lanes. Look 4-16 m ahead: a lane is bad if a piston (or,
+  // for someone who never jumps or slides, any barrier) is in it; stay put if
+  // the current lane is fine, else move to the nearest good one. (The bots
+  // used to run the whole level in the middle lane - which the level then
+  // had to allow, and which is exactly what made the middle a free ride.)
+  const LANES = [-3.2, 0, 3.2];
+  const _a = new THREE.Vector3();
+  const _b = new THREE.Vector3();
+  const _p = new THREE.Vector3();
+  for (const e of L._hazardIndex) {
+    if (e.lateral !== undefined) continue;
+    L.route.sample(e.distance, 0, 0, _a);
+    L.route.sample(e.distance, 1, 0, _b);
+    e.mesh.getWorldPosition(_p);
+    e.lateral = _p.sub(_a).dot(_b.sub(_a));
+  }
+  let laneIndex = 1;
+  const autoSteer = (d) => {
+    // Pistons and barriers only: the shutter gates close in from the sides and
+    // are what the middle lane is for, so they are not something to steer from.
+    const bad = (lane) => L._hazardIndex.some((e) => e.distance - d > 2.5 && e.distance - d < 10 &&
+      Math.abs(e.lateral - lane) < 1.6 && (e.mesh.userData.piston || (!useInputs && e.mesh.userData.barrier)));
+    // In the escape the gates close the side lanes: head for the middle.
+    if (d >= escapeFrom - 6 && laneIndex !== 1 && !bad(LANES[1])) laneIndex = 1;
+    if (bad(LANES[laneIndex])) {
+      const order = [laneIndex - 1, laneIndex + 1, laneIndex - 2, laneIndex + 2].filter((i) => i >= 0 && i < 3);
+      const next = order.find((i) => !bad(LANES[i]));
+      if (next !== undefined) laneIndex = next;
+    }
+    return LANES[laneIndex];
+  };
+  const steering = steer ?? autoSteer;
+
   while (distance < L.route.totalLength - 2 && integrity > 0 && guard++ < 400000) {
     const progress = distance / L.route.totalLength;
     distance += speedAt(progress) * (slow > 0 ? 0.45 : 1) * dt;
@@ -65,7 +98,7 @@ window.__sim = function (options) {
       recharge = 0;
     }
 
-    if (steer) lateral += (steer(distance) - lateral) * Math.min(1, dt * 9);
+    lateral += (steering(distance) - lateral) * Math.min(1, dt * 9);
 
     for (const mesh of [...L.breakables]) {
       const d = mesh.userData.routeDistance;
@@ -133,7 +166,9 @@ window.__sim = function (options) {
     minSpheres,
     ranDryAt: dryAt,
     hits: hits.length,
-    escapeHits: hits.filter((h) => h.duringEscape).length,
+    // The death spiral this guards against is the gates; a player who never
+    // jumps meeting the escape's barriers is their own miss.
+    escapeHits: hits.filter((h) => h.duringEscape && h.kind === "gate").length,
     hitList: hits.slice(0, 10).map((h) => h.at + "m " + h.kind),
     systems: L.state.systemsOnline,
     escapeLeft: +L.state.escape.remaining.toFixed(1),

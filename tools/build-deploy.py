@@ -18,6 +18,7 @@ top level of the archive, ready for the Moodle submission.
 import os
 import re
 import shutil
+import stat
 import sys
 import time
 import zipfile
@@ -48,22 +49,30 @@ ABSOLUTE = re.compile(
 RELATIVE_REF = re.compile(r"""["'`](\.{1,2}/[^"'`\s${}]+?\.(?:js|css|glb|gltf|png|jpe?g|webp|mp3|wav|ogg|json|hdr))["'`]""")
 
 
+def _writable_then_retry(func, path, _exc):
+    """OneDrive marks some folders read-only, and Windows won't delete those: clear it, try again."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def remove_tree(path):
     """rmtree, patient with Windows: OneDrive or the indexer can hold a folder for a moment."""
     for attempt in range(20):
         try:
-            shutil.rmtree(path)
+            shutil.rmtree(path, onexc=_writable_then_retry)
             return
         except FileNotFoundError:
             return
         except PermissionError:
             time.sleep(0.5)
-    shutil.rmtree(path)
+    shutil.rmtree(path, onexc=_writable_then_retry)
 
 
 def copy():
-    if os.path.isdir(DIST):
-        remove_tree(DIST)
+    # Only this build's own output: dist/ holds other things too (the trailer).
+    remove_tree(OUT)
+    if os.path.exists(ZIP):
+        os.remove(ZIP)
     os.makedirs(OUT)
     for name in FILES:
         shutil.copy2(os.path.join(ROOT, name), os.path.join(OUT, name))

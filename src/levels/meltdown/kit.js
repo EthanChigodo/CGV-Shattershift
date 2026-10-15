@@ -38,6 +38,7 @@ import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { createFire } from "./fire.js";
 import { assetSlot } from "./assets.js";
 import { HumanoidRig } from "./characters.js";
+import { ashify } from "./ash.js";
 import { SERUMS } from "../../systems/arsenal.js";
 import { serumPickup, sphereCachePickup } from "../../systems/spheres.js";
 
@@ -553,6 +554,18 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       slot.position.z = -length / 2 + (i + 0.5) * (length / pieces);
       duct.add(slot);
     }
+    // The kit's section is open along the top: a lid, and caps on the open
+    // ends, so you land on (and run along) metal, not into the hollow.
+    const lid = mesh(geometries.unitBox, materials.ductMetal);
+    lid.scale.set(1.44, 0.06, length);
+    lid.position.y = 0.53;
+    duct.add(lid);
+    for (const end of [-1, 1]) {
+      const cap = mesh(geometries.unitBox, materials.trim);
+      cap.scale.set(1.44, 1.1, 0.05);
+      cap.position.z = end * (length / 2 - 0.02);
+      duct.add(cap);
+    }
 
     if (mode === "bridge") {
       // Run along the route, lying in the centre lane, crushed flatter by
@@ -1036,7 +1049,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
 
   /** A serum capsule - the Skyline's, in that serum's own colour (src/systems/spheres.js). */
   function powerup({ kind = "coolant" } = {}) {
-    const serum = VIAL_SERUM[kind] ?? "thermal";
+    // A vial kind, or a serum by its own name (unlimited spheres, restoration).
+    const serum = VIAL_SERUM[kind] ?? (SERUMS[kind] ? kind : "thermal");
     const group = new THREE.Group();
     group.name = `Serum_${serum}`;
     const pickup = serumPickup(serum, { scale: 1.1 });
@@ -1731,7 +1745,11 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     const slot = assetSlot("patient", { size: [0, 1.74, 0] }, [standIn]);
     body.add(slot);
     let rig = null;
+    let model = null;
+    /** Burning away once down (ash.js, as on the roof). */
+    let ash = null;
     slot.userData.onFilled = (person) => {
+      model = person;
       const r = new HumanoidRig(person);
       rig = r.valid ? r : null;
       heatSignature(person);
@@ -1769,6 +1787,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       hit.userData.disabled = true;
       state = "down";
       fall = 0;
+      ash = model ? ashify(model, 1.74) : null;
       return true;
     };
     group.userData.state = () => state;
@@ -1811,9 +1830,23 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       const yaw = state === "lurch" ? dir * Math.PI * 0.35 : state === "idle" ? -fromSide * 0.5 : state === "stalk" ? THREE.MathUtils.clamp(-chaseVel * 0.18, -0.5, 0.5) : 0;
       body.rotation.y += (yaw - body.rotation.y) * Math.min(1, dt * 6);
       if (state === "down") {
-        fall = Math.min(1, fall + dt * 1.7);
-        body.rotation.x = -fall * fall * Math.PI * 0.47;
-        body.position.y = Math.sin(fall * Math.PI) * 0.1;
+        // No topple, no body left in the corridor: thrown back, arms flung
+        // wide, and burnt away to ash from the head down in about 1.4 s.
+        fall = Math.min(1.3, fall + dt / 1.2);
+        const jolt = THREE.MathUtils.smoothstep(fall, 0, 0.18);
+        body.rotation.x = -0.3 * jolt;
+        body.position.y = 0.12 * THREE.MathUtils.smoothstep(fall, 0.15, 1.2);
+        body.position.x = Math.sin(t * 47) * 0.025 * jolt;
+        const burn = THREE.MathUtils.clamp((fall - 0.12) * 1.1, 0, 1.2);
+        if (ash) {
+          ash.uniforms.uAsh.value = burn;
+          ash.uniforms.uAshBase.value = mover.getWorldPosition(world).y;
+        } else body.scale.setScalar(Math.max(0.01, 1 - burn));
+        if (fall >= 1.3 && body.visible) {
+          body.visible = false;
+          ash?.dispose();
+          ash = null;
+        }
       } else {
         body.rotation.x = -stagger * 0.35;
       }
@@ -1836,7 +1869,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
           lean: 0.3 - stagger * 0.9, headTilt: Math.sin(time * 1.3 + phase0) * 0.3, headNod: 0.2 - stagger * 0.6, spread: 0.06,
         });
       } else {
-        rig.pose({ reach: 0.25 * (1 - fall), headNod: -0.7 * fall, elbow: 0.9, lean: -0.4 * fall, spread: 0.18 * fall });
+        const jolt = THREE.MathUtils.smoothstep(fall, 0, 0.18);
+        rig.pose({ reach: -0.55 * jolt, spread: 0.5 * jolt, headNod: -0.75 * jolt, lean: -0.45 * jolt, elbow: 0.25, crouch: 0.12 * jolt });
       }
     };
     group.userData.hazardMesh = hit;

@@ -407,21 +407,15 @@
 /* ---- Game chrome owned by MeltdownGame (src/levels/meltdown/game.js) ---- */
 /* Below the host's menu screens (z-index 8), above the level HUD. */
 
-.mlt-reticle {
-  position: fixed;
-  z-index: 7;
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
-  border: 1px solid rgba(10, 255, 106, 0.85);
-  border-radius: 50%;
-  pointer-events: none;
-  transition: border-color 0.12s ease, transform 0.12s ease;
-}
-.mlt-reticle[hidden] { display: none; }
-.mlt-reticle.hot { border-color: #0aff6a; transform: scale(1.45); box-shadow: 0 0 16px rgba(10, 255, 106, 0.7); }
-.mlt-reticle.weak { border-style: dashed; border-color: #ffb03c; }
-.mlt-reticle.overheated { border-color: #ff3a1e; box-shadow: 0 0 16px rgba(255, 58, 30, 0.8); animation: mlt-reticle-hot 0.5s ease-in-out infinite; }
+/* The crosshair is the game's own (.reticle in styles.css): lines and a dot
+   that turn hot over a target. Here it only adds its two warnings. */
+.reticle.mlt-reticle { z-index: 7; }
+.reticle.mlt-reticle[hidden] { display: none; }
+.reticle.mlt-reticle.weak::before, .reticle.mlt-reticle.weak::after,
+.reticle.mlt-reticle.weak i::before, .reticle.mlt-reticle.weak i::after { background: #ffb03c; }
+.reticle.mlt-reticle.overheated::before, .reticle.mlt-reticle.overheated::after,
+.reticle.mlt-reticle.overheated i::before, .reticle.mlt-reticle.overheated i::after { background: #ff3a1e; }
+.reticle.mlt-reticle.overheated { animation: mlt-reticle-hot 0.5s ease-in-out infinite; }
 @keyframes mlt-reticle-hot { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
 .mlt-fade { position: fixed; inset: 0; z-index: 7; background: #000; opacity: 0; pointer-events: none; }
@@ -434,3 +428,16 @@
 /* While Level 3 runs inside the full game, its HUD replaces the game's own. */
 body.mlt-active #hud,
 body.mlt-active #reticle { display: none !important; }
+
+/* ---- health at the top left, and bigger (playtest feedback) ----------- */
+.mlt-vitals { left: 22px; top: 84px; bottom: auto; transform: none; }
+.mlt-stat { min-width: 120px; padding: 11px 18px; }
+.mlt-stat span { font-size: 10px; }
+.mlt-stat strong { font-size: 27px; }
+.mlt-stat.vitality { min-width: 240px; }
+.mlt-stat.vitality .mlt-track { height: 10px; border-radius: 2px; }
+.mlt-loading { top: 180px; left: 22px; }
+@media (max-width: 650px) {
+  .mlt-vitals { top: 66px; left: 12px; }
+  .mlt-stat.vitality { min-width: 150px; }
+}

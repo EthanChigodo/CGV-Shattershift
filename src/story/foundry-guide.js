@@ -74,6 +74,7 @@ export class FoundryGuide {
     this.lateral = lateral;
     this.lane = LANES.indexOf(LANES.reduce((a, b) => (Math.abs(b - lateral) < Math.abs(a - lateral) ? b : a)));
     this.mode = "run";
+    this.catchUp = false;
     this._place(0);
   }
 
@@ -146,6 +147,12 @@ export class FoundryGuide {
     this.point = Math.max(0, this.point - dt);
     this.handoff = Math.max(0, this.handoff - dt);
 
+    // The player got past him (a switch missed: they went through the gate
+    // he was waiting at). He doesn't stay behind: over it, and running
+    // faster than them in another lane until he is in front again.
+    if (distance > this.d - 0.5) this.catchUp = true;
+    else if (this.catchUp && this.d > distance + LEAD.min) this.catchUp = false;
+
     // How far ahead: closer while he talks or hands something over.
     const leadTarget = this.handoff > 0 ? LEAD.handoff : this.point > 0 ? LEAD.talk : LEAD.rest;
     this.lead += (leadTarget - this.lead) * Math.min(1, dt * 1.6);
@@ -155,7 +162,7 @@ export class FoundryGuide {
     // and, where asked, never the player's own while he is close to them.
     this.laneTimer -= dt;
     const here = LANES[this.lane];
-    const near = this.avoidPlayerWithin > 0 && playerLateral !== null && this.d - distance < this.avoidPlayerWithin;
+    const near = (this.catchUp || this.avoidPlayerWithin > 0) && playerLateral !== null && this.d - distance < Math.max(this.avoidPlayerWithin, this.catchUp ? 3 : 0);
     const playerLane = playerLateral === null ? lane : LANES.indexOf(LANES.reduce((a, b) => (Math.abs(b - playerLateral) < Math.abs(a - playerLateral) ? b : a)));
     const ok = (i) => !(near && i === playerLane);
     if (this.laneTimer <= 0 || !this.free(here, this.d) || !this.free(here, this.d + 2.5) || !ok(this.lane)) {
@@ -170,13 +177,13 @@ export class FoundryGuide {
     // A shut gate ahead in every lane: stop short of it (or, where nobody
     // can stop - the Labs - go over it).
     const step = Math.max(0, want - this.d);
-    const maxStep = (speed + 4) * dt;
+    const maxStep = (speed + (this.catchUp ? 7 : 4)) * dt;
     let next = this.d + Math.min(step, maxStep);
     let vaulting = false;
     if (!this.free(LANES[this.lane], next + 1.2)) {
       const free = LANES.some((x) => this.free(x, next + 1.2));
       if (!free) {
-        if (this.blocked === "wait") next = this.d;
+        if (this.blocked === "wait" && !this.catchUp) next = this.d;
         else vaulting = true;
       }
     }

@@ -62,6 +62,7 @@ export class Projectiles {
     ball.active = true;
     ball.life = 0;
     ball.bounces = 0;
+    ball.touched = false;
     ball.power = power;
     ball.gravity = gravity;
     ball.kind = kind;
@@ -100,6 +101,7 @@ export class Projectiles {
       if (ball.life > F.life) { this._retire(ball); continue; }
 
       ball.velocity.y -= ball.gravity * dt;
+      if (ball.touched) ball.velocity.multiplyScalar(Math.exp(-F.drag * dt));
       const p = ball.mesh.position;
       this._next.copy(ball.velocity).multiplyScalar(dt);
       const travel = this._next.length();
@@ -120,16 +122,18 @@ export class Projectiles {
         p.copy(hitB.point);
         const consumed = onBreakable?.(hitB.object, hitB.point, ball);
         if (consumed === "through") {
-          // A glass sphere through the pane it broke, a little slower.
+          // A glass sphere through the pane it broke, slower.
           ball.velocity.multiplyScalar(F.punch);
+          this._touch(ball);
           p.addScaledVector(this._dir, 0.05);
           continue;
         }
         if (consumed !== false) { this._retire(ball); continue; }
       } else if (wall && (!hitS || wall.distance <= hitS.distance)) {
-        // The corridor hands it back at full speed: a clean ricochet.
+        // Off the corridor's walls and ceiling, losing speed.
         const speed = ball.velocity.length();
         ball.velocity.reflect(wall.normal).normalize().multiplyScalar(speed * F.wall);
+        this._touch(ball);
         p.copy(wall.position);
         onSurface?.(wall.point, ball, wall);
         continue;
@@ -138,6 +142,7 @@ export class Projectiles {
         this._normal.copy(hitS.face?.normal ?? this._dir.clone().negate()).transformDirection(hitS.object.matrixWorld);
         ball.velocity.reflect(this._normal).multiplyScalar(F.solid);
         ball.bounces += 1;
+        this._touch(ball);
         onSolid?.(hitS.object, hitS.point, ball);
         if (ball.bounces > F.solidBounces || ball.life > F.life) this._retire(ball);
         continue;
@@ -151,8 +156,16 @@ export class Projectiles {
         ball.velocity.y *= -F.floor;
         ball.velocity.x *= F.floorFriction;
         ball.velocity.z *= F.floorFriction;
+        this._touch(ball);
       }
     }
+  }
+
+  /** It hit something: it slows from now on, and is spent within F.afterHit seconds. */
+  _touch(ball) {
+    if (ball.touched) return;
+    ball.touched = true;
+    ball.life = Math.max(ball.life, SPHERE_FLIGHT.life - SPHERE_FLIGHT.afterHit);
   }
 
   clear() {

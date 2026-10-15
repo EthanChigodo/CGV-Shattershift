@@ -117,6 +117,11 @@ const _qi = new THREE.Quaternion();
 const _qe = new THREE.Quaternion();
 const [_s1, _s2, _s3, _s4, _s5, _s6, _s7] = Array.from({ length: 7 }, () => new THREE.Vector3());
 const _fwd = new THREE.Vector3(0, 0, -1);
+const _up = new THREE.Vector3(0, 1, 0);
+const _x = new THREE.Vector3();
+const _y = new THREE.Vector3();
+const _z = new THREE.Vector3();
+const _basis = new THREE.Matrix4();
 const Y = new THREE.Vector3(0, 1, 0);
 const _X = new THREE.Vector3(1, 0, 0);
 
@@ -228,9 +233,9 @@ export class Companion {
    * Carry an object in a hand. It is re-placed every frame at the hand bone,
    * pointing along the forearm. `offset` is in the object's frame after that.
    */
-  hold(object, { hand = "R", offset = [0, 0, 0], rotation = [0, 0, 0] } = {}) {
+  hold(object, { hand = "R", offset = [0, 0, 0], rotation = [0, 0, 0], upright = false } = {}) {
     this.root.add(object);
-    this.props.push({ object, hand, offset: new THREE.Vector3(...offset), rotation: new THREE.Euler(...rotation) });
+    this.props.push({ object, hand, offset: new THREE.Vector3(...offset), rotation: new THREE.Euler(...rotation), upright });
     return object;
   }
 
@@ -492,8 +497,15 @@ export class Companion {
       _dir.subVectors(_a, _b).normalize().applyQuaternion(_qi);
       this.root.worldToLocal(_a);
       p.object.position.copy(_a);
-      _q.setFromUnitVectors(_fwd, _dir);
-      p.object.quaternion.copy(_q).multiply(_qe.setFromEuler(p.rotation));
+      if (p.upright && Math.abs(_dir.y) < 0.97) {
+        // Along the forearm, but its top kept up (a pistol held level, not
+        // rolled however the arm happens to turn).
+        _z.copy(_dir).negate();
+        _x.crossVectors(_up, _z).normalize();
+        _y.crossVectors(_z, _x);
+        p.object.quaternion.setFromRotationMatrix(_basis.makeBasis(_x, _y, _z));
+      } else p.object.quaternion.setFromUnitVectors(_fwd, _dir);
+      p.object.quaternion.multiply(_qe.setFromEuler(p.rotation));
       p.object.position.add(_b.copy(p.offset).applyQuaternion(p.object.quaternion));
     }
   }
