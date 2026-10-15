@@ -95,8 +95,11 @@
         <h1 class="glitch-title" data-text="WAKE UP.&#10;GET TO THE ROOF.">WAKE UP.<br />GET TO THE ROOF.</h1>
         <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Climb out of the basement, through the labs and across the skyline to the helicopter on the roof before the tower comes down.</p>
         <nav class="menu-list" aria-label="Main menu">
+          <button id="continueButton" class="menu-button primary" type="button" hidden>
+            <i class="menu-glyph" aria-hidden="true">&#9654;</i><span><b>Continue</b><small id="continueNote">Where you left off</small></span>
+          </button>
           <button id="startButton" class="menu-button primary" type="button">
-            <i class="menu-glyph" aria-hidden="true">&#9654;</i><span><b>Start story</b><small>The whole escape, from the ward to the roof</small></span>
+            <i class="menu-glyph" aria-hidden="true">&#10010;</i><span><b>New game</b><small>The whole escape, from the ward to the roof</small></span>
           </button>
           <button id="chaptersButton" class="menu-button" type="button">
             <i class="menu-glyph" aria-hidden="true">&#9776;</i><span><b>Chapters</b><small>Play any part of the story</small></span>
@@ -125,13 +128,6 @@
 
       <aside class="menu-card loadout" aria-label="Loadout">
         <p class="eyebrow">SUBJECT 07 // LOADOUT</p>
-        <p class="card-label">Difficulty <span class="card-note">the story and chapters (Endless gets harder on its own)</span></p>
-        <div class="segmented" role="group" aria-label="Choose the difficulty">
-          <button type="button" class="subject-button difficulty-button" data-difficulty="easy">Easy</button>
-          <button type="button" class="subject-button difficulty-button" data-difficulty="normal">Normal</button>
-          <button type="button" class="subject-button difficulty-button" data-difficulty="hard">Hard</button>
-        </div>
-        <p id="difficultyNote" class="card-note difficulty-note"></p>
         <p class="card-label">Play as</p>
         <div class="segmented" role="group" aria-label="Choose your character">
           <button type="button" class="subject-button" data-character="playerFemale">Female</button>
@@ -149,6 +145,13 @@
         <p class="eyebrow">CHAPTERS // THE WAY UP</p>
         <h2>PLAY ANY PART OF THE STORY.</h2>
         <p class="intro">Each chapter starts as the story reaches it, cutscenes and all.</p>
+        <p class="card-label chapters-difficulty-label">Play them on</p>
+        <div class="segmented chapters-difficulty" role="group" aria-label="Choose the difficulty for the chapters">
+          <button type="button" class="subject-button difficulty-button" data-difficulty="easy">Easy</button>
+          <button type="button" class="subject-button difficulty-button" data-difficulty="normal">Normal</button>
+          <button type="button" class="subject-button difficulty-button" data-difficulty="hard">Hard</button>
+        </div>
+        <p id="difficultyNote" class="card-note difficulty-note"></p>
         <div class="chapter-grid">
           <button type="button" class="chapter-card" data-chapter="briefing"><em>00</em><b>The briefing</b><span>The film: Project Ascension, Dr. Vale, and why the tower is coming down.</span></button>
           <button type="button" class="chapter-card" data-chapter="foundry"><em>01</em><b>Wake up / The Foundry</b><span>The ward, Dr. Okoro, and the plant floor on level 141 - its machinery will not stop for you.</span></button>
@@ -159,6 +162,23 @@
         </div>
         <div class="menu-list menu-list-row">
           <button id="chaptersBackButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="newGameScreen" class="screen" aria-label="New game">
+      <div class="screen-copy chapters-copy">
+        <p class="eyebrow">NEW GAME // CHOOSE YOUR DIFFICULTY</p>
+        <h2>HOW HARD DO YOU WANT IT?</h2>
+        <p class="intro">You can change it for the chapters later. Endless gets harder on its own.</p>
+        <p id="newGameWarning" class="card-note new-game-warning" hidden>Starting a new game replaces your saved one.</p>
+        <div class="chapter-grid difficulty-grid">
+          <button type="button" class="chapter-card difficulty-card" data-new-game="easy"><em>I</em><b>Easy</b><span>Slower, fewer obstacles, hits hurt less, spheres come back faster.</span></button>
+          <button type="button" class="chapter-card difficulty-card" data-new-game="normal"><em>II</em><b>Normal</b><span>The escape as designed. One checkpoint per level.</span></button>
+          <button type="button" class="chapter-card difficulty-card" data-new-game="hard"><em>III</em><b>Hard</b><span>Faster, more obstacles and new ones, hits hurt more, no checkpoints.</span></button>
+        </div>
+        <div class="menu-list menu-list-row">
+          <button id="newGameBackButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span></button>
         </div>
       </div>
     </section>
@@ -260,6 +280,14 @@
               <option value="0.7">70%</option>
               <option value="0.5">50%</option>
             </select>
+          </label>
+        </div>
+
+        <div class="settings-group">
+          <p class="settings-heading">Sound</p>
+          <label class="setting-row toggle-row">
+            <span>Character voices: Okoro, Vale, the pilot, 07 (the HALCYON intercom always speaks; the subtitles stay)</span>
+            <input type="checkbox" id="voicesToggle" checked />
           </label>
         </div>
 
@@ -393,8 +421,9 @@
         <div class="tab-panel" data-panel="m-tools">
           <div class="manual-grid tools">
             <article data-tone="white" data-act="tool"><h3>Glass sphere // 1</h3><p>Standard throw. Punches through panes and keeps going; ricochets off walls and ceilings.</p></article>
-            <article data-tone="cyan" data-act="tool"><h3>Cryo sphere // 2</h3><p>Puts out every fire within 4.8 m, freezes falling debris and machinery, knocks people down.</p></article>
+            <article data-tone="cyan" data-act="tool"><h3>Cryo sphere // 2</h3><p>Goes off like shock, in ice: shatters what's within 4.8 m, puts out fires, freezes falling debris and machinery, knocks people down. Frosts the floor where it lands on it.</p></article>
             <article data-tone="violet" data-act="tool"><h3>Shock sphere // 3</h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
+            <article data-tone="indigo" data-act="tool"><h3>Gravity sphere // 2</h3><p>Opens a black hole for a second where it bursts. It breaks nothing: it drags in every sphere cache, sack and serum within 7 m and they're yours, and it yanks patients and scientists toward it and stuns them.</p></article>
             <article data-tone="cyan" data-act="collect"><h3>Sphere caches and sacks</h3><p>Shoot cyan caches in Foundry and Skyline. In Labs and on the Roof, shoot sacks or run through them to collect once, without spending ammunition.</p></article>
             <article data-tone="cyan" data-act="tool"><h3>Emergency recovery</h3><p>At zero spheres, 2.5 seconds of active gameplay (1.6 on Easy, 3.5 on Hard) restores one sphere. It stops at one: use Glass (Q/E) to shoot a supply. Pause, cutscenes and death do not charge it. While empty, a yellow wireframe marks the nearest nearby, unobstructed supply when one is available.</p></article>
             <article data-tone="prism" data-act="collect"><h3>Prism split</h3><p>Gold capsule. Every throw splits into three spheres. 10 s.</p></article>

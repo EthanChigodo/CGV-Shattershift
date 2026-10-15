@@ -224,14 +224,21 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
     bool bare = body || (top && arm && along > 0.2);
 
     // Skin tone: re-tint the skin in the body texture. Skin pixels are the
-    // warm ones (red above blue and green); the whites of the eyes and the
-    // teeth are grey, so they stay. Brightness relative to the model's own
-    // average skin keeps every shadow, crease and the lips.
+    // warm ones - judged relative to their own brightness, so the skin in
+    // shadow and in highlight is caught as well as the mid-tones (judged by
+    // the raw difference, those stayed the model's own pale skin and the
+    // tint came out patchy, "coloured over"). The whites of the eyes and
+    // the teeth are grey, so they stay. Brightness relative to the model's
+    // own average skin keeps every shadow, crease and the lips.
     if (body && uToneOn > 0.5) {
-      float warm = smoothstep(0.015, 0.07, col.r - col.b) * smoothstep(-0.02, 0.02, col.r - col.g);
-      vec3 luma = vec3(0.2126, 0.7152, 0.0722);
-      vec3 tinted = uTone * (dot(col, luma) / max(0.001, dot(uSkin, luma)));
-      col = mix(col, tinted, warm);
+      float hi = max(col.r, max(col.g, col.b));
+      float warmth = (col.r - col.b) / max(hi, 0.03);
+      float warm = smoothstep(0.05, 0.16, warmth) * smoothstep(-0.04, 0.02, col.r - col.g);
+      // Each pixel scaled by the new tone over the model's average skin,
+      // channel by channel: its own variation (lips, cheeks, irises,
+      // creases) carried across, not one flat colour painted over it.
+      vec3 tinted = col * (uTone / max(uSkin, vec3(0.02)));
+      col = mix(col, clamp(tinted, 0.0, 1.0), warm);
     }
     // Short-sleeved scrubs: past the sleeve's end the arm is bare skin.
     if (top && arm && along > 0.2) col = skin * (0.92 + 0.08 * grain);

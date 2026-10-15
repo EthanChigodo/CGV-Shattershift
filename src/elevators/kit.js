@@ -319,6 +319,28 @@ export function buildCabin(shared, owned) {
     root.add(conduit);
   }
 
+  // What it hangs from: a crosshead over the roof, a sheave, and the hoist
+  // ropes running up the shaft to the machine room at the top of the tower.
+  add(dark, 2 * W + 0.5, 0.26, 0.34, 0, H + 0.24, 0.2);
+  for (const s of [-1, 1]) add(frame, 0.2, 0.5, 0.2, s * (W + 0.12), H + 0.14, 0.2);
+  const sheave = new THREE.Mesh(owned.add(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 20)), frame);
+  sheave.rotation.z = Math.PI / 2;
+  sheave.position.set(0, H + 0.62, 0.2);
+  root.add(sheave);
+  const cables = new THREE.Group();
+  cables.name = "HoistRopes";
+  const ropeGeo = owned.add(new THREE.CylinderGeometry(0.022, 0.022, 1, 6, 1, true));
+  const rope = owned.add(new THREE.MeshStandardMaterial({ color: 0x2a2c2e, metalness: 0.8, roughness: 0.45 }));
+  const ROPE = 900;
+  for (const x of [-0.12, -0.04, 0.04, 0.12]) {
+    const r = new THREE.Mesh(ropeGeo, rope);
+    r.scale.set(1, ROPE, 1);
+    r.position.set(x, H + 0.62 + ROPE / 2, 0.2);
+    r.frustumCulled = false;
+    cables.add(r);
+  }
+  root.add(cables);
+
   // Cabin light, and the red emergency beacon that takes over in a blackout.
   const light = new THREE.PointLight(0xfff2de, 9, 9, 1.6);
   light.position.set(0, H - 0.4, 0);
@@ -352,6 +374,18 @@ export function buildCabin(shared, owned) {
     energy,
     display,
     doorWidth: doorW,
+    cables,
+    /** The hoist ropes part: they whip up the shaft and are gone. */
+    snapCables() {
+      cables.userData.snapped = 0.001;
+    },
+    updateCables(dt) {
+      if (!cables.userData.snapped || !cables.visible) return;
+      cables.userData.snapped += dt;
+      cables.position.y += (20 + 60 * cables.userData.snapped) * dt;
+      cables.rotation.z = Math.sin(cables.userData.snapped * 9) * 0.02;
+      if (cables.userData.snapped > 2.5) cables.visible = false;
+    },
     /**
      * Lights, each 0..1: the main light, the two strip lights, and the red
      * emergency beacon (which pulses on its own when on).

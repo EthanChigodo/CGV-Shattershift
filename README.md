@@ -33,10 +33,9 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | Right mouse (hold) | Focus - slow time to aim |
 | `A` / `D` or left / right | Change lane |
 | `W` / `S` or up / down | Sprint / brake (the Skyline); jump / slide (the Foundry, the Labs) |
-| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock (picked in the main menu's loadout and the pause menu too) |
+| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock, gravity (picked in the main menu's loadout and the pause menu too) |
 | `Space` / `Shift` | Jump / slide |
 | `C` | First-person / chase camera |
-| `M` | Minimap |
 | `V` / VIEW button | Choose which HUD panels show |
 | `H` | Hide the whole HUD |
 | `P` | Photo mode (filters, save photo, save 360° panorama) |
@@ -67,8 +66,8 @@ A research wing 212 floors up, burning at 03:47 in the morning, in three beats: 
 - **Five case files:** gold holograms standing in columns of light - run through one or shoot it to piece together what happened.
 - **From sedated to running for your life:** the run starts slow and blurred as Subject 07 staggers out of the pod, and builds to full pace as the adrenaline kicks in; explosions scare you into a sprint.
 - **The building coming down:** telegraphed ceiling collapses, a distant tower falling, the skybridge collapsing behind you, the atrium detonating below the lift.
-- **Tools:** three sphere types, six serum power-ups (prism split, Thermal Aegis, kinetic shield, overdrive, unlimited spheres, restoration), sprint/brake, bullet-time focus.
-- **Extras:** orthographic minimap, field manual, three missions per run, five collectible case files, photo mode with 360° export, and an endless mode of randomised chunks (Endless -> The Skyline).
+- **Tools:** four sphere types, six serum power-ups (prism split, Thermal Aegis, kinetic shield, overdrive, unlimited spheres, restoration), sprint/brake, bullet-time focus.
+- **Extras:** an orthographic tactical map of the roof, field manual, three missions per run, five collectible case files, photo mode with 360° export, and an endless mode of randomised chunks (Endless -> The Skyline).
 - **The hardest sector:** it comes after the Labs, so it runs faster (11.4 m/s), hits, fire and smoke hurt more, the collapse behind you is quicker (9.6 m/s) and the sealed gate gives you seven seconds.
 - **In the story** it is Sector 03: you arrive by the glass lift (no pod, no sedated start) and its lift goes up to the Roof.
 - **Graphics pipeline:** custom multi-pass post-processing (screen-space refraction, bloom, FXAA, heat haze, thermal vision, power-up looks), dynamic ray-marched sky, reflection probe, sun shadows, wet reflective floors, and Auto quality with dynamic resolution for lab machines.

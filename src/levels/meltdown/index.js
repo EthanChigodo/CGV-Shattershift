@@ -57,6 +57,8 @@ import { loadMeltdownAssets, fillAssetSlots } from "./assets.js";
 import { createLift } from "./elevator.js";
 import { CalibrationLift, LIFT_RADIUS } from "../common/calibration-lift.js";
 import { routeSurfaceHit, locateOnRoute } from "../../systems/spheres.js";
+import { cloneCharacter } from "./characters.js";
+import { ashify } from "./ash.js";
 
 const _liftCam = new THREE.Vector3();
 const _liftFwd = new THREE.Vector3();
@@ -96,22 +98,32 @@ const BEAT_SPECS = [
   { key: "stairwell", name: "STAIRWELL ASCENT", drain: 0.8, tier: 3, wall: "concreteWall", speed: 14 },
 ];
 
-export const BEATS = [];
-{
+const BASE_LENGTHS = { ...BEAT_LENGTHS };
+export const BEATS = BEAT_SPECS.map((spec) => ({ ...spec, start: 0, end: 0 }));
+const SEGMENTS = [];
+let TOTAL_LENGTH = 0;
+
+/**
+ * Lay the beats out at `k` times their length (the difficulty's length:
+ * Hard's Labs are longer). Everything in a beat is placed as a fraction of
+ * it, so the level follows. BEATS and SEGMENTS are re-laid in place.
+ */
+export function setRouteScale(k = 1) {
+  for (const key of Object.keys(BASE_LENGTHS)) BEAT_LENGTHS[key] = Math.round(BASE_LENGTHS[key] * k);
   let cursor = 0;
-  for (const spec of BEAT_SPECS) {
+  SEGMENTS.length = 0;
+  for (const [i, spec] of BEAT_SPECS.entries()) {
     const length = BEAT_LENGTHS[spec.key];
-    BEATS.push({ ...spec, start: cursor, end: cursor + length });
+    BEATS[i].start = cursor;
+    BEATS[i].end = cursor + length;
     cursor += length + (spec.turn ? ARC : 0);
+    SEGMENTS.push({ type: "straight", length });
+    if (spec.turn) SEGMENTS.push({ type: "arc", radius: TURN_RADIUS, angle: spec.turn });
   }
+  TOTAL_LENGTH = BEATS[BEATS.length - 1].end;
 }
+setRouteScale(1);
 
-const SEGMENTS = BEAT_SPECS.flatMap((spec) => {
-  const straight = { type: "straight", length: BEAT_LENGTHS[spec.key] };
-  return spec.turn ? [straight, { type: "arc", radius: TURN_RADIUS, angle: spec.turn }] : [straight];
-});
-
-const TOTAL_LENGTH = BEATS[BEATS.length - 1].end;
 const DARK_BEAT = BEATS.find((b) => b.dark);
 
 /** Two halls per lit beat, one in the dark beat; positioned as a fraction of that beat. */
@@ -186,7 +198,10 @@ export class MeltdownLevel {
     lightPoints = 9,
     density = 1,
     extras = false,
+    length = 1,
   } = {}) {
+    // First, the beats at this difficulty's length (everything below reads them).
+    setRouteScale(length);
     this.options = { halfWidth: CORRIDOR_HALF, lanes: LANES, shadows, brightness, straightRoute, seed, density, extras };
     this.events = createEmitter();
 
@@ -1309,6 +1324,26 @@ export class MeltdownLevel {
    * browser supports it), and the textures upload a few at a time. Lets the
    * level be built while something else is on screen (the lift ride).
    */
+  /**
+   * A downed patient burns to ash (kit.js, ash.js) with its own copies of
+   * its materials: one is put out of sight for the compile, so the first
+   * one down doesn't stall the run. Kept until the level goes (a disposed
+   * material gives its program back). Returns the group to take away again.
+   */
+  _warmAsh(scene) {
+    const warm = new THREE.Group();
+    warm.position.set(0, -400, 0);
+    const asset = this.assets?.get("patient");
+    if (asset && !this._warmAshes) {
+      const model = cloneCharacter(asset.template);
+      this._warmAshes = [ashify(model, 1.74)];
+      this._warmAshModel = model;
+    }
+    if (this._warmAshModel) warm.add(this._warmAshModel);
+    scene.add(warm);
+    return warm;
+  }
+
   async prewarmAsync(renderer, camera) {
     const hidden = [];
     for (const entry of this._culled) {
@@ -1321,8 +1356,10 @@ export class MeltdownLevel {
     // compileAsync creates every program now (it has to see the hidden
     // pieces for that) and then waits for them; the pieces can go straight
     // back.
+    const warm = this._warmAsh(scene);
     const compiled = renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera));
     for (const piece of hidden) piece.visible = false;
+    scene.remove(warm);
     await compiled;
     const textures = new Set();
     this.root.traverse((o) => {
@@ -1353,7 +1390,9 @@ export class MeltdownLevel {
       }
     }
     const scene = this.root.parent ?? this.root;
+    const warm = this._warmAsh(scene);
     renderer.compile(scene, camera);
+    scene.remove(warm);
     const seen = new Set();
     this.root.traverse((o) => {
       const list = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
@@ -1733,6 +1772,7 @@ export class MeltdownLevel {
     });
     for (const hall of this.groups.shell.children) hall.userData.dispose?.();
     this.startLift?.userData.dispose?.();
+    for (const a of this._warmAshes ?? []) a.dispose();
     this.endLift?.dispose();
     this.lights.dispose();
     this.ambience.userData.dispose?.();

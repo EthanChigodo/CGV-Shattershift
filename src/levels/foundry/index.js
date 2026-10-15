@@ -57,6 +57,7 @@ const ESCAPE_GATE_MAX_CLOSE = 0.82;
  * whole level instead of needing a hundred distances edited by hand.
  */
 export const BEAT_LENGTHS = { intake: 256, rolling: 248, furnace: 232 };
+const BASE_LENGTHS = { ...BEAT_LENGTHS };
 
 export const BEATS = [
   { key: "intake", name: "INTAKE", start: 0, end: BEAT_LENGTHS.intake },
@@ -73,6 +74,21 @@ export const BEATS = [
     end: BEAT_LENGTHS.intake + BEAT_LENGTHS.rolling + ARC * 2 + BEAT_LENGTHS.furnace,
   },
 ];
+
+/**
+ * Stretch every beat by `k` (the difficulty's length: Hard's Foundry is
+ * longer). Everything is laid as a fraction of its beat, so the whole level
+ * follows; BEATS (which main.js reads too) are re-laid in place.
+ */
+export function setRouteScale(k = 1) {
+  for (const key of Object.keys(BASE_LENGTHS)) BEAT_LENGTHS[key] = Math.round(BASE_LENGTHS[key] * k);
+  let cursor = 0;
+  for (const beat of BEATS) {
+    beat.start = cursor;
+    beat.end = cursor + BEAT_LENGTHS[beat.key];
+    cursor = beat.end + ARC;
+  }
+}
 
 /**
  * The serums a Foundry capsule can hold (the Skyline's power-ups; thermal
@@ -140,7 +156,10 @@ export class FoundryLevel {
     extras = false,
     // Dynamic lights bound to the nearest emitters; fewer is cheaper on every lit pixel.
     lightBudget = { points: 8, spots: 3 },
+    length = 1,
   } = {}) {
+    // First, the beats at this difficulty's length (everything below reads them).
+    setRouteScale(length);
     // The escape timer is derived from how far the player actually has to run,
     // not hard-coded. At 194m the old fixed 26s could never expire, which made
     // the countdown decoration rather than a loss condition.
@@ -703,6 +722,8 @@ export class FoundryLevel {
     const node = this.kit.switchNode({ x: 0, y: height, label, action, points });
     this._add(this.groups.switches, node, distance, lane);
     node.userData.glass.userData.system = system;
+    // (A switch: the gravity sphere leaves these to you.)
+    node.userData.glass.userData.isSwitch = true;
     node.userData.glass.userData.routeDistance = distance;
     node.userData.glass.userData.spheres = spheres;
     this.breakables.push(node.userData.glass);

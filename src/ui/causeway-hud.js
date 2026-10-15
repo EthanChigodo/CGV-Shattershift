@@ -26,7 +26,6 @@ export const HUD_PANELS = [
   { key: "hints", label: "Hints and section titles", on: true },
   { key: "serums", label: "Active serums", on: true },
   { key: "missions", label: "Missions", on: false },
-  { key: "minimap", label: "Minimap", on: false },
 ];
 
 /** Apply a { key: boolean } map to the page. */
@@ -96,6 +95,7 @@ export class CausewayHud {
       <div class="cw-map-frame"><i class="lane l"></i><i class="lane r"></i></div>
       <div class="cw-map-key"><span class="k-glass">Glass</span><span class="k-hazard">Solid</span><span class="k-fire">Fire</span><span class="k-sprinkler">Sprinkler</span></div>`);
     this.mapFrame = this.mapEl.querySelector(".cw-map-frame");
+    // (Not on the page any more: the Skyline has no minimap - the roof has its own, meltdown/roof-map.js.)
 
     this.introEl = el("div", "cw-intro", `
       <span>Sector 03 of 03</span>
@@ -129,7 +129,7 @@ export class CausewayHud {
     this.photoEl.hidden = true;
 
     this.root.append(this.fadeEl, this.labelsEl, this.titleEl, this.radioEl, this.hintEl, this.warnEl, this.fileEl,
-      this.missionsEl, this.serumsEl, this.vitalsEl, this.toolsEl, this.coreEl, this.mapEl, this.introEl, this.reportEl);
+      this.missionsEl, this.serumsEl, this.vitalsEl, this.toolsEl, this.coreEl, this.introEl, this.reportEl);
     // The serums on screen: under the panels, over the view.
     this.serumFx = new SerumFx(this.root);
     this.root.insertBefore(this.serumFx.root, this.root.firstChild);

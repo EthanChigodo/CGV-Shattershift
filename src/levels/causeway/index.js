@@ -862,6 +862,8 @@ export class CausewayLevel {
         this.stats.extinguished += extinguished;
         this.events.emit("extinguish", { count: extinguished, by: "cryo" });
       }
+    } else if (ball === "gravity") {
+      this._ring(point, 0x7a5cff, radius * 0.6);
     } else if (ball === "shock") {
       this._burst("shock", point);
       this._ring(point, 0xd28bff, radius);

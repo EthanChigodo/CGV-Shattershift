@@ -428,3 +428,16 @@
 /* While Level 3 runs inside the full game, its HUD replaces the game's own. */
 body.mlt-active #hud,
 body.mlt-active #reticle { display: none !important; }
+
+/* ---- health at the top left, and bigger (playtest feedback) ----------- */
+.mlt-vitals { left: 22px; top: 84px; bottom: auto; transform: none; }
+.mlt-stat { min-width: 120px; padding: 11px 18px; }
+.mlt-stat span { font-size: 10px; }
+.mlt-stat strong { font-size: 27px; }
+.mlt-stat.vitality { min-width: 240px; }
+.mlt-stat.vitality .mlt-track { height: 10px; border-radius: 2px; }
+.mlt-loading { top: 180px; left: 22px; }
+@media (max-width: 650px) {
+  .mlt-vitals { top: 66px; left: 12px; }
+  .mlt-stat.vitality { min-width: 150px; }
+}

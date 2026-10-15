@@ -30,6 +30,8 @@ const FROST_SHELL = 0.9;
 const FROST_LIFE = 2.6;
 /** Ice spikes per cryo burst. */
 const SPIKES = 11;
+/** Seconds a gravity sphere's black hole holds before it pops. */
+const GRAVITY_LIFE = 1.35;
 
 /**
  * The shell: lit at its rim, clear in the middle (a bubble of light, not a
@@ -249,19 +251,24 @@ export class SphereImpactFX {
       // Drawn over the frost they stand in.
       frost.renderOrder = 1;
       spikes.renderOrder = 2;
-      const parts = [shell, ring, core, iceShell, frost, spikes];
+      // Gravity's: a black hole at the heart, an accretion disc round it.
+      const hole = new THREE.Mesh(this.shellGeometry, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+      const disc = new THREE.Mesh(this.ringGeometry, new THREE.MeshBasicMaterial({ ...additive, map: this.ringTexture, side: THREE.DoubleSide }));
+      const parts = [shell, ring, core, iceShell, frost, spikes, hole, disc];
       for (const m of parts) { m.visible = false; m.frustumCulled = false; this.root.add(m); }
       // Each spike: where round the burst, how far out, how tall, its lean, when it rises.
       const spike = Array.from({ length: SPIKES }, () => ({ angle: 0, out: 0, height: 0, lean: 0, delay: 0 }));
-      this.slots.push({ shell, ring, core, iceShell, frost, spikes, spike, parts, kind: "shock", age: LIFE, life: LIFE, radius: 1, colour: new THREE.Color(), base: new THREE.Vector3() });
+      this.slots.push({ shell, ring, core, iceShell, frost, spikes, hole, disc, spike, parts, kind: "shock", age: LIFE, life: LIFE, radius: 1, colour: new THREE.Color(), base: new THREE.Vector3() });
     }
   }
 
   /**
    * A sphere of type `kind` bursting at `point`, reaching `radius` metres
    * (or anything else: `glow` is its colour, [r, g, b], over 1 to bloom).
+   * `ground`: it burst on the floor - only then does cryo frost the floor
+   * and throw up its spikes (in the air, or on a pane, it is the ice burst).
    */
-  splash(point, kind = "shock", radius = 5, glow = null) {
+  splash(point, kind = "shock", radius = 5, glow = null, { ground = true } = {}) {
     // The burst furthest through its life makes way.
     const slot = this.slots.reduce((a, b) => (b.age / b.life > a.age / a.life ? b : a));
     for (const m of slot.parts) m.visible = false;
@@ -270,8 +277,8 @@ export class SphereImpactFX {
     // (any brighter and additive blending washes it out to white).
     const [r, g, b] = glow ?? ball.glow;
     slot.colour.setRGB(r, g, b).multiplyScalar(1.3 / Math.max(r, g, b));
-    slot.kind = kind === "cryo" && !glow ? "cryo" : "shock";
-    slot.life = slot.kind === "cryo" ? FROST_LIFE : LIFE;
+    slot.kind = glow ? "shock" : kind === "cryo" ? "cryo" : kind === "gravity" ? "gravity" : "shock";
+    slot.life = slot.kind === "cryo" ? FROST_LIFE : slot.kind === "gravity" ? GRAVITY_LIFE : LIFE;
     slot.age = 0;
     slot.radius = radius;
     const floor = Math.min(point.y, this.floorY + 0.02) + 0.02;
@@ -292,9 +299,22 @@ export class SphereImpactFX {
         s.lean = 0.25 + Math.random() * 0.45;
         s.delay = (s.out / radius) * 0.18;
       }
-      for (const m of [slot.iceShell, slot.frost, slot.spikes, slot.core]) m.visible = true;
+      for (const m of [slot.iceShell, slot.core]) m.visible = true;
+      slot.frost.visible = ground;
+      slot.spikes.visible = ground;
       slot.spikes.position.copy(slot.base);
       this._placeSpikes(slot);
+    } else if (slot.kind === "gravity") {
+      // A black hole where it burst: everything round it pulled in, then a pop.
+      for (const m of [slot.shell, slot.core, slot.hole, slot.disc]) {
+        m.visible = true;
+        m.position.copy(point);
+      }
+      slot.shell.material.uniforms.uColor.value.copy(slot.colour);
+      slot.disc.material.color.copy(slot.colour);
+      slot.core.material.color.copy(slot.colour);
+      // Nearly level: tilted further, half of it went through the floor.
+      slot.disc.rotation.set(0.1, 0, 0.06);
     } else {
       slot.shell.position.copy(point);
       slot.core.position.copy(point);
@@ -335,6 +355,7 @@ export class SphereImpactFX {
       if (s.age >= s.life) continue;
       s.age += dt;
       if (s.kind === "cryo") this._updateFrost(s);
+      else if (s.kind === "gravity") this._updateGravity(s, dt);
       else this._updateShock(s);
       if (s.age >= s.life) for (const m of s.parts) m.visible = false;
     }
@@ -356,6 +377,32 @@ export class SphereImpactFX {
     s.ring.material.opacity = 0.9 * fade;
     s.core.scale.setScalar(1.2 + s.radius * 0.5 * (1 - k) * pulse);
     s.core.material.opacity = Math.min(1, (1 - k) * 1.6);
+  }
+
+  /**
+   * Gravity: the shell falls inward (an implosion, not a blast), the disc
+   * spins faster as it tightens round the black core, then it all goes in
+   * one bright pop.
+   */
+  _updateGravity(s, dt) {
+    const POP = GRAVITY_LIFE - 0.3;
+    const k = Math.min(1, s.age / POP);
+    const pull = k * k;
+    const live = s.age < POP;
+    s.shell.visible = live;
+    s.shell.scale.setScalar(Math.max(0.05, s.radius * (1 - pull) + 0.2));
+    s.shell.material.uniforms.uOpacity.value = 0.16 + 0.34 * k;
+    s.disc.visible = live;
+    s.disc.scale.setScalar(Math.max(0.05, s.radius * 0.55 * (1 - 0.6 * pull)));
+    s.disc.rotateY(dt * (6 + 22 * k));
+    s.disc.material.opacity = 0.95;
+    s.hole.visible = live;
+    s.hole.scale.setScalar(0.3 + 0.25 * k + 0.04 * Math.sin(s.age * 40));
+    // The pop: a white-hot flash as it collapses.
+    const p = THREE.MathUtils.clamp((s.age - POP) / 0.3, 0, 1);
+    s.core.scale.setScalar(live ? 0.6 + 0.4 * k : 0.6 + s.radius * 0.9 * p);
+    s.core.material.opacity = live ? 0.55 : 1 - p;
+    if (!live && p < 0.2) this.lightLevel = Math.max(this.lightLevel, 1);
   }
 
   _updateFrost(s) {

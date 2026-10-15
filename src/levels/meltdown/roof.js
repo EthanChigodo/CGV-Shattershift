@@ -42,6 +42,7 @@
 
 import * as THREE from "../../three.js";
 import { createMeltdownKit, heatSignature } from "./kit.js";
+import { ashify } from "./ash.js";
 import { createFireMaterials } from "./fire.js";
 import { fillAssetSlots } from "./assets.js";
 import { cloneCharacter, HumanoidRig } from "./characters.js";
@@ -294,6 +295,9 @@ const SKY_FRAGMENT = /* glsl */ `
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 
+/** Seconds a downed body takes to burn away to ash. */
+const ASH_SECONDS = 1.45;
+
 class Enemy {
   constructor(level, { kind, model, position, hp }) {
     this.level = level;
@@ -369,12 +373,44 @@ class Enemy {
     this.position.z = THREE.MathUtils.clamp(this.position.z, -WALK_LIMIT, WALK_LIMIT);
   }
 
+  /**
+   * Down: no slow topple and no body left lying about. The hit throws them
+   * back, arms flung wide, and they burn away - from the head down, the
+   * edge glowing like embers, ash and sparks coming off - in a second and
+   * a half (ashify(), the "enemy-ash" event).
+   */
   updateDown(dt) {
-    const k = Math.min(1, this.t / 0.8);
-    this.body.rotation.x = -k * k * Math.PI * 0.47;
-    this.velocity.multiplyScalar(Math.max(0, 1 - dt * 4));
+    const t = this.t;
+    if (!this._ash) {
+      this._ash = this.model ? ashify(this.model, 1.9 * this.root.scale.y) : { uniforms: null, dispose() {} };
+      this._ashTick = 0;
+      if (this.glow) this.glow.visible = false;
+      this.level.events.emit("enemy-ash", { enemy: this, position: _v.copy(this.position).setY(this.position.y + 1.1).clone(), start: true });
+    }
+    const jolt = THREE.MathUtils.smoothstep(t, 0, 0.22);
+    this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
     this.position.addScaledVector(this.velocity, dt);
-    this.rig?.pose({ headNod: -0.6 * k, elbow: 0.9, lean: -0.4 * k, spread: 0.18 * k });
+    // Lifted a little as it goes, shaking.
+    this.body.position.y = 0.12 * THREE.MathUtils.smoothstep(t, 0.2, ASH_SECONDS);
+    this.body.position.x = Math.sin(t * 47) * 0.025 * jolt;
+    this.body.rotation.x = -0.32 * jolt;
+    this.rig?.pose({ reach: -0.55 * jolt, spread: 0.5 * jolt, headNod: -0.75 * jolt, lean: -0.45 * jolt, elbow: 0.25, crouch: 0.12 * jolt });
+    const burn = THREE.MathUtils.clamp((t - 0.18) / (ASH_SECONDS - 0.3), 0, 1.2);
+    if (this._ash.uniforms) {
+      this._ash.uniforms.uAsh.value = burn;
+      this._ash.uniforms.uAshBase.value = this.position.y;
+    } else this.body.scale.setScalar(Math.max(0.01, 1 - burn));
+    // Ash and embers off the burning edge.
+    this._ashTick -= dt;
+    if (burn > 0 && burn < 1.05 && this._ashTick <= 0) {
+      this._ashTick = 0.06;
+      const h = this.position.y + 1.9 * this.root.scale.y * (1 - Math.min(1, burn)) + 0.1;
+      this.level.events.emit("enemy-ash", { enemy: this, position: new THREE.Vector3(this.position.x + (Math.random() - 0.5) * 0.5, h, this.position.z + (Math.random() - 0.5) * 0.5) });
+    }
+    if (t >= ASH_SECONDS) {
+      this.removed = true;
+      this._ash.dispose();
+    }
   }
 }
 
@@ -668,7 +704,7 @@ export class RoofLevel {
   constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null } = {}) {
     this.assets = assets;
     this.endless = endless;
-    this.difficulty = { waves: 1, damage: 1, enemySpeed: 1, heli: 1, extras: false, ...difficulty };
+    this.difficulty = { waves: 1, damage: 1, enemySpeed: 1, heli: 1, lastWave: 3, extras: false, ...difficulty };
     this.events = createEmitter();
     this.root = new THREE.Group();
     this.root.name = "RoofRoot";
@@ -831,7 +867,9 @@ export class RoofLevel {
     this._box(2.7, hutH - ROOF_LIFT.height, 0.3, hutConcrete, 0, ROOF_LIFT.height, LIFT_DOOR.z + 0.15);
     this._box(5, hutH, 0.25, hutConcrete, 0, 0, hutZ + 1.275);
     this._box(5.3, 0.2, 3.1, hutTrim, 0, hutH, hutZ);
-    this.lift = this._put(createLift(k, { ...ROOF_LIFT, label: "R" }), LIFT_DOOR.x, 0, LIFT_DOOR.z);
+    // Its doors in the middle of the hut's front wall (z +0.15), so they slide
+    // into it rather than across its face.
+    this.lift = this._put(createLift(k, { ...ROOF_LIFT, label: "R" }), LIFT_DOOR.x, 0, LIFT_DOOR.z + 0.15);
     this.lift.userData.lift.setLight(1);
     this._put(k.alarmBeacon({ x: 0, y: 2.6, speed: 3.6 }), 1.95, 0.35, LIFT_DOOR.z - 0.2);
 
@@ -1608,6 +1646,8 @@ export class RoofLevel {
     if (!frozen && s.wave === 0 && s.time > 1.2) this._spawnWave(1);
     if (!frozen && s.wave === 1 && (s.time > 19 * w || (s.time > 4 && this.enemiesAlive === 0))) this._spawnWave(2);
     if (!frozen && s.wave === 2 && (s.time > 36 * w || (s.time > 24 * w && this.enemiesAlive === 0))) this._spawnWave(3);
+    // Hard: a fourth wave (the helicopter is later too - difficulty.heli).
+    if (!frozen && !this.endless && s.wave === 3 && this.difficulty.lastWave >= 4 && (s.time > 54 * w || (s.time > 42 * w && this.enemiesAlive === 0))) this._spawnWave(4);
     // Mid-wave, more of them come up the outside of the tower and over the
     // open ledges - the fight is not only at the hatches (more of them on Hard).
     s.climbers ??= [
@@ -1657,12 +1697,13 @@ export class RoofLevel {
     }
 
     // The roof is clear: the helicopter stops circling and comes in now.
-    const everyone = !this.endless && s.wave === 3 && this.enemiesAlive === 0;
+    const everyone = !this.endless && s.wave === this.difficulty.lastWave && this.enemiesAlive === 0;
     if (!s.cleared && everyone) {
       s.cleared = true;
       this.events.emit("clear", {});
-      if (!s.heliArrived) s.heliAt = Math.min(s.heliAt, s.time + 8);
-      else if (s.ending === "extraction") this._startVictory();
+      // (Sooner - but on a harder roof not straight away: never before
+      // three quarters of its time.)
+      if (!s.heliArrived) s.heliAt = Math.min(s.heliAt, Math.max(s.time + 8, s.heliAt * (this.difficulty.heli > 1 ? 0.75 : 0)));
     }
 
     // A supply drop once the second wave is in (endless: every 45 s).
@@ -1866,16 +1907,14 @@ export class RoofLevel {
   _arrive() {
     const s = this.state;
     s.heliArrived = true;
-    if (s.cleared || this.enemiesAlive === 0) {
-      this._startVictory();
-    } else {
-      // It cannot land with them still up here. It swings out beyond the
-      // east ledge and waits, ladder down - for a while.
-      s.ending = "extraction";
-      s.extractT = 0;
-      this._extractFrom = this.heli ? this.heli.root.position.clone() : new THREE.Vector3();
-      this.events.emit("heli-arrived", { ending: "extraction", window: EXTRACT_WINDOW });
-    }
+    // It cannot land on a roof coming apart (whatever the difficulty, and
+    // however many are left): it swings out beyond the east ledge and waits,
+    // ladder down - for a while - and you jump for it. One ending for
+    // everyone. (_startVictory, a landing on the pad, is no longer used.)
+    s.ending = "extraction";
+    s.extractT = 0;
+    this._extractFrom = this.heli ? this.heli.root.position.clone() : new THREE.Vector3();
+    this.events.emit("heli-arrived", { ending: "extraction", window: EXTRACT_WINDOW });
   }
 
   _startVictory() {
@@ -2102,7 +2141,23 @@ export class RoofLevel {
   /** Compile and upload everything before the roof is shown. */
   prewarm(renderer, camera) {
     const scene = this.root.parent ?? this.root;
+    // The burn-to-ash shader too (a downed enemy's own copies of its
+    // materials), so the first one down doesn't stall the fight compiling
+    // it: one of each kind, out of sight, compiled with everything else.
+    const warm = new THREE.Group();
+    warm.position.set(0, -400, 0);
+    const ashes = [];
+    for (const name of ["patient", "scientistRadioman", "scientistRust"]) {
+      const model = this._character(name);
+      if (!model) continue;
+      ashes.push(ashify(model, 1.9));
+      warm.add(model);
+    }
+    scene.add(warm);
     renderer.compile(scene, camera);
+    scene.remove(warm);
+    // Kept until the roof goes: a disposed material gives its program back.
+    this._warmAshes = ashes;
   }
 
   dispose() {
@@ -2110,6 +2165,7 @@ export class RoofLevel {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });
     this.lift?.userData.dispose?.();
+    for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();

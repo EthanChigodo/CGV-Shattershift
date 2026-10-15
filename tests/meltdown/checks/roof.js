@@ -6,7 +6,7 @@
  *  - Ledges: a player who sidesteps every charge near the east ledge sends
  *    patients over it (the "lure them off the edge" rule works at all).
  *  - Endings: clearing the roof early brings the helicopter in and ends in
- *    "victory" (climbing the ladder). The hidden timer running out with
+ *    the ladder off the ledge (one ending, however many are left). The hidden timer running out with
  *    enemies alive brings it to the east ledge: jumping for the ladder from
  *    the edge ends in "survive"; not jumping in time ends "left" behind.
  *    Every cutscene runs to completion.
@@ -71,17 +71,17 @@ export async function run(page) {
       roof.dispose();
     }
 
-    // 3. Victory: clear everything (all three waves); the helicopter comes
-    // in early and the player climbs its ladder.
+    // 3. Clear everything (all three waves): the helicopter comes in early -
+    // and still can't land: the same ending as ever, the ladder off the ledge.
     {
       const roof = new RoofLevel({ heliSeconds: 57 });
       const { t } = simulate(roof, 80, (r) => {
         for (const e of r.enemies) if (e.alive && e.state !== "emerge") r.breakTarget(e.hurt, 9);
       });
-      notes.victoryAt = Math.round(t);
-      notes.wavesToVictory = roof.state.wave;
-      if (roof.state.ending !== "victory") failures.push(`clearing the roof ended in "${roof.state.ending}", not victory`);
-      if (!roof.cutscene?.done) failures.push("the victory cutscene never finished");
+      notes.clearedAt = Math.round(t);
+      notes.wavesToClear = roof.state.wave;
+      if (!roof.state.cleared) failures.push("the roof was never cleared");
+      if (!["extraction", "left"].includes(roof.state.ending)) failures.push(`clearing the roof ended in "${roof.state.ending}", not the ladder`);
       if (roof.state.heliAt >= 57) failures.push("the helicopter did not come early for a cleared roof");
       roof.dispose();
     }

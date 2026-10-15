@@ -22,13 +22,22 @@ import { createSerumMaterial, createCrystalMaterial } from "../levels/causeway/s
 /** The Skyline's flight rules (main.js updateProjectiles). */
 export const SPHERE_FLIGHT = Object.freeze({
   life: 3,
-  wall: 1.0,          // walls and ceilings: a clean ricochet
-  solid: 0.45,        // solid hazards
+  // Every hit takes speed off (playtesters: spheres flew on too far after
+  // hitting something), and once it has hit something it is spent soon.
+  wall: 0.5,          // walls and ceilings
+  solid: 0.3,         // solid hazards
   solidBounces: 2,    // then it's spent
-  floor: 0.42,        // floor: vertical
-  floorFriction: 0.75, // floor: horizontal
-  punch: 0.82,        // a glass sphere through a pane
+  floor: 0.3,         // floor: vertical
+  floorFriction: 0.5, // floor: horizontal
+  punch: 0.6,         // a glass sphere through a pane
+  drag: 1.6,          // per second, once it has hit something
+  afterHit: 1.0,      // seconds it lasts after its first hit
+  // Thrown by hand (the Foundry) rather than fired from the launcher: slower,
+  // and a real arc.
+  handSpeed: 0.72,
+  handGravity: 3.2,
 });
+
 
 /** Radius 1: scale it by the sphere type's radius. */
 export const SPHERE_GEOMETRY = new THREE.SphereGeometry(1, 16, 12);

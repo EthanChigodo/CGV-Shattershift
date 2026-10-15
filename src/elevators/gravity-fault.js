@@ -325,6 +325,7 @@ export class GravityFaultRide {
     s.gEff = GRAVITY + (dt > 0 ? (s.velocity - before) / dt : 0);
     s.minVelocity = Math.min(s.minVelocity, s.velocity);
     this._place(s.cabinY);
+    this.cabin.updateCables(dt);
 
     // Floor counter, and the display over the doors.
     const floor = START_FLOOR + s.cabinY / STOREY;
@@ -382,6 +383,7 @@ export class GravityFaultRide {
         p.react(0, 0.8);
       });
       this._crack("front", [0.72, 0.3], 0.9, 0.55);
+      this.cabin.snapCables();
       this.hud.alert("CABLE FAILURE", "danger");
       this.events.emit("cable-snap", { floor: START_FLOOR + s.cabinY / STOREY });
     } else if (name === "brake") {

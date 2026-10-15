@@ -85,11 +85,17 @@ export const ride = {
       }
       const fadeAtEnd = Number(document.querySelector("#fadeOverlay").style.opacity);
       // Level 3 should be ready almost at once - it was built during the ride.
+      // (Behind the loading screen - building, then warming Level 3 - is not black.)
       const t0 = performance.now();
+      let blackMs = 0;
+      let last = t0;
       while (performance.now() - t0 < 60000 && !(d.currentLevel === 3 && d.state === "playing")) {
         await new Promise((resolve) => setTimeout(resolve, 50));
+        const now = performance.now();
+        if (!document.querySelector(".ld-root.show")) blackMs += now - last;
+        last = now;
       }
-      const blackMs = Math.round(performance.now() - t0);
+      blackMs = Math.round(blackMs);
       return {
         shots,
         character,
@@ -301,10 +307,7 @@ export const figure = {
       d.demoJump(2);
       await until(() => d.currentLevel === 3 && d.state === "playing" && d.meltdown?.avatar?.look);
       out.labs = read(d.meltdown?.avatar);
-      d.demoQuietRide();
-      d.step(2);
-      d.render();
-      out.quietRide = read(d.gravityLift?._avatar);
+      // (The quiet ride after the Labs is first person: no body to dress.)
       d.resetGame("story");
       d.demoJump(3);
       d.step(2);
@@ -320,7 +323,7 @@ export const figure = {
     const dusty = { wear: 0.33, gear: false };
     const bloodied = { wear: 0.66, gear: false };
     const geared = { wear: 0.66, gear: true };
-    const want = { foundry: dusty, gravityRide: dusty, labs: bloodied, quietRide: geared, skyline: geared, roof: geared };
+    const want = { foundry: dusty, gravityRide: dusty, labs: bloodied, skyline: geared, roof: geared };
     for (const [k, v] of Object.entries(want)) {
       if (JSON.stringify(r[k]) !== JSON.stringify(v)) failures.push(`${k}: ${JSON.stringify(r[k])}, want ${JSON.stringify(v)}`);
     }

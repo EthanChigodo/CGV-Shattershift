@@ -52,6 +52,7 @@ import { LauncherLight } from "./flashlight.js";
 import { createGradePass } from "./post.js";
 import { createEnvironmentDimmer } from "./lighting.js";
 import { RoofLevel, ROOF_SPAWN, CANISTER_RADIUS } from "./roof.js";
+import { RoofMinimap } from "./roof-map.js";
 import { createCreditsPanel } from "./credits.js";
 import { MeltdownHud } from "../../ui/meltdown-hud.js";
 import { MeltdownAudio } from "../../audio/meltdown-audio.js";
@@ -118,7 +119,10 @@ const ROOF_SPEED = 6.4;
  * toward it, but only within ROOF_LEAN_REACH: lean after a far aim point and
  * the camera swings, moves the aim again and shakes.
  */
+const _gw = new THREE.Vector3();
 const ROOF_AIM_FAR = 80;
+/** Where the camera stands to watch a missed jump for the ladder: back from the ledge, over it. */
+const _ledgeCam = new THREE.Vector3(-2.2, 3.4, 1.6);
 const ROOF_LEAN_REACH = 14;
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
@@ -398,6 +402,7 @@ export class MeltdownGame {
   /* ================================================================ */
 
   _resetRunner() {
+    this._dying = null;
     this.ammoRecovery.reset();
     this.ammoHint.hide();
     Object.assign(this.runner, {
@@ -458,6 +463,8 @@ export class MeltdownGame {
       this.level.dispose();
     }
     if (this.roof) {
+      this.roofMap?.dispose();
+      this.roofMap = null;
       this.roof.dispose();
       this.roof = null;
     }
@@ -488,6 +495,9 @@ export class MeltdownGame {
       origin: new THREE.Vector3(0, 0, 0), seed, lightPoints: this.quality?.shadows ? 9 : 6,
       // The story's difficulty: obstacle spacing; Hard's fire waves and stalkers.
       density: this.difficulty.density, extras: this.difficulty.extras,
+      // Harder is longer (and its hidden countdown with it); endless laps keep the base length.
+      length: this.mode === "endless-labs" ? 1 : this.difficulty.length ?? 1,
+      phaseSeconds: 124 * (this.mode === "endless-labs" ? 1 : this.difficulty.length ?? 1),
     });
     this.level = level;
     level.addTo(this.scene);
@@ -616,6 +626,8 @@ export class MeltdownGame {
       this.level.dispose();
       this.level = null;
     }
+    this.roofMap?.dispose();
+    this.roofMap = null;
     this.roof?.dispose();
     this.roof = null;
     this.director?.dispose();
@@ -1013,6 +1025,7 @@ export class MeltdownGame {
     // The host renders shadows on demand (autoUpdate is off in the game).
     if (this.quality.shadows) this.renderer.shadowMap.needsUpdate = true;
     this.composer.render();
+    if (this.roof) this.roofMap?.render(this.renderer);
   }
 
   update(dt, time) {
@@ -1040,6 +1053,7 @@ export class MeltdownGame {
     // the dark deck from the high camera.
     THERMAL_HEAT.value = Math.max(this.arsenal.level("thermal"), phase === "roof" ? 0.16 : 0);
     this._updateLauncher(dt, playing);
+    this._updateWell(dt);
 
     if (onRoof) {
       this.runner.invulnerable = Math.max(0, this.runner.invulnerable - dt);
@@ -1134,10 +1148,20 @@ export class MeltdownGame {
       r.vitality = Math.max(0, r.vitality - level.drainRateAt(r.distance) * this.difficulty.damage * heat * dt);
       if (r.vitality <= 0) {
         r.alive = false;
-        this._finishRun(false, "CAUGHT BY THE FIRE");
+        this._caughtByFire();
       }
     }
-    if (this.phase !== "depart") {
+    if (this._dying) {
+      // Caught: the fire comes on over you, the camera shaking, before the
+      // run is over (the host burns the screen meanwhile - "dying").
+      this._dying.t += dt;
+      r.fireDistance += (r.distance + 5 - r.fireDistance) * Math.min(1, dt * 2.4);
+      this.trauma = Math.max(this.trauma, 0.65);
+      if (this._dying.t > 1.6) {
+        this._dying = null;
+        this._finishRun(false, "CAUGHT BY THE FIRE");
+      }
+    } else if (this.phase !== "depart") {
       const gap = 4 + r.vitality * 0.42;
       const target = r.distance - gap;
       if (!cutscene) r.fireDistance += (target - r.fireDistance) * Math.min(1, dt * (target > r.fireDistance ? 0.9 : 3));
@@ -1590,15 +1614,20 @@ export class MeltdownGame {
   }
 
   /**
-   * A cryo or shock sphere going off (the Skyline's rules): shock breaks
-   * everything breakable within reach; cryo knocks down the people around it
-   * (and in the Labs pushes the fire back).
+   * A cryo or shock sphere going off (the Skyline's rules): both break
+   * everything breakable within reach (cryo in ice, and in the Labs it
+   * pushes the fire back). Cryo frosts the floor only if it burst on it.
    */
-  _detonate(ball, point) {
+  _detonate(ball, point, ground = false) {
     const def = BALLS[ball.kind];
     if (!def?.splash) return;
     const targets = this.roof ? this.roof.breakables : this.level?.breakables ?? [];
-    this.sphereImpact.splash(point, ball.kind, def.splash);
+    this.sphereImpact.splash(point, ball.kind, def.splash, null, { ground });
+    if (ball.kind === "gravity") {
+      this._gravityWell(point, def.splash);
+      this.trauma = Math.min(1, this.trauma + 0.15);
+      return;
+    }
     this.debris.sparks(point, { count: 26, speed: 6 });
     this._chunks(point, 22, { tint: ball.kind === "cryo" ? 0xbff4ff : 0xd9a6ff, speed: 5, radius: def.splash * 0.3, size: 0.08 });
     const at = new THREE.Vector3();
@@ -1606,8 +1635,6 @@ export class MeltdownGame {
       if (!target.parent) continue;
       target.getWorldPosition(at);
       if (at.distanceTo(point) > def.splash) continue;
-      const person = target.userData.kind === "patient" || target.userData.kind === "enemy" || !!target.userData.enemy;
-      if (ball.kind === "cryo" && !person) continue;
       // Power-ups (serum capsules) take a direct hit, never a splash.
       if (target.userData.kind === "powerup") continue;
       this._onBallBreakable(target, at.clone(), { power: ball.kind === "shock" ? 99 : 2, velocity: ball.velocity.clone(), kind: "glass" });
@@ -1615,6 +1642,60 @@ export class MeltdownGame {
     if (ball.kind === "cryo" && this.level && !this.roof) this.runner.fireDistance -= 6;
     this.trauma = Math.min(1, this.trauma + 0.2);
     this.sfx?.glassBreak();
+  }
+
+  /**
+   * The gravity sphere's black hole: the sacks and serums in reach are
+   * dragged in and yours; the patients and scientists are yanked toward it
+   * and stunned (on the roof, out of their charge) - nobody is hurt.
+   */
+  _gravityWell(point, radius) {
+    const targets = this.roof ? this.roof.breakables : this.level?.breakables ?? [];
+    const at = new THREE.Vector3();
+    let pulled = 0;
+    for (const target of targets.slice()) {
+      if (!target.parent) continue;
+      target.getWorldPosition(at);
+      if (at.distanceTo(point) > radius) continue;
+      const data = target.userData;
+      if (data.kind === "sack" || data.kind === "powerup") {
+        this._onBallBreakable(target, at.clone(), { power: 99, velocity: new THREE.Vector3(), kind: "glass", walkIn: true });
+        pulled += 1;
+      } else if (data.kind === "enemy" && data.enemy?.alive) {
+        const e = data.enemy;
+        _gw.subVectors(point, e.position).setY(0);
+        const d = _gw.length();
+        if (d > 0.3) e.velocity.addScaledVector(_gw.divideScalar(d), Math.min(9, 3 + d));
+        if (!["emerge", "fall", "down"].includes(e.state)) e.setState?.("stunned");
+        e.stagger = 1;
+      } else if (data.kind === "patient") {
+        data.node?.userData.stagger?.();
+      }
+    }
+    this.debris.sparks(point, { count: 30, speed: 3 });
+    this.audio.whoosh?.();
+    if (pulled) this.hud.toast("GRAVITY", `${pulled} PULLED IN`, "power", 1400);
+    // It keeps pulling while it is open (_updateWell).
+    this._well = { point: point.clone(), radius, t: 1.1 };
+  }
+
+  /** The gravity sphere's black hole, still open: the roof's people dragged toward it. */
+  _updateWell(dt) {
+    const w = this._well;
+    if (!w) return;
+    w.t -= dt;
+    if (w.t <= 0 || !this.roof) {
+      this._well = null;
+      return;
+    }
+    for (const e of this.roof.enemies) {
+      if (!e.alive || e.removed || ["emerge", "fall", "down"].includes(e.state)) continue;
+      _gw.subVectors(w.point, e.position).setY(0);
+      const d = _gw.length();
+      if (d > w.radius || d < 0.7) continue;
+      e.position.addScaledVector(_gw.divideScalar(d), Math.min(d - 0.7, dt * 5.5));
+      e.collide?.();
+    }
   }
 
   _onBallBreakable(object, point, ball) {
@@ -1669,6 +1750,11 @@ export class MeltdownGame {
       audio.thud();
       audio.bodyFall();
       this._patientSound("death", point, 1);
+      // Burning to ash (kit.js): a flare of embers, ash and sparks as it goes.
+      const at = (object.userData.node?.userData.worldPosition?.() ?? point.clone()).setY(1.1);
+      debris.sparks(at, { count: 34, speed: 5 });
+      debris.dust(at, { size: 2.4, life: 1.9, color: 0x3d3632 });
+      for (let i = 1; i <= 6; i += 1) this._after(i * 0.18, () => debris.sparks(at.clone().setY(1.7 - i * 0.22), { count: 6, speed: 1.8 }));
     } else if (result.kind === "powerup") {
       const serum = this._applyPowerup(result.powerupKind);
       debris.burst(result.position, { kind: "power", count: 30, speed: 5 });
@@ -1710,7 +1796,7 @@ export class MeltdownGame {
   /** A cryo or shock sphere goes off where it lands; glass just bounces. */
   _onBallFloor(point, ball) {
     if (!ball.kind || ball.kind === "glass") return;
-    this._detonate(ball, point.clone());
+    this._detonate(ball, point.clone(), true);
     ball.life = 99;
   }
 
@@ -1843,7 +1929,7 @@ export class MeltdownGame {
     if (r.vitality <= 0) {
       r.alive = false;
       this.trauma = 1;
-      this._finishRun(false, "CAUGHT BY THE FIRE");
+      this._caughtByFire();
     }
   }
 
@@ -1909,6 +1995,8 @@ export class MeltdownGame {
     this.director = null;
     this.finale?.dispose();
     this.finale = null;
+    this.roofMap?.dispose();
+    this.roofMap = null;
     this.roof?.dispose();
     this.roof = null;
     this._timers.length = 0;
@@ -1947,6 +2035,16 @@ export class MeltdownGame {
     this.events.emit("phase", { phase: "depart" });
   }
 
+  /** Out of vitality in the Labs: the fire catches you (see the run frame), then the run is over. */
+  _caughtByFire() {
+    if (this._dying || this.runner.finished) return;
+    this._dying = { t: 0 };
+    this.runner.firing = false;
+    this.ammoHint.hide();
+    this.audio.whoosh();
+    this.events.emit("dying", { cause: "fire" });
+  }
+
   _finishRun(survived, title) {
     const r = this.runner;
     if (r.finished && this.phase !== "run") return;
@@ -1982,6 +2080,7 @@ export class MeltdownGame {
    * the fire well behind, a moment of grace. The host counts you back in.
    */
   resumeAt(distance, balls = 0) {
+    this._dying = null;
     this.ammoRecovery.reset();
     this.ammoHint.hide();
     const r = this.runner;
@@ -2041,6 +2140,8 @@ export class MeltdownGame {
     if (this.level) this.level.root.visible = false;
     this.projectiles.clear();
     this.debris.clear();
+    this.roofMap?.dispose();
+    this.roofMap = null;
     this.roof?.dispose();
     const roof = new RoofLevel({
       assets: this.roofAssets, endless: this.mode === "endless-roof", assetBase: this.assetBase,
@@ -2049,6 +2150,8 @@ export class MeltdownGame {
     });
     this.roof = roof;
     roof.addTo(this.scene);
+    // The tactical map, top right (an orthographic camera of its own).
+    this.roofMap = new RoofMinimap(roof, this.scene);
     // The flight records: three round the roof, clear of the cover.
     this._setFiles(this.mode === "endless-roof" ? null : "roof", () => [
       new THREE.Vector3(-13.5, 0, -2), new THREE.Vector3(12, 0, 6.5), new THREE.Vector3(-5, 0, 12.5),
@@ -2133,6 +2236,17 @@ export class MeltdownGame {
       else if (enemy?.kind === "scientist") this.sfx.play("scream-m", { ...this._placeOf(position), volume: 0.6 });
       else this._patientSound("shriek", position, 0.9);
       hud.toast("OVER THE EDGE", "");
+    });
+    // Burning away to ash (roof.js updateDown): a flare of embers, then ash
+    // and sparks off the burning edge as it goes.
+    on("enemy-ash", ({ position, start }) => {
+      if (start) {
+        debris.sparks(position, { count: 34, speed: 5 });
+        debris.dust(position, { size: 2.4, life: 1.9, color: 0x3d3632 });
+      } else {
+        debris.sparks(position, { count: 4, speed: 1.8 });
+        if (Math.random() < 0.25) debris.dust(position, { size: 1.1, life: 1.2, color: 0x5a524c });
+      }
     });
     on("enemy-down", ({ enemy, position }) => {
       audio.bodyFall();
@@ -2248,7 +2362,9 @@ export class MeltdownGame {
       },
       {
         camera: null,
-        deathSeconds: 1.7,
+        // A miss: watched from the ledge, falling away (the effect closes in round it).
+        deathSeconds: 2.8,
+        deathFx: "fall",
         deathLine: STORY_LINES.fallen[0],
         on: {
           fail: () => {
@@ -2261,6 +2377,8 @@ export class MeltdownGame {
             layer.stop();
             hero.position.copy(this._latch.from);
             hero.velocity.set(0, 0, 0);
+            this.avatar.root.rotation.x = 0;
+            this.avatar.root.rotation.z = 0;
             this.roof.holdExtraction?.();
             this.phase = "roof";
             this.snapCamera = true;
@@ -2357,11 +2475,14 @@ export class MeltdownGame {
     V.desired.copy(hero.position).add(_roofCam);
     // Leaning toward the aim, but never after a point further than
     // ROOF_LEAN_REACH (a far one swings the camera, which moves the aim...).
-    V.lean.copy(hero.aim).sub(hero.position).setY(0).clampLength(0, ROOF_LEAN_REACH).add(hero.position).setY(hero.aim.y);
-    V.look.copy(hero.position).add(_roofLook).lerp(V.lean, 0.16);
+    // The cursor looks round: the whole view pans toward where you aim (up
+    // to 40 % of ROOF_LEAN_REACH - bounded, so it settles), quickly.
+    V.lean.copy(hero.aim).sub(hero.position).setY(0).clampLength(0, ROOF_LEAN_REACH).multiplyScalar(0.4);
+    V.desired.add(V.lean);
+    V.look.copy(hero.position).add(_roofLook).add(V.lean);
     this._follow(V.desired, 60, dt);
     if (this.snapCamera) V.smoothedLook.copy(V.look);
-    else V.smoothedLook.lerp(V.look, 1 - Math.exp(-dt * 10));
+    else V.smoothedLook.lerp(V.look, 1 - Math.exp(-dt * 18));
     camera.up.copy(UP);
     camera.lookAt(V.smoothedLook);
     // Overdrive (a serum) widens the view, as in every level.
@@ -2533,6 +2654,9 @@ export class MeltdownGame {
         l.fall += dt;
         hero.position.x += dt * 2.2;
         hero.position.y = -4.9 * l.fall * l.fall;
+        // Tumbling, one arm still up for the ladder.
+        avatar.root.rotation.x = -l.fall * 1.9;
+        avatar.root.rotation.z = Math.sin(l.fall * 3.1) * 0.6;
       } else {
         // The leap toward the ladder, slowed right down.
         hero.position.x += dt * 0.4;
@@ -2540,8 +2664,18 @@ export class MeltdownGame {
       }
       avatar.root.position.copy(hero.position);
       avatar.update(dt * 0.3, { speed: 0, height: 1, aiming: false });
-      avatar.reachUp = l?.falling ? 0.3 : 0.8;
-      this._updateRoofCamera(dt);
+      avatar.reachUp = l?.falling ? 0.9 : 0.8;
+      if (l?.falling) {
+        // The camera stays at the ledge and looks down after them: the
+        // ladder swinging above, the burning street far below.
+        const camera = this.camera;
+        const at = this._v.desired.copy(l.from).add(_ledgeCam);
+        camera.position.lerp(at, 1 - Math.exp(-dt * 4));
+        this._v.smoothedLook.lerp(hero.position, 1 - Math.exp(-dt * 8));
+        camera.up.copy(UP);
+        camera.lookAt(this._v.smoothedLook);
+        this._shake(dt, 0.3, 0.2, 0);
+      } else this._updateRoofCamera(dt);
     } else {
       roof.update({ dt: sdt, time, player: hero.position, playerVelocity: hero.velocity });
       if (cut && cut.kind !== "arrival") {
@@ -2549,7 +2683,7 @@ export class MeltdownGame {
         if (cut.done && this.phase === "ending") {
           this.avatar.hold = 1;
           this.avatar.reachUp = 0;
-          const title = roof.state.ending === "victory" ? "EXTRACTED" : "BARELY OUT";
+          const title = roof.state.ending === "victory" || roof.state.cleared ? "EXTRACTED" : "BARELY OUT";
           // The story: the pilot, the reveal, the title and the credits first.
           if (this.story) this._startFinale(title);
           else this._roofSummary(true, title);
@@ -2585,6 +2719,7 @@ export class MeltdownGame {
   }
 
   _updateRoofPresentation(dt, time, playing) {
+    this.roofMap?.update(time, this.hero, this.phase === "roof" && !this.paused);
     const { runner: r, roof } = this;
     const danger = THREE.MathUtils.clamp(1 - r.vitality / START_VITALITY, 0, 1);
     this.hud.setDanger(danger);

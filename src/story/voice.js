@@ -57,6 +57,10 @@ export class StoryVoice {
     this.voiceVolume = voiceVolume;
     this.sfx = sfx;
     this.muted = false;
+    /** The characters' voices (Settings > Sound). Off: only HALCYON, the intercom, is heard. */
+    this.characterVoices = true;
+    /** Who is speaking now (null: nobody). */
+    this.speakingWho = null;
     this.buffers = new Map();
     this.loads = new Map();
     /** { source, gain, startedAt, offset, speech, total, buffer } */
@@ -86,6 +90,9 @@ export class StoryVoice {
       this.cue(text);
       return;
     }
+    // Voices off: the subtitle still shows (the host's), nobody but the intercom speaks.
+    if (!this.characterVoices && line.who !== "halcyon") return;
+    this.speakingWho = line.who;
     const clip = this.clipFor(line);
     if (clip) this._speak(clip);
     else this.blip(line.who);
@@ -95,6 +102,7 @@ export class StoryVoice {
   cue(text) {
     for (const [method, ...args] of CUES[text] ?? []) {
       if (method === "laugh") {
+        if (!this.characterVoices) continue;
         const clip = this.clipFor({ key: `#laugh-${args[0]}` });
         if (clip) this._speak(clip);
       } else this.sfx?.[method]?.(...args);
