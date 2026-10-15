@@ -205,8 +205,9 @@ The voices are acted with VoiceStudio's engines; every other sound is a real rec
 | "Rumbling Sound Effects" by **bretbernhoft**, https://opengameart.org/content/rumbling-sound-effects | CC0 | Explosions' tails |
 | "Metal Impact Sounds" by **BMacZero**; "100 CC0 metal and wood SFX" by **rubberduck** (opengameart.org) | CC0 | Clank, clatter, cable snap, brakes, steel groaning |
 | "Elevator ding" by **fvcalderan**; "old elevator door" by **sinny** (opengameart.org) | CC0 | The lift's chime and doors |
-| Seven (female): "Female RPG Voice Starter Pack" (Type 2) by **cicifyre**, https://opengameart.org/content/female-rpg-voice-starter-pack; "Female screams" by **congusbongus**, https://opengameart.org/content/female-screams | CC0; **CC BY 3.0** | Hurt, effort; the fall scream |
-| Seven (male): "Male Grunt/Yelling sounds" by **HaelDB**, https://opengameart.org/content/male-gruntyelling-sounds | CC0 / OGA-BY 3.0 | Hurt, effort, the fall scream |
+| Seven's pain and effort (`sfx/hurt-*`, `sfx/grunt-*`), kept from the earlier version: **Kokoro-82M** (hexgrad, https://huggingface.co/hexgrad/Kokoro-82M) via kokoro-onnx, voices `af_heart` (female) and `am_puck` (male) - a held, strained vowel in the character's own voice, no words | Apache-2.0 / MIT | Hurt when you're hit or knock into something, effort |
+| Seven's fall (female): "Female screams" by **congusbongus**, https://opengameart.org/content/female-screams | **CC BY 3.0** | The fall scream |
+| Seven's fall (male): "Male Grunt/Yelling sounds" by **HaelDB**, https://opengameart.org/content/male-gruntyelling-sounds | CC0 / OGA-BY 3.0 | The fall scream |
 
 **The patients** (`assets/audio/creatures/`)
 

@@ -30,7 +30,7 @@ BSB = ("0148 0322 0359 0387 0437 0457 0486 0550 0616 0952 1022 1023 1103 1121 11
 OGA = ["100-cc0-metal-and-wood-sfx", "metal-impact-sounds", "rumbling-sound-effects", "2-high-quality-explosions",
        "80-cc0-creture-sfx-2", "hungry-ghoul", "ghost-monster-voice-moaning-growling", "female-screams",
        "elevator-ding", "old-elevator-door", "voices-sound-effects-library", "horror-sound-effects-library",
-       "male-gruntyelling-sounds", "female-rpg-voice-starter-pack", "female-hurt-grunts-groans", "grunts-male-death-and-pain"]
+       "male-gruntyelling-sounds", "grunts-male-death-and-pain"]
 LAUGHS = ["maniacal-laughter-pack-1", "evil-laughter", "evil-cackle-laugh-1"]
 
 # Kevin MacLeod (incompetech.com, CC BY 4.0).
