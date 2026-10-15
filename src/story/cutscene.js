@@ -45,6 +45,7 @@
  */
 
 import * as THREE from "../three.js";
+import { subtitleTime } from "./script.js";
 
 const SKIP_HOLD = 0.7;
 /** Esc released sooner than this is a tap: pause, not skip. */
@@ -85,7 +86,7 @@ export class CutscenePlayer {
    * @param {import("./story-ui.js").StoryUI} o.ui
    * @param {import("./reaction.js").ReactionHits} o.reactions
    * @param {THREE.PerspectiveCamera} [o.camera]  moved every frame (null: read player.pose)
-   * @param {{blip(who:string):void}} [o.voice]
+   * @param {{say(line:object):void, stop():void}} [o.voice]  the lines spoken (voice.js)
    */
   constructor({ ui, reactions, camera = null, voice = null, reducedMotion = false }) {
     this.ui = ui;
@@ -297,6 +298,8 @@ export class CutscenePlayer {
     if (!s || this.state !== "playing" || !s.skippable) return;
     const next = s.reactions.find((r) => !this._resolved.has(r.id));
     const target = next ? next.at : s.duration;
+    // Skipping the talking silences it.
+    this.voice?.stop?.();
     this.t = target;
     this._fireEvents(target, true);
     this._emit("skip", { to: next ? next.id : "end" });
@@ -307,6 +310,7 @@ export class CutscenePlayer {
   /** Abandon the scene (quit to menu). */
   stop() {
     if (!this.scene) return;
+    this.voice?.stop?.();
     this.reactions.cancel();
     this.state = "idle";
     this.scene = null;
@@ -438,14 +442,15 @@ export class CutscenePlayer {
     const tint = sampleTrack(tr.tint, t);
     if (tint !== null) this.ui.setTint(tint);
 
-    // Subtitles: the latest line whose window covers t.
+    // Subtitles: the latest line whose window covers t (a line's subtitle
+    // goes once it has been said, though its slot in the scene runs on).
     let line = null;
-    for (const l of s.lines) if (t >= l.at && t < l.at + l.hold) line = l;
+    for (const l of s.lines) if (t >= l.at && t < l.at + (l.shown ??= subtitleTime(l, l.hold))) line = l;
     if (line !== this._line) {
       this._line = line;
       this.ui.say(line?.who ?? null, line?.text);
       if (line) {
-        if (!/^\[.*\]$/.test(line.text.trim())) this.voice?.blip(line.who);
+        this.voice?.say(line);
         this._emit("line", line);
       }
     }

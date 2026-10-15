@@ -5,14 +5,22 @@
  * rebuild or seek its soundtrack. Tracks are decoded into AudioBuffers: most
  * wrap directly at the PCM boundary, while tracks configured for overlap have
  * their tail and opening blended once before the looping source starts.
+ *
+ * Each stage has its own score (assets/audio/music/ - Kevin MacLeod's hybrid
+ * orchestral tracks, cut into seamless loops by tools/audio/music_build.py):
+ * playStage("foundry" | "labs" | "skyline" | "roof" | "tension" | "grief").
+ * The briefing's score is cut to the film (it starts with it: startStory).
+ * While someone speaks the music steps back (voiceDuck).
  */
 
+import { outputFor } from "./output.js";
+
 export const MUSIC_VOLUME = Object.freeze({
-  story: 0.38,
+  story: 0.5,
   menu: 0.46,
   gameplay: 0.62,
   elevatorLevelBed: 0.04,
-  elevator: 0.34,
+  elevator: 1.2, // (the recording is quiet: -27 LUFS; this sits it with the stage scores)
   paused: 0.31,
   gameOver: 0.25,
   theme: 0.56,
@@ -26,12 +34,42 @@ export const MUSIC_TIMING = Object.freeze({
   restore: 0.6,
 });
 
+/** Each stage's score, and how loud it sits under the game. */
+export const STAGE_MUSIC = Object.freeze({
+  // (Gains set by measured loudness: the scores sit about 4 dB under the dialogue.)
+  foundry: 0.42,  // "Big Mojo": huge drums, electronics and strings - the machines
+  labs: 0.48,     // "Darkness is Coming": synths, choir, processed drums - horror that drives
+  skyline: 0.42,  // "Rocket": euro-tech guitar and symphony - the escape
+  roof: 0.42,     // "Black Vortex": a hybrid orchestra in 7/8 - the last stand
+  tension: 0.48,  // "Space Fighter Loop": synths, drums, low brass - the wake-up, the failing lift
+  grief: 0.55,    // "Lost Time": the quiet ride up, after Okoro
+});
+
+/** How far the music steps back while someone speaks. */
+export const VOICE_DUCK = 0.5;
+/**
+ * ...less in the briefing: Okoro talks over nearly all of it, and its score
+ * is mixed around him (quiet under the confession, erupting at the order).
+ */
+export const STORY_VOICE_DUCK = 0.8;
+
+const stage = (name) => new URL(`../../assets/audio/music/${name}.mp3`, import.meta.url).href;
+
 const TRACKS = Object.freeze({
-  story: new URL("../../assets/audio/soundtracks/leberch-piano-story-601906.mp3", import.meta.url).href,
+  // The briefing: "Nerves" (Kevin MacLeod), cut to the film - under Okoro's confession.
+  story: stage("briefing"),
   menu: new URL("../../assets/audio/soundtracks/852268__holizna__trap-melody-loop-5-ebmin-165-bpm.wav", import.meta.url).href,
   round1: new URL("../../assets/audio/soundtracks/GalacticTemple.ogg", import.meta.url).href,
   elevator: new URL("../../assets/audio/soundtracks/freesound_community-lift-music-by-kk-30497.mp3", import.meta.url).href,
+  ...Object.fromEntries(Object.keys(STAGE_MUSIC).map((name) => [name, stage(name)])),
 });
+
+/**
+ * The tracks a level plays: inside a lift the lift's own music takes over
+ * from these (enterElevator). The story's scored rides (tension, grief) keep
+ * their score.
+ */
+const LEVEL_TRACKS = new Set(["round1", "foundry", "labs", "skyline", "roof"]);
 
 export class MusicManager {
   constructor({ tracks = TRACKS } = {}) {
@@ -40,7 +78,9 @@ export class MusicManager {
     this.buffers = new Map();
     this.bufferPromises = new Map();
     this.loopStarts = new Map();
+    this.loopEnds = new Map();
     this.channels = new Set();
+    this.voiceDucked = false;
     this.active = null;
     this.elevator = null;
     this.elevatorInside = false;
@@ -69,8 +109,20 @@ export class MusicManager {
     this._setIntent("menu", MUSIC_VOLUME.menu, null, MUSIC_TIMING.crossfade);
   }
 
-  showStory() {
-    this._setIntent("story", MUSIC_VOLUME.story, null, MUSIC_TIMING.crossfade);
+  /**
+   * The briefing is loading: the menu's music goes, and the briefing's score
+   * waits (silent) for the film - it is cut to the film, chapter by chapter.
+   */
+  holdStory() {
+    this._setIntent("story", 0, null, MUSIC_TIMING.crossfade);
+  }
+
+  /** The film starts: its score from the first bar. */
+  startStory() {
+    const held = this.active?.track === "story" ? this.active : null;
+    if (held) this.active = null;
+    this._setIntent("story", MUSIC_VOLUME.story, null, 0.25);
+    if (held) this._retire(held, 0.25);
   }
 
   playRound1() {
@@ -78,6 +130,24 @@ export class MusicManager {
     // The lift is late in each route; warm its buffer now so the entry
     // crossfade never waits on a network/decode round trip.
     if (this.context?.state === "running") this._load("elevator");
+  }
+
+  /** A stage's own score (STAGE_MUSIC). Asking for the one already playing changes nothing. */
+  playStage(name) {
+    if (!(name in STAGE_MUSIC)) return;
+    if (this.wantedTrack === name && !this.duck) return;
+    this._setIntent(name, STAGE_MUSIC[name], null, name === "grief" ? 2.5 : MUSIC_TIMING.crossfade);
+    // The level's lift comes later: warm its music now (as playRound1 does).
+    if (LEVEL_TRACKS.has(name) && this.context?.state === "running") this._load("elevator");
+  }
+
+  /** Someone is speaking: step back, and come up again after. */
+  voiceDuck(on) {
+    on = !!on;
+    if (on === this.voiceDucked) return;
+    this.voiceDucked = on;
+    // (A track still fading out under a new one being loaded is left alone.)
+    if (!this.duck && this.active?.track === this.wantedTrack) this._rampMusicMix(on ? 0.3 : 0.9);
   }
 
   /**
@@ -98,7 +168,7 @@ export class MusicManager {
    * the same playback instance and position.
    */
   enterElevator() {
-    if (this.elevatorInside || this.wantedTrack !== "round1") return;
+    if (this.elevatorInside || !LEVEL_TRACKS.has(this.wantedTrack)) return;
     this.elevatorInside = true;
     this.elevatorTransition += 1;
     this._applyElevatorIntent(this.elevatorTransition);
@@ -129,7 +199,7 @@ export class MusicManager {
   }
 
   _setIntent(track, volume, duck, seconds) {
-    if (track === "round1") this.exitElevator(seconds);
+    if (LEVEL_TRACKS.has(track)) this.exitElevator(seconds);
     else this._clearElevator(seconds);
     this.wantedTrack = track;
     this.baseVolume = volume;
@@ -139,12 +209,12 @@ export class MusicManager {
   }
 
   _targetVolume() {
-    if (this.elevatorInside && this.active?.track === "round1") {
+    if (this.elevatorInside && LEVEL_TRACKS.has(this.active?.track)) {
       return MUSIC_VOLUME.elevatorLevelBed * this._duckFactor();
     }
     if (this.duck === "paused") return MUSIC_VOLUME.paused;
     if (this.duck === "gameOver") return MUSIC_VOLUME.gameOver;
-    return this.baseVolume;
+    return this.baseVolume * (this.voiceDucked ? (this.wantedTrack === "story" ? STORY_VOICE_DUCK : VOICE_DUCK) : 1);
   }
 
   _duckFactor() {
@@ -154,7 +224,7 @@ export class MusicManager {
   }
 
   _elevatorTargetVolume() {
-    return this.elevatorInside ? MUSIC_VOLUME.elevator * this._duckFactor() : 0;
+    return this.elevatorInside ? MUSIC_VOLUME.elevator * this._duckFactor() * (this.voiceDucked ? VOICE_DUCK : 1) : 0;
   }
 
   async _load(track) {
@@ -187,6 +257,13 @@ export class MusicManager {
    * later wrap without timers or additional AudioBufferSourceNodes.
    */
   _prepareLoop(track, buffer) {
+    if (track in STAGE_MUSIC) {
+      // Rendered as seamless loops: only an mp3's padding (exact silence) to skip.
+      const [start, end] = trimmedBounds(buffer);
+      this.loopStarts.set(track, start);
+      this.loopEnds.set(track, end);
+      return;
+    }
     const requested = track === "story"
       ? MUSIC_TIMING.storyLoopOverlap
       : track === "elevator" ? MUSIC_TIMING.elevatorLoopOverlap : 0;
@@ -226,12 +303,12 @@ export class MusicManager {
     const now = ctx.currentTime;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
-    gain.connect(ctx.destination);
+    gain.connect(outputFor(ctx));
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
     source.loopStart = this.loopStarts.get(track) ?? 0;
-    source.loopEnd = buffer.duration;
+    source.loopEnd = this.loopEnds.get(track) ?? buffer.duration;
     source.connect(gain);
     const channel = { track, source, gain, startedAt: now, buffer };
     this.channels.add(channel);
@@ -250,18 +327,18 @@ export class MusicManager {
 
   async _applyElevatorIntent(token) {
     const ctx = this.context;
-    if (!ctx || ctx.state !== "running" || !this.elevatorInside || this.wantedTrack !== "round1") return;
+    if (!ctx || ctx.state !== "running" || !this.elevatorInside || !LEVEL_TRACKS.has(this.wantedTrack)) return;
     if (this.elevator) {
       this._rampMusicMix(MUSIC_TIMING.crossfade);
       return;
     }
     const buffer = await this._load("elevator");
-    if (!buffer || token !== this.elevatorTransition || !this.elevatorInside || this.wantedTrack !== "round1") return;
+    if (!buffer || token !== this.elevatorTransition || !this.elevatorInside || !LEVEL_TRACKS.has(this.wantedTrack)) return;
 
     const now = ctx.currentTime;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
-    gain.connect(ctx.destination);
+    gain.connect(outputFor(ctx));
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
@@ -348,3 +425,13 @@ export class MusicManager {
   }
 }
 
+/** Where a buffer's sound starts and ends, past any exact silence (an mp3's padding). */
+function trimmedBounds(buffer) {
+  const data = buffer.getChannelData(0);
+  const limit = Math.min(data.length >> 2, Math.round(buffer.sampleRate * 0.1));
+  let a = 0;
+  let b = data.length - 1;
+  while (a < limit && Math.abs(data[a]) < 1e-4) a += 1;
+  while (data.length - 1 - b < limit && Math.abs(data[b]) < 1e-4) b -= 1;
+  return [a / buffer.sampleRate, (b + 1) / buffer.sampleRate];
+}
