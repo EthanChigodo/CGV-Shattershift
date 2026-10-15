@@ -344,7 +344,9 @@ export class Prologue {
     const city = this.assets.get("cityNight");
     if (city) {
       const model = city.template.clone(true);
-      // Its own little sky dome goes: the set has a sky. And the one facade
+      // Its own little sky dome goes: the set has a sky. So does its ground
+      // sheet - a flat white plate that covered the glowing streets below
+      // (the streets are the ground now). And the one facade
       // with a shop shutter's foreign lettering on it takes the plain lit
       // windows the other towers have (it's an American city).
       let windowsMap = null;
@@ -355,7 +357,7 @@ export class Prologue {
           o.material.map = windowsMap;
         }
         if (o.isMesh && o.geometry.boundingSphere === null) o.geometry.computeBoundingSphere();
-        if (o.isMesh && /Sphere/.test(o.name)) o.visible = false;
+        if (o.isMesh && /Sphere|^Plane/.test(o.name)) o.visible = false;
         if (o.isMesh && o.material && "emissive" in o.material) {
           o.material = this._own(o.material.clone());
           o.material.emissiveMap = o.material.map;

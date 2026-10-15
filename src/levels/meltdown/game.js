@@ -112,8 +112,14 @@ const SLIDE_SECONDS = 0.7;
  * make a charging patient miss and carry on over the ledge.
  */
 const ROOF_SPEED = 6.4;
-/** How far from the player the roof's aim point may go (m). */
-const ROOF_AIM_REACH = 22;
+/**
+ * The roof's aim point: as far as the cursor points, up to ROOF_AIM_FAR (m) -
+ * near the horizon the aim plane runs off for kilometres. The camera leans
+ * toward it, but only within ROOF_LEAN_REACH: lean after a far aim point and
+ * the camera swings, moves the aim again and shakes.
+ */
+const ROOF_AIM_FAR = 80;
+const ROOF_LEAN_REACH = 14;
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
 const ROOF_NAMES = [
@@ -374,7 +380,7 @@ export class MeltdownGame {
     this.director = null;
 
     this._v = {
-      desired: new THREE.Vector3(), look: new THREE.Vector3(), smoothedLook: new THREE.Vector3(), walkIn: new THREE.Vector3(),
+      desired: new THREE.Vector3(), look: new THREE.Vector3(), lean: new THREE.Vector3(), smoothedLook: new THREE.Vector3(), walkIn: new THREE.Vector3(),
       behind: new THREE.Vector3(), camVelocity: new THREE.Vector3(), warpUp: new THREE.Vector3(),
       aim: new THREE.Vector3(), muzzle: new THREE.Vector3(), fireDir: new THREE.Vector3(), forwardVel: new THREE.Vector3(),
       laneRight: new THREE.Vector3(), beamTarget: new THREE.Vector3(),
@@ -857,6 +863,7 @@ export class MeltdownGame {
 
   onPointerMove(clientX, clientY) {
     const size = this.renderer.domElement.getBoundingClientRect();
+    if (!size.width || !size.height) return; // not laid out yet: no aim from a 0-size canvas
     // Held inside the window: dragging off it (fire held) keeps reporting
     // positions beyond the edge.
     clientX = THREE.MathUtils.clamp(clientX, size.left, size.right);
@@ -2277,7 +2284,10 @@ export class MeltdownGame {
     const { hero, camera } = this;
     const V = this._v;
     V.desired.copy(hero.position).add(_roofCam);
-    V.look.copy(hero.position).add(_roofLook).lerp(hero.aim, 0.16);
+    // Leaning toward the aim, but never after a point further than
+    // ROOF_LEAN_REACH (a far one swings the camera, which moves the aim...).
+    V.lean.copy(hero.aim).sub(hero.position).setY(0).clampLength(0, ROOF_LEAN_REACH).add(hero.position).setY(hero.aim.y);
+    V.look.copy(hero.position).add(_roofLook).lerp(V.lean, 0.16);
     this._follow(V.desired, 60, dt);
     if (this.snapCamera) V.smoothedLook.copy(V.look);
     else V.smoothedLook.lerp(V.look, 1 - Math.exp(-dt * 10));
@@ -2397,24 +2407,25 @@ export class MeltdownGame {
         // At (or above) the horizon: straight out that way instead.
         _face.copy(this.raycaster.ray.direction).setY(0);
         if (_face.lengthSq() < 1e-6) _face.set(0, 0, -1);
-        hero.aim.copy(hero.position).addScaledVector(_face.normalize(), ROOF_AIM_REACH).setY(hero.position.y + 1.15);
+        hero.aim.copy(hero.position).addScaledVector(_face.normalize(), ROOF_AIM_FAR).setY(hero.position.y + 1.15);
       }
-      // Never further than across the roof: near the horizon the aim plane
-      // runs off for kilometres, and the camera (which leans toward the aim)
-      // would swing after it, move the aim again and shake (the cursor at
-      // the top of the screen or off it).
+      // Right under the cursor, wherever it is on screen (only the camera's
+      // lean toward it is held in - _updateRoofCamera).
       _face.subVectors(hero.aim, hero.position).setY(0);
-      if (!hit && _face.length() > ROOF_AIM_REACH) hero.aim.copy(hero.position).addScaledVector(_face.normalize(), ROOF_AIM_REACH).setY(hero.position.y + 1.15);
+      if (!hit && _face.length() > ROOF_AIM_FAR) hero.aim.copy(hero.position).addScaledVector(_face.normalize(), ROOF_AIM_FAR).setY(hero.position.y + 1.15);
       this.ui.reticle.classList.toggle("hot", Boolean(hit));
 
-      // Face the aim while shooting, otherwise the way you move.
+      // Always facing the cursor, launcher on it, as in any top-down shooter
+      // (playtest: facing only while firing, the aim seemed not to respond).
+      // With the cursor right on the player, the way you move instead.
       hero.lastShot += dt;
-      const face = hero.lastShot < 0.6 || r.firing ? _face.copy(hero.aim).sub(hero.position) : hero.velocity.lengthSq() > 0.5 ? _face.copy(hero.velocity) : null;
-      if (face) {
+      _face.copy(hero.aim).sub(hero.position).setY(0);
+      const face = _face.lengthSq() > 0.8 ? _face : hero.velocity.lengthSq() > 0.5 ? _face.copy(hero.velocity) : null;
+      if (face && Number.isFinite(face.x) && Number.isFinite(face.z)) {
         const want = Math.atan2(-face.x, -face.z);
         let delta = want - hero.yaw;
         delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-        hero.yaw += delta * Math.min(1, dt * 14);
+        hero.yaw += delta * Math.min(1, dt * 22);
       }
       avatar.root.position.copy(hero.position);
       avatar.root.rotation.y = hero.yaw;
