@@ -159,13 +159,14 @@ export class CausewayHud {
     this._flash(this.titleEl, "title", seconds);
   }
 
-  radio({ who, speaker, text }) {
+  /** `seconds`: how long it is up (the recording's length, if it has one). */
+  radio({ who, speaker, text, seconds }) {
     this.radioEl.dataset.speaker = speaker;
     this.radioEl.querySelector(".cw-who").textContent = who;
     const p = this.radioEl.querySelector("p");
     p.textContent = "";
     this._typing = { text, i: 0, p };
-    this._flash(this.radioEl, "radio", 3 + text.length * 0.045);
+    this._flash(this.radioEl, "radio", seconds ?? 3 + text.length * 0.045);
   }
 
   hint(text, seconds = 2.4) {

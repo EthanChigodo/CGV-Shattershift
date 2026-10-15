@@ -45,6 +45,7 @@
  */
 
 import * as THREE from "../three.js";
+import { subtitleTime } from "./script.js";
 
 const SKIP_HOLD = 0.7;
 /** Esc released sooner than this is a tap: pause, not skip. */
@@ -441,9 +442,10 @@ export class CutscenePlayer {
     const tint = sampleTrack(tr.tint, t);
     if (tint !== null) this.ui.setTint(tint);
 
-    // Subtitles: the latest line whose window covers t.
+    // Subtitles: the latest line whose window covers t (a line's subtitle
+    // goes once it has been said, though its slot in the scene runs on).
     let line = null;
-    for (const l of s.lines) if (t >= l.at && t < l.at + l.hold) line = l;
+    for (const l of s.lines) if (t >= l.at && t < l.at + (l.shown ??= subtitleTime(l, l.hold))) line = l;
     if (line !== this._line) {
       this._line = line;
       this.ui.say(line?.who ?? null, line?.text);

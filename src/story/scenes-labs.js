@@ -30,7 +30,7 @@ const v = () => new THREE.Vector3();
  */
 export function breachScene(a) {
   const lines = timeLines(SCENES.breach, 0.8);
-  const tNo = cue(lines, "No. No, no", 4);
+  const tNo = cue(lines, "no, no, no", 4);
   const tGlass = cue(lines, "[glass", 7);
   const tOut = cue(lines, "They're out", 9);
   const tVale = cue(lines, "Elias. You always", 13);

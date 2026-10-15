@@ -106,9 +106,7 @@ RADIO_FIT = {"quietRideRadio": 3.9}  # the lift's radio has a beat to fit
 
 
 # Lines a voice kept getting wrong, worded so it says them right (the subtitle is unchanged).
-SAY = {"The lift's at the far end of the labs. Go!": "The lift is at the far end of the labs. Go!",
-       "You'll want to know what you are. You were Subject Seven. Project Ascension.":
-           "You will want to know what you are. You were... Subject Seven. Project Ascension.",
+SAY = {"The lift's at the far end of the labs, go, go!": "The lift is at the far end of the labs, go, go!",
        "Every floor is wired, Seven. I signed the order myself.": "Every floor is wired, Seven. I signed the order... myself.",
        # (Okoro says "Vale's" as "Velle's" at the start of a sentence: spelt as it sounds.)
        "Vale's answer is to bury it. Charges on every floor. The subjects still in their beds. Thirty minutes, and this tower comes down.":
