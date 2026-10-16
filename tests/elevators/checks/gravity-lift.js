@@ -183,6 +183,8 @@ export const cableSnap = {
     });
     const failures = [];
     const order = ["board", "climb", "tremor", "freefall", "brake", "launcher", "clamps", "resume"];
+    // (The handoff to the Labs is queued behind the loading screen, so the ride may report "done" first.)
+    if (r.phases.at(-1) === "done") r.phases.pop();
     if (r.phases.join() !== order.join()) failures.push(`phases ran ${r.phases.join(" > ")}`);
     for (const name of ["tremor", "flicker", "glass-crack", "glass-break", "cable-snap", "brake", "brake-slam", "launcher-thud", "launcher-land", "pickup", "resume"]) if (!r.events.includes(name)) failures.push(`no "${name}" event`);
     if (!r.launcherLanded) failures.push("the launcher never landed on the cabin floor");

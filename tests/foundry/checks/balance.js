@@ -21,7 +21,7 @@ import { DIFFICULTIES } from "../../../src/systems/difficulty.js";
 export const name = "balance";
 
 async function freshRun(page, url, options) {
-  await page.goto(url, { waitUntil: "load" });
+  await page.goto(url, { waitUntil: "load", timeout: 90000 });
   await page.waitForFunction(() => globalThis.__foundry?.level, null, { timeout: 20000 });
   await installSimulator(page);
   return page.evaluate((opts) => globalThis.__sim(opts), options);

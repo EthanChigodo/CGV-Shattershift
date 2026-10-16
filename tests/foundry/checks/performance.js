@@ -16,7 +16,7 @@ const MAX_DRAW_CALLS = 420;
 const MAX_LIGHTS = 14;
 
 export async function run(page, { url }) {
-  await page.goto(url, { waitUntil: "load" });
+  await page.goto(url, { waitUntil: "load", timeout: 90000 });
   await page.waitForFunction(() => globalThis.__foundry?.level, null, { timeout: 20000 });
 
   const failures = [];

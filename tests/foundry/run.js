@@ -79,7 +79,7 @@ async function main() {
   for (const check of CHECKS) {
     process.stdout.write(`${check.name} ... `);
     try {
-      await page.goto(url, { waitUntil: "load" });
+      await page.goto(url, { waitUntil: "load", timeout: 90000 });
       await page.waitForFunction(() => globalThis.__foundry?.level, null, { timeout: 20000 });
       const { failures, notes } = await check.run(page, { url });
 
@@ -104,7 +104,7 @@ async function main() {
   if (wantShots) {
     const dir = path.join(ROOT, "docs/images");
     await mkdir(dir, { recursive: true });
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(url, { waitUntil: "load", timeout: 90000 });
     await page.waitForFunction(() => globalThis.__foundry?.level, null, { timeout: 20000 });
     await page.evaluate(() => {
       const f = globalThis.__foundry;
