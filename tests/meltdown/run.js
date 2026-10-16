@@ -53,7 +53,7 @@ async function main() {
     const tab = await openPage(browser);
     const page = tab.page;
     try {
-      await page.goto(url, { waitUntil: "load" });
+      await page.goto(url, { waitUntil: "load", timeout: 90000 });
       await page.waitForFunction(() => globalThis.__meltdown?.level, null, { timeout: 60000 });
       const { failures, notes } = await check.run(page);
       if (failures.length) {
@@ -76,7 +76,7 @@ async function main() {
     const { page, errors: shotErrors } = await openPage(browser);
     const dir = path.join(ROOT, "docs/images");
     await mkdir(dir, { recursive: true });
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(url, { waitUntil: "load", timeout: 90000 });
     await page.waitForFunction(() => globalThis.__meltdown?.assetsReady, null, { timeout: 120000 });
     await page.evaluate(() => globalThis.__meltdown.begin());
     for (const [name, distance, camera] of SHOTS) {

@@ -1486,7 +1486,7 @@ function continueStory() {
   story.forgetSeen();
   newRunReport();
   saveProgress = true;
-  if (save.stage === "foundry") { startCampaign(); return; }
+  if (save.stage === "foundry") { startCampaign(); pauseWhenReady(); return; }
   // Set up as a story run at that difficulty (without saving the Foundry
   // over the save on the way), then into the sector as it was.
   saveProgress = false;
@@ -1497,6 +1497,7 @@ function continueStory() {
   runFromStart = false;
   if (save.stage === "skyline" && (!causeway || causeway.builtFor !== runDifficulty)) buildCauseway("story");
   restartStage({ stage: save.stage, score: save.score ?? 0, ammo: save.ammo ?? 0, balls: save.balls ?? null });
+  pauseWhenReady();
 }
 
 function refreshMenuProgress() {
@@ -2932,7 +2933,9 @@ const storyJumps = {
     storyJumps.roof();
     const game = getMeltdown();
     const go = () => {
-      if (game.phase === "roof" || game.phase === "roofArrive") game._startFinale("EXTRACTED");
+      // (Wait out the loading screen: the finale ends the run only once it is playing.)
+      if (state !== "playing" || loadingHold) setTimeout(go, 100);
+      else if (game.phase === "roof" || game.phase === "roofArrive") game._startFinale("EXTRACTED");
       else if (game.phase === "fade" || game.phase === "idle") setTimeout(go, 100);
     };
     go();
@@ -4188,8 +4191,10 @@ function updateLoadingScreen(dt) {
 let loadingHold = null;
 let pendingTransition = null;
 function holdLoading(label) {
-  if (!loadingHold) loadingHold = { since: performance.now() };
+  if (!loadingHold || loadingHold.menu) loadingHold = { since: performance.now() };
   loadingScreen.show(...label, { instant: true });
+  // (Nothing under it can be clicked while it is held.)
+  loadingScreen.root.style.pointerEvents = "auto";
 }
 /** The switch `fn`, behind the loading screen (it runs a couple of frames from now). */
 function queueTransition(label, fn) {
@@ -4221,9 +4226,11 @@ async function releaseLoading(...targets) {
   if (!hold) return;
   if (!targets.length) targets = [[scene, camera]];
   try {
+    // (Synchronous on purpose: three's compileAsync polls programs that a
+    // swapped-out scene can dispose under it, and throws from a timer.)
     for (const [targetScene, targetCamera] of targets) {
-      if (renderer.compileAsync) await renderer.compileAsync(targetScene, targetCamera);
-      else renderer.compile(targetScene, targetCamera);
+      renderer.compile(targetScene, targetCamera);
+      await nextFrames(1);
     }
     const textures = new Set();
     for (const [targetScene] of targets) targetScene.traverse((o) => {
@@ -4244,12 +4251,14 @@ async function releaseLoading(...targets) {
   if (left > 0) await new Promise((resolve) => setTimeout(resolve, left));
   if (loadingHold !== hold) return;
   loadingHold = null;
+  loadingScreen.root.style.pointerEvents = "";
   loadingScreen.hide();
 }
 /** A restart or a quit: nothing to wait for any more. */
 function cancelLoadingHold() {
   loadingHold = null;
   pendingTransition = null;
+  loadingScreen.root.style.pointerEvents = "";
   loadingScreen.hide();
 }
 
@@ -4701,6 +4710,7 @@ function quitToMenu() {
   ui.story.classList.remove("active");
   ui.start.classList.add("active");
   music.showMenu();
+  warmMenu();
 }
 
 /*
@@ -5143,12 +5153,202 @@ addEventListener("resize", () => {
   meltdown?.resize(innerWidth, innerHeight);
 });
 
+
+/* ---- A refresh: back where you were ------------------------------------- */
+
+/**
+ * The tab remembers where it was (sessionStorage: a refresh keeps it, a new
+ * visit starts clean). In a run, a refresh puts you back in the same run -
+ * the same sector, at its checkpoint if you had reached it, with the
+ * cutscenes you have seen left seen - and opens on the pause menu. In the
+ * menus, it reopens the page you were on.
+ */
+const SESSION_KEY = "fractureRun.session";
+const SESSION_SCREENS = {
+  startScreen: null,
+  chaptersScreen: "#chaptersButton",
+  newGameScreen: "#startButton",
+  endlessScreen: "#endlessButton",
+  manualScreen: "#manualButton",
+  settingsScreen: "#settingsButton",
+  creditsScreen: "#creditsButton",
+  reportScreen: "#lastReportButton",
+};
+/** (Not for the checks driving the page, nor the trailer capture.) */
+const sessionKept = !navigator.webdriver && !trailer.enabled;
+
+/** The sector a run is in - or, on the way between two, the one it is headed for. */
+function sessionStage() {
+  if (runKind === "endless") return endlessEnv;
+  if (pendingSkyline) return "skyline";
+  if (state === "lift" || pendingTransition) {
+    if (gravityLift || (currentLevel === 2 && transitionTarget === 3)) return "labs";
+    if (currentLevel === 1 && transitionTarget === 0) return "skyline";
+    if (currentLevel === 1 && transitionTarget === 2) return "roof";
+  }
+  return reportLevel() ?? storyCheckpoint?.stage ?? "foundry";
+}
+
+function inRun() {
+  if (storyPlaying || prologue?.active) return false;
+  if (state === "ended") return storyDeath;
+  return ["playing", "lift", "cutscene", "launch"].includes(state) || !!loadingHold && state !== "intro";
+}
+
+function sessionSnapshot() {
+  if (inRun()) {
+    const stage = sessionStage();
+    if (!stage) return null;
+    const kind = runKind === "endless" ? "endless" : saveProgress ? "story" : "chapter";
+    // What you carried into the sector (headed for the next: what you carry now).
+    const cp = storyCheckpoint?.stage === stage ? storyCheckpoint : { stage, score: Math.floor(score), ammo, balls: storyBalls };
+    const mid = levelCheckpoint && levelCheckpoint.key === stage ? { ...levelCheckpoint } : null;
+    return {
+      where: "run", kind, stage, difficulty: runDifficulty, checkpoint: { ...cp }, mid,
+      bag: !awaitingBag, seen: [...story.seen], report: runReport,
+    };
+  }
+  const screen = document.querySelector(".screen.active")?.id;
+  // The end of a run, a finished film: the menu.
+  return { where: "menu", screen: screen in SESSION_SCREENS ? screen : screen === "storyScreen" && !prologue?.active ? "storyScreen" : "startScreen" };
+}
+
+function writeSession() {
+  if (!sessionKept) return;
+  try {
+    const snap = sessionSnapshot();
+    if (snap) sessionStorage.setItem(SESSION_KEY, JSON.stringify(snap));
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch {}
+}
+addEventListener("pagehide", writeSession);
+addEventListener("beforeunload", writeSession);
+
+/** Once the run is up (out of the loading screen), open the pause menu over it. */
+function pauseWhenReady({ mid = null, bag = false } = {}) {
+  const until = performance.now() + 60000;
+  let calm = 0;
+  const tick = () => {
+    if (state === "intro" || state === "ended" || performance.now() > until) return;
+    // (Settled for a couple of checks: the level's first frames have run.)
+    calm = !loadingHold && !pendingTransition && !meltdownEntering ? calm + 1 : 0;
+    const settled = calm >= 3;
+    if (mid) {
+      // Back to the checkpoint you had reached: once the sector is playing.
+      const ready = settled && state === "playing" && reportLevel() === mid.key &&
+        (mid.key !== "labs" || meltdown?.phase === "run") && !story.player.active;
+      if (!ready) { setTimeout(tick, 100); return; }
+      levelCheckpoint = mid;
+      checkpointLevel = mid.key;
+      if (mid.key === "foundry" && bag && awaitingBag) {
+        bagToss = null;
+        wearSphereBag(true);
+        awaitingBag = false;
+      }
+      resumeFromCheckpoint();
+    } else if (!settled || !["playing", "lift", "cutscene"].includes(state)) {
+      setTimeout(tick, 100);
+      return;
+    }
+    openPause();
+  };
+  setTimeout(tick, 100);
+}
+
+/** Back into the run the tab was in. */
+function restoreRun(snap) {
+  for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
+  cancelStory();
+  if (snap.kind === "endless") {
+    startEndless(snap.stage);
+    pauseWhenReady();
+    return;
+  }
+  if (DIFFICULTIES[snap.difficulty]) difficultyKey = snap.difficulty;
+  showDifficultyChoice();
+  const seen = snap.seen ?? [];
+  const story_ = snap.kind === "story";
+  const cp = { stage: snap.stage, score: snap.checkpoint?.score ?? 0, ammo: snap.checkpoint?.ammo ?? 0, balls: snap.checkpoint?.balls ?? null };
+  story.forgetSeen();
+  for (const id of seen) story.markSeen(id);
+  if (snap.stage === "foundry") {
+    saveProgress = story_;
+    startCampaign();
+  } else {
+    // Set up as a story run at that difficulty (no Foundry save on the way), then in.
+    saveProgress = false;
+    story.markSeen("wake");
+    startCampaign();
+    endStoryStage();
+    saveProgress = story_;
+    if (snap.stage === "skyline" && (!causeway || causeway.builtFor !== runDifficulty)) buildCauseway("story");
+    restartStage(cp);
+  }
+  runFromStart = false;
+  runReport = story_ ? (snap.report ?? null) : null;
+  if (story_ && !runReport) newRunReport();
+  // A sector you were part-way through: its opening scenes stay seen.
+  if (snap.mid) for (const id of seen) story.markSeen(id);
+  pauseWhenReady({ mid: snap.mid, bag: snap.bag });
+}
+
+/** Back on the menu page the tab was on. */
+function restoreMenu(snap) {
+  if (!snap.screen || snap.screen === "storyScreen") return;
+  finishStory();
+  const button = SESSION_SCREENS[snap.screen];
+  if (!button) return;
+  const el = $(button);
+  if (el && !el.hidden) el.click();
+}
+
+function restoreSession() {
+  // (index.html hid the opening screen's buttons if this was coming.)
+  const done = () => document.documentElement.classList.remove("restoring", "restoring-run");
+  if (!sessionKept) { done(); return; }
+  let snap = null;
+  try { snap = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "null"); } catch {}
+  if (!snap) { done(); return; }
+  try {
+    if (snap.where === "run") restoreRun(snap);
+    else restoreMenu(snap);
+  } catch (error) {
+    console.warn("[session] could not restore", error);
+  }
+  done();
+}
+
+/**
+ * The menu behind a loading screen: the first models in, the shaders of
+ * what is behind the menu compiled, and only then the menu - so its
+ * buttons answer the moment it is seen (at the start, and after a quit).
+ */
+async function warmMenu() {
+  if (loadingHold) return;
+  holdLoading(["ASCENSION TOWER", "LOADING"]);
+  const hold = loadingHold;
+  hold.menu = true;
+  await nextFrames(2);
+  const until = performance.now() + 15000;
+  while (loadingHold === hold && performance.now() < until && loads.total > loads.loaded) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (loadingHold !== hold) return;
+  await releaseLoading([scene, camera]);
+}
+
+async function bootMenu() {
+  restoreSession();
+  await warmMenu();
+}
+
 applyQuality();
 resetStats("story");
 refreshMenuProgress();
 updateUI();
 camera.position.set(0, 1.8, CAUSEWAY_ORIGIN_Z + 8);
 animate();
+bootMenu();
 
 /**
  * Read-only handle on game state, for the check harness and for poking at a

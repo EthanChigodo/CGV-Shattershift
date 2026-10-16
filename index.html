@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Fracture Run - a playable CGV project concept demo." />
     <title>Fracture Run - CGV Demo</title>
+    <!-- A refresh that is about to put you back in a run (or on another menu
+         page): no buttons on the opening screen meanwhile (main.js lifts it). -->
+    <script>
+      try {
+        var s = JSON.parse(sessionStorage.getItem("fractureRun.session") || "null");
+        if (s && !navigator.webdriver && (s.where === "run" || (s.screen && s.screen !== "storyScreen"))) {
+          document.documentElement.classList.add("restoring");
+          if (s.where === "run") document.documentElement.classList.add("restoring-run");
+        }
+      } catch (e) {}
+    </script>
     <!-- Three.js add-ons (Level 3's model loader and post-processing) import
          the bare name "three"; it must resolve to the exact URL src/three.js
          uses, or the page ends up with two copies of Three. -->

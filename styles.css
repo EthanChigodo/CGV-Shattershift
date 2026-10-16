@@ -704,3 +704,17 @@ body.trailer-clean, body.trailer-clean * { cursor: none !important; }
 .chapters-difficulty [data-difficulty="normal"].picked { border-color: #ffb547; background: rgba(255, 181, 71, .14); color: #ffe6c0; box-shadow: 0 0 16px rgba(255, 181, 71, .25); }
 .chapters-difficulty [data-difficulty="hard"].picked { border-color: #ff5a4e; background: rgba(255, 90, 78, .16); color: #ffd6d2; box-shadow: 0 0 16px rgba(255, 90, 78, .3); }
 .chapters-copy .difficulty-note { margin-top: 8px; font-size: 13px; }
+
+/* A refresh on its way back to where you were (see index.html's head):
+   the opening screen without anything to press. */
+html.restoring .screen button,
+html.restoring .screen nav,
+html.restoring .screen aside,
+html.restoring .screen .intro,
+html.restoring .screen .progress-line { visibility: hidden !important; }
+html.restoring #storyPrompt::after {
+  content: "RESUMING..."; display: block; margin-top: 18px;
+  color: var(--accent, #6ff); font-size: 12px; font-weight: 800; letter-spacing: .3em;
+  animation: restoring-pulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes restoring-pulse { from { opacity: .35; } to { opacity: 1; } }
