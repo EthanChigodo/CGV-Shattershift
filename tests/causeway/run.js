@@ -94,7 +94,7 @@ async function main() {
   for (const check of shotsOnly ? [] : selected) {
     process.stdout.write(`${check.name} ... `);
     try {
-      await page.goto(url, { waitUntil: "load" });
+      await page.goto(url, { waitUntil: "load", timeout: 90000 });
       await page.waitForFunction(() => globalThis.__dbg?.causeway, null, { timeout: 30000 });
       await page.addScriptTag({ content: bot });
       await page.evaluate(() => document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active")));
@@ -116,7 +116,7 @@ async function main() {
   if (wantShots) {
     const dir = path.join(ROOT, "docs/images/causeway");
     await mkdir(dir, { recursive: true });
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(url, { waitUntil: "load", timeout: 90000 });
     await page.waitForFunction(() => globalThis.__dbg?.causeway, null, { timeout: 30000 });
     await page.evaluate(() => { document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active")); document.body.classList.add("photo-hide-hud"); });
     for (const shot of SHOTS) {

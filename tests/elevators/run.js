@@ -101,7 +101,7 @@ async function main() {
   });
 
   const open = async () => {
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(url, { waitUntil: "load", timeout: 90000 });
     await page.waitForFunction(() => globalThis.__dbg?.causeway, null, { timeout: 30000 });
     await page.evaluate(() => document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active")));
   };
