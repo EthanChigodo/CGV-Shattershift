@@ -62,8 +62,8 @@ const STICK_RELEASE = 0.3;
 /** A held direction repeats: [first after, then every] seconds. */
 const MENU_REPEAT = [0.38, 0.11];
 const LANE_REPEAT = [0.3, 0.18];
-/** A stick past this, or any button, means the pad is in use (a little drift does not). */
-const ACTIVE = 0.5;
+/** A stick past this (past its dead zone), or any button, means the pad is in use; a little drift does not. */
+const ACTIVE = 0.25;
 /** A mouse move shorter than this (px) is not the player taking the mouse back. */
 const MOUSE_SLOP = 4;
 
