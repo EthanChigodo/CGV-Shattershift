@@ -430,6 +430,33 @@ export class VersusRoof extends RoofLevel {
     return THREE.MathUtils.clamp(1 - this.heliLeft / 16, 0, 1);
   }
 
+  /* ---------------- Two cameras ---------------- */
+
+  /**
+   * The lift housing fades to a ghost when a fight camera is right over it
+   * (the base's updateOcclusion) - but two cameras see it: each view keeps
+   * its own fade (`fade`, 1 solid), stepped here and applied just before
+   * that view is drawn.
+   */
+  occlusionFade(cameraPosition, fade = 1, dt = 0) {
+    if (!this._hutBox) return 1;
+    const near = this._hutBox.distanceToPoint(cameraPosition) < 8;
+    return fade + ((near ? 0.18 : 1) - fade) * Math.min(1, dt * 6);
+  }
+
+  applyOcclusion(fade = 1) {
+    if (!this._hutMaterials) return;
+    const solid = fade > 0.98;
+    for (const m of this._hutMaterials) {
+      if (m.transparent === solid) {
+        m.transparent = !solid;
+        m.needsUpdate = true;
+      }
+      m.opacity = solid ? 1 : fade;
+      m.depthWrite = solid;
+    }
+  }
+
   /* ---------------- Rounds ---------------- */
 
   /** The roof as it was at the start: no enemies, canisters and caches back, no drop, no helicopter. */
