@@ -29,6 +29,14 @@ function saveBall(key) {
 
 const hex = (n) => `#${n.toString(16).padStart(6, "0")}`;
 
+/** One line on what each sphere is for, under the loadout's picker. */
+const BLURBS = {
+  glass: "The everyday throw: punches through glass and keeps going, and ricochets off walls.",
+  cryo: "An ice burst: shatters everything within 4.8 m, puts fires out and freezes falling debris.",
+  shock: "A shockwave: shatters all glass within 5 m - reinforced glass too, in one hit.",
+  gravity: "A black hole for a second: drags every supply within 7 m to you and pulls enemies in.",
+};
+
 /**
  * Every [data-ball-pick] on the page becomes a sphere picker.
  * @param {(key: string) => void} onPick
@@ -39,7 +47,7 @@ export function buildBallPickers(onPick) {
   for (const picker of pickers) {
     picker.innerHTML = BALL_ORDER.map((k) => {
       const b = BALLS[k];
-      return `<button type="button" class="ball-card" data-ball="${k}" style="--c:${hex(b.colour)}" aria-pressed="false">
+      return `<button type="button" class="ball-card" data-ball="${k}" style="--c:${hex(b.colour)}" aria-pressed="false" title="${b.name}: ${b.text}">
         <i class="orb" aria-hidden="true"></i>
         <span><b>${b.name}</b><small>${b.text}</small></span>
         <em>costs ${b.cost} sphere${b.cost > 1 ? "s" : ""}</em>
@@ -58,6 +66,12 @@ export function buildBallPickers(onPick) {
       const on = button.dataset.ball === key;
       button.classList.toggle("picked", on);
       button.setAttribute("aria-pressed", String(on));
+    }
+    // The loadout says what the one picked does (testers asked what the
+    // picker is for): you start the run holding it.
+    const b = BALLS[key];
+    for (const line of document.querySelectorAll("[data-ball-desc]")) {
+      line.innerHTML = b ? `<b>${b.name} // ${b.cost} per throw</b><br />${BLURBS[key] ?? b.text}` : "";
     }
   }
   show(savedBall());

@@ -3724,6 +3724,14 @@ function deathKind(reason, detail) {
 function dressEndScreen(won) {
   ui.end.classList.toggle("is-win", !!won);
   ui.end.classList.toggle("is-death", !won);
+  // The tag's printed fields: the clock on your wall, and where it happened.
+  const now = new Date();
+  const two = (n) => String(n).padStart(2, "0");
+  $("#endStamp").textContent = won ? "DISCHARGED" : "DECEASED";
+  $("#endTimeLabel").textContent = won ? "Time out" : "Time of death";
+  $("#endTime").textContent = `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
+  const roof = currentLevel === 3 && (onRoofStage || meltdown?.roof);
+  $("#endWhere").textContent = won ? "Airborne" : roof ? "The roof" : `The ${(sectorNames[currentLevel] ?? "tower").toLowerCase()}`;
   // Replay the entrance.
   ui.end.classList.remove("enter");
   void ui.end.offsetWidth;

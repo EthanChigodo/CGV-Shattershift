@@ -334,7 +334,8 @@ export class CausewayHud {
       const x = this._ecgX;
       const y = h * 0.62 - v * h * 0.5;
       ctx.clearRect(x, 0, 6, h);
-      ctx.strokeStyle = this._integrity < 35 ? "#ff5a4a" : "#5ef0ff";
+      // The trace in the monitor's ink: bone, red when integrity is critical.
+      ctx.strokeStyle = this._integrity < 35 ? "#ff3b1f" : "#ece6da";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x - 1, this._lastY ?? y);

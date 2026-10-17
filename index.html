@@ -31,7 +31,6 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./src/ui/theme.css" />
     <link rel="stylesheet" href="./styles.css" />
-    <link rel="stylesheet" href="./src/ui/menu-fx.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
     <link rel="stylesheet" href="./src/ui/serum-fx.css" data-serum-fx />
   </head>
@@ -80,7 +79,7 @@
     <section id="storyScreen" class="screen active">
       <div class="screen-copy compact story-copy">
         <div id="storyPrompt">
-          <p class="eyebrow">INCOMING TRANSMISSION // ASCENSION TOWER</p>
+          <p class="eyebrow">EVIDENCE 07-ASC // RECOVERED FROM ASCENSION TOWER</p>
           <h1 class="game-title">FRACTURE<span>RUN</span></h1>
           <p class="intro">A short film: what Project Ascension was, who ran it, and why the tower is coming down tonight. Skip it at any time.</p>
           <div class="menu-list menu-list-row">
@@ -102,9 +101,13 @@
     </section>
 
     <section id="startScreen" class="screen menu-screen">
+      <div class="status-strip" aria-hidden="true">
+        <span>HALCYON</span><span>ASCENSION TOWER // L212</span><span>03:47</span><span class="armed">&#9679; DEMOLITION ARMED</span>
+      </div>
       <div class="menu-main">
-        <p class="eyebrow">ASCENSION TOWER // LEVEL 212 // DEMOLITION ARMED</p>
-        <h1 class="glitch-title" data-text="WAKE UP.&#10;GET TO THE ROOF.">WAKE UP.<br />GET TO THE ROOF.</h1>
+        <p class="eyebrow">PROJECT ASCENSION // SUBJECT 07 // STATUS: AWAKE</p>
+        <h1 class="title-mark">FRACTURE<em>RUN</em></h1>
+        <span class="pen-note title-note">Wake up. Get to the roof.</span>
         <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Climb out of the basement, through the labs and across the skyline to the helicopter on the roof before the tower comes down.</p>
         <nav class="menu-list" aria-label="Main menu">
           <button id="continueButton" class="menu-button primary" type="button" hidden>
@@ -139,21 +142,33 @@
       </div>
 
       <aside class="menu-card loadout" aria-label="Loadout">
-        <p class="eyebrow">SUBJECT 07 // LOADOUT</p>
-        <p class="card-label">Play as</p>
+        <header class="tag-head">
+          <span class="mono-label">Specimen tag // Halcyon</span>
+          <b>SUBJECT 07</b>
+          <span class="mono-label">Project Ascension // Level 212</span>
+        </header>
+        <span class="tag-stamp" aria-hidden="true">ESCAPED</span>
+        <p class="card-label">Body</p>
         <div class="segmented" role="group" aria-label="Choose your character">
           <button type="button" class="subject-button" data-character="playerFemale">Female</button>
           <button type="button" class="subject-button" data-character="playerMale">Male</button>
         </div>
         <p class="card-label">Skin</p>
         <div id="skinPick" class="skin-pick" role="group" aria-label="Choose a skin tone"></div>
-        <p class="card-label">Sphere <span class="card-note">change it any time with <kbd>Q</kbd> <kbd>E</kbd> or in the pause menu</span></p>
-        <div class="ball-pick" data-ball-pick role="group" aria-label="Choose your sphere"></div>
+        <p class="card-label">Starting sphere</p>
+        <div class="ball-pick compact" data-ball-pick data-compact role="group" aria-label="Choose the sphere you start with"></div>
+        <p class="ball-desc" data-ball-desc aria-live="polite"></p>
+        <p class="card-note">Switch any time in a run: <kbd>Q</kbd> <kbd>E</kbd>, the mouse wheel, or the pause menu.</p>
+        <footer class="tag-foot" aria-hidden="true">
+          <span class="barcode"></span>
+          <span class="mono-label">07-ASC-212<br />DO NOT RELEASE</span>
+        </footer>
       </aside>
     </section>
 
     <section id="chaptersScreen" class="screen" aria-label="Chapters">
-      <div class="screen-copy chapters-copy">
+      <div class="screen-copy chapters-copy split-copy">
+        <div class="split-head">
         <p class="eyebrow">CHAPTERS // THE WAY UP</p>
         <h2>PLAY ANY PART OF THE STORY.</h2>
         <p class="intro">Each chapter starts as the story reaches it, cutscenes and all.</p>
@@ -164,6 +179,10 @@
           <button type="button" class="subject-button difficulty-button" data-difficulty="hard">Hard</button>
         </div>
         <p id="difficultyNote" class="card-note difficulty-note"></p>
+        <div class="menu-list menu-list-row">
+          <button id="chaptersBackButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span></button>
+        </div>
+        </div>
         <div class="chapter-grid">
           <button type="button" class="chapter-card" data-chapter="briefing"><em>00</em><b>The briefing</b><span>The film: Project Ascension, Dr. Vale, and why the tower is coming down.</span></button>
           <button type="button" class="chapter-card" data-chapter="foundry"><em>01</em><b>Wake up / The Foundry</b><span>The ward, Dr. Okoro, and the plant floor on level 141 - its machinery will not stop for you.</span></button>
@@ -171,9 +190,6 @@
           <button type="button" class="chapter-card" data-chapter="labs"><em>02</em><b>The Labs</b><span>The labs are burning and the test subjects are loose.</span></button>
           <button type="button" class="chapter-card" data-chapter="skyline"><em>03</em><b>The Skyline</b><span>Across the glass causeway, before the tower goes.</span></button>
           <button type="button" class="chapter-card" data-chapter="roof"><em>03+</em><b>The Roof</b><span>Hold out until the helicopter comes.</span></button>
-        </div>
-        <div class="menu-list menu-list-row">
-          <button id="chaptersBackButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span></button>
         </div>
       </div>
     </section>
@@ -184,10 +200,10 @@
         <h2>HOW HARD DO YOU WANT IT?</h2>
         <p class="intro">You can change it for the chapters later. Endless gets harder on its own.</p>
         <p id="newGameWarning" class="card-note new-game-warning" hidden>Starting a new game replaces your saved one.</p>
-        <div class="chapter-grid difficulty-grid">
-          <button type="button" class="chapter-card difficulty-card" data-new-game="easy"><em>I</em><b>Easy</b><span>Slower, fewer obstacles, hits hurt less, spheres come back faster.</span></button>
-          <button type="button" class="chapter-card difficulty-card" data-new-game="normal"><em>II</em><b>Normal</b><span>The escape as designed. One checkpoint per level.</span></button>
-          <button type="button" class="chapter-card difficulty-card" data-new-game="hard"><em>III</em><b>Hard</b><span>Faster, more obstacles and new ones, hits hurt more, no checkpoints.</span></button>
+        <div class="difficulty-grid">
+          <button type="button" class="difficulty-card" data-new-game="easy"><em>I</em><b>Easy</b><span>Slower, fewer obstacles, hits hurt less, spheres come back faster.</span></button>
+          <button type="button" class="difficulty-card" data-new-game="normal"><em>II</em><b>Normal</b><span>The escape as designed. One checkpoint per level.</span></button>
+          <button type="button" class="difficulty-card" data-new-game="hard"><em>III</em><b>Hard</b><span>Faster, more obstacles and new ones, hits hurt more, no checkpoints.</span></button>
         </div>
         <div class="menu-list menu-list-row">
           <button id="newGameBackButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span></button>
@@ -357,9 +373,15 @@
       <div class="end-bg" aria-hidden="true"><i class="end-scan"></i><i class="end-glow"></i></div>
       <div class="screen-copy compact end-card">
         <div class="end-main">
+          <span id="endStamp" class="end-stamp" aria-hidden="true">DECEASED</span>
           <p id="endEyebrow" class="eyebrow end-eyebrow">SECTOR COMPLETE</p>
           <h2 id="endTitle" class="end-title">CALIBRATION LIFT REACHED</h2>
           <p id="endText" class="intro end-text">All three tower sectors are stable.</p>
+          <dl class="end-fields">
+            <div><dt>Subject</dt><dd>07</dd></div>
+            <div><dt id="endTimeLabel">Time of death</dt><dd id="endTime">--:--:--</dd></div>
+            <div><dt>Location</dt><dd id="endWhere">Ascension Tower</dd></div>
+          </dl>
           <div class="end-score"><span>FINAL SCORE</span><strong id="finalScore">000000</strong></div>
           <p id="endStats" class="end-stats" hidden></p>
           <ul id="endChips" class="end-chips"></ul>
@@ -378,18 +400,20 @@
     </section>
 
     <section id="endlessScreen" class="screen" aria-label="Endless">
-      <div class="screen-copy compact">
+      <div class="screen-copy chapters-copy split-copy">
+        <div class="split-head">
         <p class="eyebrow">ENDLESS // SEPARATE FROM THE STORY</p>
         <h2>PICK A PLACE.<br />SEE HOW FAR YOU GET.</h2>
         <p class="intro">Each environment on its own, until you go down. The corridors come back as new layouts, a little faster every lap.</p>
+        <div class="button-row">
+          <button id="endlessBackButton" class="primary-button">BACK</button>
+        </div>
+        </div>
         <div class="endless-grid">
           <button type="button" class="endless-card" data-endless="foundry"><b>The Foundry</b><span>The plant floor, lap after lap.</span><small></small></button>
           <button type="button" class="endless-card" data-endless="labs"><b>The Labs</b><span>The Meltdown's corridors, reshuffled every lap.</span><small></small></button>
           <button type="button" class="endless-card" data-endless="skyline"><b>The Skyline</b><span>The Glass Causeway, randomised, faster every 250 m.</span><small></small></button>
           <button type="button" class="endless-card" data-endless="roof"><b>The Roof</b><span>No helicopter. The waves never stop.</span><small></small></button>
-        </div>
-        <div class="button-row">
-          <button id="endlessBackButton" class="primary-button">BACK</button>
         </div>
       </div>
     </section>
