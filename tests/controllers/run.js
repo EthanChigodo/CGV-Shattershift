@@ -121,6 +121,8 @@ async function menus(page, check) {
   check("Settings by pad; ✕ ticks a box", m.settings === "settingsScreen" && m.toggled, `${m.settingsButton} ${m.settings} ${m.toggled}`);
   check("left / right move a slider (and it is saved)", m.slider === "sensitivitySlider" && m.sliderStep === 5 && m.saved === 105, `${m.slider} ${m.sliderStep} ${m.saved}`);
   check("Settings > Controller: the pad, its sensitivity, its buttons", m.padSlider === "padSensitivitySlider" && /DualSense/.test(m.padStatus) && m.padMap.includes("✕"), JSON.stringify(m));
+  // (The menu's first load may still be up over it: the pad works behind it, the picture waits.)
+  await page.waitForFunction(() => __dbg.loadingScreen.root.hidden, null, { timeout: 120000 }).catch(() => {});
   await page.screenshot({ path: path.join(SHOTS, "settings-controller.png") });
 
   // The glyphs: PlayStation, then Xbox, then the keyboard again.
@@ -142,7 +144,7 @@ async function menus(page, check) {
     return { ps, xbox };
   }, XBOX);
   check("PlayStation glyphs: the end screen's R and Esc", g.ps.end.join() === "✕,Options", g.ps.end.join());
-  check("...the launch controls (A D -> one stick, Mouse -> R-stick, RMB -> L2)", g.ps.launch.join() === "L-stick,L-stick(hidden),R-stick,L-stick,L-stick(hidden),L1,R1,L2", g.ps.launch.join());
+  check("...the launch controls (A D -> one stick, Mouse -> R-stick, RMB -> L2)", g.ps.launch.join().replace(/‑/g, "-") === "L-stick,L-stick(hidden),R-stick,L-stick,L-stick(hidden),L1,R1,L2", g.ps.launch.join());
   check("...hold Options to skip", g.ps.skip.join() === "Options", g.ps.skip.join());
   check("...prose: 'Or press Esc', the manual's '(Space or W)'", g.ps.resume === "Or press Options" && /\(✕ or up\)/.test(g.ps.manual), `${g.ps.resume} | ${g.ps.manual}`);
   check("...the serum card: just ✕", g.ps.serum === "✕ / keyboard words hidden: true", g.ps.serum);

@@ -40,11 +40,11 @@ export const KEY_BUTTON = {
   KeyR: "triangle", KeyF: "square", KeyZ: "cross", KeyX: "circle", KeyG: "l1", KeyT: "r1",
 };
 
-/** Names for what is not a single button. */
+/** Names for what is not a single button (a non-breaking hyphen: a key cap never wraps). */
 const EXTRA = {
-  lstick: { ps: "L-stick", xbox: "L-stick" },
-  rstick: { ps: "R-stick", xbox: "R-stick" },
-  dpad: { ps: "D-pad", xbox: "D-pad" },
+  lstick: { ps: "L‑stick", xbox: "L‑stick" },
+  rstick: { ps: "R‑stick", xbox: "R‑stick" },
+  dpad: { ps: "D‑pad", xbox: "D‑pad" },
 };
 
 /** A button's name on that family of pad ("cross" -> "✕" / "A"), sticks included. */

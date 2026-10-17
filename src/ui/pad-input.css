@@ -12,6 +12,11 @@ html.pad-active :focus-visible {
   outline-offset: 3px;
 }
 
+/* A row with the ring: one ring, not a second on the slider or box in it. */
+html.pad-active .pad-focus :focus-visible {
+  outline: none;
+}
+
 /* Keyboard-only words in a prompt ("Click", "or Enter"), and the second
    <kbd> of a pair that became one stick. */
 html.pad-active [data-pad-hide],
