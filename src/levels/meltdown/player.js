@@ -315,6 +315,60 @@ export class PlayerAvatar {
     this.shadowMaterial.opacity = 1 - lift * 0.65;
   }
 
+  /** Exterior-fall pose; ordinary running and ladder animation never call this. */
+  updateFall(time, { reducedMotion = false } = {}) {
+    const blend = THREE.MathUtils.smoothstep(time, 0, 0.55);
+    const settle = THREE.MathUtils.smoothstep(time, 1.8, 5);
+    const motion = reducedMotion ? 0.55 : 1;
+    const flutter = (a, b, phase) => Math.sin(time * a + phase) * 0.7 + Math.sin(time * b + phase * 1.9) * 0.3;
+    const energy = motion * (1 - settle * 0.5);
+    this.hold = 0;
+    this.reachUp = 0;
+    this.throwT = null;
+    this.body.scale.setScalar(1);
+    this.body.rotation.set(-(1.34 + settle * 0.1 + flutter(2.7, 5.1, 1) * 0.12 * energy) * blend,
+      flutter(1.4, 3.7, 2) * 0.13 * energy * blend,
+      flutter(2.2, 4.9, 0.4) * 0.28 * energy * blend);
+    // Turn about the hips rather than hinging the whole body on its toes.
+    // This lays the torso out in air while retaining the existing limb rig.
+    const hip = this.bodyInfo?.hipY ?? 0.9;
+    this.body.position.set(0, hip, 0).applyEuler(this.body.rotation).multiplyScalar(-1);
+    this.body.position.y += hip;
+    this.shadow.visible = false;
+    const u = this.uniforms;
+    if (!u) return;
+    u.uFalling.value = blend;
+    u.uHold.value = 0; u.uReachUp.value = 0; u.uRest.value = 0;
+    u.uThrow.value.set(0, 0, 0, 0);
+    u.uGait.value = 1;
+    u.uStride.value = 0; u.uTuck.value = 0; u.uCrouch.value = 0;
+    u.uLean.value = 0.12 * blend;
+    u.uTwist.value = flutter(1.9, 4.3, 0.8) * 0.18 * energy;
+    // Uncorrelated shoulder/elbow motion and independently flexed knees: not
+    // the running gait, a jump tuck, or the same symmetric sine on both sides.
+    u.uFallArmR.value.set(0.8 + flutter(5.7, 9.1, 0.3) * 0.65 * energy,
+      0.65 + flutter(4.1, 7.7, 1.4) * 0.4 * energy, 0.35 + flutter(3.3, 8.2, 2.1) * 0.22 * energy);
+    u.uFallArmL.value.set(1.1 + flutter(4.9, 8.3, 2.2) * 0.6 * energy,
+      0.75 + flutter(3.7, 6.9, 0.7) * 0.45 * energy, 0.2 + flutter(4.7, 7.9, 0.5) * 0.25 * energy);
+    u.uLegR.value.set(-0.35 + flutter(3.7, 6.1, 0.2) * 0.35 * energy, 0.65 + flutter(4.3, 7.1, 1.5) * 0.4 * energy);
+    u.uLegL.value.set(0.1 + flutter(4.1, 6.7, 2.8) * 0.3 * energy, 0.9 + flutter(3.1, 8.1, 0.9) * 0.45 * energy);
+  }
+
+  resetFall() {
+    if (this.uniforms?.uFalling) this.uniforms.uFalling.value = 0;
+    this.root.rotation.x = this.root.rotation.z = 0;
+    this.body.rotation.set(0, 0, 0);
+    this.body.position.set(0, 0, 0);
+    this.body.scale.setScalar(1);
+    this.shadow.visible = true;
+    this.hold = 1;
+    this.reachUp = 0;
+    this.throwT = null;
+    this._airborne = false;
+    this._fall = 0;
+    this.pitch = this.pitchVel = this.lean = this.leanVel = this.lurch = 0;
+  }
+
   /** Damage: 0 clean, 0.33 dusty, 0.66 bloodied - see src/figure/look.js. */
   setWear(value) {
     this._wear = value;

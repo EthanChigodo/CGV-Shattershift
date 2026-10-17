@@ -1576,7 +1576,10 @@ function getMeltdown() {
   meltdown.events.on("collectible", collectibleFound);
   meltdown.events.on("collectible-near", collectibleNear);
   // The ending (the helicopter, then the credits) plays over the main theme.
-  meltdown.events.on("phase", ({ phase }) => { if (phase === "finale") music.playTheme(); });
+  meltdown.events.on("phase", ({ phase }) => {
+    if (phase === "finale") music.playTheme();
+    if (phase === "roof-fall") music.gameOverDuck();
+  });
   return meltdown;
 }
 
@@ -4665,7 +4668,10 @@ function closePause() {
   ui.pause.classList.remove("active");
   paused = false;
   story.setPaused(false);
-  if (wasPaused) music.restore();
+  if (wasPaused) {
+    if (currentLevel === 3 && meltdown?.phase === "roofFall") music.gameOverDuck();
+    else music.restore();
+  }
   if (wasPaused) level1Audio.setPaused(false);
   if (wasPaused) foundryAmbience.setPaused(false);
   if (currentLevel === 3) meltdown?.setPaused(false);

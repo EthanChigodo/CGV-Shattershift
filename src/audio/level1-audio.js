@@ -44,6 +44,7 @@ export const LEVEL1_SFX_VOLUME = Object.freeze({
   player: 1.0,
   blast: 0.5,
   cue: 0.75,
+  roofFallScream: 0.9,
 });
 
 export const LEVEL1_SFX_RANGE = Object.freeze({
@@ -56,6 +57,7 @@ export const LEVEL1_SFX_RANGE = Object.freeze({
 export const LEVEL1_SFX_TIMING = Object.freeze({
   elevatorMechanicalFade: 0.35,
   elevatorMechanicalLoopOverlap: 0.75,
+  roofScreamOverlap: 0.12,
 });
 
 const url = (path) => new URL(`../../assets/audio/${path}`, import.meta.url).href;
@@ -134,6 +136,7 @@ export class Level1Audio {
     this.context = null;
     this.buffers = new Map();
     this.loads = new Map();
+    this.sustainedScreams = new Map();
     this.loopStarts = new Map();
     this.buses = null;
     this.ambient = new Map();
@@ -234,7 +237,7 @@ export class Level1Audio {
 
   async _play(name, {
     volume = LEVEL1_SFX_VOLUME[name], bus = "sfx", cooldown = 0, cooldownKey = name,
-    playbackRate = 1, offset = 0, gameplay = true, pan = 0, lowpass = 0, delay = 0,
+    playbackRate = 1, offset = 0, gameplay = true, pan = 0, lowpass = 0, delay = 0, sustain = false,
   } = {}) {
     if (!this.context || !this.buses) return null;
     const now = this.context.currentTime;
@@ -242,12 +245,19 @@ export class Level1Audio {
     if (cooldown && now - last < cooldown) return null;
     this.cooldowns.set(cooldownKey, now);
     const generation = gameplay ? this.generation : null;
-    const buffer = await this._load(name);
+    let buffer = await this._load(name);
     if (!buffer || (gameplay && generation !== this.generation)) return null;
+    const held = sustain ? this._sustainScream(name, buffer) : null;
+    if (held) buffer = held.buffer;
     const ctx = this.context;
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
     source.buffer = buffer;
+    if (held) {
+      source.loop = true;
+      source.loopStart = held.start;
+      source.loopEnd = buffer.duration;
+    }
     source.playbackRate.value = playbackRate;
     gain.gain.value = volume ?? 0.5;
     let node = source;
@@ -331,6 +341,56 @@ export class Level1Audio {
   /** Over the edge. */
   fallScream() {
     this._play(`scream-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 2 });
+  }
+
+  /** One controllable scream; a late decode cannot escape this death's lifetime. */
+  async beginRoofFall() {
+    this.stopRoofFall();
+    const shot = { channel: null, level: 1 };
+    this.roofFall = shot;
+    const channel = await this._play(`scream-${this.gender}`, { volume: 0, sustain: true });
+    if (!channel) return;
+    if (this.roofFall !== shot) { this._stop(channel); return; }
+    shot.channel = channel;
+    channel.source.playbackRate.value = this.paused ? 0 : 1;
+    this._ramp(channel.gain.gain, shot.level * LEVEL1_SFX_VOLUME.roofFallScream, 0.12);
+  }
+
+  updateRoofFall(level) {
+    const shot = this.roofFall;
+    if (!shot) return;
+    shot.level = clamp(level);
+    if (shot.channel) this._ramp(shot.channel.gain.gain, shot.level * LEVEL1_SFX_VOLUME.roofFallScream, 0.12);
+  }
+
+  stopRoofFall(seconds = 0.12) {
+    const shot = this.roofFall;
+    this.roofFall = null;
+    if (shot?.channel) this._fadeAndStop(shot.channel, seconds);
+  }
+
+  /** Preserve the attack, then sustain the voiced middle with a PCM crossfade.
+   * Originals remain untouched (other deaths use the natural one-shot). Cache
+   * at most the two character clips, never one allocation per death/frame.
+   */
+  _sustainScream(name, original) {
+    if (this.sustainedScreams.has(name)) return this.sustainedScreams.get(name);
+    const end = Math.floor(original.length * 0.88);
+    const start = Math.floor(original.length * 0.28);
+    const overlap = Math.min(Math.floor(LEVEL1_SFX_TIMING.roofScreamOverlap * original.sampleRate), Math.floor((end - start) / 4));
+    if (overlap < 2) return null;
+    const buffer = this.context.createBuffer(original.numberOfChannels, end, original.sampleRate);
+    for (let c = 0; c < original.numberOfChannels; c++) {
+      const samples = buffer.getChannelData(c);
+      samples.set(original.getChannelData(c).subarray(0, end));
+      for (let i = 0; i < overlap; i++) {
+        const k = i / (overlap - 1);
+        samples[end - overlap + i] = samples[end - overlap + i] * (1 - k) + samples[start + i] * k;
+      }
+    }
+    const held = { buffer, start: (start + overlap) / original.sampleRate };
+    this.sustainedScreams.set(name, held);
+    return held;
   }
 
   /** A breath one-shot: "pant" (out of breath), "scared" (hiding), "recover" (slowing down). */
@@ -540,6 +600,7 @@ export class Level1Audio {
 
   setPaused(paused) {
     this.paused = paused;
+    if (this.roofFall?.channel) this.roofFall.channel.source.playbackRate.value = paused ? 0 : 1;
     if (this.buses) this._ramp(this.buses.sfx.gain, paused ? 0 : 0.9, 0.12);
     this._applyAmbientTargets();
   }
@@ -552,6 +613,7 @@ export class Level1Audio {
 
   cleanupLevel() {
     this.generation += 1;
+    this.stopRoofFall();
     this.paused = false;
     this.ended = false;
     this.stopGameOver();

@@ -51,6 +51,7 @@ import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
 import { createPropKit } from "../../story/stages/props.js";
+import { createRoofFacade } from "./roof-facade.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -821,10 +822,8 @@ export class RoofLevel {
 
     // The slab, and the building falling away beneath it.
     this._box(EDGE * 2 + 0.6, 0.6, EDGE * 2 + 0.6, roofing, 0, -0.6, 0);
-    const facade = this._track(new THREE.MeshStandardMaterial({ color: 0x3a3a3c, emissive: 0xffffff, emissiveMap: windowsTexture(19, 0.12), emissiveIntensity: 0.9, roughness: 0.9 }));
+    const facade = this._track(createRoofFacade());
     // All the way down, into the haze (the city's streets are 160 m below).
-    facade.emissiveMap.repeat.set(3, 26);
-    this.owned.textures.push(facade.emissiveMap);
     this._box(EDGE * 2 - 0.2, 300, EDGE * 2 - 0.2, facade, 0, -300.6, 0);
 
     // Parapets north and south; the east and west ones have collapsed.
@@ -1403,6 +1402,14 @@ export class RoofLevel {
   groundAt(p) {
     if (this.overHatch(p)) return null;
     return Math.abs(p.x) <= EDGE && Math.abs(p.z) <= EDGE ? 0 : null;
+  }
+
+  /** Actual outer footprint, not a hatch, proximity radius or fall height. */
+  exteriorAt(p) {
+    if (Math.abs(p.x) <= EDGE && Math.abs(p.z) <= EDGE) return null;
+    return Math.abs(p.x) - EDGE >= Math.abs(p.z) - EDGE
+      ? { normal: new THREE.Vector3(Math.sign(p.x), 0, 0), edge: EDGE }
+      : { normal: new THREE.Vector3(0, 0, Math.sign(p.z)), edge: EDGE };
   }
 
   /**
