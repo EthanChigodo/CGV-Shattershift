@@ -77,7 +77,7 @@ const CREDIT_WINDOW = 4;
 
 /** Aim: how far an un-targeted stick shot goes, and the assist's cones (radians) and reach. */
 const STICK_AIM = 11;
-const ASSIST_STICK = 0.22;
+const ASSIST_STICK = 0.3;
 const ASSIST_KEYS = 0.62;
 const ASSIST_RANGE = 24;
 const AIM_FAR = 60;
@@ -568,13 +568,15 @@ export class VersusMatch {
       if (_v.lengthSq() > 0.6) p.aimDir.copy(_v.normalize());
     } else {
       p.reticle = null;
-      let dir = null;
       let cone = ASSIST_KEYS;
       if (intent?.aimStick) {
-        dir = _v.set(intent.aimStick.x, 0, -intent.aimStick.y).normalize();
+        // Twin-stick: the aim is the stick, at once.
+        p.aimDir.set(intent.aimStick.x, 0, -intent.aimStick.y).normalize();
         cone = ASSIST_STICK;
-      } else if (p.velocity.lengthSq() > 1.2) dir = _v.copy(p.velocity).setY(0).normalize();
-      if (dir) p.aimDir.lerp(dir, 1 - Math.exp(-dt * 20)).normalize();
+      } else if (p.velocity.lengthSq() > 1.2) {
+        // No stick: the way they move (turning smoothly).
+        p.aimDir.lerp(_v.copy(p.velocity).setY(0).normalize(), 1 - Math.exp(-dt * 20)).normalize();
+      }
       const target = this._assist(p, p.aimDir, cone);
       p.hot = Boolean(target);
       if (target) {
@@ -635,6 +637,9 @@ export class VersusMatch {
     p.spheres -= cost;
     const count = p.arsenal.isActive("prism") ? 3 : 1;
     p.stats.shots += count;
+    // The body where they are now (it is posed after this), so the shot leaves the launcher.
+    p.avatar.root.position.copy(p.position);
+    p.avatar.root.rotation.y = p.yaw;
     const muzzle = p.muzzle(_a);
     const fire = _w.subVectors(p.aim, muzzle).normalize();
     const flight = p.aim.distanceTo(muzzle) / def.speed;

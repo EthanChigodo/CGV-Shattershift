@@ -1,0 +1,316 @@
+/*
+ * Rooftop Showdown (src/versus/): the split-screen HUD, its cards, and the
+ * lobby. Loaded by hud.js. Built on the game's tokens (src/ui/theme.css):
+ * bone-and-ink specimen tags, P1 in hazard red, P2 in glass cyan, caution
+ * stripes on the seam between the halves.
+ */
+
+.vs-hud, .vs-lobby {
+  --p1: var(--hazard, #ff3b1f);
+  --p2: var(--glass, #7ff3ff);
+  --vs-bone: var(--bone, #ece6da);
+  --vs-ink: var(--ink, #0d0e10);
+  font-family: var(--font-mono, monospace);
+  color: var(--vs-bone);
+}
+.vs-p1, .vs-team-1, [data-team="0"] { --team: var(--p1); }
+.vs-p2, .vs-team-2, [data-team="1"] { --team: var(--p2); }
+
+/* While a match is up, the single-player chrome steps aside. */
+body.vs-running .topbar, body.vs-running #hud, body.vs-running .reticle:not(.vs-reticle),
+body.vs-running .sphere-wheel, body.vs-running .message, body.vs-running .cw-ui,
+html[data-versus="on"] .powerup-banner { display: none !important; }
+body.vs-active .screen.active { display: none; }
+body.vs-aiming, body.vs-aiming #game { cursor: none; }
+body.vs-aiming button { cursor: pointer; }
+
+/* ---------------------------------------------------------------------- */
+/* The HUD                                                                  */
+/* ---------------------------------------------------------------------- */
+
+.vs-hud { position: fixed; inset: 0; z-index: 7; pointer-events: none; overflow: hidden; }
+.vs-hud[hidden] { display: none; }
+.vs-view { position: absolute; overflow: hidden; }
+.vs-layout-v .vs-view { top: 0; bottom: 0; width: calc(50% - 2px); }
+.vs-layout-v .vs-p1 { left: 0; }
+.vs-layout-v .vs-p2 { right: 0; }
+.vs-layout-h .vs-view { left: 0; right: 0; height: calc(50% - 2px); }
+.vs-layout-h .vs-p1 { top: 0; }
+.vs-layout-h .vs-p2 { bottom: 0; }
+.vs-layout-single .vs-view, .vs-layout-single .vs-seam, .vs-layout-single .vs-centre { display: none; }
+
+/* The seam: hazard stripes between the halves. */
+.vs-seam { position: absolute; background: repeating-linear-gradient(-45deg, var(--caution, #ffc21a) 0 6px, var(--vs-ink) 6px 12px); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.vs-layout-v .vs-seam { top: 0; bottom: 0; left: calc(50% - 2px); width: 4px; }
+.vs-layout-h .vs-seam { left: 0; right: 0; top: calc(50% - 2px); height: 4px; }
+
+/* Who: the specimen tag, top left of each half. */
+.vs-plate {
+  position: absolute; top: 14px; left: 14px; display: flex; align-items: center; gap: 10px;
+  padding: 6px 22px 6px 6px; background: var(--vs-bone); color: var(--vs-ink);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  box-shadow: inset 4px 0 0 var(--team);
+}
+.vs-chip {
+  display: grid; place-items: center; min-width: 44px; height: 40px; padding: 0 6px; background: var(--team); color: var(--vs-ink);
+  font-family: var(--font-stencil, var(--font-display, sans-serif)); font-weight: 900; font-size: 30px; letter-spacing: 0.02em; line-height: 1;
+}
+.vs-id { display: grid; gap: 2px; }
+.vs-id strong { font-family: var(--font-display, sans-serif); font-weight: 800; font-size: 18px; letter-spacing: 0.06em; line-height: 1; }
+.vs-device { font-size: 9px; color: #5b5a55; }
+.vs-pips { display: flex; gap: 5px; margin: 0 0 0 6px; padding: 0; list-style: none; }
+.vs-pips li { width: 12px; height: 12px; border: 2px solid var(--vs-ink); transform: rotate(45deg); }
+.vs-pips li.won { background: var(--team); border-color: var(--vs-ink); box-shadow: 0 0 0 1px var(--team); }
+
+/* Integrity and spheres, bottom left. */
+.vs-vitals { position: absolute; left: 14px; bottom: 16px; width: min(240px, 42%); }
+.vs-vitals-top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); }
+.vs-vitals-top strong { font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 30px; line-height: 0.9; }
+.vs-bar { height: 10px; background: rgba(13, 14, 16, 0.75); border: 1px solid rgba(236, 230, 218, 0.35); overflow: hidden; }
+.vs-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 60%, white)); transform-origin: left; transition: transform 0.18s var(--ease-out, ease-out); }
+.vs-vitals.low .vs-bar i { background: var(--hazard, #ff3b1f); animation: vs-blink 0.6s steps(2) infinite; }
+.vs-vitals.low strong { color: var(--hazard, #ff3b1f); }
+
+.vs-ammo { position: absolute; left: 14px; bottom: 66px; display: flex; align-items: flex-end; gap: 10px; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); }
+.vs-spheres { font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 46px; line-height: 0.85; }
+.vs-ammo-side { display: grid; gap: 4px; padding-bottom: 2px; }
+.vs-ball { display: inline-block; padding: 3px 8px; background: rgba(13, 14, 16, 0.78); border-left: 3px solid var(--ball, #d9fbff); font-size: 10px; font-weight: 800; letter-spacing: 0.12em; }
+.vs-ball[data-ball="glass"] { --ball: #d9fbff; }
+.vs-ball[data-ball="cryo"] { --ball: #7fe9ff; }
+.vs-ball[data-ball="shock"] { --ball: #c77dff; }
+.vs-ball[data-ball="gravity"] { --ball: #7a5cff; }
+.vs-dry .vs-spheres { color: var(--hazard, #ff3b1f); }
+.vs-serums { display: grid; gap: 3px; padding-bottom: 2px; }
+.vs-serum { padding: 2px 6px; font-size: 9px; font-weight: 800; letter-spacing: 0.1em; color: var(--vs-ink); background: var(--serum); }
+
+/* The kill feed, bottom right. */
+.vs-feed { position: absolute; right: 14px; bottom: 14px; display: grid; justify-items: end; gap: 4px; margin: 0; padding: 0; list-style: none; max-width: 60%; }
+.vs-feed li { padding: 4px 9px; background: rgba(13, 14, 16, 0.8); border-right: 3px solid rgba(236, 230, 218, 0.5); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; white-space: nowrap; animation: vs-in 0.22s var(--ease-out, ease-out); }
+.vs-feed .vs-feed-kill { border-color: var(--team); }
+.vs-feed .vs-feed-hit { border-color: var(--caution, #ffc21a); }
+.vs-feed .vs-feed-warn, .vs-feed .vs-feed-loss { border-color: var(--hazard, #ff3b1f); color: #ffd2c8; }
+.vs-feed .vs-feed-alert { background: var(--hazard, #ff3b1f); color: var(--vs-ink); border-color: var(--vs-ink); }
+.vs-feed .vs-feed-power, .vs-feed .vs-feed-good { border-color: var(--ok, #2fd07a); }
+.vs-feed .vs-feed-win { background: var(--team); color: var(--vs-ink); }
+
+/* A banner across the top of a half: a wave, the helicopter, a knock-off. */
+.vs-flash { position: absolute; top: 74px; left: 50%; transform: translate(-50%, -8px); display: grid; justify-items: center; gap: 4px; opacity: 0; text-align: center; width: max-content; max-width: 92%; }
+.vs-flash.on { animation: vs-flash 2.6s var(--ease-out, ease-out) forwards; }
+.vs-flash b { padding: 6px 14px; background: var(--vs-bone); color: var(--vs-ink); font-family: var(--font-display, sans-serif); font-weight: 900; font-size: clamp(16px, 2.2vw, 26px); letter-spacing: 0.06em; box-shadow: inset 0 -4px 0 var(--team, var(--caution, #ffc21a)); }
+.vs-flash[data-team=""] b { box-shadow: inset 0 -4px 0 var(--caution, #ffc21a); }
+.vs-flash small { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-shadow: 0 1px 6px #000; }
+.vs-flash small:empty { display: none; }
+
+/* Their state, mid-half. */
+.vs-status { position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 6px; opacity: 0; transition: opacity 0.15s; }
+.vs-status.on { opacity: 1; }
+.vs-status b { font-family: var(--font-stencil, var(--font-display, sans-serif)); font-weight: 900; font-size: clamp(30px, 5vw, 64px); letter-spacing: 0.04em; color: var(--vs-bone); text-shadow: 0 0 24px rgba(0, 0, 0, 0.9), 0 0 2px #000; }
+.vs-status small { font-size: 12px; font-weight: 800; letter-spacing: 0.2em; padding: 4px 10px; background: var(--team); color: var(--vs-ink); }
+.vs-status small:empty { display: none; }
+
+/* The prompt for now: jump for the ladder, mash to climb, knock them off. */
+.vs-prompt { position: absolute; left: 50%; bottom: 20%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: rgba(13, 14, 16, 0.86); border: 1px solid rgba(236, 230, 218, 0.25); font-size: 12px; font-weight: 800; letter-spacing: 0.14em; white-space: nowrap; opacity: 0; transition: opacity 0.12s; }
+.vs-prompt.on { opacity: 1; }
+.vs-prompt .key { color: var(--team); }
+.vs-prompt.mash .key { animation: vs-mash 0.22s steps(2) infinite; }
+.vs-prompt.alert { background: var(--hazard, #ff3b1f); color: var(--vs-ink); border-color: var(--vs-ink); animation: vs-blink 0.8s steps(2) infinite; }
+
+/* Markers: the helicopter's ladder and the rival, arrows at the edge when off screen. */
+.vs-marker { position: absolute; display: none; transform: translate(-50%, -50%); text-align: center; }
+.vs-marker.on { display: grid; justify-items: center; gap: 2px; }
+.vs-marker b { padding: 2px 7px; font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 14px; letter-spacing: 0.06em; background: var(--vs-ink); color: var(--team, var(--p2)); border: 1px solid currentColor; }
+.vs-marker small { font-size: 9px; font-weight: 800; text-shadow: 0 1px 4px #000; }
+.vs-marker-heli { --team: var(--caution, #ffc21a); }
+.vs-marker-heli:not(.vs-edge) { animation: vs-bob 1s ease-in-out infinite; }
+.vs-marker .vs-arrow { display: none; width: 0; height: 0; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 16px solid var(--team, var(--p2)); filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.8)); }
+.vs-marker.vs-edge .vs-arrow { display: block; margin-bottom: 2px; }
+
+/* The mouse player's crosshair. */
+.vs-reticle { position: absolute; left: 0; top: 0; width: 30px; height: 30px; margin: -15px 0 0 -15px; }
+.vs-reticle::before, .vs-reticle::after, .vs-reticle i::before, .vs-reticle i::after { content: ""; position: absolute; background: var(--team); box-shadow: 0 0 6px rgba(0, 0, 0, 0.8); }
+.vs-reticle::before { width: 9px; height: 2px; left: 0; top: 14px; }
+.vs-reticle::after { width: 9px; height: 2px; right: 0; top: 14px; }
+.vs-reticle i::before { width: 2px; height: 9px; left: 14px; top: 0; }
+.vs-reticle i::after { width: 2px; height: 9px; left: 14px; bottom: 0; }
+.vs-reticle b { position: absolute; width: 4px; height: 4px; left: 13px; top: 13px; border-radius: 50%; background: var(--vs-bone); }
+.vs-reticle.hot b { background: var(--hazard, #ff3b1f); box-shadow: 0 0 10px var(--hazard, #ff3b1f); }
+
+/* The round's card: ROUND n, then FIGHT. */
+.vs-intro { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; pointer-events: none; opacity: 0; }
+.vs-intro.vs-run { animation: vs-intro 3.4s linear forwards; }
+.vs-intro-round { padding: 10px 26px; background: var(--vs-bone); color: var(--vs-ink); font-family: var(--font-stencil, var(--font-display, sans-serif)); font-weight: 900; font-size: clamp(36px, 6vw, 84px); letter-spacing: 0.04em; line-height: 1; box-shadow: inset 0 -8px 0 var(--team); animation: vs-slam 3.4s var(--ease-out, ease-out) forwards; }
+.vs-intro-word { font-family: var(--font-stencil, var(--font-display, sans-serif)); font-weight: 900; font-size: clamp(48px, 9vw, 130px); line-height: 0.9; color: var(--team); text-shadow: 0 0 30px rgba(0, 0, 0, 0.8); opacity: 0; animation: vs-fight 3.4s var(--ease-out, ease-out) forwards; }
+.vs-intro-sub { padding: 4px 10px; background: rgba(13, 14, 16, 0.85); }
+.vs-intro.vs-run::before { content: ""; position: absolute; inset: 40% -10%; background: repeating-linear-gradient(-45deg, var(--caution, #ffc21a) 0 16px, var(--vs-ink) 16px 32px); opacity: 0.85; z-index: -1; transform: scaleY(0); animation: vs-band 3.4s var(--ease-out, ease-out) forwards; }
+
+/* The round's result. */
+.vs-result { position: absolute; inset: 0; display: none; place-content: center; justify-items: center; gap: 10px; background: radial-gradient(ellipse at center, rgba(13, 14, 16, 0.2), rgba(13, 14, 16, 0.65)); }
+.vs-show-result .vs-result { display: grid; animation: vs-in 0.4s var(--ease-out, ease-out); }
+.vs-result-word { padding: 10px 24px; font-family: var(--font-stencil, var(--font-display, sans-serif)); font-weight: 900; font-size: clamp(36px, 6vw, 88px); letter-spacing: 0.04em; line-height: 1; background: var(--vs-ink); color: var(--hazard, #ff3b1f); border: 3px solid currentColor; }
+.vs-won .vs-result-word { background: var(--team); color: var(--vs-ink); border-color: var(--vs-ink); }
+.vs-result-sub { padding: 4px 10px; background: rgba(13, 14, 16, 0.85); }
+
+/* Over the seam: the score, the helicopter's clock, the climb. */
+.vs-centre { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: grid; justify-items: center; gap: 6px; }
+.vs-layout-h .vs-centre { top: 50%; left: auto; right: 14px; transform: translateY(-50%); justify-items: end; }
+.vs-score { display: flex; align-items: stretch; background: var(--vs-ink); border: 1px solid rgba(236, 230, 218, 0.3); }
+.vs-score b { display: grid; place-items: center; min-width: 34px; font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 24px; color: var(--vs-ink); }
+.vs-s1 { background: var(--p1); }
+.vs-s2 { background: var(--p2); }
+.vs-round { display: grid; place-items: center; padding: 0 10px; }
+.vs-heli { position: relative; display: flex; align-items: baseline; gap: 8px; padding: 4px 10px; background: rgba(13, 14, 16, 0.86); border-left: 3px solid var(--caution, #ffc21a); }
+.vs-heli-time { font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 20px; line-height: 1; }
+.vs-heli-close .vs-heli { background: var(--caution, #ffc21a); color: var(--vs-ink); border-color: var(--vs-ink); }
+.vs-shaves { position: absolute; right: -6px; top: 0; }
+.vs-shave { position: absolute; right: 0; top: 0; transform: translateX(100%); font-weight: 900; font-size: 13px; animation: vs-shave 1.2s var(--ease-out, ease-out) forwards; text-shadow: 0 1px 4px #000; }
+.vs-shave-1 { color: var(--p1); }
+.vs-shave-2 { color: var(--p2); }
+.vs-climb { display: grid; justify-items: center; gap: 4px; padding: 6px 10px; background: rgba(13, 14, 16, 0.9); border: 1px solid var(--team); animation: vs-in 0.2s var(--ease-out, ease-out); }
+.vs-climb[hidden] { display: none; }
+.vs-climb-label { color: var(--team); }
+.vs-climb-bar { width: 160px; height: 8px; background: rgba(236, 230, 218, 0.15); }
+.vs-climb-bar i { display: block; height: 100%; background: var(--team); transform-origin: left; }
+
+.vs-fade { position: absolute; inset: 0; background: #000; opacity: 0; }
+
+/* ---------------------------------------------------------------------- */
+/* Cards: pause, loading, the winner                                        */
+/* ---------------------------------------------------------------------- */
+
+.vs-card, .vs-loading {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, 90vw); padding: 26px 28px 24px;
+  background: var(--vs-bone); color: var(--vs-ink); pointer-events: auto; text-align: left;
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+  box-shadow: inset 0 6px 0 var(--caution, #ffc21a);
+}
+.vs-card[hidden], .vs-loading[hidden], .vs-winner[hidden] { display: none; }
+.vs-card h2, .vs-loading h2 { margin: 6px 0 18px; font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 38px; letter-spacing: 0.02em; line-height: 1; text-transform: uppercase; }
+.vs-loading { box-shadow: inset 0 6px 0 var(--hazard, #ff3b1f); }
+.vs-load-bar { height: 10px; background: var(--bone-2, #d8cfbf); margin-bottom: 10px; }
+.vs-load-bar i { display: block; height: 100%; background: var(--vs-ink); transform-origin: left; transition: transform 0.3s; }
+
+.vs-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.vs-button {
+  display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border: 2px solid var(--vs-ink); background: transparent; color: var(--vs-ink);
+  font-family: var(--font-display, sans-serif); font-weight: 800; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+}
+.vs-button:hover, .vs-button:focus-visible { background: var(--vs-ink); color: var(--vs-bone); outline: none; }
+.vs-button.primary { background: var(--hazard, #ff3b1f); }
+.vs-button.primary:hover, .vs-button.primary:focus-visible { background: var(--vs-ink); color: var(--hazard, #ff3b1f); }
+.vs-button .key { font-size: 11px; }
+
+.vs-winner { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; pointer-events: auto; background: linear-gradient(90deg, rgba(13, 14, 16, 0.92) 0%, rgba(13, 14, 16, 0.7) 46%, rgba(13, 14, 16, 0) 72%); justify-content: start; }
+.vs-winner-card { width: min(560px, 92vw); padding: 0 0 0 clamp(8px, 4vw, 56px); color: var(--vs-bone); animation: vs-in 0.6s var(--ease-out, ease-out); }
+.vs-winner-title { margin: 6px 0 4px; font-family: var(--font-stencil, var(--font-display, sans-serif)); font-weight: 900; font-size: clamp(56px, 9vw, 120px); line-height: 0.88; letter-spacing: 0.01em; }
+.vs-winner-title span { color: var(--team); }
+.vs-winner-sub { margin: 0 0 18px; font-family: var(--font-display, sans-serif); font-weight: 600; font-size: 18px; color: #c8c1b3; }
+.vs-stats { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: var(--vs-bone); color: var(--vs-ink); font-size: 12px; }
+.vs-stats th, .vs-stats td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--bone-2, #d8cfbf); }
+.vs-stats th:first-child, .vs-stats td:first-child { text-align: left; font-weight: 600; letter-spacing: 0.04em; }
+.vs-stats thead th { background: var(--vs-ink); color: var(--vs-bone); border: 0; }
+.vs-stats thead th b { display: block; font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 20px; }
+.vs-stats thead th small { font-size: 9px; color: var(--ash, #8f8a80); letter-spacing: 0.08em; }
+.vs-stats thead .vs-col-1 b { color: var(--p1); }
+.vs-stats thead .vs-col-2 b { color: var(--p2); }
+.vs-stats td.best { font-weight: 800; box-shadow: inset 3px 0 0 var(--col); }
+.vs-stats td.vs-col-1 { --col: var(--p1); }
+.vs-stats td.vs-col-2 { --col: #1aa9b8; }
+.vs-winner .vs-button { color: var(--vs-bone); border-color: var(--vs-bone); }
+.vs-winner .vs-button:hover, .vs-winner .vs-button:focus-visible { background: var(--vs-bone); color: var(--vs-ink); }
+.vs-winner .vs-button.primary { background: var(--team); color: var(--vs-ink); border-color: var(--team); }
+
+/* ---------------------------------------------------------------------- */
+/* The lobby                                                                */
+/* ---------------------------------------------------------------------- */
+
+.vs-lobby {
+  position: fixed; inset: 0; z-index: 9; overflow-y: auto; padding: 28px 24px;
+  background:
+    linear-gradient(180deg, rgba(13, 14, 16, 0.78), rgba(13, 14, 16, 0.94)),
+    repeating-linear-gradient(-45deg, rgba(255, 194, 26, 0.05) 0 2px, transparent 2px 14px);
+}
+.vs-lobby[hidden] { display: none; }
+.vs-lobby-inner { width: min(1060px, 100%); margin: 0 auto; display: grid; gap: 22px; }
+.vs-lobby-head { display: grid; gap: 8px; }
+.vs-lobby-title { margin: 0; font-family: var(--font-stencil, var(--font-display, sans-serif)); font-weight: 900; font-size: clamp(48px, 8vw, 104px); line-height: 0.86; letter-spacing: 0.01em; }
+.vs-lobby-title span { display: block; color: var(--hazard, #ff3b1f); }
+.vs-lobby-pitch { max-width: 640px; margin: 0; font-family: var(--font-display, sans-serif); font-weight: 600; font-size: 18px; line-height: 1.3; color: #cfc8ba; }
+
+.vs-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 760px) { .vs-slots { grid-template-columns: 1fr; } }
+.vs-slot {
+  position: relative; min-height: 290px; padding: 16px 18px 18px; background: rgba(13, 14, 16, 0.7);
+  border: 2px dashed rgba(236, 230, 218, 0.28); display: grid; grid-template-rows: auto 1fr; gap: 14px;
+}
+.vs-slot.joined { background: var(--vs-bone); color: var(--vs-ink); border: 0; clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); box-shadow: inset 6px 0 0 var(--team); }
+.vs-slot.ready { box-shadow: inset 6px 0 0 var(--team), inset 0 0 0 4px var(--team); }
+.vs-slot-head { display: flex; align-items: center; gap: 10px; }
+.vs-slot-state { margin-left: auto; padding: 3px 8px; border: 1px solid currentColor; }
+.vs-slot.ready .vs-slot-state { background: var(--team); color: var(--vs-ink); border-color: var(--team); }
+.vs-slot-body { display: grid; align-content: start; gap: 12px; }
+.vs-slot-open { place-content: center; justify-items: center; text-align: center; }
+.vs-join { margin: 0; font-family: var(--font-display, sans-serif); font-weight: 800; font-size: 24px; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.35; animation: vs-pulse 1.6s ease-in-out infinite; }
+.vs-join .key { color: var(--team); }
+.vs-join-alt { margin: 0; font-size: 11px; letter-spacing: 0.08em; color: #b9b2a4; }
+.vs-slot-open .vs-button { color: var(--vs-bone); border-color: rgba(236, 230, 218, 0.5); font-size: 13px; }
+.vs-slot-open .vs-button:hover { background: var(--vs-bone); color: var(--vs-ink); }
+.vs-slot-device { display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--font-display, sans-serif); font-weight: 800; font-size: 20px; letter-spacing: 0.04em; text-transform: uppercase; }
+.vs-device-icon { width: 30px; height: 18px; border: 2px solid var(--vs-ink); border-radius: 9px; position: relative; }
+.vs-device-icon.keys { border-radius: 3px; background: repeating-linear-gradient(90deg, transparent 0 5px, var(--vs-ink) 5px 6px); }
+.vs-subject { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; text-align: center; background: var(--vs-ink); color: var(--vs-bone); }
+.vs-subject button { height: 52px; border: 0; background: transparent; color: var(--team); font-size: 18px; cursor: pointer; }
+.vs-subject button:hover { background: var(--team); color: var(--vs-ink); }
+.vs-subject strong { display: block; font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 26px; letter-spacing: 0.06em; color: var(--team); }
+.vs-legend { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0; align-items: center; font-size: 11px; }
+.vs-legend dt { justify-self: start; }
+.vs-legend dd { margin: 0; letter-spacing: 0.04em; }
+.vs-slot-actions { display: flex; gap: 10px; }
+.vs-slot .vs-button.primary { background: var(--team); }
+.vs-slot.ready .vs-button.primary { background: var(--vs-ink); color: var(--team); }
+
+.vs-options { display: flex; flex-wrap: wrap; gap: 14px 26px; }
+.vs-option { display: flex; align-items: center; gap: 10px; }
+.vs-seg { display: flex; border: 1px solid rgba(236, 230, 218, 0.4); }
+.vs-seg button { padding: 8px 12px; border: 0; background: transparent; color: var(--vs-bone); font-family: var(--font-display, sans-serif); font-weight: 800; font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.vs-seg button.on { background: var(--vs-bone); color: var(--vs-ink); }
+.vs-option .key { color: #b9b2a4; }
+.vs-lobby-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.vs-lobby-foot .vs-button { color: var(--vs-bone); border-color: rgba(236, 230, 218, 0.5); }
+.vs-lobby-foot .vs-button:hover { background: var(--vs-bone); color: var(--vs-ink); }
+.vs-pads { color: #b9b2a4; }
+.vs-go { margin-left: auto; padding: 8px 14px; font-family: var(--font-display, sans-serif); font-weight: 900; font-size: 20px; letter-spacing: 0.06em; border: 2px solid rgba(236, 230, 218, 0.3); }
+.vs-go.on { background: var(--caution, #ffc21a); color: var(--vs-ink); border-color: var(--caution, #ffc21a); animation: vs-pulse 1s ease-in-out infinite; }
+
+/* ---------------------------------------------------------------------- */
+
+@keyframes vs-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes vs-blink { 50% { opacity: 0.45; } }
+@keyframes vs-pulse { 50% { opacity: 0.6; } }
+@keyframes vs-mash { 50% { transform: translateY(2px) scale(0.92); } }
+@keyframes vs-bob { 50% { transform: translate(-50%, calc(-50% - 5px)); } }
+@keyframes vs-flash {
+  0% { opacity: 0; transform: translate(-50%, -10px); }
+  8% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -6px); }
+}
+@keyframes vs-shave { from { opacity: 1; transform: translate(100%, 0); } to { opacity: 0; transform: translate(100%, -18px); } }
+@keyframes vs-intro { 0% { opacity: 1; } 88% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes vs-slam {
+  0% { opacity: 0; transform: scale(1.6); }
+  10% { opacity: 1; transform: scale(1); }
+  45% { opacity: 1; transform: scale(1); }
+  55% { opacity: 0; transform: scale(0.9); }
+  100% { opacity: 0; }
+}
+@keyframes vs-fight {
+  0%, 50% { opacity: 0; transform: scale(1.8); }
+  58% { opacity: 1; transform: scale(1); }
+  92% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 0; transform: scale(1.1); }
+}
+@keyframes vs-band { 0% { transform: scaleY(0); } 8% { transform: scaleY(1); } 88% { transform: scaleY(1); } 100% { transform: scaleY(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .vs-intro-round, .vs-intro-word, .vs-intro.vs-run::before, .vs-prompt.mash .key, .vs-join, .vs-go.on, .vs-marker-heli { animation-duration: 0.01s; }
+}

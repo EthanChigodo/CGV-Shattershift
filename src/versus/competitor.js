@@ -360,6 +360,8 @@ export class Competitor {
 
     this.tag.visible = this.state !== "gone" && this.state !== "out";
     this.tag.position.copy(this.position).setY(this.position.y + 2.55);
+    // The hurtbox is hit-tested before the next draw would update it.
+    a.root.updateMatrixWorld(true);
   }
 
   /** Where the launcher's muzzle is, in the world. */
