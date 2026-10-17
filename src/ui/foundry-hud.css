@@ -625,3 +625,54 @@
 @media (max-width: 650px) {
   .fdy-systems { display: none; }
 }
+
+/* ---- The game's look (src/ui/theme.css): bone labels on ink ------------- */
+.foundry-ui {
+  --fdy-amber: var(--caution, #ffc21a);
+  --fdy-red: var(--hazard, #ff3b1f);
+  --fdy-cyan: var(--glass, #7ff3ff);
+  --fdy-ink: var(--ink, #0d0e10);
+  --fdy-panel: rgba(13, 14, 16, 0.86);
+  --fdy-line: rgba(236, 230, 218, 0.22);
+  font-family: var(--font-body, system-ui, sans-serif);
+  color: var(--bone, #ece6da);
+}
+.fdy-banner span {
+  display: inline-block; padding: 4px 9px 3px; background: var(--bone, #ece6da); color: var(--ink, #0d0e10);
+  font-family: var(--font-mono, monospace); font-size: 9px; font-weight: 800; letter-spacing: 0.22em;
+}
+.fdy-banner strong { font-family: var(--font-display, sans-serif); font-size: clamp(34px, 4.4vw, 58px); font-weight: 900; line-height: 0.95; letter-spacing: 0.02em; text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55); }
+.fdy-banner i { width: 160px; height: 6px; background: repeating-linear-gradient(-45deg, var(--fdy-amber) 0 6px, var(--ink, #0d0e10) 6px 12px); }
+/* The route out: an ink checklist under the vitals. */
+.fdy-systems { padding: 0 0 10px; background: var(--fdy-panel); border: 0; backdrop-filter: none; }
+.fdy-systems > span {
+  padding: 6px 12px 5px; background: var(--bone, #ece6da); color: var(--ink, #0d0e10);
+  font-family: var(--font-mono, monospace); font-size: 9.5px; font-weight: 800; letter-spacing: 0.18em;
+}
+.fdy-system { margin: 8px 12px 0; font-family: var(--font-display, sans-serif); font-size: 18px; font-weight: 800; letter-spacing: 0.03em; color: rgba(236, 230, 218, 0.55); }
+.fdy-system i { width: 13px; height: 13px; border: 2px solid currentColor; transform: none; }
+.fdy-system.online { color: var(--bone, #ece6da); text-decoration: line-through; text-decoration-color: var(--fdy-red); }
+.fdy-system.online i { background: var(--fdy-red); border-color: var(--fdy-red); box-shadow: none; }
+/* What to shoot next: a printed tag. */
+.fdy-prompt { padding: 6px 12px 6px 10px; background: var(--bone, #ece6da); color: var(--ink, #0d0e10); border: 0; border-left: 6px solid var(--fdy-cyan); }
+.fdy-prompt b { font-family: var(--font-display, sans-serif); font-size: 19px; font-weight: 900; letter-spacing: 0.03em; color: var(--ink, #0d0e10); }
+.fdy-prompt small { font-family: var(--font-mono, monospace); font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; color: #4b4840; }
+.fdy-prompt i { background: var(--ink, #0d0e10); }
+.fdy-escape { background: var(--ink, #0d0e10); border: 0; border-top: 6px solid transparent; border-image: repeating-linear-gradient(-45deg, var(--fdy-red) 0 8px, var(--ink, #0d0e10) 8px 16px) 6; }
+.fdy-escape header { font-family: var(--font-mono, monospace); }
+.fdy-escape header b { font-family: var(--font-display, sans-serif); font-size: 26px; }
+.fdy-escape .fdy-fill { background: var(--fdy-red); }
+/* The old stat strip (the unified HUD replaces it) and toasts: label tape. */
+.fdy-run { background: rgba(13, 14, 16, 0.86); border: 0; border-top: 3px solid var(--bone, #ece6da); backdrop-filter: none; }
+.fdy-stat { background: transparent; }
+.fdy-stat span { font-family: var(--font-mono, monospace); color: #b3ac9f; }
+.fdy-stat strong { font-family: var(--font-display, sans-serif); }
+.fdy-toast {
+  padding: 6px 12px 5px; background: var(--ink, #0d0e10); border: 0; transform: rotate(-1deg);
+  font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 800; letter-spacing: 0.14em;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.14) inset, 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+.fdy-toast b { color: var(--fdy-cyan); }
+.fdy-integrity { font-family: var(--font-mono, monospace); }
+.fdy-integrity .fdy-fill { background: var(--bone, #ece6da); }
+.fdy-dev { font-family: var(--font-mono, monospace); background: rgba(13, 14, 16, 0.86); border: 0; }

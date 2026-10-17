@@ -441,3 +441,51 @@ body.mlt-active #reticle { display: none !important; }
   .mlt-vitals { top: 66px; left: 12px; }
   .mlt-stat.vitality { min-width: 150px; }
 }
+
+/* ---- The game's look (src/ui/theme.css): bone labels on ink ------------- */
+.meltdown-ui {
+  --mlt-red: var(--hazard, #ff3b1f);
+  --mlt-amber: var(--caution, #ffc21a);
+  --mlt-panel: rgba(13, 14, 16, 0.86);
+  --mlt-line: rgba(236, 230, 218, 0.22);
+  font-family: var(--font-body, system-ui, sans-serif);
+  color: var(--bone, #ece6da);
+}
+.mlt-banner span {
+  display: inline-block; padding: 4px 9px 3px; background: var(--bone, #ece6da); color: var(--ink, #0d0e10);
+  font-family: var(--font-mono, monospace); font-size: 9px; font-weight: 800; letter-spacing: 0.22em;
+}
+.mlt-banner strong { font-family: var(--font-display, sans-serif); font-size: clamp(34px, 4.4vw, 58px); font-weight: 900; line-height: 0.95; letter-spacing: 0.02em; text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55); }
+.mlt-vitals { background: rgba(13, 14, 16, 0.86); border: 0; border-top: 3px solid var(--bone, #ece6da); backdrop-filter: none; }
+.mlt-stat { background: transparent; }
+.mlt-stat span { font-family: var(--font-mono, monospace); color: #b3ac9f; }
+.mlt-stat strong { font-family: var(--font-display, sans-serif); font-size: 26px; }
+.mlt-stat.vitality .mlt-fill { background: var(--bone, #ece6da); }
+.mlt-toast {
+  padding: 6px 12px 5px; background: var(--ink, #0d0e10); border: 0; transform: rotate(-1deg);
+  font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 800; letter-spacing: 0.14em;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.14) inset, 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+.mlt-toast.warn { color: var(--mlt-red); }
+.mlt-toast.power { color: var(--mlt-amber); }
+/* A prompt you must act on now: hazard-striped. */
+.mlt-prompt {
+  padding: 8px 16px 7px; background: var(--ink, #0d0e10); color: var(--mlt-amber);
+  border: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+  border-image: repeating-linear-gradient(-45deg, var(--mlt-amber) 0 7px, var(--ink, #0d0e10) 7px 14px) 5;
+  font-family: var(--font-display, sans-serif); font-size: 22px; font-weight: 900; letter-spacing: 0.04em;
+}
+.mlt-credits-card { background: var(--grain, none), var(--bone, #ece6da); color: var(--ink, #0d0e10); border: 0; }
+.mlt-credits h2 { font-family: var(--font-display, sans-serif); font-size: 26px; letter-spacing: 0.02em; color: var(--ink, #0d0e10); }
+.mlt-credits li span, .mlt-credits p, .mlt-credits small { color: #5c574d; }
+.mlt-credits a { color: #1f5d8a; }
+.reticle.mlt-reticle.weak::before, .reticle.mlt-reticle.weak::after,
+.reticle.mlt-reticle.weak i::before, .reticle.mlt-reticle.weak i::after { background: var(--mlt-amber); }
+.reticle.mlt-reticle.overheated::before, .reticle.mlt-reticle.overheated::after,
+.reticle.mlt-reticle.overheated i::before, .reticle.mlt-reticle.overheated i::after { background: var(--mlt-red); }
+/* The roof's tactical map (meltdown/roof-map.js): a bone label over the view. */
+html .roof-map { font-family: var(--font-mono, monospace); color: var(--bone, #ece6da); }
+html .roof-map header { padding: 6px 9px 5px; background: var(--bone, #ece6da); border: 0; color: var(--ink, #0d0e10); font-size: 9.5px; letter-spacing: 0.18em; }
+html .roof-map header b { color: var(--hazard, #ff3b1f); }
+html .roof-map-view { border: 1.5px solid rgba(236, 230, 218, 0.45); }
+html .roof-map footer { background: rgba(13, 14, 16, 0.86); border: 0; color: #b3ac9f; }

@@ -111,3 +111,44 @@ body.finale-film .topbar { opacity: 0 !important; transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .story-key.next, .story-react.fail .keys { animation: none; }
 }
+
+/* ---- The game's look (src/ui/theme.css) -----------------------------------
+   Reaction prompts are printed keys with a red timer round them; subtitles
+   sit on ink with the speaker's name on a tag; the title card is stencilled. */
+.story-layer { font-family: var(--font-body, system-ui, sans-serif); }
+.story-sub .who {
+  display: inline-block; padding: 3px 8px 2px; margin-bottom: 8px; background: var(--bone, #ece6da); color: var(--ink, #0d0e10) !important;
+  font-family: var(--font-mono, monospace); font-size: calc(9.5px * var(--sub-scale, 1.25)); font-weight: 800; letter-spacing: .18em; text-shadow: none;
+}
+.story-sub .line { border-radius: 0; background: rgba(13, 14, 16, .84); font-weight: 600; }
+.story-sub.direction .line { color: #c9c1b2; background: rgba(13, 14, 16, .45); }
+.story-layer .story-skip { font-family: var(--font-mono, monospace); color: var(--bone, #ece6da); }
+.story-layer .story-skip .fill { stroke: var(--hazard, #ff3b1f); }
+.story-react .label {
+  padding: 5px 12px 4px; background: var(--bone, #ece6da); color: var(--ink, #0d0e10);
+  font-family: var(--font-mono, monospace); font-size: 11px; letter-spacing: .22em; text-shadow: none;
+}
+.story-key circle { fill: var(--bone, #ece6da); }
+.story-key .track { stroke: rgba(13, 14, 16, .35); }
+.story-key .timer { stroke: var(--hazard, #ff3b1f); }
+.story-key b { color: var(--ink, #0d0e10); font-family: var(--font-display, sans-serif); font-size: 34px; font-weight: 900; }
+.story-key.wide b { font-family: var(--font-mono, monospace); font-size: 12px; }
+.story-key.done circle.track { stroke: var(--ok, #2fd07a); }
+.story-key.done b { color: #138a4b; }
+.story-key.held circle.track { stroke: var(--caution, #ffc21a); }
+.story-react .plus { color: var(--bone, #ece6da); }
+/* The mash bar: twenty cells. */
+.story-react .bar {
+  width: 300px; height: 16px; border: 0; background: rgba(236, 230, 218, .14);
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 calc(5% - 3px), transparent calc(5% - 3px) 5%);
+  mask: repeating-linear-gradient(90deg, #000 0 calc(5% - 3px), transparent calc(5% - 3px) 5%);
+}
+.story-react .bar i { background: var(--bone, #ece6da); }
+.story-react.success .label { background: var(--ok, #2fd07a); color: var(--ink, #0d0e10); }
+.story-react.fail .label { background: var(--hazard, #ff3b1f); color: var(--ink, #0d0e10); }
+.story-layer .story-title h1 { font-family: var(--font-stencil, sans-serif); color: var(--bone, #ece6da); font-size: clamp(64px, 11vw, 150px); line-height: .85; letter-spacing: .02em; }
+.story-layer .story-title p { font-family: var(--font-mono, monospace); color: #c9c1b2; font-size: 11px; letter-spacing: .3em; }
+.story-credits .roll { color: var(--bone, #ece6da); }
+.story-credits h2 { color: var(--bone, #ece6da); font-family: var(--font-mono, monospace); font-size: 10.5px; letter-spacing: .26em; }
+.story-credits h1 { font-family: var(--font-stencil, sans-serif); letter-spacing: .02em; }
+.story-credits p small { color: #a39c8f; }

@@ -172,3 +172,52 @@ body.reduced-motion .pu-card-ring, body.reduced-motion .pu-card-img, body.reduce
 @keyframes puRing { from { transform: scale(.4); opacity: 1; } to { transform: scale(40); opacity: 0; border-width: 1px; } }
 body.reduced-motion .pu-burst-ring { display: none; }
 @media (prefers-reduced-motion: reduce) { .pu-burst-ring { display: none; } }
+
+/* ---- The game's look (src/ui/theme.css) ---------------------------------
+   An active serum is a dose label at the top; the first pickup is the
+   serum's own prescription label, with its directions. */
+.pu-badges { font-family: var(--font-body, system-ui, sans-serif); }
+.pu-badge {
+  padding: 8px 14px 12px 16px; border: 0; border-radius: 0; border-left: 8px solid var(--c);
+  background: var(--grain, none), var(--bone, #ece6da); color: var(--ink, #0d0e10);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  box-shadow: none;
+}
+.pu-badge-top b { color: var(--ink, #0d0e10); font-family: var(--font-display, sans-serif); font-size: 24px; letter-spacing: .02em; }
+.pu-badge-top span { color: var(--ink, #0d0e10); font-family: var(--font-mono, monospace); font-size: 14px; }
+.pu-badge-action { color: #3f3b34; font-size: 12.5px; }
+.pu-badge-bar { height: 4px; background: var(--ink, #0d0e10); }
+.pu-badge.ending { animation: puBlink .5s steps(2) infinite; }
+
+.pu-card { font-family: var(--font-body, system-ui, sans-serif); background: rgba(8, 9, 10, .7); }
+.pu-card-box {
+  border: 0; border-left: 14px solid var(--c); color: var(--ink, #0d0e10);
+  clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%);
+  background: var(--grain, none), var(--bone, #ece6da);
+  box-shadow: none;
+}
+.pu-card-box::before { content: "Rx"; inset: auto 22px 14px auto; background: none; font-family: var(--font-stencil, sans-serif); font-size: 64px; line-height: 1; color: rgba(13, 14, 16, .1); }
+.pu-card-box::after { display: none; }
+.pu-corner { display: none; }
+.pu-card-art { background: var(--ink, #0d0e10); clip-path: circle(48%); }
+.pu-card-eyebrow { color: var(--ink, #0d0e10); font-family: var(--font-mono, monospace); font-size: 9.5px; letter-spacing: .2em; }
+.pu-card-eyebrow span { color: #5c574d; }
+.pu-card-name { color: var(--ink, #0d0e10); font-family: var(--font-display, sans-serif); font-size: clamp(44px, 5.4vw, 70px); line-height: .88; letter-spacing: .01em; text-shadow: none; }
+.pu-card-name::after { content: ""; display: block; width: 64px; height: 6px; margin-top: 8px; background: var(--c); }
+.pu-card-text { color: #2a2824; font-size: 16px; }
+.pu-card-stats { gap: 0; border-top: 1.5px solid var(--ink, #0d0e10); border-bottom: 1.5px solid var(--ink, #0d0e10); }
+.pu-card-stats div { border: 0; border-radius: 0; background: transparent; padding: 7px 14px 7px 0; }
+.pu-card-stats div + div { padding-left: 14px; border-left: 1px solid rgba(13, 14, 16, .25); }
+.pu-card-stats small { color: #5c574d; font-family: var(--font-mono, monospace); font-size: 8.5px; }
+.pu-card-stats b { color: var(--ink, #0d0e10); font-family: var(--font-display, sans-serif); font-size: 22px; }
+.pu-card-action { border-left: 4px solid var(--ink, #0d0e10); background: none; }
+.pu-card-action small { color: var(--ink, #0d0e10); font-family: var(--font-mono, monospace); }
+.pu-card-action span { color: #2a2824; }
+.pu-card-button {
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  background: var(--ink, #0d0e10); color: var(--bone, #ece6da); box-shadow: none;
+  font-family: var(--font-display, sans-serif); font-size: 22px; letter-spacing: .06em;
+}
+.pu-card-button:hover, .pu-card-button:focus-visible { background: var(--hazard, #ff3b1f); color: var(--ink, #0d0e10); filter: none; }
+.pu-card-keys { color: #5c574d; }
+.pu-card-keys kbd { border-color: var(--ink, #0d0e10); color: var(--ink, #0d0e10); }

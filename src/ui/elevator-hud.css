@@ -253,3 +253,20 @@
     width: calc(100% - 32px);
   }
 }
+
+/* ---- The game's look (src/ui/theme.css): the lift's own placards ---------- */
+.elevator-ui {
+  --elv-cyan: var(--glass, #7ff3ff);
+  --elv-red: var(--hazard, #ff3b1f);
+  --elv-green: var(--ok, #2fd07a);
+  --elv-panel: rgba(13, 14, 16, 0.86);
+  --elv-line: rgba(236, 230, 218, 0.22);
+  font-family: var(--font-body, system-ui, sans-serif);
+  color: var(--bone, #ece6da);
+}
+.elv-panel { border: 0; border-radius: 0; border-top: 3px solid var(--bone, #ece6da); }
+.elv-eyebrow { font-family: var(--font-mono, monospace); }
+.elv-title, .elv-floor, .elv-speed { font-family: var(--font-display, sans-serif); }
+.elv-caption { border-radius: 0; background: rgba(13, 14, 16, 0.86); border: 0; }
+.elv-caption-who { background: var(--bone, #ece6da); color: var(--ink, #0d0e10); font-family: var(--font-mono, monospace); }
+.elv-alert { border-radius: 0; font-family: var(--font-display, sans-serif); letter-spacing: 0.04em; }

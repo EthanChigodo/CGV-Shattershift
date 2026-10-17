@@ -263,8 +263,8 @@ export class LoadingScreen {
     const lit = this.progress * FLOORS;
     // A halo of light behind it, as it lights up.
     const halo = g.createRadialGradient(W * 0.5, yBase - towerH * 0.5, towerW * 0.3, W * 0.5, yBase - towerH * 0.5, towerH * 0.75);
-    halo.addColorStop(0, `rgba(126, 244, 241, ${0.05 + 0.12 * this.progress})`);
-    halo.addColorStop(1, "rgba(126, 244, 241, 0)");
+    halo.addColorStop(0, `rgba(236, 230, 218, ${0.04 + 0.08 * this.progress})`);
+    halo.addColorStop(1, "rgba(236, 230, 218, 0)");
     g.fillStyle = halo;
     g.fillRect(0, 0, W, H);
     // Body.
@@ -296,13 +296,13 @@ export class LoadingScreen {
         g.fillRect(x0 + col * cw + cw * 0.18, y + floorH * 0.22, cw * 0.64, floorH * 0.56);
       }
     }
-    // Edges: cyan, bright where it is lit.
-    g.strokeStyle = "rgba(126, 244, 241, 0.75)";
+    // Edges: drawn in bone, like the elevation on an engineer's sheet, bright where it is lit.
+    g.strokeStyle = "rgba(236, 230, 218, 0.6)";
     g.lineWidth = 1.5 * dpr;
     g.strokeRect(x0, yTop, towerW, towerH);
     const litY = yBase - lit * floorH;
-    g.strokeStyle = "rgba(126, 244, 241, 1)";
-    g.shadowColor = "rgba(126, 244, 241, 0.9)";
+    g.strokeStyle = "rgba(236, 230, 218, 1)";
+    g.shadowColor = "rgba(236, 230, 218, 0.7)";
     g.shadowBlur = 14 * dpr;
     g.beginPath();
     g.moveTo(x0, yBase);
@@ -313,7 +313,7 @@ export class LoadingScreen {
     // The scan line: up the facade to where it has got, again and again.
     const sweep = (t * 0.6 * motion) % 1;
     const sy = yBase - sweep * (yBase - Math.min(litY, yBase - floorH));
-    g.fillStyle = "rgba(126, 244, 241, 0.9)";
+    g.fillStyle = "rgba(255, 59, 31, 0.9)";
     g.fillRect(x0 - 10 * dpr, sy, towerW + 20 * dpr, 1.5 * dpr);
     g.shadowBlur = 0;
     // The street.
