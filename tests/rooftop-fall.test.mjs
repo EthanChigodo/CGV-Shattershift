@@ -245,7 +245,7 @@ test("a lethal Roof collision uses THEY GOT YOU immediately, never the falling s
 
 test("facade keeps standard lights/fog/environment; world-space varied glass uses no extra pass", () => {
   const m = createRoofFacade();
-  const shader = { vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  const shader = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
   m.onBeforeCompile(shader);
   assert.ok(m.isMeshStandardMaterial); assert.equal(m.transparent, false);
   for (const code of ["towerGlass", "towerFresnel", "towerVariation", "roughnessFactor = mix", "fwidth", "#include <fog_fragment>", "#include <lights_fragment_maps>"]) assert.ok(shader.fragmentShader.includes(code), code);

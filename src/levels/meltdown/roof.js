@@ -52,6 +52,7 @@ import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
 import { createPropKit } from "../../story/stages/props.js";
 import { createRoofFacade } from "./roof-facade.js";
+import { createRoofFacadeFrames } from "./roof-facade-rooms.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -822,9 +823,12 @@ export class RoofLevel {
 
     // The slab, and the building falling away beneath it.
     this._box(EDGE * 2 + 0.6, 0.6, EDGE * 2 + 0.6, roofing, 0, -0.6, 0);
-    const facade = this._track(createRoofFacade());
+    const facade = this.facadeMaterial = this._track(createRoofFacade());
     // All the way down, into the haze (the city's streets are 160 m below).
-    this._box(EDGE * 2 - 0.2, 300, EDGE * 2 - 0.2, facade, 0, -300.6, 0);
+    this.facadeMesh = this._box(EDGE * 2 - 0.2, 300, EDGE * 2 - 0.2, facade, 0, -300.6, 0);
+    this.facadeFrames = createRoofFacadeFrames(mat.trim);
+    this.owned.geometries.push(this.facadeFrames.geometry);
+    this.groups.set.add(this.facadeFrames);
 
     // Parapets north and south; the east and west ones have collapsed.
     for (const z of [-EDGE, EDGE]) {
@@ -1615,6 +1619,12 @@ export class RoofLevel {
 
   /* ---------------- Runtime ---------------- */
 
+  /** Visual clock only; the fall holds enemy AI but not these distant rooms. */
+  updateFacade(dt) {
+    const uniform = this.facadeMaterial?.userData.facadeTime;
+    if (uniform && Number.isFinite(dt)) uniform.value += Math.max(0,dt);
+  }
+
   /**
    * @param {object} p
    * @param {number} p.dt
@@ -1625,6 +1635,7 @@ export class RoofLevel {
    */
   update({ dt, time, player, playerVelocity }) {
     const s = this.state;
+    this.updateFacade(dt);
     this.fire.setTime(time);
     this.city?.update(dt, time, { haze: this.cityHaze });
     if (this.cutscene?.kind === "arrival") {
@@ -2168,6 +2179,7 @@ export class RoofLevel {
   }
 
   dispose() {
+    this.facadeFrames?.dispose();
     this.root.traverse((o) => {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });

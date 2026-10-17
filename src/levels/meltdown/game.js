@@ -2607,6 +2607,7 @@ export class MeltdownGame {
     const shot = this._roofFall;
     if (!shot || this.phase !== "roofFall" || this.paused) return;
     shot.update(dt, this.camera.aspect);
+    this.roof.updateFacade(dt);
     this.hero.position.copy(shot.position);
     this.avatar.root.position.copy(shot.position);
     this.avatar.root.rotation.set(0, shot.yaw, 0);

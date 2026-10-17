@@ -28,12 +28,13 @@ both using the same 24 m/s² game gravity. It is visibly below the player and
 leaves the frame first. Reset restores its original parent, local position,
 rotation, scale and visibility. Normal weapon/shooting rules are unchanged.
 
-The tower retains its existing box and dimensions. One opaque Standard material
-adds world-space window cells, recessed shading, seeded tint/roughness/lit-room
-variation, Fresnel sky/horizon reflections and the scene's existing environment
-lighting/specular highlights. It adds no probes, render targets, transparent
-layers, reflection passes or graphics settings. Normal Three lighting, tone
-mapping and fog still apply. There is no texture or material creation per frame.
+The tower retains its existing box and dimensions. Its opaque Standard material
+now includes world-space parallax offices, glass damage and lighting variety;
+one instanced trim batch adds physical lintels/mullions to the upper floors.
+There are no probes, render targets, transparent layers, reflection passes or
+graphics settings. Normal Three lighting, tone mapping and fog still apply.
+Details and limitations are in `rooftop-building-visuals.md`. No textures,
+materials or geometry are created per frame.
 
 ## Audio
 

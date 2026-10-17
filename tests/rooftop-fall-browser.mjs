@@ -1,17 +1,18 @@
 /** Optional native Chromium WebGL smoke test. Node 24, installed Edge/Chrome;
- * no dependency installs. node tests/rooftop-fall-browser.mjs [--shots]
+ * no dependency installs. node tests/rooftop-fall-browser.mjs [--shots] [--facade]
  * ROOF_FALL_CHROMIUM overrides the Windows Edge path. Isolated temporary profile.
  */
 import assert from "node:assert/strict";
 import http from "node:http";
 import net from "node:net";
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const shots = process.argv.includes("--shots");
+const facade = process.argv.includes("--facade");
 const temporary = await mkdtemp(path.join(os.tmpdir(), "fracture-roof-fall-"));
 const profile = path.join(temporary, "profile");
 const errors = [];
@@ -27,6 +28,9 @@ const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/htm
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
+    if (facade && url.pathname === "/src/levels/meltdown/__facade-baseline.js") {
+      return res.writeHead(200, { "content-type": "text/javascript" }).end(execFileSync("git",["show","HEAD:src/levels/meltdown/roof-facade.js"],{cwd:root}));
+    }
     if (url.pathname === "/__roof-fall-test") return res.writeHead(200, { "content-type": "text/html" }).end(html);
     if (url.pathname === "/favicon.ico") return res.writeHead(204).end();
     const target = path.resolve(root, "." + decodeURIComponent(url.pathname));
@@ -94,13 +98,34 @@ try {
       const sample = await evaluate(`(() => { const g=roofTest.game;for(let i=0;i<${Math.round(seconds * 60)};i++)g.update(1/60,20+i/60);g.render();
         const s=g._roofFall;return {phase:g.phase,time:s.time,y:g.hero.position.y,camera:g.camera.position.toArray(),audio:s.audio,
           playerTop:s.playerFrame.top,exitTime:s.exitTime,weaponY:s.weaponPosition.y,weaponExit:s.weaponExitTime,
-          dropped:g.launcher.rig.parent===g.scene,bodyPitch:g.avatar.body.rotation.x,calls:roofTest.renderer.info.render.calls};})()`);
+          dropped:g.launcher.rig.parent===g.scene,bodyPitch:g.avatar.body.rotation.x,facadeTime:g.roof.facadeMaterial.userData.facadeTime.value,
+          frameInstances:g.roof.facadeFrames.count,calls:roofTest.renderer.info.render.calls};})()`);
       console.log(side, label, sample);
       assert.equal(sample.dropped, true, "same launcher is visible in world space");
       if (label === "follow") assert.ok(Math.abs(Math.cos(sample.bodyPitch)) < 0.4, "laid-out torso");
       if (shots) { const png = await call("Page.captureScreenshot", { format: "png" }); await writeFile(path.join(temporary, `${side < 0 ? "left" : "right"}-${label}.png`), Buffer.from(png.data, "base64")); }
+      if (facade && label === "follow" && side === 1) {
+        const measurements = await evaluate(`(async()=>{
+          const g=roofTest.game,r=roofTest.renderer,gl=r.getContext(),current=g.roof.facadeMaterial;
+          const {createRoofFacade}=await import('/src/levels/meltdown/__facade-baseline.js');
+          const baseline=createRoofFacade(),results=[];r.info.autoReset=false;
+          const rendererInfo=gl.getExtension('WEBGL_debug_renderer_info');
+          for(const [mode,material,trim] of [['before',baseline,false],['after',current,true]]) {
+            g.roof.facadeMesh.material=material;g.roof.facadeFrames.visible=trim;
+            for(let i=0;i<3;i++){g.render();gl.finish();}
+            const samples=[];for(let i=0;i<8;i++){r.info.reset();const t=performance.now();g.render();gl.finish();samples.push(performance.now()-t);}
+            samples.sort((a,b)=>a-b);results.push({mode,medianRenderMs:(samples[3]+samples[4])/2,drawCalls:r.info.render.calls,
+              triangles:r.info.render.triangles,textures:r.info.memory.textures,geometries:r.info.memory.geometries,
+              viewport:[innerWidth,innerHeight],buffer:[r.domElement.width,r.domElement.height],
+              renderer:rendererInfo?gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)});
+          }
+          g.roof.facadeMesh.material=current;g.roof.facadeFrames.visible=true;r.info.autoReset=true;baseline.dispose();g.render();return results;
+        })()`);
+        console.log("Frozen follow shot / software WebGL / gl.finish render comparison",measurements);
+        assert.equal(measurements[1].drawCalls-measurements[0].drawCalls,1,"one instanced facade draw added");
+      }
       if (label === "locked") {
-        const pause = await evaluate("(() => {const g=roofTest.game;g.setPaused(true);const t=g._roofFall.time;g._updateRoofFrame(.05,99);g.setPaused(false);return g._roofFall.time===t;})()");
+        const pause = await evaluate("(() => {const g=roofTest.game;g.setPaused(true);const t=g._roofFall.time,u=g.roof.facadeMaterial.userData.facadeTime.value;g._updateRoofFrame(.05,99);g.setPaused(false);return g._roofFall.time===t&&g.roof.facadeMaterial.userData.facadeTime.value===u;})()");
         assert.equal(pause, true);
         await evaluate("globalThis.fixedCamera=roofTest.game.camera.position.toArray()");
       }
@@ -117,6 +142,21 @@ try {
     assert.equal(await evaluate("roofTest.game._roofFall.exitTime!==null && roofTest.game._roofFall.playerFrame.top < -1.05"), true);
   }
   assert.equal(await evaluate("failed.length"), 2);
+  if (facade) {
+    // A known clear pane with a sparse figure, using the production material.
+    // Camera/time changes here are a visual test only; real restart follows.
+    await evaluate("(()=>{const g=roofTest.game;g.hud.hideSummary();g.ui.fade.style.opacity='0';g.avatar.setVisible(false);g.launcher.rig.visible=false;g.camera.fov=40;g.camera.updateProjectionMatrix();g.camera.position.set(-22,-34.2,-6.5);g.camera.lookAt(-15.9,-34.2,-6.5);})()");
+    const fingerprints=[];
+    for(const time of [0,5]) {
+      const pixels = await evaluate(`(()=>{const g=roofTest.game,r=roofTest.renderer;g.roof.facadeMaterial.userData.facadeTime.value=${time};g.render();
+        const gl=r.getContext(),a=new Uint8Array(160*160*4);gl.readPixels(Math.floor(r.domElement.width/2)-80,Math.floor(r.domElement.height/2)-80,160,160,gl.RGBA,gl.UNSIGNED_BYTE,a);
+        let hash=0;for(let i=0;i<a.length;i++)hash=(Math.imul(hash,31)+a[i])|0;return hash;})()`);
+      fingerprints.push(pixels);
+      if(shots){const png=await call("Page.captureScreenshot",{format:"png"});await writeFile(path.join(temporary,`facade-figure-${time}.png`),Buffer.from(png.data,"base64"));}
+    }
+    assert.notEqual(fingerprints[0],fingerprints[1],"room silhouette moves without advancing enemies or creating objects");
+    console.log("Facade close-up silhouette motion pixel hashes",fingerprints);
+  }
   // Use the real restart entry path, not merely a fixture that clears fields.
   await evaluate("roofTest.game.enterRoof()");
   const restarted = await evaluate("(() => {const g=roofTest.game;for(let i=0;i<80;i++)g.update(.05,50+i*.05);g.render();return {phase:g.phase,fall:g._roofFall,rig:g.avatar.uniforms.uFalling.value,launcher:g.launcher.rig.visible,attached:g.launcher.rig.parent===g.avatar.shoulder,alive:g.runner.alive};})()");
