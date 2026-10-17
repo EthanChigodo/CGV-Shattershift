@@ -354,6 +354,8 @@ export class MeltdownGame {
       dodge: 0, dodgeCooldown: 0, dodgeDir: new THREE.Vector3(), yaw: 0, lastShot: 99, aim: new THREE.Vector3(),
     };
     this.held = new Set();
+    /** A controller's left stick on the roof (-1..1, y up), set by src/systems/pad-input.js; 0 without one. */
+    this.padMove = { x: 0, y: 0 };
     this.aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.15);
 
     /* ---- State ---- */
@@ -2572,6 +2574,8 @@ export class MeltdownGame {
       const ix = (held.has("KeyD") || held.has("ArrowRight") ? 1 : 0) - (held.has("KeyA") || held.has("ArrowLeft") ? 1 : 0);
       const iz = (held.has("KeyS") || held.has("ArrowDown") ? 1 : 0) - (held.has("KeyW") || held.has("ArrowUp") ? 1 : 0);
       const input = _input.set(ix, 0, iz);
+      // No keys held: a controller's stick, as far as it is pushed, any way (its up is the camera's forward).
+      if (!ix && !iz) input.set(this.padMove.x, 0, -this.padMove.y);
       if (input.lengthSq() > 1) input.normalize();
       hero.velocity.lerp(input.multiplyScalar(ROOF_SPEED * (this.arsenal.isActive("overdrive") ? 1.25 : 1)), 1 - Math.exp(-dt * 12));
       hero.dodge = Math.max(0, hero.dodge - dt);
