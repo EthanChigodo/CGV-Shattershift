@@ -46,6 +46,7 @@ import { ashify } from "./ash.js";
 import { createFireMaterials } from "./fire.js";
 import { fillAssetSlots } from "./assets.js";
 import { cloneCharacter, HumanoidRig } from "./characters.js";
+import { Collapse, Flinch, persona, shamble, stride } from "../../figure/motion.js";
 import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
@@ -318,6 +319,12 @@ class Enemy {
     this.alive = true;
     this.removed = false;
     this.rig = null;
+    // Procedural life (src/figure/motion.js): who they are (their own gait),
+    // a hit reaction by the hit's direction, a collapse when they go down.
+    // The body tilts about its own axes (YXZ), not the world's.
+    this.persona = persona(Math.random() * 1e6);
+    this.flinch = new Flinch();
+    this.body.rotation.order = "YXZ";
 
     if (model) {
       this.model = model;
@@ -351,6 +358,8 @@ class Enemy {
     if (!this.alive) return false;
     this.hp = Math.max(0, this.hp - power);
     this.stagger = 1;
+    this.flinch.hit(from, this.position, this.yaw, 0.7 + power * 0.25);
+    this._hitFrom = from ? from.clone() : null;
     if (from) {
       _v.subVectors(this.position, from).setY(0).normalize();
       this.velocity.addScaledVector(_v, 2.5);
@@ -387,14 +396,15 @@ class Enemy {
       if (this.glow) this.glow.visible = false;
       this.level.events.emit("enemy-ash", { enemy: this, position: _v.copy(this.position).setY(this.position.y + 1.1).clone(), start: true });
     }
-    const jolt = THREE.MathUtils.smoothstep(t, 0, 0.22);
     this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
     this.position.addScaledVector(this.velocity, dt);
-    // Lifted a little as it goes, shaking.
-    this.body.position.y = 0.12 * THREE.MathUtils.smoothstep(t, 0.2, ASH_SECONDS);
-    this.body.position.x = Math.sin(t * 47) * 0.025 * jolt;
-    this.body.rotation.x = -0.32 * jolt;
-    this.rig?.pose({ reach: -0.55 * jolt, spread: 0.5 * jolt, headNod: -0.75 * jolt, lean: -0.45 * jolt, elbow: 0.25, crouch: 0.12 * jolt });
+    // The body crumples as it burns: the blow's jolt, the knees going, the
+    // torso folding over them, the arms hanging, a topple to one side.
+    if (!this._collapse) {
+      this._collapse = new Collapse(this.rig, this.persona);
+      this._collapse.start(this._hitFrom, this.position, this.yaw);
+    }
+    this._collapse.update(dt, this.body);
     const burn = THREE.MathUtils.clamp((t - 0.18) / (ASH_SECONDS - 0.3), 0, 1.2);
     if (this._ash.uniforms) {
       this._ash.uniforms.uAsh.value = burn;
@@ -461,12 +471,13 @@ class Patient extends Enemy {
         this.face(player, dt, 5);
         _v.subVectors(player, this.position).setY(0);
         const d = _v.length();
-        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * dt);
+        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * stride(this.persona, time) * dt);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
-        rig?.pose({ phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3, headTilt: Math.sin(time * 1.7 + this.phase) * 0.3 });
+        // Each their own shamble: pace, limp or drag or lurch, arms, twitches.
+        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2 });
         if (d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
           this.setState("windup");
           this.level.events.emit("patient-windup", { position: this.position.clone() });
@@ -547,9 +558,11 @@ class Patient extends Enemy {
       default:
         break;
     }
-    if (this.stagger > 0 && this.alive && this.state !== "charge") {
-      this.body.rotation.x = -this.stagger * 0.3;
-    } else if (this.alive) this.body.rotation.x = 0;
+    // A hit's flinch, on top of whatever the state posed.
+    if (this.alive) {
+      this.flinch.update(dt);
+      this.flinch.apply(rig, this.body);
+    }
   }
 
   setState(state) {
@@ -666,10 +679,12 @@ class Scientist extends Enemy {
         break;
     }
 
-    if (this.alive && this.stagger > 0) {
-      this.body.rotation.x = -this.stagger * 0.28;
-      if (this.state === "aim") this.t = Math.min(this.t, SCIENTIST.aim * 0.3); // a hit spoils the shot
-    } else if (this.alive) this.body.rotation.x = 0;
+    if (this.alive && this.stagger > 0 && this.state === "aim") this.t = Math.min(this.t, SCIENTIST.aim * 0.3); // a hit spoils the shot
+    // A hit's flinch, on top of whatever the state posed.
+    if (this.alive) {
+      this.flinch.update(dt);
+      this.flinch.apply(rig, this.body);
+    }
 
     this.handPosition(this.glow.position).sub(this.position);
     this.glowMaterial.opacity = glow * (0.6 + Math.sin(time * 40) * 0.2);
