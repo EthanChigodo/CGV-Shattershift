@@ -42,7 +42,7 @@ import { Prologue } from "./src/story/prologue.js";
 import { themeAt as causewayThemeAt } from "./src/levels/causeway/layout.js";
 import { blastScene } from "./src/story/scenes-skyline.js";
 import { SCENES as STORY_LINES } from "./src/story/script.js";
-import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone } from "./src/figure/look.js";
+import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone, HAIR_COLOURS, savedHairColour, saveHairColour } from "./src/figure/look.js";
 import { DIFFICULTIES, loadDifficulty, saveDifficulty } from "./src/systems/difficulty.js";
 import { loadSave, writeSave, clearSave, SAVE_STAGE_NAMES } from "./src/systems/story-save.js";
 import { TrailerDirector } from "./src/trailer/director.js";
@@ -414,6 +414,7 @@ avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 const playerBody = new PlayerAvatar();
 playerBody.hold = 0;
 playerBody.setSkinTone(savedSkinTone());
+playerBody.setHairColour(savedHairColour());
 let playerBodyReady = false;
 /** The chosen character's model template, for the lift ride to show the same person. */
 let playerBodyTemplate = null;
@@ -1558,8 +1559,9 @@ function getMeltdown() {
   });
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdownQuality();
-  // Level 3's body: the chosen skin tone (its stage is set per stage, below).
+  // Level 3's body: the chosen skin tone and hair (its stage is set per stage, below).
   meltdown.avatar?.setSkinTone(savedSkinTone());
+  meltdown.avatar?.setHairColour(savedHairColour());
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
   // The story: through the lift at the end of the Labs, up to the Skyline.
@@ -2226,7 +2228,7 @@ function startGravityLift({ boarded = false } = {}) {
     // The same character as in the Foundry (null while it is still loading),
     // as they left it: dusty.
     character: playerBodyTemplate,
-    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone() },
+    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone(), hairColour: savedHairColour() },
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
     // The story's version: Okoro drops the launcher, the clamps are reaction hits.
@@ -4889,6 +4891,35 @@ for (const [key, tone] of Object.entries(SKIN_TONES)) {
   skinPick.appendChild(button);
 }
 showSkinChoice();
+
+// Hair colour: one swatch per colour (src/figure/look.js), remembered - the
+// same markup as the skin swatches, so the two pickers are styled together.
+const hairPick = $("#hairPick");
+function showHairChoice() {
+  const chosen = savedHairColour();
+  for (const button of hairPick.querySelectorAll("[data-hair]")) {
+    const on = button.dataset.hair === chosen;
+    button.classList.toggle("picked", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+}
+for (const [key, hair] of Object.entries(HAIR_COLOURS)) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "skin-button hair-button";
+  button.dataset.hair = key;
+  button.title = hair.label;
+  button.setAttribute("aria-label", `${hair.label} hair`);
+  button.style.setProperty("--swatch", hair.swatch);
+  button.addEventListener("click", () => {
+    saveHairColour(key);
+    playerBody.setHairColour(key);
+    meltdown?.avatar?.setHairColour(key);
+    showHairChoice();
+  });
+  hairPick.appendChild(button);
+}
+showHairChoice();
 
 // The sphere you start with (the loadout card; the pause menu changes it mid-run).
 const ballPickers = buildBallPickers((key) => {

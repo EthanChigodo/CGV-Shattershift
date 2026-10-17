@@ -91,14 +91,14 @@ export function saveSkinTone(name) {
  */
 export const HAIR_COLOURS = {
   natural: { label: "Natural", color: null, swatch: "#4b2a1c" },
-  black: { label: "Black", color: "#1c1714", swatch: "#17120f" },
-  brown: { label: "Dark brown", color: "#4a2e1d", swatch: "#4a2e1d" },
-  auburn: { label: "Auburn", color: "#9a4220", swatch: "#9a4220" },
-  blonde: { label: "Blonde", color: "#d8b06c", swatch: "#d8b06c" },
-  platinum: { label: "Platinum", color: "#d9d6cf", swatch: "#d9d6cf" },
-  red: { label: "Deep red", color: "#a3121f", swatch: "#a3121f" },
-  blue: { label: "Electric blue", color: "#1f62ff", swatch: "#1f62ff" },
-  violet: { label: "Violet", color: "#7a35d0", swatch: "#7a35d0" },
+  black: { label: "Black", color: "#1e1916", swatch: "#17120f" },
+  brown: { label: "Dark brown", color: "#4a2f1f", swatch: "#4a2f1f" },
+  auburn: { label: "Auburn", color: "#8e3c1c", swatch: "#9a4220" },
+  blonde: { label: "Blonde", color: "#c2a26c", swatch: "#d8b06c" },
+  platinum: { label: "Platinum", color: "#aaa69e", swatch: "#d9d6cf" },
+  red: { label: "Deep red", color: "#86141e", swatch: "#a3121f" },
+  blue: { label: "Electric blue", color: "#1a52e0", swatch: "#1f62ff" },
+  violet: { label: "Violet", color: "#6630b0", swatch: "#7a35d0" },
 };
 const HAIR_KEY = "fractureRun.hairColour";
 
@@ -348,8 +348,13 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
       vec3 luma = vec3(0.2126, 0.7152, 0.0722);
       float rel = dot(col, luma) / max(uHairLum, 0.002);
       float dyeLum = dot(uHair, luma);
-      float contrast = mix(0.95, 0.5, smoothstep(0.02, 0.5, dyeLum));
+      float contrast = mix(0.95, 0.62, smoothstep(0.02, 0.5, dyeLum));
       vec3 dyed = uHair * pow(max(rel, 0.0), contrast);
+      // Real hair is richer in its shadows and paler where it catches the
+      // light: saturation rises in the darker strands and falls in the
+      // lighter ones, so one dye still reads as many shades.
+      float grey = dot(dyed, luma);
+      dyed = max(vec3(0.0), mix(vec3(grey), dyed, mix(1.15, 0.75, smoothstep(0.45, 1.8, rel))));
       // The strands' direction on screen: the hair texture's streaks run
       // down v, so it is how the surface moves as v grows - solved from the
       // screen-space derivatives of the view position and the UV.
