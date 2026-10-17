@@ -39,6 +39,7 @@ import { createFire } from "./fire.js";
 import { assetSlot } from "./assets.js";
 import { HumanoidRig } from "./characters.js";
 import { ashify } from "./ash.js";
+import { Collapse, Flinch, persona, shamble } from "../../figure/motion.js";
 import { SERUMS } from "../../systems/arsenal.js";
 import { serumPickup, sphereCachePickup } from "../../systems/spheres.js";
 
@@ -1762,6 +1763,12 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     mover.add(hurt);
 
     const phase0 = (seed % 17) * 0.37;
+    // Procedural life (src/figure/motion.js): their own shamble, a flinch
+    // when hit, a collapse when they go down. Tilts about the body's own axes.
+    const me = persona(seed * 7.31 + 1);
+    const flinch = new Flinch();
+    let collapse = null;
+    body.rotation.order = "YXZ";
     const dir = Math.sign(lane - startX) || -fromSide;
     let state = "idle";
     let t = 0;
@@ -1782,6 +1789,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       if (!hurt.userData.alive) return false;
       hurt.userData.hp = Math.max(0, hurt.userData.hp - power);
       stagger = 1;
+      // Shot from up the corridor (the runner): pushed straight back.
+      flinch.hit(null, mover.getWorldPosition(world), body.rotation.y, 0.8 + power * 0.25);
       if (hurt.userData.hp > 0) return false;
       hurt.userData.alive = false;
       hit.userData.disabled = true;
@@ -1805,6 +1814,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     /** Rock them back without hurting them (the story's cosmetic pistol). */
     group.userData.stagger = () => {
       stagger = 1;
+      flinch.hit(null, mover.getWorldPosition(world), body.rotation.y, 0.8);
     };
 
     group.userData.tick = (dt, time) => {
@@ -1833,10 +1843,12 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
         // No topple, no body left in the corridor: thrown back, arms flung
         // wide, and burnt away to ash from the head down in about 1.4 s.
         fall = Math.min(1.3, fall + dt / 1.2);
-        const jolt = THREE.MathUtils.smoothstep(fall, 0, 0.18);
-        body.rotation.x = -0.3 * jolt;
-        body.position.y = 0.12 * THREE.MathUtils.smoothstep(fall, 0.15, 1.2);
-        body.position.x = Math.sin(t * 47) * 0.025 * jolt;
+        // Crumpling as it burns: knees, fold, topple (motion.js Collapse).
+        if (!collapse) {
+          collapse = new Collapse(rig, me);
+          collapse.start(null, mover.getWorldPosition(world), body.rotation.y);
+        }
+        collapse.update(dt, body);
         const burn = THREE.MathUtils.clamp((fall - 0.12) * 1.1, 0, 1.2);
         if (ash) {
           ash.uniforms.uAsh.value = burn;
@@ -1847,10 +1859,9 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
           ash?.dispose();
           ash = null;
         }
-      } else {
-        body.rotation.x = -stagger * 0.35;
-      }
+      } else flinch.update(dt);
       if (!rig) {
+        if (state !== "down") body.rotation.x = -stagger * 0.35;
         body.rotation.z = Math.sin(time * 1.3 + phase0) * 0.06;
         return;
       }
@@ -1859,19 +1870,14 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       } else if (state === "lurch") {
         rig.pose({ phase: time * 7 + phase0, stride: 0.5, knee: 0.8, reach: 0.85, lean: 0.35, headTilt: 0.4, spread: 0.05 });
       } else if (state === "stalk") {
-        rig.pose({
-          phase: time * (3 + Math.abs(chaseVel) * 2) + phase0, stride: 0.2 + Math.abs(chaseVel) * 0.12, knee: 0.5, reach: (1.0 + Math.sin(time * 4 + phase0) * 0.12) * (1 - stagger),
-          lean: 0.32 - stagger * 0.9, headTilt: 0.25 + Math.sin(time * 2.1 + phase0) * 0.2, headNod: 0.15 - stagger * 0.6, spread: 0.08,
-        });
+        // Their own shamble (pace, limp / drag / lurch, arms, twitches);
+        // a hit drops the arms, and the flinch bends them away from it.
+        shamble(rig, me, time, { cadence: 3 + Math.abs(chaseVel) * 2, stride: 0.2 + Math.abs(chaseVel) * 0.12, knee: 0.5, reach: 1.0 * (1 - stagger), lean: 0.32 });
       } else if (state === "stand") {
-        rig.pose({
-          phase: time * 2.2 + phase0, stride: 0.12, knee: 0.3, reach: (0.95 + Math.sin(time * 3 + phase0) * 0.1) * (1 - stagger),
-          lean: 0.3 - stagger * 0.9, headTilt: Math.sin(time * 1.3 + phase0) * 0.3, headNod: 0.2 - stagger * 0.6, spread: 0.06,
-        });
-      } else {
-        const jolt = THREE.MathUtils.smoothstep(fall, 0, 0.18);
-        rig.pose({ reach: -0.55 * jolt, spread: 0.5 * jolt, headNod: -0.75 * jolt, lean: -0.45 * jolt, elbow: 0.25, crouch: 0.12 * jolt });
+        shamble(rig, me, time, { cadence: 2.2, stride: 0.12, knee: 0.3, reach: 0.95 * (1 - stagger), lean: 0.3, amount: 0.5 });
       }
+      // (Down: the collapse has posed them.) A hit's flinch on top.
+      if (state !== "down") flinch.apply(rig, body);
     };
     group.userData.hazardMesh = hit;
     group.userData.breakableMeshes = [hurt];
