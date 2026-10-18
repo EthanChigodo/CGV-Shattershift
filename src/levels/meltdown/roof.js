@@ -31,7 +31,8 @@
  * hides Phase A's root while the roof is up.
  *
  *   RoofRoot
- *   |-- Set         slab, parapets, stair hut, hatches, helipad, cover, skyline
+ *   |-- Set         slab, parapets, stair hut, hatches (railed, striped and
+ *   |               signed: hatch-guard.js), helipad, cover, skyline
  *   |-- Hazards     smoke off the ledges, ash
  *   |-- Pickups     ball sacks
  *   |-- Enemies     scientists and patients (their hurtboxes are breakables)
@@ -51,6 +52,7 @@ import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
 import { createPropKit } from "../../story/stages/props.js";
+import { buildHatchGuards } from "./hatch-guard.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -66,9 +68,19 @@ const ARRIVAL_CUT = 2.9;
 const ARRIVAL_CAMERA = new THREE.Vector3(0, 11.5, 8.5);
 const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
 
-const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
+/** The open hatches the patients climb out of (holes: step in and you fall). */
+export const HATCHES = [new THREE.Vector3(-10.5, 0, 2.6), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
+/**
+ * Each hatch's open side (hatch-guard.js rails off the other three): into
+ * the roof, clear of the cover beside it. The patients step out this way.
+ */
+export const HATCH_MOUTHS = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0)];
+/** How far out of the mouth a patient walks before it goes for you. */
+const HATCH_EXIT = 1.95;
 /** Half the hatch opening (1.2 m) less a little: your feet have to be over the hole, not the rim. */
 const HATCH_HOLE = 0.5;
+/** Where a patient out of hatch `i` has walked clear of its rails. */
+const hatchExit = (i) => HATCHES[i].clone().addScaledVector(HATCH_MOUTHS[i], HATCH_EXIT);
 const MACHINE_DOOR = new THREE.Vector3(12.5, 0, -12.5);
 
 /** Seconds the helicopter waits at the ledge for you to jump for the ladder. */
@@ -428,6 +440,9 @@ class Patient extends Enemy {
     }
     this.state = "emerge";
     this.hatch = opts.position.clone();
+    /** Out through the hatch's mouth first (its rails pen the other three sides). */
+    this.exitTo = opts.exitTo ?? null;
+    this.exitT = 0;
     this.position.y = -1.7;
     // A climber comes up the outside of the building and over an open ledge
     // (x = +/-EDGE) instead of out of a hatch.
@@ -458,6 +473,20 @@ class Patient extends Enemy {
         break;
       }
       case "stalk": {
+        if (this.exitTo) {
+          // Out of the railed pen round the hatch, through its mouth.
+          _v.subVectors(this.exitTo, this.position).setY(0);
+          const e = _v.length();
+          this.exitT += dt;
+          if (e < 0.3 || this.exitT > 2.5) this.exitTo = null;
+          else {
+            this.face(this.exitTo, dt, 8);
+            this.position.addScaledVector(_v.divideScalar(e), this.stats.stalk * 1.15 * dt);
+            this.collide();
+            rig?.pose({ phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3 });
+            break;
+          }
+        }
         this.face(player, dt, 5);
         _v.subVectors(player, this.position).setY(0);
         const d = _v.length();
@@ -877,14 +906,31 @@ export class RoofLevel {
     this._box(7, 3.8, 5, concrete, EDGE - 4.6, 0, -EDGE + 3.6, { solid: true, cover: true });
     this._box(1.5, 2.4, 0.1, mat.pitBlack, MACHINE_DOOR.x - 0.8, 0, -EDGE + 6.12);
 
-    // Hatches the patients climb out of.
-    for (const h of HATCHES) {
+    // Hatches the patients climb out of, each lid swung open against a
+    // side rail (not the mouth, not the sign's side: the north rail, or
+    // the back one when the mouth is north).
+    for (const [i, h] of HATCHES.entries()) {
       this._box(1.6, 0.35, 1.6, mat.darkMetal, h.x, 0, h.z);
       this._box(1.2, 0.02, 1.2, mat.pitBlack, h.x, 0.35, h.z);
+      const mouth = HATCH_MOUTHS[i];
+      const sign = mouth.z < -0.5 ? 1 : -1;
+      const side = [[-1, 0], [1, 0], [0, 1], [0, -1]].find(([x, z]) => !(x === mouth.x && z === mouth.z) && !(x === 0 && z === sign));
       const lid = this._box(1.6, 0.08, 1.6, mat.paintedMetal, h.x, 0, h.z);
-      lid.position.set(h.x - 0.8, 0.75, h.z);
-      lid.rotation.z = 1.2;
+      lid.position.set(h.x + side[0] * 0.8, 0.75, h.z + side[1] * 0.8);
+      // The edge toward the hole up, leaning in.
+      lid.rotation.z = -1.2 * side[0];
+      lid.rotation.x = 1.2 * side[1];
     }
+    // Their site-safety gear: rails, striping, a pulsing strip, a sign. The
+    // rails are cover; balls fly over them.
+    const guard = buildHatchGuards({ hatches: HATCHES, mouths: HATCH_MOUTHS, own: (x) => {
+      (x.isMaterial ? this.owned.materials : x.isTexture ? this.owned.textures : this.owned.geometries).push(x);
+      return x;
+    } });
+    this.hatchGuard = guard.group;
+    this.groups.set.add(guard.group);
+    this._ticking.push(guard.group);
+    this.cover.push(...guard.fences);
 
     // Helipad.
     const pad = this._track(new THREE.MeshStandardMaterial({ map: helipadTexture(), transparent: true, roughness: 0.7, metalness: 0.1 }));
@@ -1471,13 +1517,13 @@ export class RoofLevel {
     // Hard: one more patient out of a hatch in the first two waves.
     const hatches = this.difficulty.extras && index < 3 ? [...spec.hatches, index === 1 ? 3 : 0] : spec.hatches;
     for (const [i, hatch] of hatches.entries()) {
-      const patient = new Patient(this, { model: this._character("patient"), position: HATCHES[hatch], delay: 0.6 + i * 0.8 });
+      const patient = new Patient(this, { model: this._character("patient"), position: HATCHES[hatch], exitTo: hatchExit(hatch), delay: 0.6 + i * 0.8 });
       this._addEnemy(patient);
     }
     // The last wave brings the brute out of the far hatch (and endless, every
     // third wave after it; Hard, the second wave too).
     if (index === 3 || (index > 3 && index % 3 === 0) || (index === 2 && this.difficulty.extras)) {
-      const brute = new Patient(this, { model: this._character("patient"), position: HATCHES[2], delay: 2.2, brute: true });
+      const brute = new Patient(this, { model: this._character("patient"), position: HATCHES[2], exitTo: hatchExit(2), delay: 2.2, brute: true });
       this._addEnemy(brute);
       this.events.emit("brute", { position: HATCHES[2].clone() });
     }
