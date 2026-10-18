@@ -205,7 +205,9 @@ The voices are acted with VoiceStudio's engines; every other sound is a real rec
 | "Rumbling Sound Effects" by **bretbernhoft**, https://opengameart.org/content/rumbling-sound-effects | CC0 | Explosions' tails |
 | "Metal Impact Sounds" by **BMacZero**; "100 CC0 metal and wood SFX" by **rubberduck** (opengameart.org) | CC0 | Clank, clatter, cable snap, brakes, steel groaning |
 | "Elevator ding" by **fvcalderan**; "old elevator door" by **sinny** (opengameart.org) | CC0 | The lift's chime and doors |
-| Seven's pain and effort (`sfx/hurt-*`, `sfx/grunt-*`), kept from the earlier version: **Kokoro-82M** (hexgrad, https://huggingface.co/hexgrad/Kokoro-82M) via kokoro-onnx, voices `af_heart` (female) and `am_puck` (male) - a held, strained vowel in the character's own voice, no words | Apache-2.0 / MIT | Hurt when you're hit or knock into something, effort |
+| Seven's pain and effort, female (`sfx/hurt-*-f`, `sfx/grunt-f`), kept from the earlier version: **Kokoro-82M** (hexgrad, https://huggingface.co/hexgrad/Kokoro-82M) via kokoro-onnx, voice `af_heart` - a held, strained vowel in the character's own voice, no words | Apache-2.0 / MIT | Hurt when you're hit or knock into something, effort |
+| Seven's pain, male (`sfx/hurt-1/2/3-m`): `pain2`, `painh`, `pain4` from "11 Male Human Pain/Death Sounds" by **Michel Baradari**, posted by qubodup, https://opengameart.org/content/11-male-human-paindeath-sounds - trimmed and levelled to the female set (the synthesised male grunts sounded like a horse to the beta testers) | **CC BY 3.0** | Hurt when you're hit or knock into something |
+| Seven's effort, male (`sfx/grunt-m`): `1yell1` from "Male Grunt/Yelling sounds" by **HaelDB**, https://opengameart.org/content/male-gruntyelling-sounds - trimmed and levelled | CC0 / OGA-BY 3.0 | Effort (the ledge catch) |
 | Seven's fall (female): "Female screams" by **congusbongus**, https://opengameart.org/content/female-screams | **CC BY 3.0** | The fall scream |
 | Seven's fall (male): "Male Grunt/Yelling sounds" by **HaelDB**, https://opengameart.org/content/male-gruntyelling-sounds | CC0 / OGA-BY 3.0 | The fall scream |
 
