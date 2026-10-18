@@ -40,6 +40,16 @@ It is the same shader, not new models or textures: on the body's atlas cell, pix
 avatar.setSkinTone("dark");   // PlayerAvatar; "light" restores the model's own
 ```
 
+## Hair colours
+
+Next to the skin tones (*Hair* on the start screen) the player picks one of nine: **natural** (the models' own - auburn-brown on the female figure, dark brown on the male), **black**, **dark brown**, **auburn**, **blonde**, **platinum**, **deep red**, **electric blue** and **violet** (`HAIR_COLOURS` in `look.js`). Saved in the browser (`fractureRun.hairColour`) and applied wherever the figure appears, like the skin tone; every `PlayerAvatar` starts with the saved skin tone and hair, so a cutscene's figure needs no extra code.
+
+The hair is its own source material, so it has its own atlas cell (`uCellHair`) and nothing else can be touched. On it, the shader dyes each texel **by luminance**: the texel's brightness relative to the hair's average (`uHairLum`, measured once from the atlas) is kept - the dark gaps between strands, the lighter strands - and the colour comes from the dye. A light dye compresses that contrast (fair hair scatters light into its own shadows), and saturation rises in the darker strands and falls in the lighter ones, so one dye still reads as many shades. On top goes a **sheen**: two Kajiya-Kay highlights - a thin hair is a cylinder, brightest where its direction is perpendicular to the half vector, a band across the strands rather than a spot. The strand direction is solved per pixel from screen-space derivatives (the texture's streaks run down v, so it is how the surface moves as v grows); the narrow white highlight and the broader one in the hair's colour are shifted apart along the normal, as on real hair, and broken up by the strands.
+
+```js
+avatar.setHairColour("platinum");   // PlayerAvatar; "natural" restores the model's own
+```
+
 ## Inputs (uniforms)
 
 | Uniform | What it is |
@@ -48,6 +58,7 @@ avatar.setSkinTone("dark");   // PlayerAvatar; "light" restores the model's own
 | `uGear` | 0 or 1 - the scientist's vest and radio |
 | `uSkin` | the model's skin tone, averaged once from its own body texture, so painted skin matches real skin |
 | `uTone`, `uToneOn` | the chosen skin tone, and whether it replaces the model's own (0 for "light") |
+| `uHair`, `uHairOn`, `uCellHair`, `uHairLum` | the hair dye, whether it replaces the model's own (0 for "natural"), the hair's atlas cell and its average brightness |
 | `uCellTop`, `uCellBody`, `uCellBottom`, `uCellShoes` | each clothing texture's rectangle in the character's texture atlas - how a pixel knows what it is |
 | `uShoulderX`, `uShoulderY`, `uArmLength`, `uHipY` | body measurements from the rig (characters.js `measureBody`) |
 | `uNeckY` | the top of the scrub top (its neckline), measured from the mesh |
