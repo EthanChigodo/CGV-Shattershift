@@ -242,7 +242,6 @@ const _y = new THREE.Vector3();
 const _z = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _look = new THREE.Vector3();
-const _hip = new THREE.Vector3();
 
 export class FallScene {
   /**
