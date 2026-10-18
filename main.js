@@ -988,6 +988,14 @@ function wireCausewayEvents(level) {
     level1Audio.buildingCollapse(0.85);
     if (state === "playing") run.surge = Math.min(1.5, run.surge + 0.5);
   });
+  // Tower C's demolition (src/fx/demolition.js), as it happens: the charges'
+  // crackle, the blast, steel giving, the floors going one by one.
+  on("demolition", (p) => {
+    if (p.phase === "charges") level1Audio.demolitionCharges(0.9);
+    else if (p.phase === "blast") { level1Audio.explosion(0.8); triggerShake(0.18); }
+    else if (p.phase === "collapse") { level1Audio.metalGroan(0.8); triggerShake(0.25); }
+    else if (p.phase === "crush" && p.floor % 3 === 0) level1Audio.debrisFall(0.5);
+  });
   on("pod-break", () => triggerShake(0.3));
   on("tremor", (p) => {
     level1Audio.distantCollapse(0.5 + (p.strength ?? 0.5) * 0.5);

@@ -23,7 +23,7 @@
  * Scene hierarchy:
  *
  *   CausewayRoot                  positioned at `origin`; local z = -distance
- *   |-- Sky, Skyline, Tower       far-plane sky, instanced city, scripted collapse
+ *   |-- Sky, Skyline, Tower C     far-plane sky, instanced city, a demolition (src/fx/demolition.js)
  *   |-- Shell                     instanced corridor treadmill (shell.js)
  *   |-- Props                     streamed objects: glass, fire, hazards, lift...
  *   |-- Effects                   embers, sprinkler water, smoke, shards, bursts
@@ -36,6 +36,7 @@ import { gateRecoveryWaiting } from "../../systems/ammo-recovery.js";
 import { CausewayKit, CASE_FILES } from "./kit.js";
 import { ShellTreadmill } from "./shell.js";
 import { ReflectionProbe } from "./probe.js";
+import { DemolitionFX, DemolitionBuilding } from "../../fx/demolition.js";
 import { LAYERS, setLayer } from "./layers.js";
 import { createGlassShared } from "./shaders/glass.js";
 import { createSky, createSkyline } from "./shaders/sky.js";
@@ -55,6 +56,15 @@ const SPAWN_AHEAD = 185;
 const DESPAWN_BEHIND = 32;
 const TICK_RANGE = 95;
 const MAX_DEBRIS = 16;
+/**
+ * Tower C, demolished as you cross the skybridge (the "tower" event): ahead
+ * and to the right, where the first-person camera has it in view from the
+ * moment the charges go until the dust (route distance d, metres right of
+ * the bridge, roof height). Close enough to read through the bridge's haze;
+ * its fire and dust are drawn as if the haze were thinner (FOG_SCALE).
+ */
+const TOWER_C = { d: 470, x: 60, top: 46, floors: 20, width: 30, depth: 24 };
+const TOWER_C_FOG_SCALE = 0.45;
 
 function createEmitter() {
   const handlers = new Map();
@@ -142,11 +152,20 @@ export class CausewayLevel {
     this.skyline = createSkyline(this.sky.material.uniforms);
     this.root.add(this.sky, this.skyline);
 
-    this.tower = this.kit.distantTower();
-    this.tower.position.set(-240, -120, -560);
-    this.tower.visible = mode === "story";
-    this.root.add(this.tower);
-    this._towerFall = null;
+    // Tower C (the story's): slabs, dust and fire from src/fx/demolition.js.
+    this.demolitionFx = new DemolitionFX({
+      quality, fogScale: TOWER_C_FOG_SCALE,
+      // Lit by the burning sky above and the fires below.
+      light: { ambient: [0.07, 0.05, 0.05], key: [0.2, 0.15, 0.13], keyDir: new THREE.Vector3(0.3, 1, 0.4), fire: [0.6, 0.26, 0.08] },
+    });
+    this.towerC = new DemolitionBuilding({
+      fx: this.demolitionFx, position: new THREE.Vector3(TOWER_C.x, 0, -TOWER_C.d), yaw: 0.08,
+      width: TOWER_C.width, depth: TOWER_C.depth, floors: TOWER_C.floors, top: TOWER_C.top, bottom: -320, seed: 21, lit: 0.3, name: "TowerC",
+    });
+    this.towerC.onEvent = (name, info) => this._onTowerC(name, info);
+    this.tower = this.towerC.root;
+    this.tower.visible = this.demolitionFx.root.visible = mode === "story";
+    this.root.add(this.tower, this.demolitionFx.root);
 
     this.shell = new ShellTreadmill(this.kit, { segments: 30, behind: 40, themeAt: (d) => themeAt(d, mode) });
     this.root.add(this.shell.group);
@@ -955,8 +974,7 @@ export class CausewayLevel {
         this._explode(distance - (entry.behind ?? 20), entry.strength ?? 1);
         break;
       case "tower":
-        this._towerFall = { t: 0 };
-        this.events.emit("tower-collapse", {});
+        this.demolish();
         this.events.emit("radio", { who: RADIO.halcyon, speaker: "halcyon", text: "Tower C has lost its core. Brace." });
         break;
       case "chaseStart": {
@@ -1052,7 +1070,7 @@ export class CausewayLevel {
     this._updateAtmosphere(dt, time, distance);
     this._updateLights(dt, time, distance);
     this._updateEffects(dt, time);
-    if (this._towerFall) this._updateTower(dt);
+    if (this.tower.visible) this._updateTower(dt);
     this._updateFinale(dt, distance, playing, ammunition, throwCost);
 
     this.shield.position.copy(this._player).sub(this.origin);
@@ -1320,24 +1338,28 @@ export class CausewayLevel {
     }
   }
 
+  /**
+   * Tower C comes down (the "tower" event, or __dbg.demolish): charges up
+   * the floors, the blast, the top dropping into its own dust - leaning
+   * across your view, toward the bridge.
+   */
+  demolish() {
+    if (this.towerC.started) return false;
+    this.tower.visible = this.demolitionFx.root.visible = true;
+    this.towerC.detonate({ viewer: this._player.clone(), cut: 0.42, lean: 0.34, fall: new THREE.Vector3(-0.96, 0, -0.28), interval: 0.08 });
+    return true;
+  }
+
+  /** The host hears it as it happens: the charges, the blast, the fall, the floors going. */
+  _onTowerC(name, info) {
+    if (name === "blast") this.state.flash = Math.max(this.state.flash, 0.3);
+    if (name === "collapse") this.events.emit("tower-collapse", {});
+    this.events.emit("demolition", { phase: name, ...info });
+  }
+
   _updateTower(dt) {
-    const t = (this._towerFall.t += dt);
-    if (t > 9) { this.tower.visible = false; this._towerFall = null; return; }
-    if (t < 0.4 && !this._towerFall.boom) {
-      this._towerFall.boom = true;
-      const p = this.tower.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 150, 0));
-      this._burst("fireball", p, { scale: 26000, count: 90 });
-      this._burst("dust", p, { scale: 30000, count: 60, speed: 14, life: 6 });
-      this.state.flash = Math.max(this.state.flash, 0.35);
-    }
-    const drop = Math.max(0, t - 0.6);
-    this.tower.position.y = -120 - drop * drop * 3.2;
-    this.tower.rotation.z = drop * drop * 0.012;
-    this.tower.rotation.x = drop * 0.02;
-    if (Math.random() < dt * 3) {
-      const p = this.tower.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 60 + Math.random() * 80, 0));
-      this._burst("dust", p, { scale: 22000, count: 30, speed: 10, life: 5 });
-    }
+    this.towerC.update(dt);
+    this.demolitionFx.update(dt);
   }
 
   _updateFinale(dt, distance, playing, ammunition = Infinity, throwCost = 1) {
@@ -1608,6 +1630,8 @@ export class CausewayLevel {
     this.skyline.geometry.dispose();
     this.skyline.material.dispose();
     this.shell.dispose();
+    this.towerC.dispose();
+    this.demolitionFx.dispose();
     this.probe.dispose();
     this.sun.shadow.map?.dispose();
     this.kit.dispose();

@@ -1281,9 +1281,9 @@ export class DemolitionBuilding {
       p.set(dir.x * this.width * 0.55, y + rand(-1, 2), dir.z * this.depth * 0.55);
       const w = this._world(p).clone();
       const v = this._worldDir(dir).clone().multiplyScalar(rand(6, 11));
-      fx.dust(w, { velocity: v, size: [big * 0.4, big * rand(1.2, 1.7)], life: rand(10, 14), drag: 0.45, rise: rand(0.8, 2.2), shade: rand(0.55, 0.8), warm: 0.6 });
+      fx.dust(w, { velocity: v, size: [big * 0.4, big * rand(1.2, 1.7)], life: rand(10, 14), drag: 0.45, rise: rand(0.8, 2.2), shade: rand(0.55, 0.8), warm: 0.35 });
     }
-    fx.dust(this._world(p.set(0, y + fh, 0)).clone(), { size: [big * 0.9, big * 2.2], life: rand(11, 15), drag: 0.5, rise: rand(1.2, 2), shade: 0.7, warm: 0.5 });
+    fx.dust(this._world(p.set(0, y + fh, 0)).clone(), { size: [big * 0.9, big * 2.2], life: rand(11, 15), drag: 0.5, rise: rand(1.2, 2), shade: 0.7, warm: 0.3 });
     // Pieces and glass out of the floors as they go.
     for (const face of this._faces()) {
       const n = this._worldDir(FACES[face]).clone();
