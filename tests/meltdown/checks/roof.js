@@ -153,6 +153,47 @@ export async function run(page) {
       roof.dispose();
     }
 
+    // 4e. The hatches are marked (rails, striping, a pulsing strip, a sign
+    // each - a few instanced/merged meshes for all of them), the rails hold
+    // you, the mouth still lets you in (the hole is still a hole), and the
+    // patients walk out through the mouth rather than sticking in the pen.
+    {
+      const { HATCHES, HATCH_MOUTHS } = await import("/src/levels/meltdown/roof.js");
+      const roof = new RoofLevel({ heliSeconds: 999 });
+      const guard = roof.hatchGuard;
+      const meshes = [];
+      guard?.traverse((o) => { if (o.isMesh) meshes.push(o); });
+      const instances = (name) => meshes.find((m) => m.name === name)?.count ?? 0;
+      notes.hatchGuard = { meshes: meshes.length, signs: instances("HatchSigns"), boards: instances("HatchRailBoards"), fences: roof.cover.filter((b) => b.fence).length };
+      if (!guard) failures.push("the hatches have no safety gear");
+      else {
+        if (meshes.length > 6) failures.push(`the hatch gear takes ${meshes.length} draw calls (instance/merge it)`);
+        if (instances("HatchSigns") !== HATCHES.length) failures.push("not every hatch has a sign");
+        if (instances("HatchRailBoards") !== HATCHES.length * 6) failures.push("not every hatch is railed on three sides");
+        const led = guard.userData.led;
+        guard.userData.tick(0, 0.2);
+        const a = led.emissiveIntensity;
+        guard.userData.tick(0, 1.05);
+        if (Math.abs(led.emissiveIntensity - a) < 0.5) failures.push("the hatch strip does not pulse");
+      }
+      for (const [i, h] of HATCHES.entries()) {
+        const mouth = HATCH_MOUTHS[i];
+        // Walk at it from the back: the rail stops you outside it.
+        const back = h.clone().addScaledVector(mouth, -1.6);
+        roof.clampPlayer(back);
+        if (roof.overHatch(back) || back.distanceTo(h) < 1.7) failures.push(`hatch ${i}: the back rail does not hold you (${back.distanceTo(h).toFixed(2)} m)`);
+        // Through the mouth you can still step in.
+        if (roof.groundAt(h.clone()) !== null) failures.push(`hatch ${i}: the hole is no longer a hole`);
+      }
+      // Patients: everyone out of their hatch and clear of its rails in 6 s.
+      simulate(roof, 9, (r, p) => p.set(0, 0, 14));
+      const penned = roof.enemies.filter((e) => e.kind === "patient" && e.alive && e.hatch && !e.climb
+        && Math.abs(e.position.x - e.hatch.x) < 1.3 && Math.abs(e.position.z - e.hatch.z) < 1.3);
+      notes.pennedPatients = penned.length;
+      if (penned.length) failures.push(`${penned.length} patient(s) still inside a hatch's rails after 9 s`);
+      roof.dispose();
+    }
+
     // 5. The hidden timer really is random, within 40-58 s.
     const times = [1, 2, 3, 4, 5, 6].map((seed) => {
       const r = new RoofLevel({ seed: seed * 7919 });
