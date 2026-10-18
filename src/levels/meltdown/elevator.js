@@ -1,7 +1,9 @@
 /**
- * Level 3's lifts: glass, like every lift in the tower (the Calibration
- * Lift's look - glass doors with a lit edge, glass walls between steel posts
- * carrying cyan conduits; frosted, standing in from the walls around it).
+ * Level 3's lifts: the tower's one glass cabin (src/elevators/glass-cabin.js,
+ * the same parts and materials as every other lift) - glass walls in steel
+ * mullions, posts carrying cyan conduits, glass doors with a lit edge in a
+ * steel frame (the buttons and a floor display inside), a tread-plate deck,
+ * light bars, a handrail. The glass stands in from the walls round the lift.
  *
  * Level 3 opens with the player stepping out of a freight lift (arriving from
  * Level 2), ends Phase A by running into another one as the fire catches up,
@@ -29,6 +31,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { createGlassCabinKit, GLASS_CABIN } from "../../elevators/glass-cabin.js";
 
 /** Freight lift: wide enough for all three lanes, tall enough for the chase camera. */
 export const FREIGHT_LIFT = { width: 6.6, height: 4.6, depth: 8 };
@@ -94,12 +97,11 @@ export function createLift(kit, { width, height, depth, wallHalfWidth = 0, wallH
 
   const owned = [];
   const own = (m) => (owned.push(m), m);
-  // Glass, as the Calibration Lift's (src/levels/common/calibration-lift.js).
-  const cabinWall = own(new THREE.MeshStandardMaterial({ color: 0xe8fbff, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide, emissive: 0x0b2a30, emissiveIntensity: 1, envMapIntensity: 0.4 }));
-  const doorMat = own(new THREE.MeshStandardMaterial({ color: 0xdff8ff, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.26, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 0.5 }));
-  const steel = own(new THREE.MeshStandardMaterial({ color: 0x737c80, metalness: 0.75, roughness: 0.4, envMapIntensity: 0.45 }));
-  const conduit = own(new THREE.MeshBasicMaterial({ color: 0x7ef4f1 }));
-  const lamp = own(new THREE.MeshBasicMaterial({ color: 0xfff0d6 }));
+  // The tower's glass cabin: its parts and materials (one set per lift, so
+  // each lift's light and conduits dim on their own).
+  const cabinKit = createGlassCabinKit(own);
+  const { steel, darkSteel, conduit } = cabinKit.materials;
+  const lamp = cabinKit.lightMaterial();
   const indicator = indicatorTexture(label);
   const indicatorMat = own(new THREE.MeshBasicMaterial({ map: indicator }));
 
@@ -134,47 +136,37 @@ export function createLift(kit, { width, height, depth, wallHalfWidth = 0, wallH
   group.add(panel);
 
   // Doors: two glass leaves meeting in the middle, a lit inner edge on each.
-  const leaves = [-1, 1].map((s) => {
-    const leaf = box(W / 2 + 0.02, H, 0.06, doorMat, (s * W) / 4, H / 2, 0);
-    box(0.05 / (W / 2 + 0.02), 1, 1.4, conduit, -s * 0.49, 0, 0, leaf);
-    leaf.userData.side = s;
-    return leaf;
-  });
+  const doors = cabinKit.doors(group, { width: W, height: H, z: 0, depth: 0.06 });
+  // (Open, they slide the whole way into the wall either side.)
+  for (const leaf of doors.leaves) leaf.userData.openX = leaf.userData.closedX + leaf.userData.side * (W / 2);
 
-  // The cabin: a steel floor and roof, glass walls between steel posts with
-  // conduits. The glass stands in from whatever is around the lift (the
-  // Labs' start room, the roof's hut) - flush against those walls, the two
-  // surfaces flickered through each other - and is frosted, so it reads as
-  // a cabin rather than as the room's own wall.
+  // The cabin behind them. The glass stands in from whatever is around the
+  // lift (the Labs' start room, the roof's hut) - flush against those walls,
+  // the two surfaces flickered through each other.
   const Z = D / 2 + T / 2;
   const IN = W / 2 - 0.18;
+  const FRONT = T / 2 + 0.1;
   const BACK = D + T / 2 - 0.18;
-  box(W, 0.2, D, steel, 0, -0.1, Z);
-  box(W, 0.2, D, steel, 0, H + 0.1, Z);
+  const deck = cabinKit.deck(group, W, D);
+  deck.position.z = Z;
+  box(W, 0.2, D, darkSteel, 0, H + 0.1, Z);
   for (const s of [-1, 1]) {
-    box(0.03, H, D - 0.36, cabinWall, s * IN, H / 2, Z - 0.18);
-    box(0.06, 0.06, D * 0.8, mat.trim, s * (IN - 0.07), 1.0, Z);
-    for (const z of [T / 2 + 0.1, BACK]) {
-      box(0.16, H, 0.16, steel, s * IN, H / 2, z);
-      box(0.06, H - 0.1, 0.06, conduit, s * (IN - 0.14), H / 2, z + (z < Z ? 0.12 : -0.12));
-    }
+    cabinKit.glassWall(group, [s * IN, FRONT], [s * IN, BACK], H, { inward: [-s, 0] });
+    cabinKit.post(group, s * IN, BACK, H, [-s, -1]);
+    // The front posts are the door frame's jambs; their conduits.
+    cabinKit.post(group, s * IN, FRONT, H, [-s, 1], { steel: false });
+    cabinKit.handrail(group, [s * (IN - 0.12), FRONT + 0.4], [s * (IN - 0.12), BACK - 0.3], [s, 0]);
   }
-  box(2 * IN, H, 0.03, cabinWall, 0, H / 2, BACK);
-  // Mullions: the glass in panels, so it reads as glass.
-  const panels = Math.max(1, Math.round(D / 2));
-  for (const s of [-1, 1]) {
-    box(0.05, 0.07, D - 0.36, steel, s * IN, H * 0.68, Z - 0.18);
-    for (let i = 1; i < panels; i += 1) box(0.05, H, 0.07, steel, s * IN, H / 2, T / 2 + ((D - 0.36) * i) / panels);
-  }
-  for (let i = 1; i < Math.round(W / 2); i += 1) box(0.07, H, 0.05, steel, -IN + (2 * IN * i) / Math.round(W / 2), H / 2, BACK);
-  box(2 * IN, 0.07, 0.05, steel, 0, H * 0.68, BACK);
-  box(2 * IN - 0.2, 0.05, 0.08, conduit, 0, H - 0.03, Z);
-  box(0.08, 0.05, D - 0.4, conduit, 0, H - 0.03, Z);
-  const light = new THREE.Mesh(geo.unitPlane, lamp);
-  light.scale.set(W * 0.3, D * 0.5, 1);
-  light.rotation.x = Math.PI / 2;
-  light.position.set(0, H - 0.02, D / 2 + T / 2);
-  group.add(light);
+  cabinKit.glassWall(group, [-IN, BACK], [IN, BACK], H, { inward: [0, -1] });
+  cabinKit.handrail(group, [-IN + 0.3, BACK - 0.12], [IN - 0.3, BACK - 0.12], [0, 1]);
+  // The door frame inside the doorway: jambs (the front posts), a header,
+  // the threshold, the buttons on the right-hand jamb; the floor display.
+  cabinKit.doorFrame(group, { width: 2 * IN - GLASS_CABIN.post, height: H, z: FRONT, inward: 1, depth: GLASS_CABIN.post, ceiling: H + 0.2 });
+  const inside = new THREE.Mesh(geo.unitPlane, indicatorMat);
+  inside.scale.set(Math.min(1.0, W * 0.3), Math.min(0.5, W * 0.15), 1);
+  inside.position.set(0, H - inside.scale.y / 2 - 0.08, FRONT + GLASS_CABIN.post / 2 + 0.01);
+  group.add(inside);
+  cabinKit.lightBars(group, { span: Math.min(1.2, W * 0.25), length: D - 0.8, y: H - 0.02, z0: Z, material: lamp });
 
   const api = {
     width: W,
@@ -185,16 +177,14 @@ export function createLift(kit, { width, height, depth, wallHalfWidth = 0, wallH
     open: 0,
     /** 0 = shut, 1 = fully open. Eased here, so callers can pass a linear ramp. */
     setDoors(t) {
-      const k = THREE.MathUtils.clamp(t, 0, 1);
-      api.open = k;
-      const e = k * k * (3 - 2 * k);
-      for (const leaf of leaves) leaf.position.x = (leaf.userData.side * W) / 4 + leaf.userData.side * (W / 2) * e;
+      api.open = THREE.MathUtils.clamp(t, 0, 1);
+      doors.set(t);
     },
     /** Cabin light, 0..1 (flicker it for a lift that has just stopped hard). */
     setLight(v) {
-      lamp.color.setRGB(0.78, 0.73, 0.65).multiplyScalar(0.15 + 0.85 * THREE.MathUtils.clamp(v, 0, 1));
-      cabinWall.emissiveIntensity = 0.2 + 0.8 * v;
-      conduit.color.setHex(0x7ef4f1).multiplyScalar(0.25 + 0.75 * THREE.MathUtils.clamp(v, 0, 1));
+      const k = THREE.MathUtils.clamp(v, 0, 1);
+      lamp.color.copy(GLASS_CABIN.light).multiplyScalar(0.12 + 0.88 * k);
+      conduit.color.setHex(GLASS_CABIN.accent).multiplyScalar(0.25 + 0.75 * k);
     },
     setIndicator(text, arrow = true) {
       indicator.userData.draw(text, arrow);

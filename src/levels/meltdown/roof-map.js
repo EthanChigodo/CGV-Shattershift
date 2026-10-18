@@ -9,7 +9,9 @@
  * few dozen quads. The icons:
  *
  *   the deck, the parapets (north and south) and the open ledges (east and
- *   west, red and broken); cover, the hatches, the helipad, the lift hut;
+ *   west, red and broken); cover, the hatches (a pulsing yellow/black
+ *   striped square with a warning triangle - holes you can fall down, as
+ *   on the roof itself: hatch-guard.js), the helipad, the lift hut;
  *   you, an arrow pointing where you aim; patients (red; a brute bigger),
  *   scientists (amber); the supply drop (green, pulsing); the helicopter,
  *   and - while it waits off the ledge - its ladder, a pulsing cyan ring.
@@ -21,16 +23,50 @@
  */
 
 import * as THREE from "../../three.js";
-import { EDGE } from "./roof.js";
+import { EDGE, HATCHES } from "./roof.js";
 
 export const MAP_LAYER = 9;
 /** Half the width the map shows (the roof, the ledges and the helicopter's hold point). */
 const VIEW = EDGE + 5;
 const MAX_ENEMIES = 32;
+/** A hatch's icon, metres across (bigger than the hatch, so it reads at 200 px). */
+const HATCH_ICON = 3.4;
 
 const HELIPAD = new THREE.Vector3(0, 0, -8);
-const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
 const LIFT_HUT = new THREE.Vector3(0, 0, EDGE - 1.7);
+
+/**
+ * A hatch on the map: a yellow/black striped square (the rails and the
+ * painted band) round the black hole, a warning triangle with "!" on it.
+ */
+function hatchIconTexture() {
+  const S = 64;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  g.fillStyle = "#16140f";
+  g.fillRect(0, 0, S, S);
+  g.fillStyle = "#f2c21a";
+  for (let x = -S; x < S * 2; x += 16) {
+    g.beginPath();
+    g.moveTo(x, 0); g.lineTo(x + 8, 0); g.lineTo(x + 8 + S, S); g.lineTo(x + S, S);
+    g.closePath();
+    g.fill();
+  }
+  g.fillStyle = "#050708";
+  g.fillRect(14, 14, S - 28, S - 28);
+  g.fillStyle = "#f2c21a";
+  g.beginPath();
+  g.moveTo(S / 2, 18); g.lineTo(S - 19, S - 21); g.lineTo(19, S - 21);
+  g.closePath();
+  g.fill();
+  g.fillStyle = "#16140f";
+  g.fillRect(S / 2 - 1.5, 27, 3, 9);
+  g.fillRect(S / 2 - 1.5, 38, 3, 3);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 export class RoofMinimap {
   constructor(roof, scene) {
@@ -67,16 +103,18 @@ export class RoofMinimap {
     // Cover, hatches, the helipad, the lift hut.
     const cover = mat(0x5d6b72);
     for (const box of roof.cover ?? []) {
+      // (A hatch's rails are part of its icon, not cover to draw.)
+      if (box.fence) continue;
       const sx = box.max.x - box.min.x;
       const sz = box.max.z - box.min.z;
       if (sx > 0 && sz > 0 && sx < 12 && sz < 12) add(plane, cover, (box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2, sx, sz, 0.2);
     }
-    const hatch = mat(0x050708);
-    const hatchRim = mat(0xff8a42);
-    for (const h of HATCHES) {
-      add(plane, hatchRim, h.x, h.z, 1.7, 1.7, 0.25);
-      add(plane, hatch, h.x, h.z, 1.2, 1.2, 0.3);
-    }
+    // The hatches: hazard icons, pulsing with the amber strips round them.
+    const hatchIcon = mat(0xffffff);
+    hatchIcon.map = own(hatchIconTexture());
+    hatchIcon.needsUpdate = true;
+    this.hatchIcon = hatchIcon;
+    this.hatches = HATCHES.map((h) => add(plane, hatchIcon, h.x, h.z, HATCH_ICON, HATCH_ICON, 0.3));
     add(ring, mat(0xf4f6f6), HELIPAD.x, HELIPAD.z, 7, 7, 0.25);
     add(plane, mat(0x7ef4f1, 0.8), LIFT_HUT.x, LIFT_HUT.z, 5, 2.8, 0.25);
 
@@ -116,7 +154,7 @@ export class RoofMinimap {
     this.frame.className = "roof-map";
     this.frame.setAttribute("aria-label", "Roof map");
     this.frame.innerHTML = `<header>ROOF // TACTICAL <b>N</b></header><div class="roof-map-view"></div>
-      <footer><span class="k-you">You</span><span class="k-patient">Patient</span><span class="k-sci">Scientist</span><span class="k-ledge">Open ledge</span></footer>`;
+      <footer><span class="k-you">You</span><span class="k-patient">Patient</span><span class="k-sci">Scientist</span><span class="k-ledge">Open ledge</span><span class="k-hatch">Open hatch</span></footer>`;
     this.view = this.frame.querySelector(".roof-map-view");
     document.body.append(this.frame);
     if (!document.querySelector("style[data-roof-map]")) {
@@ -135,6 +173,15 @@ export class RoofMinimap {
     this.frame.classList.toggle("show", visible);
     if (!visible) return;
     const roof = this.roof;
+    // The hatches pulse slowly (as their strips do on the roof), and swell a
+    // little when you are near one.
+    const pulse = 0.5 + 0.5 * Math.sin(time * 3.7);
+    this.hatchIcon.color.setScalar(0.72 + 0.28 * pulse);
+    for (const [i, icon] of this.hatches.entries()) {
+      const near = hero ? Math.max(0, 1 - Math.hypot(hero.position.x - HATCHES[i].x, hero.position.z - HATCHES[i].z) / 5) : 0;
+      const s = HATCH_ICON * (1 + near * 0.3 * pulse);
+      icon.scale.set(s, 1, s);
+    }
     if (hero) {
       this.player.position.set(hero.position.x, 1.2, hero.position.z);
       const dx = hero.aim.x - hero.position.x;
@@ -236,5 +283,6 @@ body.hud-hidden .roof-map, body.story-cutscene .roof-map, body:not(.mlt-active) 
 .roof-map .k-patient::before { background: #ff4a3d; }
 .roof-map .k-sci::before { background: #ffb03c; }
 .roof-map .k-ledge::before { background: #ff4a3d; border-radius: 0; height: 3px; vertical-align: 2px; }
+.roof-map .k-hatch::before { border-radius: 0; background: repeating-linear-gradient(45deg, #f2c21a 0 2px, #16140f 2px 4px); box-shadow: 0 0 0 1px #f2c21a; }
 @media (max-width: 650px) { .roof-map { transform: scale(.72); transform-origin: top right; } }
 `;

@@ -37,6 +37,8 @@ const THROW_KEYS = [
   [0.46, 0.4, 0.6, 0.3, -0.1],
 ];
 const THROW_SECONDS = 0.46;
+/** A fall's flailing (flail()): the arms' windmill and the legs' kick, radians a second. */
+const FLAIL = { arms: 10.5, legs: 8.3 };
 /** Seconds into a throw when the ball leaves the hand. */
 export const THROW_RELEASE = 0.13;
 
@@ -317,6 +319,38 @@ export class PlayerAvatar {
     this.shadow.position.y = 0.025 - height; // stays on the floor under a jump
     this.shadow.scale.setScalar((1 - lift * 0.45) * (sliding ? 1.25 : 1));
     this.shadowMaterial.opacity = 1 - lift * 0.65;
+  }
+
+  /**
+   * Falling (fall-scene.js), instead of update(): nothing under you, so no
+   * gait - arms windmilling and clawing at the air, legs bicycling, the back
+   * arching and the shoulders wrenching about. Straight into the rig's
+   * uniforms; `k` 0..1 is how wild (it settles a little as the fall goes on).
+   */
+  flail(time, k = 1) {
+    const u = this.uniforms;
+    if (!u) {
+      this.standIn.rotation.z = Math.sin(time * 9) * 0.35 * k;
+      return;
+    }
+    const s = Math.sin;
+    this.hold = 0;
+    u.uHold.value = 0;
+    u.uStride.value = 0;
+    u.uCrouch.value = 0;
+    u.uTuck.value = 0.15 + 0.15 * s(time * 3.7);
+    u.uThrow.value.w = 0;
+    // Arms: up and grabbing (reach) while they windmill against each other.
+    u.uPhase.value = time * FLAIL.arms;
+    u.uArmSwing.value = 1.7 * k;
+    u.uReachUp.value = (0.4 + 0.32 * s(time * 5.3) + 0.12 * s(time * 13.1)) * k;
+    // Legs: kicking out of step, knees snapping.
+    const kick = time * FLAIL.legs;
+    u.uGait.value = 1;
+    u.uLegR.value.set((0.55 * s(kick) - 0.15) * k, (0.85 + 0.6 * s(kick + 1.2)) * k);
+    u.uLegL.value.set((0.55 * s(kick + 2.6) - 0.15) * k, (0.85 + 0.6 * s(kick + 3.8)) * k);
+    u.uTwist.value = (0.38 * s(time * 3.1) + 0.12 * s(time * 7.9)) * k;
+    u.uLean.value = (-0.32 + 0.28 * s(time * 2.3)) * k;
   }
 
   /** Damage: 0 clean, 0.33 dusty, 0.66 bloodied - see src/figure/look.js. */

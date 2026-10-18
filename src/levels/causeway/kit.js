@@ -21,6 +21,7 @@ import {
   createShieldMaterial, createConduitMaterial, createBeaconMaterial,
 } from "./shaders/objects.js";
 import { LAYERS, setLayer } from "./layers.js";
+import { buildCalibrationCabin } from "../common/calibration-lift.js";
 
 export const CASE_FILES = [
   ["CASE FILE 01", "Trial 07, day 1.", "Subject responds to the", "resonance field. Glass", "within 3 m fractures."],
@@ -713,46 +714,25 @@ export class CausewayKit {
     return { root, slab, collider, locks, conduitMaterial };
   }
 
-  /** The Calibration Lift: cabin, glass shaft, doors, conduits. */
+  /**
+   * The Calibration Lift: the tower's one glass cabin (the shared builder in
+   * common/calibration-lift.js - the same cabin Levels 2 and 3 ride), in
+   * this level's refraction glass; the glass shaft round it.
+   */
   lift() {
     const root = new THREE.Group();
     root.name = "CalibrationLift";
     const m = this.materials;
-    const cabin = new THREE.Group();
-    cabin.name = "LiftCabin";
-    const floor = this.mesh(this.geometries.octagon, m.steel, { receive: true, cast: true });
-    floor.scale.set(9, 0.4, 9);
-    floor.position.y = -0.15;
-    const roof = floor.clone();
-    roof.position.y = 5.6;
-    const glassWall = this.mesh(this.geometries.openCylinder, this.glass.lift);
-    glassWall.scale.set(8.6, 5.4, 8.6);
-    glassWall.position.y = 2.75;
-    setLayer(glassWall, LAYERS.GLASS);
     const conduitMaterial = createConduitMaterial(this.time, 0x7ef4f1);
     this._owned.push(conduitMaterial);
-    for (let i = 0; i < 8; i += 1) {
-      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-      const post = this.block(m.steel, 0.2, 5.4, 0.2, Math.cos(a) * 4.3, 2.75, Math.sin(a) * 4.3, { cast: true });
-      const conduit = this.mesh(this.geometries.cylinder, conduitMaterial);
-      conduit.scale.set(0.1, 5.2, 0.1);
-      conduit.position.set(Math.cos(a) * 4.05, 2.75, Math.sin(a) * 4.05);
-      setLayer(conduit, LAYERS.FX);
-      cabin.add(post, conduit);
-    }
-    cabin.add(floor, roof, glassWall);
-    cabin.add(this.block(m.stripCyan, 8.4, 0.05, 0.1, 0, 5.35, 0));
-    const doors = [];
-    for (const side of [-1, 1]) {
-      const door = this.mesh(this.paneGeometry(2.3, 5.0, 0.08), this.glass.lift);
-      door.position.set(side * 1.15, 2.6, 4.25);
-      setLayer(door, LAYERS.GLASS);
-      door.userData.openX = side * 3.4;
-      door.userData.closedX = side * 1.15;
-      door.position.x = door.userData.openX;
-      cabin.add(door);
-      doors.push(door);
-    }
+    const { cabin, doors } = buildCalibrationCabin((x) => (this._owned.push(x), x), {
+      glass: this.glass.lift,
+      doorGlass: this.glass.lift,
+      conduit: conduitMaterial,
+      onGlass: (mesh) => setLayer(mesh, LAYERS.GLASS),
+      onConduit: (mesh) => setLayer(mesh, LAYERS.FX),
+    });
+    for (const door of doors) door.position.x = door.userData.openX;
     // The shaft: a tall glass tube on the outside of the tower.
     const shaft = this.mesh(this.geometries.openCylinder, this.glass.window);
     shaft.scale.set(10, 80, 10);

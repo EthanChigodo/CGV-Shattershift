@@ -37,6 +37,8 @@
  *   fade        black while the roof is built
  *   roofArrive  the roof's lift doors open, the player walks out
  *   roof        Phase B - the fight
+ *   roofFall    off a ledge or down a hatch: the fall in 3D (fall-scene.js),
+ *               then "failed"
  *   ending      a roof ending cutscene (climb, or the leap for the ladder)
  *   over        finished - "complete" or "failed" has been emitted
  */
@@ -51,7 +53,8 @@ import { PlayerAvatar } from "./player.js";
 import { LauncherLight } from "./flashlight.js";
 import { createGradePass } from "./post.js";
 import { createEnvironmentDimmer } from "./lighting.js";
-import { RoofLevel, ROOF_SPAWN, CANISTER_RADIUS } from "./roof.js";
+import { RoofLevel, ROOF_SPAWN, CANISTER_RADIUS, EDGE } from "./roof.js";
+import { FallScene } from "./fall-scene.js";
 import { RoofMinimap } from "./roof-map.js";
 import { createCreditsPanel } from "./credits.js";
 import { MeltdownHud } from "../../ui/meltdown-hud.js";
@@ -122,8 +125,6 @@ const ROOF_SPEED = 6.4;
  */
 const _gw = new THREE.Vector3();
 const ROOF_AIM_FAR = 80;
-/** Where the camera stands to watch a missed jump for the ladder: back from the ledge, over it. */
-const _ledgeCam = new THREE.Vector3(-2.2, 3.4, 1.6);
 const ROOF_LEAN_REACH = 14;
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
@@ -133,9 +134,15 @@ const ROOF_NAMES = [
 /** Endless roof: a supply drop of spheres every this many seconds survived. */
 const SUPPLY_SECONDS = 30;
 const SUPPLY_SPHERES = 5;
-/** The roof player's fall: gravity, and how far down before it's over. */
+/**
+ * The roof player's fall: gravity, and how far down before it's over - past
+ * the point you could still land back on the roof (0.3 m), the fall scene
+ * (fall-scene.js) takes it from there.
+ */
 const ROOF_GRAVITY = 24;
-const ROOF_FALL_LIMIT = -8;
+const ROOF_FALL_LIMIT = -0.35;
+/** The facade's face, from the tower's axis (the roof's slab overhangs it). */
+const ROOF_WALL = EDGE - 0.1;
 
 /** The playable characters: asset key -> label. The first is the default. */
 export const CHARACTERS = { playerFemale: "Female", playerMale: "Male" };
@@ -625,6 +632,8 @@ export class MeltdownGame {
   /** Stop everything and free the level (the game object can be reused with load()). */
   unload() {
     this.hide();
+    this._fall?.dispose();
+    this._fall = null;
     if (this.level) {
       this.hud.unbind();
       this.level.dispose();
@@ -1042,7 +1051,7 @@ export class MeltdownGame {
     }
     this._updateFade(dt);
     const phase = this.phase;
-    const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
+    const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "roofFall" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
     const playing = onRoof ? phase === "roof" && this.runner.alive : phase === "run" && this.runner.alive && !this.runner.finished;
     const previousBalls = this.runner.balls;
     this.runner.balls = this.ammoRecovery.update(dt, previousBalls, playing && !this.paused, this.difficulty?.recharge);
@@ -2106,7 +2115,7 @@ export class MeltdownGame {
   }
 
   /** The run is over, one way or the other. */
-  _end(escaped, title, rows, eyebrow) {
+  _end(escaped, title, rows, eyebrow, extra = null) {
     this.ammoHint.hide();
     this.phase = "over";
     if (!escaped) this.sfx?.gameOver();
@@ -2115,7 +2124,7 @@ export class MeltdownGame {
     this.ui.letterbox.classList.remove("on");
     this.hud.vitals.style.visibility = "";
     this.hud.setPrompt(null);
-    const result = { escaped, title, rows, eyebrow, stats: this.stats };
+    const result = { escaped, title, rows, eyebrow, stats: this.stats, ...extra };
     if (this.options.summary) this.hud.showSummary({ title, eyebrow, failed: !escaped, rows });
     this.events.emit(escaped ? "complete" : "failed", result);
   }
@@ -2180,6 +2189,8 @@ export class MeltdownGame {
     this.scene.add(this.demolitions.root);
 
     const { hero, runner: r, avatar } = this;
+    // A fall last time (a retry): the body and the camera back.
+    this._endFall();
     hero.position.copy(ROOF_SPAWN);
     hero.velocity.set(0, 0, 0);
     hero.knock.set(0, 0, 0);
@@ -2235,6 +2246,8 @@ export class MeltdownGame {
       this._after(1.8, () => hud.toast("LURE THEM", "OFF THE EDGE", "", 4200));
     });
     on("wave", ({ index }) => {
+      // (Not over a fall: the run is already over.)
+      if (this.phase === "roofFall") return;
       hud.showBanner(index === 1 ? "THEY WERE WAITING" : "MORE OF THEM", index === 1 ? "THEY'RE LETTING THEM OUT" : "THE MACHINE ROOM", 2600);
       this._patientSound("horde", null, 0.8);
       // Vale, on the roof's PA, as he lets them out.
@@ -2381,19 +2394,27 @@ export class MeltdownGame {
       },
       {
         camera: null,
-        // A miss: watched from the ledge, falling away (the effect closes in round it).
-        deathSeconds: 2.8,
-        deathFx: "fall",
-        deathLine: STORY_LINES.fallen[0],
+        // A miss: the fall scene, as for any way off the roof (the host
+        // plays the death: deathSeconds 0), then retry() - back on the roof.
+        deathSeconds: 0,
         on: {
           fail: () => {
-            this._latch.falling = true;
             if (this.sfx) this.sfx.fallScream();
             else this.audio.scream?.();
+            const line = STORY_LINES.fallen[0];
+            this._playFall({
+              kind: "ledge",
+              velocity: new THREE.Vector3(2.2, -1, 0),
+              onFreeze: () => line && layer.ui.say(line.who, line.text),
+              onDone: () => layer.retry(),
+            });
           },
           retry: () => {
             // Back on the roof just before the jump; it waits for you.
             layer.stop();
+            this._endFall();
+            this.fade.value = 0;
+            this.fade.target = 0;
             hero.position.copy(this._latch.from);
             hero.velocity.set(0, 0, 0);
             this.avatar.root.rotation.x = 0;
@@ -2542,7 +2563,12 @@ export class MeltdownGame {
     }
   }
 
-  /** Off the edge of the roof: down past the facade, and that's the run. */
+  /**
+   * Off the edge of the roof (or down a hatch): you fall, in 3D - the camera
+   * dives after you, stops dead, you fall on into the dark (fall-scene.js) -
+   * and that's the run. The result says the death has played (`deathScene`),
+   * so the host goes straight to its end screen.
+   */
   _roofFell() {
     const r = this.runner;
     // Down an open hatch, or off an open ledge.
@@ -2550,14 +2576,55 @@ export class MeltdownGame {
     r.alive = false;
     r.vitality = 0;
     r.firing = false;
-    this.trauma = 1;
+    this.trauma = 0;
     if (this.sfx) this.sfx.fallScream();
     else this.audio.scream?.();
-    this.hud.toast(hatch ? "DOWN A HATCH" : "YOU FELL", "", "warn", 2400);
-    this._roofSummary(false, hatch ? "DOWN A HATCH" : "YOU FELL");
+    this.audio.whoosh();
+    const title = hatch ? "DOWN A HATCH" : "YOU FELL";
+    this.phase = "roofFall";
+    this._playFall({ kind: hatch ? "hatch" : "ledge", onDone: () => this._roofSummary(false, title, { deathScene: "fall" }) });
+    // Where you left the roof: the enemies (and the key light) stay there.
+    const hero = this.hero;
+    hero.velocity.set(0, 0, 0);
+    hero.knock.set(0, 0, 0);
+    hero.vy = 0;
   }
 
-  _roofSummary(escaped, title) {
+  /**
+   * The fall scene (built on the first fall, kept for the next): it has the
+   * camera and the body until _endFall(); the HUD is off while it plays.
+   */
+  _playFall({ kind, velocity = null, onFreeze = null, onDone }) {
+    const hero = this.hero;
+    this._fall ??= new FallScene({ parent: this.scene, camera: this.camera, avatar: this.avatar, reducedMotion: this.reducedMotion, isPaused: () => this.paused });
+    // Which face you went off (the open ledges are east and west).
+    const p = hero.position;
+    const face = Math.abs(p.x) >= Math.abs(p.z) ? new THREE.Vector3(Math.sign(p.x) || 1, 0, 0) : new THREE.Vector3(0, 0, Math.sign(p.z) || 1);
+    const v = velocity ?? hero.velocity.clone().add(hero.knock).setY(hero.vy ?? 0);
+    this.runner.firing = false;
+    this.ammoHint.hide();
+    this.hud.setPrompt(null);
+    this.hud.hideBanner();
+    this.story?.layer?.stopTalk();
+    document.body.classList.add("story-cutscene");
+    this._fall.start({
+      from: p, velocity: v, kind, face, wallAt: ROOF_WALL, onFreeze,
+      onDone: () => {
+        document.body.classList.remove("story-cutscene");
+        onDone();
+      },
+    });
+  }
+
+  /** The fall scene's hold on the camera and the body, given back (a retry, a new roof). */
+  _endFall() {
+    if (!this._fall) return;
+    this._fall.restore();
+    this.fade.override = null;
+    document.body.classList.remove("story-cutscene");
+  }
+
+  _roofSummary(escaped, title, extra = null) {
     const r = this.runner;
     this._end(escaped, title, [
       ["Total time", `${this.clock.toFixed(1)}s`],
@@ -2566,7 +2633,7 @@ export class MeltdownGame {
       ["Sent over the edge", this.roof ? this.roof.state.falls : 0],
       ["Hits taken", r.hits],
       ["Spheres left", r.balls, true],
-    ], escaped ? "YOU GOT OUT" : "THE ROOF");
+    ], escaped ? "YOU GOT OUT" : "THE ROOF", extra);
   }
 
   _updateRoofFrame(dt, time) {
@@ -2667,36 +2734,28 @@ export class MeltdownGame {
       // The story's ending: the roof burns on under the departing cabin.
       roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
       this.finale?.update(dt, time);
+    } else if (this.phase === "roofFall") {
+      // Off the roof: the fall has the camera and the body (fall-scene.js);
+      // the roof goes on above without you.
+      roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
+      this._fall.update(dt, time);
+      this.fade.override = this._fall.black > 0 ? this._fall.black : null;
     } else if (this.phase === "latch") {
       // The story's latch: the world holds (the helicopter's window too)
-      // while the keys are up. A miss: over the edge and down.
-      const l = this._latch;
-      if (l?.falling) {
-        l.fall += dt;
-        hero.position.x += dt * 2.2;
-        hero.position.y = -4.9 * l.fall * l.fall;
-        // Tumbling, one arm still up for the ladder.
-        avatar.root.rotation.x = -l.fall * 1.9;
-        avatar.root.rotation.z = Math.sin(l.fall * 3.1) * 0.6;
-      } else {
+      // while the keys are up. A miss: over the edge and down - the fall
+      // scene, as any other way off the roof.
+      if (this._fall?.active) {
+        this._fall.update(dt, time);
+        this.fade.override = this._fall.black > 0 ? this._fall.black : null;
+      } else if (!this._fall?.holdsCamera) {
         // The leap toward the ladder, slowed right down.
         hero.position.x += dt * 0.4;
         hero.position.y = Math.min(0.9, hero.position.y + dt * 1.5);
+        avatar.root.position.copy(hero.position);
+        avatar.update(dt * 0.3, { speed: 0, height: 1, aiming: false });
+        avatar.reachUp = 0.8;
+        this._updateRoofCamera(dt);
       }
-      avatar.root.position.copy(hero.position);
-      avatar.update(dt * 0.3, { speed: 0, height: 1, aiming: false });
-      avatar.reachUp = l?.falling ? 0.9 : 0.8;
-      if (l?.falling) {
-        // The camera stays at the ledge and looks down after them: the
-        // ladder swinging above, the burning street far below.
-        const camera = this.camera;
-        const at = this._v.desired.copy(l.from).add(_ledgeCam);
-        camera.position.lerp(at, 1 - Math.exp(-dt * 4));
-        this._v.smoothedLook.lerp(hero.position, 1 - Math.exp(-dt * 8));
-        camera.up.copy(UP);
-        camera.lookAt(this._v.smoothedLook);
-        this._shake(dt, 0.3, 0.2, 0);
-      } else this._updateRoofCamera(dt);
     } else {
       roof.update({ dt: sdt, time, player: hero.position, playerVelocity: hero.velocity });
       if (cut && cut.kind !== "arrival") {
@@ -2709,7 +2768,8 @@ export class MeltdownGame {
           if (this.story) this._startFinale(title);
           else this._roofSummary(true, title);
         }
-      } else {
+      } else if (!this._fall?.holdsCamera) {
+        // (After a fall the camera stays where it stopped, under the end screen.)
         this._updateRoofCamera(dt);
       }
     }
@@ -2747,9 +2807,10 @@ export class MeltdownGame {
     this.hud.setDanger(danger);
     // The roof coming apart: thicker smoke, heat haze, louder everything.
     const chaos = roof?.state.chaos ?? 0;
-    this.scene.fog.density = 0.0058 + chaos * 0.007;
+    this.scene.fog.density = 0.0058 + chaos * 0.007 + (this._fall?.fogBoost ?? 0);
     // The wind across the top of the tallest tower in the city, gusting.
-    this.sfx?.updateWind(playing ? 0.7 + Math.sin(time * 0.31) * 0.2 + Math.sin(time * 1.13) * 0.1 : 0.3);
+    // (Falling: the rush of it.)
+    this.sfx?.updateWind(this._fall?.active ? 1 : playing ? 0.7 + Math.sin(time * 0.31) * 0.2 + Math.sin(time * 1.13) * 0.1 : 0.3);
     // The alarm below, through the roof hatches.
     const fighting = playing && this.phase === "roof";
     this.sfx?.updateAlarm(fighting ? 0.55 : 0, 0.65);

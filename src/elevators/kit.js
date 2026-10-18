@@ -13,6 +13,7 @@
 
 import * as THREE from "../three.js";
 import { createFacadeMaterial, createSkyMaterial, createCityMaterial, createEnergyMaterial } from "./shaders.js";
+import { createGlassCabinKit, GLASS_CABIN } from "./glass-cabin.js";
 
 export const STOREY = 4;
 /** Half the cabin's inside width and depth, and its inside height. */
@@ -174,37 +175,6 @@ export function buildShaft(owned, { from = -120, to = TOWER_TOP - 20 } = {}) {
 
 /* ------------------------------------------------------------------ cabin */
 
-function floorTexture(owned) {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 256;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#2a2d31";
-  ctx.fillRect(0, 0, 256, 256);
-  // Tread plate.
-  ctx.fillStyle = "#3a3e43";
-  for (let y = 0; y < 256; y += 16) for (let x = (y / 16) % 2 ? 8 : 0; x < 256; x += 16) ctx.fillRect(x + 3, y + 6, 9, 3);
-  // Hazard border.
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, 256, 256);
-  ctx.rect(22, 22, 212, 212);
-  ctx.clip("evenodd");
-  for (let i = -256; i < 512; i += 28) {
-    ctx.fillStyle = "#d8a21a";
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i + 14, 0);
-    ctx.lineTo(i + 14 - 256, 256);
-    ctx.lineTo(i - 256, 256);
-    ctx.fill();
-  }
-  ctx.restore();
-  const texture = owned.add(new THREE.CanvasTexture(canvas));
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  return texture;
-}
-
 /** The floor display over the doors: floor number and direction. */
 function displayTexture(owned) {
   const canvas = document.createElement("canvas");
@@ -231,93 +201,78 @@ function displayTexture(owned) {
 }
 
 /**
- * The glass cabin. Local frame: floor at y = 0, centred on x = z = 0, the
- * doors on the +Z side (toward the tower), glass on the other three sides
- * and the roof.
+ * The glass cabin - the tower's one cabin design (glass-cabin.js), glass on
+ * every side: the front and side walls single panes in their mullions (each
+ * can crack and blow out, glass.js), a glass roof (the launcher comes
+ * through it), and the door wall glass too - glass doors with lit edges in
+ * a steel frame, the floor display on its header and the buttons on a jamb,
+ * so from inside you see the shaft and the tower through it, as from
+ * outside. Local frame: floor at y = 0, centred on x = z = 0, the doors on
+ * the +Z side (toward the tower).
  */
 export function buildCabin(shared, owned) {
   const root = new THREE.Group();
   root.name = "GravityLiftCabin";
   const H = CABIN.height;
   const W = CABIN.half;
-  const box = owned.add(new THREE.BoxGeometry(1, 1, 1));
-  const frame = owned.add(new THREE.MeshStandardMaterial({ color: 0x5b6269, metalness: 0.85, roughness: 0.32 }));
-  const dark = owned.add(new THREE.MeshStandardMaterial({ color: 0x1d2024, metalness: 0.6, roughness: 0.5 }));
-  const floor = owned.add(new THREE.MeshStandardMaterial({ map: floorTexture(owned), metalness: 0.5, roughness: 0.6 }));
-  const glass = owned.add(new THREE.MeshStandardMaterial({
-    color: 0xa8e4ee, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide,
-  }));
-  // One material per strip light, so each can flicker and die on its own.
-  const STRIP = new THREE.Color(1.6, 1.55, 1.4);
-  const strips = [0, 1].map(() => owned.add(new THREE.MeshBasicMaterial({ color: STRIP.clone() })));
+  // Its conduits carry the ride's energy shader (red when the power stutters).
   const energy = owned.add(createEnergyMaterial(shared));
+  const kit = createGlassCabinKit((x) => owned.add(x), { conduit: energy });
+  const { steel: frame, darkSteel: dark, glass } = kit.materials;
+  // One material per light bar, so each can flicker and die on its own.
+  const STRIP = GLASS_CABIN.light;
+  const strips = [0, 1].map(() => kit.lightMaterial());
   const display = displayTexture(owned);
   const displayMat = owned.add(new THREE.MeshBasicMaterial({ map: display }));
 
-  const add = (material, sx, sy, sz, x, y, z, parent = root) => {
-    const mesh = new THREE.Mesh(box, material);
-    mesh.scale.set(sx, sy, sz);
-    mesh.position.set(x, y, z);
-    parent.add(mesh);
-    return mesh;
-  };
+  const add = (material, sx, sy, sz, x, y, z, parent = root) => kit.box(parent, material, sx, sy, sz, x, y, z);
 
-  // Floor and roof frame.
-  add(floor, 2 * W + 0.2, 0.22, 2 * W + 0.2, 0, -0.11, 0);
+  // Deck, and the frame under it; the roof frame.
+  kit.deck(root, 2 * W + 0.2, 2 * W + 0.2, 0.22);
   add(dark, 2 * W + 0.3, 0.2, 2 * W + 0.3, 0, -0.32, 0);
   for (const s of [-1, 1]) {
     add(frame, 2 * W + 0.2, 0.14, 0.14, 0, H, s * W);
     add(frame, 0.14, 0.14, 2 * W + 0.2, s * W, H, 0);
-    // Handrails on three sides.
-    add(frame, 0.05, 0.05, 2 * W - 0.2, s * (W - 0.12), 1.0, 0);
   }
-  add(frame, 2 * W - 0.2, 0.05, 0.05, 0, 1.0, -(W - 0.12));
-  for (const x of [-W, W]) for (const z of [-W, W]) add(frame, 0.14, H, 0.14, x, H / 2, z);
-  // Cross members on the roof, and the ceiling light strips under them.
   add(frame, 0.1, 0.1, 2 * W, 0, H, 0);
-  [-1, 1].forEach((s, i) => add(strips[i], 0.08, 0.03, 2 * W - 0.4, s * (W - 0.25), H - 0.09, 0));
+  // Corner posts, each carrying its conduit.
+  for (const x of [-W, W]) for (const z of [-W, W]) kit.post(root, x, z, H, [-x, -z]);
+  kit.lightBars(root, { span: W - 0.25, length: 2 * W - 0.4, y: H - 0.08, materials: strips });
 
-  // Glass: front, sides, roof.
-  const plane = owned.add(new THREE.PlaneGeometry(1, 1));
-  const pane = (sx, sy, x, y, z, rx, ry) => {
-    const mesh = new THREE.Mesh(plane, glass);
-    mesh.scale.set(sx, sy, 1);
-    mesh.position.set(x, y, z);
-    mesh.rotation.set(rx, ry, 0);
-    mesh.renderOrder = 2;
-    root.add(mesh);
-    return mesh;
-  };
-  // Named, so they can crack and blow out one by one (glass.js).
+  // Glass: front, sides (named, so they can crack and blow out one by one:
+  // glass.js), the roof. Each pane's +Z faces into the cabin.
   const panes = {
-    front: pane(2 * W, H, 0, H / 2, -W, 0, 0),
-    left: pane(2 * W, H, -W, H / 2, 0, 0, Math.PI / 2),
-    right: pane(2 * W, H, W, H / 2, 0, 0, -Math.PI / 2),
-    roof: pane(2 * W, 2 * W, 0, H, 0, -Math.PI / 2, 0),
+    front: kit.glassWall(root, [-W, -W], [W, -W], H, { inward: [0, 1], single: true })[0],
+    left: kit.glassWall(root, [-W, W], [-W, -W], H, { inward: [1, 0], single: true })[0],
+    right: kit.glassWall(root, [W, -W], [W, W], H, { inward: [-1, 0], single: true })[0],
   };
+  const roofPane = new THREE.Mesh(kit.geometries.plane, glass);
+  roofPane.scale.set(2 * W, 2 * W, 1);
+  roofPane.position.set(0, H, 0);
+  roofPane.rotation.x = -Math.PI / 2;
+  roofPane.renderOrder = 2;
+  root.add(roofPane);
+  panes.roof = roofPane;
+  // A handrail round the three glass walls.
+  const r = W - 0.12;
+  kit.handrail(root, [-r + 0.15, -r], [r - 0.15, -r], [0, -1]);
+  kit.handrail(root, [-r, r - 0.3], [-r, -r + 0.15], [-1, 0]);
+  kit.handrail(root, [r, -r + 0.15], [r, r - 0.3], [1, 0]);
 
-  // Back wall with the doors (two leaves that slide apart along X).
+  // The door wall: glass either side of a steel door frame, two glass leaves
+  // sliding apart along X, the floor display on the header inside.
   const doorW = 1.7;
-  for (const s of [-1, 1]) add(dark, W - doorW / 2, H, 0.12, s * (doorW / 2 + (W - doorW / 2) / 2), H / 2, W);
-  add(dark, doorW, 0.3, 0.12, 0, H - 0.15, W);
-  const leaves = [-1, 1].map((s) => {
-    const leaf = add(frame, doorW / 2, H - 0.3, 0.06, (s * doorW) / 4, (H - 0.3) / 2, W - 0.04);
-    leaf.userData.side = s;
-    return leaf;
-  });
-  const screen = new THREE.Mesh(plane, displayMat);
+  const doorH = 2.65;
+  const jamb = doorW / 2 + GLASS_CABIN.post;
+  for (const s of [-1, 1]) kit.glassWall(root, [s * W, W], [s * jamb, W], H, { inward: [0, -1] });
+  kit.doorFrame(root, { width: doorW, height: doorH, z: W, inward: -1, depth: 0.22, ceiling: H });
+  const doors = kit.doors(root, { width: doorW, height: doorH, z: W - 0.04 });
+  const leaves = doors.leaves;
+  const screen = new THREE.Mesh(kit.geometries.plane, displayMat);
   screen.scale.set(0.9, 0.34, 1);
-  screen.position.set(0, H - 0.5, W - 0.08);
+  screen.position.set(0, (doorH + H) / 2, W - 0.115);
   screen.rotation.y = Math.PI;
   root.add(screen);
-
-  // Energy conduits up the back corners (the brief's energy shader).
-  const conduitGeo = owned.add(new THREE.CylinderGeometry(0.07, 0.07, H - 0.2, 12, 1, true));
-  for (const s of [-1, 1]) {
-    const conduit = new THREE.Mesh(conduitGeo, energy);
-    conduit.position.set(s * (W - 0.14), H / 2, W - 0.14);
-    root.add(conduit);
-  }
 
   // What it hangs from: a crosshead over the roof, a sheave, and the hoist
   // ropes running up the shaft to the machine room at the top of the tower.
@@ -400,9 +355,7 @@ export function buildCabin(shared, owned) {
     },
     /** 0 = shut, 1 = open. Eased. */
     setDoors(t) {
-      const k = THREE.MathUtils.clamp(t, 0, 1);
-      const e = k * k * (3 - 2 * k);
-      for (const leaf of leaves) leaf.position.x = (leaf.userData.side * doorW) / 4 + leaf.userData.side * (doorW / 2 - 0.05) * e;
+      doors.set(t);
     },
   };
 }
