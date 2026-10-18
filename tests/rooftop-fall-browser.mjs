@@ -1,5 +1,5 @@
 /** Optional native Chromium WebGL smoke test. Node 24, installed Edge/Chrome;
- * no dependency installs. node tests/rooftop-fall-browser.mjs [--shots] [--facade]
+ * no dependency installs. node tests/rooftop-fall-browser.mjs [--shots] [--facade] [--full-game]
  * ROOF_FALL_CHROMIUM overrides the Windows Edge path. Isolated temporary profile.
  */
 import assert from "node:assert/strict";
@@ -13,6 +13,7 @@ import os from "node:os";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const shots = process.argv.includes("--shots");
 const facade = process.argv.includes("--facade");
+const fullGame = process.argv.includes("--full-game") || process.argv.includes("--game-only");
 const temporary = await mkdtemp(path.join(os.tmpdir(), "fracture-roof-fall-"));
 const profile = path.join(temporary, "profile");
 const errors = [];
@@ -33,7 +34,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/__roof-fall-test") return res.writeHead(200, { "content-type": "text/html" }).end(html);
     if (url.pathname === "/favicon.ico") return res.writeHead(204).end();
-    const target = path.resolve(root, "." + decodeURIComponent(url.pathname));
+    // Exercise the actual entry point under a server subdirectory too.
+    const pathname = url.pathname.replace(/^\/fracture-run\//, "/");
+    const target = path.resolve(root, "." + decodeURIComponent(pathname));
     if (!target.startsWith(path.resolve(root) + path.sep)) return res.writeHead(403).end();
     const body = await readFile(target);
     res.writeHead(200, { "content-type": types[path.extname(target)] ?? "application/octet-stream" }).end(body);
@@ -64,6 +67,7 @@ try {
     const m = JSON.parse(data), p = pending.get(m.id);
     if (p) { clearTimeout(p.timeout); pending.delete(m.id); m.error ? p.reject(Error(JSON.stringify(m.error))) : p.resolve(m.result); }
     else if (m.method === "Runtime.exceptionThrown") errors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+    else if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") errors.push(m.params.args.map(a => a.value ?? a.description ?? a.type).join(" "));
     else if (m.method === "Log.entryAdded" && m.params.entry.level === "error") errors.push(m.params.entry.text);
   });
   socket.addEventListener("close", () => { for (const p of pending.values()) { clearTimeout(p.timeout); p.reject(Error("Browser closed")); } pending.clear(); });
@@ -78,6 +82,9 @@ try {
     return r.result.value;
   };
   await call("Runtime.enable"); await call("Log.enable"); await call("Page.enable");
+  // --game-only is useful when iterating on the shared host/UI, without
+  // repeating the independent preview/AI/animation checks below.
+  if (!process.argv.includes("--game-only")) {
   await call("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/__roof-fall-test` });
   for (let i = 0; i < 180 && !await evaluate("!!globalThis.roofReady"); i++) await delay(500);
   assert.equal(await evaluate("!!globalThis.roofReady"), true, "roof assets/prewarm not ready");
@@ -171,8 +178,116 @@ try {
   const checks = await import("./meltdown/checks/roof.js");
   const result = await checks.run({ evaluate: fn => evaluate(`(${fn.toString()})()`) });
   assert.deepEqual(result.failures, []); console.log("Existing Roof checks", result);
+  }
+  if (fullGame) {
+    // Unlike the isolated preview above, use the real main.js, loader,
+    // DeathFX, statistics panel and buttons. No mocked scene or results UI.
+    await call("Page.addScriptToEvaluateOnNewDocument", { source: `localStorage.setItem('fractureRunSettings',JSON.stringify({quality:'low'}));` });
+    await call("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/fracture-run/index.html` });
+    const waitFor = async (expression, label) => {
+      for (let i = 0; i < 180; i++) {
+        if (await evaluate(expression)) return;
+        await delay(500);
+      }
+      throw Error(`Timed out: ${label}`);
+    };
+    await waitFor("!!globalThis.__dbg", "actual main.js boot");
+    await evaluate("__dbg.manual=true");
+    await waitFor("!__dbg.loadingScreen.visible", "legitimate boot loading finishes");
+    await evaluate("__dbg.story.jump('roof');__dbg.newRunReport()");
+    const roofReady = async () => {
+      await waitFor("__dbg.state==='playing'&&!__dbg.loadingScreen.visible", "legitimate Roof entry loading finishes");
+      await evaluate("__dbg.step(80,.05)");
+      assert.equal(await evaluate("__dbg.meltdown.phase"), "roof");
+    };
+    await roofReady();
+    const gameplayHud = ".cw-ui,.hud,.sphere-wheel,.mlt-vitals,.mlt-banner,.mlt-toasts,.mlt-prompt,.roof-map,.topbar,.reticle,.message,.sx,.pu-badges,.pu-edge";
+    const hudHidden = () => evaluate(`document.body.classList.contains('roof-fall-cinematic')&&[...document.querySelectorAll(${JSON.stringify(gameplayHud)})].every(el=>getComputedStyle(el).display==='none')`);
+    await evaluate(`(() => {
+      globalThis.transitionCalls=[];
+      for(const [object,key,label] of [[__dbg.deathFx,'play','capture'],[__dbg.loadingScreen,'show','loading'],[__dbg.renderer,'compile','compile']]) {
+        const original=object[key];object[key]=function(...args){transitionCalls.push(label);return original.apply(this,args);};
+      }
+    })()`);
+    for (const side of [-1, 1]) {
+      const entry = await evaluate(`(() => {
+        const g=__dbg.meltdown;globalThis.retainedScene=g.scene;globalThis.retainedCamera=g.camera;
+        g.runner.invulnerable=999;g.runner.breaks=7;g.runner.downs=2;g.runner.hits=3;g.runner.balls=9;g.roof.state.falls=1;
+        g.hero.position.set(${side}*15.8,0,0);g.hero.velocity.set(0,0,0);g.hero.knock.set(0,0,0);g.hero.vy=0;g.hero.dodge=0;
+        g.held.clear();g.held.add('${side < 0 ? "KeyA" : "KeyD"}');g.snapCamera=true;g._updateRoofCamera(.016);
+        transitionCalls.length=0;
+        for(let i=0;i<80&&g.phase==='roof';i++)__dbg.step(1,.05);
+        return {phase:g.phase,host:__dbg.state};
+      })()`);
+      assert.deepEqual(entry, { phase: "roofFall", host: "playing" });
+      assert.equal(await hudHidden(),true,"all gameplay statistics hidden immediately on exterior-fall entry");
+      // Step physics independently of software-rendering speed, then leave
+      // real animation frames running past the loader's old 0.6 s threshold.
+      await evaluate("while(__dbg.meltdown._roofFall.time<2.5)__dbg.step(1,1/60);globalThis.finalCamera=__dbg.meltdown.camera.matrixWorld.toArray();__dbg.render()");
+      assert.equal(await hudHidden(),true,"stats, sphere wheel and delayed toasts stay hidden throughout the fall");
+      if (shots) { const png=await call("Page.captureScreenshot",{format:"png"});await writeFile(path.join(temporary,`full-${side}-camera-stop.png`),Buffer.from(png.data,"base64")); }
+      await evaluate("for(let i=0;i<100&&__dbg.state==='playing';i++)__dbg.step(1,1/60)");
+      await delay(1200);
+      // Keep the existing count-up animation: software WebGL may deliver its
+      // final animation frame later than a wall-clock timeout would assume.
+      await waitFor("document.querySelector('#finalScore').textContent===String(Math.floor(__dbg.score)).padStart(6,'0')", "existing score count-up completes");
+      const overlay = await evaluate(`(() => {
+        const d=__dbg,g=d.meltdown,e=document.querySelector('#endScreen'),style=getComputedStyle(e);
+        globalThis.frozenStats=JSON.stringify(g.stats);globalThis.facadeTime=g.roof.facadeMaterial.userData.facadeTime.value;
+        globalThis.resultRenders=0;const render=g.composer.render;g.composer.render=function(...args){resultRenders++;return render.apply(this,args);};
+        return {state:d.state,background:g.roofFallBackground,active:e.classList.contains('active'),liveClass:e.classList.contains('roof-fall-background'),
+          sameScene:g.scene===retainedScene&&g.camera===retainedCamera,cameraLocked:JSON.stringify(finalCamera)===JSON.stringify(g.camera.matrixWorld.toArray()),
+          playerOut:g._roofFall.playerFrame.top < -1.05&&!g.avatar.body.visible,weaponFirst:g._roofFall.weaponExitTime<g._roofFall.exitTime,
+          fade:g.ui.fade.style.opacity,mainFade:document.querySelector('#fadeOverlay').style.opacity,
+          blur:style.backdropFilter,cardFilter:getComputedStyle(e.querySelector('.end-card')).filter,backgroundColor:style.backgroundColor,
+          title:document.querySelector('#endTitle').textContent,stats:document.querySelector('#endStats').textContent,
+          score:document.querySelector('#finalScore').textContent,chips:e.querySelectorAll('#endChips li').length,
+          deaths:d.runReport.deaths.length,calls:[...transitionCalls],loader:d.loadingScreen.visible,deathFX:d.deathFx.playing};
+      })()`);
+      console.log("Full-game live results", side, overlay);
+      for(const key of ['background','active','liveClass','sameScene','cameraLocked','playerOut','weaponFirst']) assert.equal(overlay[key],true,key);
+      assert.equal(overlay.state,"ended");assert.equal(overlay.title,"YOU FELL");assert.equal(overlay.score,"001250");
+      assert.equal(overlay.blur,"blur(5px)");assert.equal(overlay.cardFilter,"none");
+      assert.equal(overlay.backgroundColor,"rgba(8, 5, 7, 0.32)");
+      assert.equal(Number(overlay.fade),0);assert.equal(Number(overlay.mainFade),0);
+      assert.deepEqual(overlay.calls,[]);assert.equal(overlay.loader,false);assert.equal(overlay.deathFX,false);
+      for(const value of ['7 broken','2 downed','1 over the edge','3 hits taken']) assert.ok(overlay.stats.includes(value),value);
+      assert.ok(overlay.chips>=5);assert.equal(overlay.deaths,side===-1?1:2);
+      assert.equal(await hudHidden(),true,"gameplay HUD remains hidden behind unchanged Game Over statistics");
+      await evaluate("__dbg.step(60,1/60)");await delay(250);
+      await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+      const retained = await evaluate("({renders:resultRenders,facadeMoves:__dbg.meltdown.roof.facadeMaterial.userData.facadeTime.value>facadeTime,statsFixed:JSON.stringify(__dbg.meltdown.stats)===frozenStats,cameraFixed:JSON.stringify(__dbg.meltdown.camera.matrixWorld.toArray())===JSON.stringify(finalCamera),statsBefore:JSON.parse(frozenStats),statsAfter:__dbg.meltdown.stats})");
+      console.log('Live background retention',side,retained);
+      assert.ok(retained.renders>0,'actual render loop continues');
+      for(const key of ['facadeMoves','statsFixed','cameraFixed']) assert.equal(retained[key],true,key);
+      await call("Emulation.setDeviceMetricsOverride",{width:1000,height:700,deviceScaleFactor:1,mobile:false});
+      await delay(100);
+      assert.equal(await evaluate("JSON.stringify(finalCamera)===JSON.stringify(__dbg.meltdown.camera.matrixWorld.toArray())&&__dbg.meltdown.roofFallBackground"),true,"resize never resets cinematic camera");
+      await call("Emulation.clearDeviceMetricsOverride");
+      if(shots){const png=await call("Page.captureScreenshot",{format:"png"});await writeFile(path.join(temporary,`full-${side}-live-results.png`),Buffer.from(png.data,"base64"));}
+      if(side===-1) {
+        await evaluate("document.querySelector('#restartButton').click()");await roofReady();
+        assert.equal(await evaluate("!document.querySelector('#endScreen').classList.contains('active')&&!document.querySelector('#endScreen').classList.contains('roof-fall-background')&&!__dbg.meltdown._roofFall&&__dbg.meltdown.avatar.uniforms.uFalling.value===0&&__dbg.meltdown.launcher.rig.parent===__dbg.meltdown.avatar.shoulder&&__dbg.meltdown.runner.alive"),true,"real Retry button clears overlay, fall, pose, weapon and controls");
+        assert.equal(await evaluate("!document.body.classList.contains('roof-fall-cinematic')&&getComputedStyle(document.querySelector('.cw-ui')).display!=='none'&&getComputedStyle(document.querySelector('.sphere-wheel')).display!=='none'"),true,"normal gameplay HUD returns after Retry");
+      }
+    }
+    await evaluate("document.querySelector('#endMenuButton').click()");
+    assert.equal(await evaluate("document.body.classList.contains('roof-fall-cinematic')"),false,"menu clears cinematic HUD suppression");
+    assert.equal(await evaluate("__dbg.state==='intro'&&!document.querySelector('#endScreen').classList.contains('roof-fall-background')&&!__dbg.meltdown._roofFall&&!__dbg.meltdown.roof&&!__dbg.meltdown.visible&&!__dbg.meltdown.sfx.roofFall"),true,"real Menu button releases Roof and cinematic state");
+    await waitFor("!__dbg.loadingScreen.visible","legitimate menu warm-up");
+    // Shared deaths must STILL use their existing effects. A hatch is not an
+    // exterior cinematic even though both titles are classified as 'fall'.
+    await evaluate("__dbg.story.jump('roof')");await roofReady();
+    await evaluate("transitionCalls.length=0;const g=__dbg.meltdown;g.hero.position.set(-10,0,3);g.hero.velocity.set(0,0,0);g.hero.vy=0;g.held.clear();for(let i=0;i<80&&g.phase==='roof';i++)__dbg.step(1,.05)");
+    assert.equal(await evaluate("__dbg.state==='ended'&&!__dbg.meltdown._roofFall&&__dbg.deathFx.playing&&transitionCalls.includes('capture')&&!document.querySelector('#endScreen').classList.contains('roof-fall-background')"),true,"internal hatch retains shared captured-frame death");
+    await evaluate("document.querySelector('#endMenuButton').click()");
+    await waitFor("!__dbg.loadingScreen.visible","menu after hatch");
+    await evaluate("__dbg.startEndless('skyline');transitionCalls.length=0;__dbg.endRun(false,'fell')");
+    assert.equal(await evaluate("__dbg.deathFx.playing&&transitionCalls.includes('capture')&&!document.querySelector('#endScreen').classList.contains('roof-fall-background')"),true,"other-level fall retains existing effect");
+    console.log("PASS: actual main.js under /fracture-run/: both live results, no capture/loading/compile, unchanged stats, resize, real Retry/Menu cleanup, hatch and Skyline exclusion");
+  }
   assert.deepEqual(errors, [], "browser console/WebGL errors");
-  console.log("PASS: both ledges, side camera, horizontal pose, detached faster launcher, bottom exit, delayed Game Over, restart; console errors: 0");
+  console.log("PASS: requested Rooftop browser checks; console errors: 0");
   if (shots) console.log("Visual review images:", temporary);
 } finally {
   if (socket?.readyState === WebSocket.OPEN) await Promise.race([call("Browser.close").catch(() => {}), delay(2000)]);

@@ -65,9 +65,9 @@ for (const side of [-1, 1]) test(`camera brakes and stays absolutely fixed while
   assert.ok(s.playerFrame.top < -1.05, "the entire player envelope crossed the bottom of frame");
   assert.ok(s.weaponExitTime < s.exitTime, "bazooka leaves the bottom first");
   assert.ok(s.weaponPosition.y < s.position.y - 5);
-  assert.ok(s.time - s.exitTime >= ROOF_FALL.afterExitHold + ROOF_FALL.fadeSeconds);
+  assert.ok(s.time - s.exitTime >= ROOF_FALL.afterExitHold);
   assert.ok(s.audio < volume); assert.equal(s.audio, 0); assert.equal(s.wind, 0);
-  assert.equal(s.hidden, true); assert.equal(s.fade, 1);
+  assert.equal(s.hidden, true);
   assert.ok(s.done && s.time < 7.2, "bounded Game Over, even when no world event arrives");
 });
 
@@ -81,17 +81,17 @@ test("quick side view shows the facade, rather than looking down after the playe
   assert.equal(s.playerFrame.shown, true); assert.equal(s.weaponFrame.shown, true);
 });
 
-test("Game Over waits for full bottom exit, a hold and fade, including viewport changes", () => {
+test("Game Over waits for full bottom exit and audio hold, without a black fade, including viewport changes", () => {
   for (const aspect of [0.1, 0.5, 1, 16 / 9, 32 / 9]) {
     const s = shot();
     let previouslyExited = false;
     for (let i = 0; i < 600 && !s.done; i++) {
       s.update(1 / 60, i < 80 ? aspect : 1 / aspect);
-      if (s.exitTime === null) { assert.equal(s.fade, 0); assert.equal(s.hidden, false); }
+      if (s.exitTime === null) assert.equal(s.hidden, false);
       else {
         if (!previouslyExited) assert.ok(s.playerFrame.top < -1.05);
         previouslyExited = true;
-        if (s.time - s.exitTime < ROOF_FALL.afterExitHold) assert.equal(s.fade, 0);
+        if (s.time - s.exitTime < ROOF_FALL.afterExitHold) assert.equal(s.done, false);
       }
     }
     assert.ok(previouslyExited && s.done, `viewport aspect ${aspect} completes`);
@@ -147,11 +147,11 @@ function game() {
     camera: new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 650), avatar: a,
     runner: { alive: true, vitality: 40, firing: true, balls: 2, shots: 3, breaks: 1, hits: 1 },
     held: new Set(["KeyD"]), projectiles: { clear: noop }, ammoHint: { hide: noop }, launcher: { rig },
-    ui: { reticle: {}, letterbox: { classList: { add: noop, remove: noop } } },
+    ui: { reticle: {}, fade: { style: {} }, letterbox: { classList: { add: noop, remove: noop } } },
     hud: { vitals: { style: {} }, setPrompt: noop, toast: noop, hideBanner: noop, toasts: { replaceChildren: noop } }, options: { summary: false },
     events: { emit: (name, value) => events.push({ name, value }) },
     sfx: { beginRoofFall: () => audio.push("start"), updateRoofFall: noop, stopRoofFall: () => audio.push("stop"), updateWind: noop, gameOver: noop, updateElevator: noop },
-    scene, fade: { override: null, value: 0, target: 0 }, clock: 20, roofClock: 10,
+    scene, renderer: { toneMappingExposure: 1 }, fade: { override: null, value: 0, target: 0 }, clock: 20, roofClock: 10,
     endless: { laps: 0, distance: 0 },
   });
   g.camera.position.copy(s.cameraStart); g.camera.lookAt(g.hero.position);
@@ -161,6 +161,8 @@ test("real game entry is single-shot; inputs disabled; delayed Game Over uses ex
   const { g, events, audio } = game();
   g._roofFell(); g._roofFell();
   assert.equal(g.phase, "roofFall"); assert.equal(g.runner.firing, false);
+  assert.equal(g.roofFallBackground, false);
+  assert.equal(g.fade.override, 0); assert.equal(g.ui.fade.style.opacity, "0");
   assert.equal(g.runner.alive, false); assert.equal(g.launcher.rig.visible, true);
   assert.equal(g.launcher.rig.parent, g.scene, "original weapon is detached into world space");
   assert.equal(g.held.size, 0); assert.deepEqual(audio, ["start"]);
@@ -171,12 +173,36 @@ test("real game entry is single-shot; inputs disabled; delayed Game Over uses ex
   assert.equal(g.phase, "over");
   const ended = events.filter(e => e.name === "failed");
   assert.equal(ended.length, 1); assert.equal(ended[0].value.title, "YOU FELL");
+  assert.equal(g.roofFallBackground, true);
+  assert.equal(g.fade.override, 0, "the actual facade is never replaced by black");
   const fixed = g.camera.position.clone(); g._updateRoofFrame(1, 20);
   assert.deepEqual(g.camera.position, fixed);
   let restarted = false;
   g.options.devKeys = true; g.audio = { start: noop }; g.restart = () => { restarted = true; };
   g.onKeyDown({ code: "KeyR" });
   assert.equal(restarted, true, "the existing preview Game Over R key still works");
+});
+
+test("results retain the actual shot and only advance decorative facade time, never gameplay", () => {
+  const { g, events } = game(); g._roofFell();
+  for (let i = 0; i < 450; i++) g._updateRoofFrame(1 / 60, i / 60);
+  const shot = g._roofFall, camera = g.camera.matrixWorld.clone(), player = g.hero.position.clone();
+  const weaponPosition = g.launcher.rig.position.clone(), weaponRotation = g.launcher.rig.quaternion.clone(), stats = g.stats;
+  let facadeTime = 0;
+  g.roof.updateFacade = dt => { facadeTime += dt; };
+  g._timers = [{ at: 0, fn: () => assert.fail("gameplay timer fired behind results") }];
+  g._updateLauncher = g._updateWell = () => assert.fail("gameplay updated behind results");
+  for (let i = 0; i < 90; i++) {
+    g.renderer.toneMappingExposure = 1.08; // host's shared pipeline tuning
+    g.update(1 / 60, 100 + i / 60);
+    assert.equal(g.renderer.toneMappingExposure, 1, "Roof lighting does not change behind results");
+  }
+  assert.ok(facadeTime > 1); assert.equal(g._roofFall, shot);
+  assert.deepEqual(g.camera.matrixWorld, camera); assert.deepEqual(g.hero.position, player);
+  assert.deepEqual(g.launcher.rig.position, weaponPosition); assert.deepEqual(g.launcher.rig.quaternion.toArray(), weaponRotation.toArray());
+  assert.deepEqual(g.stats, stats);
+  assert.equal(g.fade.override, 0); assert.equal(events.filter(e => e.name === "failed").length, 1);
+  g._clearRoofFall(); assert.equal(g.roofFallBackground, false);
 });
 
 test("pause freezes cinematic; cleanup restores controls/rig/camera/launcher/fade before retry or menu", () => {
@@ -224,6 +250,7 @@ test("internal hatch and hazard/other-phase deaths retain their previous immedia
   g._roofFallOrigin = "internal"; g.hero.position.set(-10, -9, 3);
   g.sfx.fallScream = () => audio.push("hatch"); g._roofFell();
   assert.equal(g._roofFall, undefined); assert.equal(g.phase, "over");
+  assert.equal(g.roofFallBackground, false);
   assert.equal(events.at(-1).value.title, "DOWN A HATCH"); assert.deepEqual(audio, ["hatch"]);
   for (const phase of ["run", "roofArrive", "fade", "ending", "over"]) {
     const { g: other } = game(); other.phase = phase; other._roofFell();
@@ -240,6 +267,7 @@ test("a lethal Roof collision uses THEY GOT YOU immediately, never the falling s
   g.hud.flashDamage = noop; g.trauma = 0;
   g._roofHit({ damage: 15, from: new THREE.Vector3(), knock: 3, source: "patient" });
   assert.equal(g.phase, "over"); assert.equal(g._roofFall, undefined);
+  assert.equal(g.roofFallBackground, false);
   assert.equal(events.at(-1).value.title, "THEY GOT YOU");
 });
 

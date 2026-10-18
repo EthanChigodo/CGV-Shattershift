@@ -751,6 +751,11 @@ export class MeltdownGame {
     return CAMERA_MODES[this.cameraMode];
   }
 
+  /** Only a completed exterior fall retains its shot behind the host's results. */
+  get roofFallBackground() {
+    return this.phase === "over" && !!this.roof && !!this._roofFall?.done;
+  }
+
   /** Where the player is, for a status line. */
   get locationName() {
     if (this.roof) return "THE ROOF";
@@ -1037,6 +1042,16 @@ export class MeltdownGame {
   update(dt, time) {
     dt = Math.min(dt, 0.05);
     if (!this.level && !this.roof) return;
+    // Keep rendering the actual locked camera/scene, not a captured frame.
+    // Only decorative window motion continues behind results; timers, enemies,
+    // player/weapon, statistics and camera controllers must remain frozen.
+    if (this.roofFallBackground) {
+      this.roof.updateFacade(dt);
+      // The shared host sets its own exposure before forwarding each frame.
+      // Keep the Roof's existing presentation without running its simulation.
+      this.renderer.toneMappingExposure = 1.0;
+      return;
+    }
     if (this.phase !== "idle" && this.phase !== "over") this.clock += dt;
     for (let i = this._timers.length - 1; i >= 0; i -= 1) {
       if (this.clock >= this._timers[i].at) this._timers.splice(i, 1)[0].fn();
@@ -2583,6 +2598,9 @@ export class MeltdownGame {
     this._roofFall.savedFog = this.scene.fog.density;
     this._roofFall.launcherRestore = launcherRestore;
     this.phase = "roofFall";
+    this.fade.override = 0;
+    this.fade.value = this.fade.target = 0;
+    this.ui.fade.style.opacity = "0";
     this.cut = null;
     this.runner.alive = false;
     this.runner.vitality = 0;
@@ -2616,7 +2634,6 @@ export class MeltdownGame {
     this.launcher.rig.position.copy(shot.weaponPosition);
     this.launcher.rig.quaternion.copy(shot.weaponQuaternion);
     shot.applyCamera(this.camera);
-    this.fade.override = shot.fade;
     this.sfx?.updateRoofFall(shot.audio);
     // Hold the world during the shot: no enemy, extraction, delayed explosion
     // or collision can steal the camera or finish this death a second time.

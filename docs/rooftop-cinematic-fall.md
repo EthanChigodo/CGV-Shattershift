@@ -11,9 +11,40 @@ transitions to an outside, side-facing view with the facade behind the body and
 a 54-degree FOV. It follows downward, brakes between 2.0 and 2.4 seconds, then
 locks position AND aim permanently. It does not tilt farther down to track the
 departing body. Conservative projected bounds must entirely cross below the
-bottom of the actual view before a 0.45-second dramatic hold and 0.5-second fade
-can begin. Game Over uses the existing event/UI; its timing is based on observed
-exit, not a fixed disappearance timer. The shot is normally about four seconds.
+bottom of the actual view before a 0.45-second dramatic/audio-fade hold begins.
+Game Over uses the existing event/UI immediately after that hold; its timing is
+based on observed exit, not a fixed disappearance timer. The shot is normally
+about 3.4 seconds. There is no black fade or second captured-frame death effect.
+
+## Live Game Over background
+
+`MeltdownGame.roofFallBackground` is true only for a completed exterior shot in
+the `over` phase. The host's `deathKind` then skips `DeathFX.play`, whose normal
+fall effect copies the last canvas frame. Other deaths still use that effect.
+Removing the shot's black fade also removes the condition which made the host's
+black-screen detector show a spurious loader. No new loading, scene switch,
+capture or background image runs at this handoff. Legitimate level/menu loading
+continues unchanged.
+
+The same Roof scene, camera and compositor remain in the existing render loop.
+Position, aim, FOV, player/weapon and run statistics remain frozen. Only the
+lightweight decorative facade clock advances; gameplay timers and normal camera
+controllers do not run behind results. The existing statistics, score, messages
+and buttons are unchanged. The scoped `roof-fall-background` class uses a 32%
+dark veil and a 5 px CSS `backdrop-filter` (plus the WebKit form): the live building
+is blurred, not the foreground UI. Browsers without backdrop-filter retain the
+darkened live scene and sharp UI without blur.
+
+The host's existing phase listener applies `roof-fall-cinematic` synchronously
+when the fall starts. Gameplay HUD panels, sphere wheel, vitals, gameplay prompts
+and late toasts stay hidden during the shot and behind results. The results and
+pause screens are not targeted. A new phase or leaving the Roof removes this
+temporary class, restoring the player's normal HUD preferences on retry/menu.
+
+Retry and menu use the existing reset/unload paths: remove the scoped class,
+restore the launcher parent/pose and avatar animation, clear the shot/fade/audio,
+then rebuild or dispose the Roof as usual. No additional listeners, render loops,
+timers, screenshots or GPU resources are allocated for the results background.
 
 `PlayerAvatar.updateFall` uses the existing merged-mesh vertex rig: independently
 changing shoulders/elbows, unequal hip/knee angles, and a near-horizontal,
@@ -58,8 +89,8 @@ not resolve that pre-existing attribution gap.
 From the repository root:
 
 ```powershell
-node --test tests/rooftop-fall.test.mjs tests/ammo-recovery.test.mjs
-node tests/rooftop-fall-browser.mjs --shots
+node --test tests/rooftop-fall.test.mjs tests/rooftop-facade.test.mjs tests/ammo-recovery.test.mjs
+node tests/rooftop-fall-browser.mjs --shots --full-game
 py tools/serve.py 8000
 ```
 
@@ -69,19 +100,27 @@ executable. Screenshots go to a printed temporary directory outside the repo;
 the isolated browser profile is removed on exit. It exercises real Roof movement,
 shader compilation, side framing, horizontal body pose, detached faster bazooka,
 camera lock, complete bottom exit, pause, delayed Game Over, weapon reattachment
-on restart, hatch exclusion, cleanup, audio decoding, and the existing standalone Roof checks. Software WebGL
+on restart, hatch exclusion, cleanup, audio decoding, and the existing standalone
+Roof checks. `--full-game` also opens the actual index/main.js under a server
+subdirectory and checks direct live results, no capture/loading/compile calls at
+death, unchanged statistics, camera persistence on resize, actual Retry/Menu
+buttons, resource cleanup and hatch/other-level exclusion. Software WebGL
 is not representative hardware performance or a listening test.
 
 Open `http://localhost:8000/preview/meltdown.html?roof` for the isolated Roof,
 or use `http://localhost:8000/` and select the Roof via the game's existing modes.
 Walk off each open side with A/D. Check the arm/leg motion and facade, wait for
 the camera to stop, then watch the body leave the bottom before Game Over. The
-bazooka should tumble below the person and leave first. Repeat with
+bazooka should tumble below the person and leave first. On the full game page,
+the recognisable building must remain behind the sharp existing statistics panel
+with a subtle blur: no captured picture, black screen or loader in between.
+Retry must remove the overlay/blur and restore the original camera and controls;
+Back to menu must release the Roof. Repeat with
 both characters, pause/resume during the shot, and retry/return to menu using
 the full game's existing buttons. Also check a hatch and a lethal enemy hit:
 neither should play the cinematic. Space retains its existing Roof dodge/ladder
 interaction; this feature does not add a new jumping mechanic.
 
-Full-story menu/retry navigation, subjective audio/animation quality and
-hardware FPS on the target lab PC still need human playtesting. The existing
+Full-story playthrough, subjective blur/audio/animation quality and hardware FPS
+on the target lab PC still need human playtesting. The existing
 Playwright all-sector suite requires its separately installed test dependency.

@@ -4,7 +4,7 @@ import * as THREE from "../../three.js";
 export const ROOF_FALL = Object.freeze({
   confirmDepth: -0.65, gravity: 24, terminalSpeed: 32, weaponTerminalSpeed: 90,
   cameraSettle: 0.28, brakeStart: 2.0, cameraStop: 2.4,
-  afterExitHold: 0.45, fadeSeconds: 0.5, cinematicFov: 54,
+  afterExitHold: 0.45, cinematicFov: 54,
 });
 
 /** A height test alone is insufficient: the missing floor must be an OUTER edge. */
@@ -55,7 +55,6 @@ export class RoofFall {
     this.weaponVelocity = this.velocity.clone().multiplyScalar(0.65).addScaledVector(this.tangent, 1.2);
     this.audio = 1;
     this.wind = 0.8;
-    this.fade = 0;
     this.hidden = false;
     this.done = false;
   }
@@ -146,8 +145,9 @@ export class RoofFall {
       this.audio = recede * ending;
       this.wind = (0.8 + 0.2 * smooth(0, 1, t)) * ending;
       this.hidden = this.exitTime !== null;
-      this.fade = smooth(ROOF_FALL.afterExitHold, ROOF_FALL.afterExitHold + ROOF_FALL.fadeSeconds, afterExit);
-      this.done = this.exitTime !== null && afterExit >= ROOF_FALL.afterExitHold + ROOF_FALL.fadeSeconds;
+      // The host reveals its existing results OVER this live view. Only audio
+      // fades during the hold; black would obscure the facade and imply a load.
+      this.done = this.exitTime !== null && afterExit >= ROOF_FALL.afterExitHold;
       if (this.done) break;
     }
     return this;

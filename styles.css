@@ -93,6 +93,23 @@ button { font: inherit; }
 body.pregame .hud, body.pregame .reticle,
 body.paused .hud, body.paused .reticle { display: none; }
 
+/* Keep the exterior fall unobstructed, including late gameplay toasts. This
+   never targets the pause screen or the final Game Over statistics panel. */
+body.roof-fall-cinematic .cw-ui,
+body.roof-fall-cinematic .hud,
+body.roof-fall-cinematic .sphere-wheel,
+body.roof-fall-cinematic .mlt-vitals,
+body.roof-fall-cinematic .mlt-banner,
+body.roof-fall-cinematic .mlt-toasts,
+body.roof-fall-cinematic .mlt-prompt,
+body.roof-fall-cinematic .roof-map,
+body.roof-fall-cinematic .topbar,
+body.roof-fall-cinematic .reticle,
+body.roof-fall-cinematic .message,
+body.roof-fall-cinematic .sx,
+body.roof-fall-cinematic .pu-badges,
+body.roof-fall-cinematic .pu-edge { display: none !important; }
+
 .screen {
   position: fixed; inset: 0; z-index: 8; display: none; overflow-y: auto; padding: 84px 24px 92px;
   background: radial-gradient(circle at 75% 35%, rgba(200, 70, 25, .16), transparent 35%), rgba(10, 5, 4, .68);
@@ -240,6 +257,13 @@ body.reduced-motion .countdown.tick { animation: none; }
 /* ---- The end screen: death and the way out --------------------------------- */
 .end-screen { --end: #ff5a3c; --end-soft: rgba(255, 90, 60, .16); background: radial-gradient(ellipse at 30% 40%, rgba(40, 6, 4, .55), rgba(4, 2, 2, .92) 70%); overflow-y: auto; }
 .end-screen.is-win { --end: #ffcc4d; --end-soft: rgba(255, 204, 77, .14); background: radial-gradient(ellipse at 30% 40%, rgba(46, 32, 6, .5), rgba(4, 3, 1, .92) 70%); }
+/* Exterior Roof fall only: the live facade stays recognisable. Backdrop blur
+   samples the scene BEHIND the screen, never its statistics or buttons. */
+.end-screen.roof-fall-background {
+  background: rgba(8, 5, 7, .32);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
 .end-bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 .end-scan { position: absolute; inset: -50% 0; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 4px); animation: endScan 9s linear infinite; }
 .end-glow { position: absolute; left: -10%; top: 10%; width: 70vw; height: 70vw; border-radius: 50%; background: radial-gradient(circle, var(--end-soft), transparent 65%); filter: blur(10px); animation: endBreathe 6s ease-in-out infinite; }

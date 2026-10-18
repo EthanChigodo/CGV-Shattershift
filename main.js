@@ -1577,6 +1577,8 @@ function getMeltdown() {
   meltdown.events.on("collectible-near", collectibleNear);
   // The ending (the helicopter, then the credits) plays over the main theme.
   meltdown.events.on("phase", ({ phase }) => {
+    // Synchronous with entry: do not draw a frame of gameplay stats over the fall.
+    document.body.classList.toggle("roof-fall-cinematic", phase === "roof-fall");
     if (phase === "finale") music.playTheme();
     if (phase === "roof-fall") music.gameOverDuck();
   });
@@ -1692,6 +1694,8 @@ async function enterMeltdown() {
 function leaveMeltdown(nextLevel) {
   pendingSkyline = false;
   meltdownPrepared = null;
+  ui.end.classList.remove("roof-fall-background");
+  document.body.classList.remove("roof-fall-cinematic");
   meltdown?.unload();
   meltdownEntering = false;
   currentLevel = nextLevel;
@@ -3705,6 +3709,9 @@ function endRun(won, reason = null, detail = null) {
 function deathKind(reason, detail) {
   const title = detail?.title ?? "";
   if (currentLevel === 3) {
+    // The exterior fall already played its death cinematic. Do not capture
+    // and animate another frame over the retained live Rooftop view.
+    if (meltdown?.roofFallBackground) return null;
     if (title === "LEFT BEHIND") return null;
     if (title === "THEY GOT YOU") return "mauled";
     if (title === "YOU FELL" || title === "DOWN A HATCH") return "fall";
@@ -3725,6 +3732,7 @@ function deathKind(reason, detail) {
  * stats line as cards; the score counting up.
  */
 function dressEndScreen(won) {
+  ui.end.classList.toggle("roof-fall-background", !won && currentLevel === 3 && !!meltdown?.roofFallBackground);
   ui.end.classList.toggle("is-win", !!won);
   ui.end.classList.toggle("is-death", !won);
   // Replay the entrance.
