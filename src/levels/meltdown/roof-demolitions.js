@@ -152,12 +152,16 @@ export class RoofDemolitions {
     if (!craft) return;
     this._lent = index;
     const target = this.towers.target;
-    // Its west face (toward the helicopter, and the roof), toward the front.
-    const spec = target.spec;
-    const at = new THREE.Vector3(spec.x - spec.width / 2 - 0.2, CRASH_HEIGHT, spec.z + spec.depth * 0.25);
+    const at = this.crashPoint;
     this.crash = new HeliCrash({ fx: this.fx, craft });
     this.crash.onEvent = (name, info) => this._onCrash(name, info);
     this.crash.start({ stage: CRASH_STAGE, target: at, building: target, look: new THREE.Vector3(0, 0, 0), approach: CRASH_LEAD - 0.4 });
+  }
+
+  /** Where the helicopter goes in: the target's west face (toward it, and the roof), toward the front. */
+  get crashPoint() {
+    const spec = this.towers.target.spec;
+    return new THREE.Vector3(spec.x - spec.width / 2 - 0.2, CRASH_HEIGHT, spec.z + spec.depth * 0.25);
   }
 
   /** Left/right in the mix, from where it is against the camera. */
