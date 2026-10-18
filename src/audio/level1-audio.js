@@ -119,7 +119,7 @@ const STAGE_SETS = {
   lift: ["cable-snap", "brake", "clatter", "lift-chime", "lift-doors", "metal-groan", "spark", "breath-scared", "breath-recover"],
   labs: ["patient-growl", "patient-moan", "patient-speech", "patient-shriek", "patient-pain", "patient-death", "patient-horde", "pistol", "body-hit", "breath-scared", "monitor-beep"],
   skyline: ["demolition-charges", "building-collapse", "metal-groan", "sprinkler-burst", "breath-recover"],
-  roof: ["patient-growl", "patient-moan", "patient-shriek", "patient-pain", "patient-death", "patient-roar", "patient-horde", "building-collapse"],
+  roof: ["patient-growl", "patient-moan", "patient-shriek", "patient-pain", "patient-death", "patient-roar", "patient-horde", "building-collapse", "demolition-charges", "metal-groan"],
 };
 
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));

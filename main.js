@@ -925,7 +925,8 @@ function applyQuality() {
  */
 function meltdownQuality() {
   const high = settings.quality === "high";
-  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects });
+  // (The roof's demolitions take the preset; Visual effects off keeps them to Low.)
+  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects, fx: settings.effects ? resolvedQuality() : "low" });
 }
 
 function causewayDistance() {
@@ -5413,6 +5414,15 @@ globalThis.__dbg = {
   resetGame,
   setRunZ(z) { runZ = z; },
   setCausewayDistance(d) { runZ = CAUSEWAY_ORIGIN_Z - d; },
+  /**
+   * A demolition now (src/fx/demolition.js): on the Roof the next tower, or
+   * "crash" for the police helicopter; on the Skyline, Tower C.
+   */
+  demolish(what = "collapse") {
+    if (currentLevel === 3) return meltdown?.demolitions?.trigger(what) ?? false;
+    if (currentLevel === 1) return causeway?.demolish?.(what) ?? false;
+    return false;
+  },
   setLane(index) { lane = index; playerX = lanes[index]; },
   setHealth(v) { health = v; },
   /**
