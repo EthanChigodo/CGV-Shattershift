@@ -46,6 +46,8 @@ import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone } from "./src/figu
 import { DIFFICULTIES, loadDifficulty, saveDifficulty } from "./src/systems/difficulty.js";
 import { loadSave, writeSave, clearSave, SAVE_STAGE_NAMES } from "./src/systems/story-save.js";
 import { TrailerDirector } from "./src/trailer/director.js";
+import { Gamepads } from "./src/systems/gamepad.js";
+import { PadInput } from "./src/systems/pad-input.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -4273,6 +4275,8 @@ function cancelLoadingHold() {
 function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
+  // Controllers first (behind a loading screen too: menus, a pad plugged in).
+  padInput.update(Math.min(0.05, rawDt));
   updateLoadingScreen(Math.min(0.1, rawDt));
   // A level change behind the loading screen: the switch, then the world
   // holds still (nothing to see, the GPU busy warming the next level).
@@ -5161,6 +5165,38 @@ addEventListener("resize", () => {
   meltdown?.resize(innerWidth, innerHeight);
 });
 
+/*
+ * Controllers - PlayStation and Xbox pads (src/systems/pad-input.js). The
+ * pad plays through the handlers above: its buttons arrive as these keys,
+ * its right stick as the mouse on the canvas, and over a menu it moves a
+ * focus ring. This is what it needs to know about the game.
+ */
+const padInput = new PadInput({
+  gamepads: new Gamepads(),
+  canvas,
+  game: {
+    get state() { return state; },
+    get paused() { return paused; },
+    /** The mouse's aim is scaled by its sensitivity outside Level 3 (pointermove above). */
+    get aimScale() { return currentLevel === 3 ? 1 : settings.sensitivity / 100; },
+    get aimAssist() { return settings.aimAssist; },
+    get aimTargets() {
+      if (gravityLift) return null;
+      if (currentLevel === 3) return meltdown?.level && !meltdown.roof ? { camera: meltdown.camera, targets: meltdown.level.breakables } : null;
+      return { camera, targets: aliveTargets() };
+    },
+    /** Level 3's module while the roof fight is on (it takes the stick as an analog vector). */
+    get roof() { return currentLevel === 3 && meltdown?.roof && meltdown.phase === "roof" ? meltdown : null; },
+    get photo() { return photoActive ? photo : null; },
+    get serumCard() { return powerups.open ? powerups.card : null; },
+    get reactionKeys() { return story.reactions.running ? story.reactions.keys : null; },
+    toast: showMessage,
+    unlockAudio: () => unlockMusic({}),
+  },
+});
+// Felt as well as heard: every glass break, hit, blast and death in every level plays one of these.
+padInput.feel(level1Audio, { glassBreak: "glass", hurt: "hit", explosion: "blast", gameOver: "death" });
+
 
 /* ---- A refresh: back where you were ------------------------------------- */
 
@@ -5401,6 +5437,8 @@ globalThis.__dbg = {
   get projectiles() { return projectiles; },
   get arsenal() { return arsenal; },
   get powerups() { return powerups; },
+  /** The controller driver (src/systems/pad-input.js): the checks call update() themselves. */
+  pad: padInput,
   get runReport() { return runReport; },
   newRunReport, showRunReport,
   get skyLauncher() { return { rig: skyLauncher.rig, loaded: !!skyLauncher.model, cameraThird, avatarVisible: avatar.visible, level: currentLevel, photoActive }; },

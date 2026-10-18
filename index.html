@@ -33,6 +33,7 @@
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
     <link rel="stylesheet" href="./src/ui/serum-fx.css" data-serum-fx />
+    <link rel="stylesheet" href="./src/ui/pad-input.css" />
   </head>
   <body>
     <canvas id="game" aria-label="Fracture Run game canvas"></canvas>
@@ -360,6 +361,24 @@
             <span><kbd>M</kbd> Minimap</span>
             <span><kbd>ESC</kbd> Pause</span>
           </div>
+        </div>
+
+        <div class="settings-group">
+          <p class="settings-heading">Controller - PlayStation or Xbox pad</p>
+          <p class="setting-note" id="padStatus" aria-live="polite"></p>
+          <label class="setting-row">
+            <span>Stick aim sensitivity</span>
+            <input type="range" id="padSensitivitySlider" min="50" max="200" value="100" />
+          </label>
+          <label class="setting-row toggle-row">
+            <span>Invert the aim stick's up and down</span>
+            <input type="checkbox" id="padInvertToggle" />
+          </label>
+          <label class="setting-row toggle-row">
+            <span>Vibration (hits, glass, deaths)</span>
+            <input type="checkbox" id="padVibrationToggle" checked />
+          </label>
+          <div class="controls settings-controls" data-pad-controls></div>
         </div>
 
         <div class="button-row">

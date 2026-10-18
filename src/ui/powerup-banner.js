@@ -93,7 +93,8 @@ export class PowerupBanner {
     this.cardButton = el("button", "pu-card-button", info);
     this.cardButton.type = "button";
     this.cardButton.innerHTML = "<span>GOT IT</span><i>&#9654;</i>";
-    el("p", "pu-card-keys", info).innerHTML = "<kbd>Click</kbd> <kbd>Space</kbd> or <kbd>Enter</kbd> to carry on";
+    // (With a controller in use, Space reads as its ✕ / A and the rest goes: src/systems/key-glyphs.js.)
+    el("p", "pu-card-keys", info).innerHTML = "<span data-pad-hide><kbd>Click</kbd> </span><kbd>Space</kbd><span data-pad-hide> or <kbd>Enter</kbd></span> to carry on";
     this.open = false;
   }
 

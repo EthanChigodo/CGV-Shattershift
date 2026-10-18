@@ -1,0 +1,31 @@
+/*
+ * Controller play (src/systems/pad-input.js, src/systems/key-glyphs.js):
+ * only what a pad needs on screen, nothing restyled. While a pad is the
+ * last thing used, <html> has .pad-active (and .pad-ps / .pad-xbox /
+ * .pad-generic); the mouse or keyboard takes it off again.
+ */
+
+/* The menu item the pad is on: a setting's whole row, or the control itself. */
+html.pad-active .pad-focus,
+html.pad-active :focus-visible {
+  outline: 3px solid var(--hazard);
+  outline-offset: 3px;
+}
+
+/* A row with the ring: one ring, not a second on the slider or box in it. */
+html.pad-active .pad-focus :focus-visible {
+  outline: none;
+}
+
+/* Keyboard-only words in a prompt ("Click", "or Enter"), and the second
+   <kbd> of a pair that became one stick. */
+html.pad-active [data-pad-hide],
+html.pad-active .pad-dupe {
+  display: none !important;
+}
+
+/* The pad aims and navigates: no idle mouse pointer left over the view. */
+html.pad-active,
+html.pad-active * {
+  cursor: none !important;
+}

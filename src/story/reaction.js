@@ -25,7 +25,13 @@
  *
  * Options (the settings menu): `longWindows` gives every window 1.6x the
  * time; `holdInsteadOfMash` turns every mash into a hold.
+ *
+ * A controller answers with the button each key is mapped to
+ * (src/systems/key-glyphs.js KEY_BUTTON); while one is in use the prompt
+ * names those buttons, and redraws if the player switches device mid-prompt.
  */
+
+import { padGlyph, onGlyphChange } from "../systems/key-glyphs.js";
 
 /**
  * Keys reactions draw from - clear of WASD/Space movement, Esc, and the
@@ -86,7 +92,7 @@ const LABELS = { press: "PRESS", combo: "PRESS BOTH", sequence: "IN ORDER", mash
  * FAST", or (with "Hold instead of mash") "HOLD SPACE".
  */
 function howTo(kind, spec, keys) {
-  const names = keys.map((k) => (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
+  const names = keys.map((k) => padGlyph(k) ?? (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
   if (kind === "hold") return `HOLD ${names}`;
   if (kind === "mash") return spec.alternate ? `ALTERNATE ${names} FAST` : `TAP ${names} FAST`;
   return null;
@@ -140,6 +146,11 @@ export class ReactionHits {
     return this.state === "running";
   }
 
+  /** The keys the running prompt asks for (none when idle) - a controller maps its buttons onto them. */
+  get keys() {
+    return this.state === "running" ? this._s?.keys ?? [] : [];
+  }
+
   /** Begin a reaction (see the header for specs). */
   start(spec) {
     const o = this.options;
@@ -169,11 +180,12 @@ export class ReactionHits {
     this.state = "running";
     this.failReason = null;
     const s = this._s;
-    // The story's verb ("LOCK IT", "SPRINT") and, for the bars, how: "LOCK IT - TAP SPACE FAST".
-    const how = howTo(kind, spec, s.keys);
-    const label = spec.label ? (how ? `${spec.label} - ${how}` : spec.label) : how ?? LABELS[kind];
+    // Keyboard to pad (or back) mid-prompt: the same prompt, renamed.
+    this._offGlyphs ??= onGlyphChange(() => {
+      if (this.state === "running") this.ui?.relabelReaction?.(this._label());
+    });
     this.ui?.showReaction({
-      label,
+      label: this._label(),
       keys: s.keys,
       layout: kind === "combo" ? "together" : kind === "sequence" ? "sequence" : "single",
       bar: kind === "mash" || kind === "hold",
@@ -270,7 +282,20 @@ export class ReactionHits {
   cancel() {
     this.state = "idle";
     this._s = null;
+    this._unlistenGlyphs();
     this.ui?.hideReaction();
+  }
+
+  /** The story's verb ("LOCK IT", "SPRINT") and, for the bars, how: "LOCK IT - TAP SPACE FAST". */
+  _label() {
+    const s = this._s;
+    const how = howTo(s.kind, s.spec, s.keys);
+    return s.spec.label ? (how ? `${s.spec.label} - ${how}` : s.spec.label) : how ?? LABELS[s.kind];
+  }
+
+  _unlistenGlyphs() {
+    this._offGlyphs?.();
+    this._offGlyphs = null;
   }
 
   _draw() {
@@ -299,6 +324,7 @@ export class ReactionHits {
       return;
     }
     this.state = result;
+    this._unlistenGlyphs();
     this.ui?.endReaction(result);
     this.onResult?.(result, this.failReason);
   }
