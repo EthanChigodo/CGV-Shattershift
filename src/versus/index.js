@@ -216,6 +216,8 @@ export class Versus {
     if (!this.active) return;
     this._teardown();
     this.lobby.close();
+    // Out to the menu: the seats are empty next time (Change players keeps them).
+    this.lobby.slots = [null, null];
     this.input.detach();
     this.active = false;
     setVersusActive(false);
