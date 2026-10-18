@@ -8,3 +8,4 @@ tests/controllers/shots/
 __pycache__/
 dist/
 .audio-work/
+tests/versus/shots/

@@ -48,6 +48,7 @@ import { loadSave, writeSave, clearSave, SAVE_STAGE_NAMES } from "./src/systems/
 import { TrailerDirector } from "./src/trailer/director.js";
 import { Gamepads } from "./src/systems/gamepad.js";
 import { PadInput } from "./src/systems/pad-input.js";
+import { Versus } from "./src/versus/index.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -1550,6 +1551,25 @@ const MELTDOWN_AUDIO = true;
 let meltdownPrepared = null;
 const MELTDOWN_ASSET_BASE = new URL("./assets/meltdown/", import.meta.url).href;
 let meltdownEntering = false;
+
+/**
+ * Versus (src/versus/): Rooftop Showdown, two players on the roof, split
+ * screen. While its lobby or a match is up it owns the input (the handlers
+ * below stand aside) and, during a match, the frame (updateGame/renderFrame).
+ */
+const versus = new Versus({
+  renderer,
+  assetBase: MELTDOWN_ASSET_BASE,
+  sfx: level1Audio,
+  music,
+  quality: () => resolvedQuality(),
+  reducedMotion: () => settings.reducedMotion,
+  onExit: () => {
+    applyQuality();
+    ui.start.classList.add("active");
+    music.showMenu();
+  },
+});
 
 function getMeltdown() {
   if (meltdown) return meltdown;
@@ -3855,6 +3875,11 @@ function clearPostLooks() {
 }
 
 function updateGame(dt, time) {
+  // Versus: its lobby over the menu, or a match that owns the frame.
+  if (versus.active) {
+    versus.update(dt, time);
+    if (versus.running) return;
+  }
   // Hide independently of the early returns for pause, menus and cutscenes.
   ammoHint.hide();
   if (paused || photoActive || state !== "playing" || currentLevel !== 3) meltdown?.ammoHint?.hide();
@@ -4125,6 +4150,7 @@ function updatePerformance(rawDt) {
 }
 
 function renderFrame() {
+  if (versus.running) { versus.render(); return; }
   if (prologue?.active) { prologue.render(); return; }
   if (gravityLift?.visible) { gravityLift.render(); return; }
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
@@ -4282,7 +4308,8 @@ function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
   // Controllers first (behind a loading screen too: menus, a pad plugged in).
-  padInput.update(Math.min(0.05, rawDt));
+  // Versus reads every pad itself (src/versus/active.js): pad 1 must not also drive the game.
+  if (!versus.active) padInput.update(Math.min(0.05, rawDt));
   updateLoadingScreen(Math.min(0.1, rawDt));
   // A level change behind the loading screen: the switch, then the world
   // holds still (nothing to see, the GPU busy warming the next level).
@@ -4971,6 +4998,7 @@ story.reactions.onResult = (result) => {
   else if (result === "fail") runReport.qteFailed += 1;
 };
 ui.endlessButton.addEventListener("click", () => { ui.start.classList.remove("active"); refreshEndlessMenu(); ui.endless.classList.add("active"); });
+$("#versusButton").addEventListener("click", () => { ui.start.classList.remove("active"); versus.openLobby(); });
 for (const button of document.querySelectorAll("[data-endless]")) {
   button.addEventListener("click", () => startEndless(button.dataset.endless));
 }
@@ -5062,6 +5090,7 @@ causewayHud.photoEl.querySelector("[data-fov]").addEventListener("input", (event
 /* ---- Input ---------------------------------------------------------------- */
 
 addEventListener("pointermove", (event) => {
+  if (versus.active) return;
   const factor = settings.sensitivity / 100;
   pointer.x = THREE.MathUtils.clamp(((event.clientX / innerWidth) * 2 - 1) * factor, -1, 1);
   pointer.y = THREE.MathUtils.clamp((-(event.clientY / innerHeight) * 2 + 1) * factor, -1, 1);
@@ -5080,6 +5109,7 @@ function placeReticle() {
   ui.reticle.style.top = `${((1 - pointer.y) / 2) * innerHeight}px`;
 }
 addEventListener("pointerdown", (event) => {
+  if (versus.active) return;
   if (powerups.open) return; // the serum card takes the click
   if (state === "launch" && causeway) { skipLaunch(); return; }
   if (state === "cutscene" || story.player.active) return;
@@ -5114,11 +5144,13 @@ addEventListener("pointerup", (event) => {
 });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 addEventListener("wheel", (event) => {
-  if (gravityLift) return;
+  if (gravityLift || versus.active) return;
   cycleSphere(event.deltaY > 0 ? 1 : -1);
 }, { passive: true });
 
 addEventListener("keydown", (event) => {
+  // Versus reads the keyboard itself (src/versus/controls.js).
+  if (versus.active) return;
   // Trailer mode keys (only with ?trailer).
   if (trailer.onKey(event)) return;
   // The serum card: Space or Enter carries on (Esc too, below); nothing else.
@@ -5198,6 +5230,7 @@ addEventListener("resize", () => {
   postfx.resize();
   placeReticle();
   meltdown?.resize(innerWidth, innerHeight);
+  versus.resize();
 });
 
 /*
@@ -5455,6 +5488,8 @@ globalThis.__dbg = {
   get causeway() { return causeway; },
   get meltdown() { return meltdown; },
   enterMeltdown,
+  /** Versus (src/versus/index.js): openLobby(), quickStart(), state, match. */
+  get versus() { return versus; },
   get gravityLift() { return gravityLift; },
   get loadingScreen() { return loadingScreen; },
   get deathFx() { return deathFx; },
