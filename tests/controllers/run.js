@@ -72,8 +72,8 @@ async function menus(page, check) {
     out.back = __c.active();
     out.backFocus = __c.focus();
     // The field manual's tabs on R1 / L1.
-    p.tap("down");
-    p.tap("down");
+    // Down to it by name: the menu's order changes as modes are added.
+    for (let i = 0; i < 12 && __c.focus() !== "manualButton"; i += 1) p.tap("down");
     out.manualButton = __c.focus();
     p.tap("cross");
     p.frame();
@@ -87,7 +87,7 @@ async function menus(page, check) {
     p.tap("circle");
     p.frame();
     // Settings: a checkbox, then the aim slider.
-    p.tap("down");
+    for (let i = 0; i < 12 && __c.focus() !== "settingsButton"; i += 1) p.tap("down");
     out.settingsButton = __c.focus();
     p.tap("cross");
     p.frame();
