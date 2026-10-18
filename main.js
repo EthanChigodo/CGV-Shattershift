@@ -933,7 +933,8 @@ function applyQuality() {
  */
 function meltdownQuality() {
   const high = settings.quality === "high";
-  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects });
+  // (The roof's demolitions take the preset; Visual effects off keeps them to Low.)
+  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects, fx: settings.effects ? resolvedQuality() : "low" });
 }
 
 function causewayDistance() {
@@ -994,6 +995,14 @@ function wireCausewayEvents(level) {
   on("tower-collapse", () => {
     level1Audio.buildingCollapse(0.85);
     if (state === "playing") run.surge = Math.min(1.5, run.surge + 0.5);
+  });
+  // Tower C's demolition (src/fx/demolition.js), as it happens: the charges'
+  // crackle, the blast, steel giving, the floors going one by one.
+  on("demolition", (p) => {
+    if (p.phase === "charges") level1Audio.demolitionCharges(0.9);
+    else if (p.phase === "blast") { level1Audio.explosion(0.8); triggerShake(0.18); }
+    else if (p.phase === "collapse") { level1Audio.metalGroan(0.8); triggerShake(0.25); }
+    else if (p.phase === "crush" && p.floor % 3 === 0) level1Audio.debrisFall(0.5);
   });
   on("pod-break", () => triggerShake(0.3));
   on("tremor", (p) => {
@@ -1081,7 +1090,7 @@ function updateCauseway(dt, time) {
     beginSkylineBlast();
     return;
   }
-  skylineStory?.tower.update(dt);
+  skylineStory?.tower.update(dt, camera);
   skylineStory?.sky.update(dt, time);
   hideRampProps();
   run.time += dt;
@@ -2782,7 +2791,7 @@ function buildSkylineStory() {
   hands.visible = false;
   group.add(hands);
   // The tower that's demolished floor by floor (stages/demolition-tower.js).
-  const tower = new DemolitionTower({ floors: 24, width: 22 });
+  const tower = new DemolitionTower({ floors: 24, width: 22, quality: resolvedQuality() });
   tower.root.position.set(SKYLINE_TOWER.x, SKYLINE_TOWER.base, CAUSEWAY_ORIGIN_Z - SKYLINE_TOWER.d);
   group.add(tower.root);
   // The sky over it all once the tower goes: smoke lit from below, embers,
@@ -2827,6 +2836,8 @@ function beginSkylineBlast() {
   tower.onWhole = () => {
     s.flash = 1;
     s.sky.setVisible(true);
+    // Glass and debris raining past you, its dust blowing across the bridge.
+    tower.fallout(camera);
     // The whole tower going: the sound of it arrives with the dust.
     level1Audio.buildingCollapse(1);
     level1Audio.impact(1);
@@ -2999,7 +3010,7 @@ function updateMainCutscene(dt, time, frame) {
     scene.background.copy(causeway.hazeColor);
     if (skylineStory) {
       hideRampProps();
-      skylineStory.tower.update(dt);
+      skylineStory.tower.update(dt, camera);
       skylineStory.sky.update(dt, time);
       skylineStory.flash = Math.max(0, skylineStory.flash - dt * 1.2);
       postfx.uniforms.uFlash.value = skylineStory.flash * 0.35;
@@ -5529,6 +5540,15 @@ globalThis.__dbg = {
   resetGame,
   setRunZ(z) { runZ = z; },
   setCausewayDistance(d) { runZ = CAUSEWAY_ORIGIN_Z - d; },
+  /**
+   * A demolition now (src/fx/demolition.js): on the Roof the next tower, or
+   * "crash" for the police helicopter; on the Skyline, Tower C.
+   */
+  demolish(what = "collapse") {
+    if (currentLevel === 3) return meltdown?.demolitions?.trigger(what) ?? false;
+    if (currentLevel === 1) return causeway?.demolish?.(what) ?? false;
+    return false;
+  },
   setLane(index) { lane = index; playerX = lanes[index]; },
   setHealth(v) { health = v; },
   /**

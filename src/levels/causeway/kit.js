@@ -177,7 +177,6 @@ export class CausewayKit {
     const box = new THREE.BoxGeometry(1, 1, 1);
     this.geometries = {
       box,
-      boxBase: box.clone().translate(0, 0.5, 0),
       octa: new THREE.OctahedronGeometry(0.55, 0),
       sphere: new THREE.SphereGeometry(0.5, 28, 18),
       smallSphere: new THREE.SphereGeometry(0.14, 12, 8),
@@ -814,20 +813,6 @@ export class CausewayKit {
   }
 
   /** A single tower in the skyline, used for the scripted collapse. */
-  distantTower() {
-    const material = new THREE.MeshStandardMaterial({ color: 0x8a9aa8, roughness: 0.35, metalness: 0.2, emissive: 0x3a2014, fog: true });
-    this._owned.push(material);
-    const root = new THREE.Group();
-    root.name = "CollapsingTower";
-    const body = this.mesh(this.geometries.boxBase, material);
-    body.scale.set(34, 190, 34);
-    const crown = this.mesh(this.geometries.boxBase, material);
-    crown.scale.set(22, 24, 22);
-    crown.position.y = 190;
-    root.add(body, crown);
-    return root;
-  }
-
   shield() {
     const material = createShieldMaterial(this.time);
     this._owned.push(material);

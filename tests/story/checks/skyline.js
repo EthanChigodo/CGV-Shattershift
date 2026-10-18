@@ -129,9 +129,9 @@ export async function run(page, { shots }) {
     __t.until(() => __t.R.running && __t.R._s.spec.label === "GRAB", 200);
   });
   await shot("03-mid-air-latch-prompt");
-  await page.evaluate(() => { __t.play(); __t.until(() => __t.L.player.t > 7.25, 200); });
+  await page.evaluate(() => { __t.play(); __t.until(() => __t.L.player.t > 8.6, 200); });
   await shot("04-hands-on-the-ledge");
-  await page.evaluate(() => __t.until(() => __t.L.player.t > 10.45, 300));
+  await page.evaluate(() => __t.until(() => __t.L.player.t > 11.8, 300));
   await shot("05-on-your-back-the-sky");
   const after = await page.evaluate(() => {
     __t.until(() => __dbg.state === "playing", 600);

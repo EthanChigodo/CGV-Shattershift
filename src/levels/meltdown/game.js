@@ -70,6 +70,7 @@ import { DIFFICULTIES } from "../../systems/difficulty.js";
 import { AmmoRecovery, canAffordThrow } from "../../systems/ammo-recovery.js";
 import { AmmoRecoveryHint } from "../../ui/ammo-recovery.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
+import { RoofDemolitions } from "./roof-demolitions.js";
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                               */
@@ -470,6 +471,7 @@ export class MeltdownGame {
       this.roof.dispose();
       this.roof = null;
     }
+    this._dropDemolitions();
     this._timers.length = 0;
     this.phase = "idle";
     // The alarm comes back with a fresh run (the blackout silenced it).
@@ -632,6 +634,7 @@ export class MeltdownGame {
     this.roofMap = null;
     this.roof?.dispose();
     this.roof = null;
+    this._dropDemolitions();
     this.director?.dispose();
     this.director = null;
     this.finale?.dispose();
@@ -699,8 +702,8 @@ export class MeltdownGame {
    * key light's shadow map; `ao` - screen-space ambient occlusion. Both only
    * at High: they are the most expensive things on screen.
    */
-  setQuality({ shadows = false, ao = false } = {}) {
-    this.quality = { shadows, ao };
+  setQuality({ shadows = false, ao = false, fx = "high" } = {}) {
+    this.quality = { shadows, ao, fx };
     this.ao.enabled = ao;
     this.keyLight.visible = shadows;
     this.keyLight.castShadow = shadows;
@@ -2001,6 +2004,7 @@ export class MeltdownGame {
     this.roofMap = null;
     this.roof?.dispose();
     this.roof = null;
+    this._dropDemolitions();
     this._timers.length = 0;
     this.cut = null;
     this.ui.letterbox.classList.remove("on");
@@ -2167,6 +2171,13 @@ export class MeltdownGame {
     }
     this.scene.add(this.police.root);
     this.police.root.visible = true;
+    // The towers next door coming down, and a police helicopter caught in it.
+    this._dropDemolitions();
+    this.demolitions = new RoofDemolitions({
+      city: roof.city, police: this.police, quality: this.quality.fx ?? "high", endless: this.mode === "endless-roof",
+      sfx: this.sfx, audio: this.audio, shake: (k) => { this.trauma = Math.min(1, this.trauma + k); },
+    });
+    this.scene.add(this.demolitions.root);
 
     const { hero, runner: r, avatar } = this;
     hero.position.copy(ROOF_SPAWN);
@@ -2207,6 +2218,12 @@ export class MeltdownGame {
     this.fade.target = 0;
     this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "HOLD ON", 3200);
     this.events.emit("phase", { phase: "roof" });
+  }
+
+  /** The roof's neighbours (roof-demolitions.js) go with the roof. */
+  _dropDemolitions() {
+    this.demolitions?.dispose();
+    this.demolitions = null;
   }
 
   _bindRoofEvents(roof) {
@@ -2700,6 +2717,7 @@ export class MeltdownGame {
     this._placeLauncher(false);
     this._placeKeyLight(hero.position);
     this.police?.update(dt, time, { worldZ: (d) => 70 - d, distance: 0, deckY: 0, overDeck: true, cityY: -60, spotZ: 0, spotSpread: 14 });
+    this.demolitions?.update(dt, time, roof.state, this.camera, this.renderer.domElement.height);
     // Balls fly through the cutscene's slow motion too.
     this.projectiles.update(sdt, { breakables: roof.breakables, solids: roof.solids, onBreakable: (o, p, b) => this._onBallHit(o, p, b), onSolid: (o, p, b) => this._onBallSolid(o, p, b), onFloor: (p, b) => this._onBallFloor(p, b) });
     this.debris.update(sdt);

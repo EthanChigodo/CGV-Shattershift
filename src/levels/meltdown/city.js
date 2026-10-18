@@ -163,6 +163,8 @@ export class CityAtNight {
       { colour: 0x231d1a, metal: 0.1, rough: 0.92, tile: own(windowTile(seed + 3, { lit: 0.15, warm: 0.95 })), glow: 0.55, count: 60 },
     ];
     const towers = [];
+    /** What stands where, for clearAround(): { mesh, index, x, z, r, sprite? }. */
+    this.placed = [];
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const p = new THREE.Vector3();
@@ -220,6 +222,7 @@ export class CityAtNight {
         q.setFromAxisAngle(up, yaw);
         m.compose(p.set(x, y, z), q, s.set(sx, sy, sz));
         mesh.setMatrixAt(i, m);
+        this.placed.push({ mesh, index: i, x, z, r: Math.hypot(sx, sz) / 2 });
       });
       mesh.frustumCulled = false;
       this.root.add(mesh);
@@ -236,6 +239,7 @@ export class CityAtNight {
         q.setFromAxisAngle(up, yaw);
         m.compose(p.set(x, y, z), q, s.set(sx, sy, sz));
         crownMesh.setMatrixAt(i, m);
+        this.placed.push({ mesh: crownMesh, index: i, x, z, r: Math.hypot(sx, sz) / 2 });
         crownMesh.setColorAt(i, colour.set(c).multiplyScalar(0.8));
       });
       crownMesh.frustumCulled = false;
@@ -268,6 +272,7 @@ export class CityAtNight {
         light.position.set(x, y + h + 0.6, z);
         light.scale.setScalar(5);
         this.root.add(light);
+        this.placed.push({ mesh: mastMesh, index: i, x, z, r: 0.5, sprite: light });
       });
       this.root.add(mastMesh);
     }
@@ -284,6 +289,20 @@ export class CityAtNight {
 
     this.police = null;
     this.centre = centre.clone();
+  }
+
+  /**
+   * Take down whatever stands within `radius` of (x, z) - somewhere else
+   * puts a tower of its own there (roof-demolitions.js).
+   */
+  clearAround(x, z, radius) {
+    const none = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (const item of this.placed) {
+      if (Math.hypot(item.x - x, item.z - z) > radius + item.r) continue;
+      item.mesh.setMatrixAt(item.index, none);
+      item.mesh.instanceMatrix.needsUpdate = true;
+      if (item.sprite) item.sprite.visible = false;
+    }
   }
 
   /** Police helicopters circling the tower (assets/meltdown/police_helicopter.glb). */

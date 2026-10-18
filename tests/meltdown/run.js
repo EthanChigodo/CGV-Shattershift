@@ -17,10 +17,11 @@ import * as route from "./checks/route.js";
 import * as fairness from "./checks/fairness.js";
 import * as roof from "./checks/roof.js";
 import * as playthrough from "./checks/playthrough.js";
+import * as demolition from "./checks/demolition.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
-const CHECKS = [route, fairness, roof, playthrough];
+const CHECKS = [route, fairness, roof, playthrough, demolition];
 
 /** Documentation shots: [name, route distance, camera mode]. */
 const SHOTS = [

@@ -19,6 +19,11 @@ import { sprintReaction, latchReaction } from "./reaction.js";
 
 /** When the charges start (the tower goes floor by floor from here). */
 export const DETONATE_AT = 0.35;
+/**
+ * Seconds you watch the tower come down after the blast before the deck
+ * goes (enough to see the top drop, lean and break into its dust).
+ */
+const WATCH_COLLAPSE = 3.0;
 /** The deck's final ramp angle before you run (radians) and while you run. */
 const RAMP_ANGLE = 0.2;
 const RAMP_ANGLE_RUN = 0.3;
@@ -39,8 +44,8 @@ const RAMP_ANGLE_RUN = 0.3;
  */
 export function blastScene(a) {
   const WHOLE = DETONATE_AT + a.wholeAt;
-  // Watch the whole tower go up and start to come down before the deck goes.
-  const TILT_AT = WHOLE + 1.6;
+  // Watch the tower blow and come down before the deck goes.
+  const TILT_AT = WHOLE + WATCH_COLLAPSE;
   const SPRINT_AT = TILT_AT + 1.15;
   const LATCH_AT = SPRINT_AT + 0.65;
   const UP_AT = LATCH_AT + 2.35;
