@@ -45,7 +45,7 @@ const FALL_ACCEL = 0.62;
 const CRUSH_KEEP = 0.86;
 const FALL_MAX_SPEED = 22;
 /** Seconds from the last charge to the blast that cuts the core, and from that to the drop. */
-const BLAST_DELAY = 0.3;
+export const BLAST_DELAY = 0.3;
 const FALL_DELAY = 0.35;
 /** Seconds the ruin smokes on afterwards. */
 const SMOULDER = 26;

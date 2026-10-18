@@ -1082,7 +1082,7 @@ function updateCauseway(dt, time) {
     beginSkylineBlast();
     return;
   }
-  skylineStory?.tower.update(dt);
+  skylineStory?.tower.update(dt, camera);
   skylineStory?.sky.update(dt, time);
   hideRampProps();
   run.time += dt;
@@ -2763,7 +2763,7 @@ function buildSkylineStory() {
   hands.visible = false;
   group.add(hands);
   // The tower that's demolished floor by floor (stages/demolition-tower.js).
-  const tower = new DemolitionTower({ floors: 24, width: 22 });
+  const tower = new DemolitionTower({ floors: 24, width: 22, quality: resolvedQuality() });
   tower.root.position.set(SKYLINE_TOWER.x, SKYLINE_TOWER.base, CAUSEWAY_ORIGIN_Z - SKYLINE_TOWER.d);
   group.add(tower.root);
   // The sky over it all once the tower goes: smoke lit from below, embers,
@@ -2808,6 +2808,8 @@ function beginSkylineBlast() {
   tower.onWhole = () => {
     s.flash = 1;
     s.sky.setVisible(true);
+    // Glass and debris raining past you, its dust blowing across the bridge.
+    tower.fallout(camera);
     // The whole tower going: the sound of it arrives with the dust.
     level1Audio.buildingCollapse(1);
     level1Audio.impact(1);
@@ -2980,7 +2982,7 @@ function updateMainCutscene(dt, time, frame) {
     scene.background.copy(causeway.hazeColor);
     if (skylineStory) {
       hideRampProps();
-      skylineStory.tower.update(dt);
+      skylineStory.tower.update(dt, camera);
       skylineStory.sky.update(dt, time);
       skylineStory.flash = Math.max(0, skylineStory.flash - dt * 1.2);
       postfx.uniforms.uFlash.value = skylineStory.flash * 0.35;
