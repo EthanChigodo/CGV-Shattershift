@@ -1,0 +1,61 @@
+/*
+ * The mash prompt: a reaction that fills a bar by tapping a key (the lift's
+ * LOCK IT, the Skyline's SPRINT, the Labs' PUSH IT OFF - src/story/reaction.js).
+ *
+ * Beta feedback said these were hard to fill; the tuning is in reaction.js
+ * (MASH). This makes the prompt easy to read while you hammer it: the key is
+ * half as big again and beckons until the first press, then pulses with
+ * every counted press; the bar is a thick track ticked off in presses (one
+ * cell per press, from --step) that eases up and bumps with each one, so
+ * every tap visibly does something. The classes are StoryUI's own
+ * (src/story/story-ui.js: .story-react.mash, .tap-a / .tap-b), layered on
+ * src/story/story.css; colours from the theme's tokens (src/ui/theme.css)
+ * where it is loaded, with fallbacks.
+ */
+
+.story-react.mash { gap: 18px; }
+.story-react.mash .label { font-size: 15px; letter-spacing: 0.22em; }
+
+/* The key: big, beckoning until the first press. */
+.story-react.mash .story-key { width: 112px; height: 112px; animation: mash-beckon 0.5s ease-in-out infinite alternate; }
+.story-react.mash .story-key b { font-size: 36px; }
+.story-react.mash .story-key.wide b { font-size: 20px; letter-spacing: 0.14em; }
+.story-react.mash .story-key circle { stroke-width: 6; }
+
+/* Each press: a squash and a punch out, the ring flashing. Two copies of
+   the same animation, swapped per press, so it restarts every time. */
+.story-react.mash .story-key.tap-a { animation: mash-tap-a 0.2s ease-out; }
+.story-react.mash .story-key.tap-b { animation: mash-tap-b 0.2s ease-out; }
+.story-react.mash .story-key.tap-a circle.track,
+.story-react.mash .story-key.tap-b circle.track { animation: mash-ring 0.25s ease-out; }
+
+/* The bar: a thick track, one cell per press. */
+.story-react.mash .bar {
+  position: relative; width: min(440px, 72vw); height: 24px; border: 2px solid rgba(255, 255, 255, 0.8); border-radius: 3px;
+  background: rgba(0, 0, 0, 0.66); box-shadow: 0 0 20px rgba(0, 0, 0, 0.6); transform-origin: 50% 50%;
+}
+.story-react.mash .bar i {
+  background: linear-gradient(90deg, var(--glass, #7ff3ff), #ffffff);
+  box-shadow: 0 0 14px var(--glass, #7ff3ff);
+  /* Up in a quick ease, so the jump of each press reads; the drain is per frame. */
+  transition: width 0.09s ease-out;
+}
+.story-react.mash .bar::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(var(--step, 100%) - 2px), rgba(0, 0, 0, 0.55) calc(var(--step, 100%) - 2px) var(--step, 100%));
+}
+.story-react.mash .bar.tap-a { animation: mash-bump-a 0.2s ease-out; }
+.story-react.mash .bar.tap-b { animation: mash-bump-b 0.2s ease-out; }
+
+@keyframes mash-beckon { from { transform: scale(1); } to { transform: scale(1.1); } }
+@keyframes mash-tap-a { 0% { transform: scale(0.84); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
+@keyframes mash-tap-b { 0% { transform: scale(0.84); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
+@keyframes mash-ring { from { stroke: var(--caution, #ffc21a); } to { stroke: rgba(255, 255, 255, 0.18); } }
+@keyframes mash-bump-a { 0% { transform: scaleY(1.45); filter: brightness(1.6); } 100% { transform: scaleY(1); filter: none; } }
+@keyframes mash-bump-b { 0% { transform: scaleY(1.45); filter: brightness(1.6); } 100% { transform: scaleY(1); filter: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .story-react.mash .story-key, .story-react.mash .bar { animation: none !important; }
+}
+body.reduced-motion .story-react.mash .story-key,
+body.reduced-motion .story-react.mash .bar { animation: none !important; }

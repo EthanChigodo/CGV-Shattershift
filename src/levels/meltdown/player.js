@@ -21,7 +21,7 @@
 
 import * as THREE from "../../three.js";
 import { cloneCharacter, rigPlayerMesh } from "./characters.js";
-import { applyFigureLook } from "../../figure/look.js";
+import { applyFigureLook, savedHairColour, savedSkinTone } from "../../figure/look.js";
 import { RunGait } from "./gait.js";
 
 /**
@@ -121,7 +121,11 @@ export class PlayerAvatar {
     this.look = applyFigureLook(mesh, body);
     this.look.setWear(this._wear ?? 0);
     this.look.setGear(this._gear ?? false);
-    this.look.setSkinTone(this._skinTone ?? "light");
+    // Skin and hair: as the host set them, else as picked on the start
+    // screen - so every place the figure appears (a cutscene's sleeper
+    // too) shows the player's own choice without being told.
+    this.look.setSkinTone(this._skinTone ?? savedSkinTone());
+    this.look.setHairColour(this._hairColour ?? savedHairColour());
     // Models face +Z; the runner travels down -Z.
     model.rotation.y = Math.PI;
     this.model = model;
@@ -325,6 +329,12 @@ export class PlayerAvatar {
   setSkinTone(name) {
     this._skinTone = name;
     this.look?.setSkinTone(name);
+  }
+
+  /** Hair colour, a HAIR_COLOURS key from src/figure/look.js. */
+  setHairColour(name) {
+    this._hairColour = name;
+    this.look?.setHairColour(name);
   }
 
   /** The scientist's vest and radio, after his sacrifice. */

@@ -1,0 +1,34 @@
+/*
+ * The start screen's hair colour swatches (#hairPick, main.js).
+ *
+ * They share the skin swatches' markup and classes (.skin-pick /
+ * .skin-button, sized and ringed in styles.css), so a restyle of one picker
+ * restyles both. This file only adds what makes a hair swatch read as hair
+ * rather than a flat dot: fine vertical streaks and a band of sheen over the
+ * dye (--swatch), like the strands the shader draws. Colours come from the
+ * theme's tokens (src/ui/theme.css) where it is loaded, with fallbacks.
+ */
+
+.hair-pick { margin-bottom: 2px; }
+
+.hair-button {
+  background:
+    /* The sheen: a soft light band across the top third. */
+    linear-gradient(180deg, transparent 18%, rgba(255, 255, 255, 0.28) 34%, transparent 50%),
+    /* Strands: thin darker streaks down the swatch. */
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 4px),
+    /* Shade toward the ends. */
+    linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.35)),
+    var(--swatch);
+}
+
+/* The model's own hair differs per figure: half the female figure's
+   auburn-brown, half the male's dark brown. */
+.hair-button[data-hair="natural"] {
+  --swatch: linear-gradient(135deg, #5a2a17 50%, #34261d 50%);
+}
+
+.hair-button:focus-visible {
+  outline: 2px solid var(--glass, #7ff3ff);
+  outline-offset: 2px;
+}

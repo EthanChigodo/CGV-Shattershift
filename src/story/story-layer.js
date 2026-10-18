@@ -34,7 +34,7 @@ export class StoryLayer {
    * @param {() => AudioContext|null} [o.getAudioContext]
    * @param {object} [o.sfx]  the game's sound set (level1-audio.js): the stage directions' sounds
    * @param {HTMLElement[]} [o.blurTargets]
-   * @param {object} [o.options]  { longWindows, holdInsteadOfMash, reducedMotion }
+   * @param {object} [o.options]  { longWindows, holdInsteadOfMash, reducedMotion, difficulty }
    */
   constructor({ getAudioContext = () => null, sfx = null, blurTargets = [], options = {} } = {}) {
     this.ui = new StoryUI({ blurTargets });
@@ -61,11 +61,16 @@ export class StoryLayer {
     this.player.on("done", ({ id, skipped }) => this.log.push(["done", id, skipped]));
   }
 
-  /** { longWindows, holdInsteadOfMash, reducedMotion } - from the settings menu. */
-  setOptions({ longWindows, holdInsteadOfMash, reducedMotion } = {}) {
+  /**
+   * { longWindows, holdInsteadOfMash, reducedMotion } - from the settings
+   * menu; `difficulty` - the run's (a key, or a function returning it), for
+   * the mash meters (reaction.js MASH).
+   */
+  setOptions({ longWindows, holdInsteadOfMash, reducedMotion, difficulty } = {}) {
     const reaction = {};
     if (longWindows !== undefined) reaction.longWindows = !!longWindows;
     if (holdInsteadOfMash !== undefined) reaction.holdInsteadOfMash = !!holdInsteadOfMash;
+    if (difficulty !== undefined) reaction.difficulty = difficulty;
     this.reactions.setOptions(reaction);
     if (reducedMotion !== undefined) this.player.reducedMotion = !!reducedMotion;
   }
