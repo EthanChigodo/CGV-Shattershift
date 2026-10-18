@@ -7,9 +7,9 @@ Ascension Tower's lifts connect the three sectors. From the project brief: *"A g
 | Calibration Lift | Level 1 → Level 2 | Done - part of the Causeway (`src/levels/causeway/`), see [`level-transition.md`](./level-transition.md) |
 | Calibration Lift (shared) | end of Level 2, end of Level 3's corridor | Done - `src/levels/common/calibration-lift.js` (from the Level 3 work). At the end of Level 2 you board it; it hands over to the Gravity Fault |
 | **Gravity Fault** | Foundry → Labs | **Built** (this document): the tower collapsing around the lift, a cable snap and free fall, the launcher, and the three brake clamps to shoot |
-| **Elevator interior** | every enclosed ride | **Built** (section 4): one reusable cabin - doors, button panel, floor display, ceiling light, speaker, security camera, the subjects' scratched messages |
+| **One glass cabin** | every lift | **Built** (section 4): one set of parts and materials (`src/elevators/glass-cabin.js`) - glass walls in steel mullions, conduit posts, glass doors with lit edges in a steel frame, buttons, light bars, a handrail, a tread deck - inside and out |
 | **Quiet ride** (cutscene 7) | Labs → Skyline | **Built** (section 5): alone for the first time after the scientist's sacrifice, the pilot on the radio. Demo key `6` |
-| Level 3 arrival and roof lifts | Level 3 start, roof | Placeholders in `src/levels/meltdown/elevator.js` |
+| Level 3 arrival and roof lifts | Level 3 start, roof | `src/levels/meltdown/elevator.js`, the glass cabin (section 4) |
 
 ---
 
@@ -70,6 +70,7 @@ src/elevators/
   gravity-fault.js   GravityFaultRide - the phases, cabin motion, beats, cameras, rendering
   kit.js             the world (sky, city, skyline, tower), the shaft, the cabin (lights,
                      named panes, brake shoes), the stand-in figure
+  glass-cabin.js     the one glass cabin's parts and materials - every lift's (section 4)
   shaders.js         GLSL: facade windows and fire, sky, city lights, energy conduits
   shake.js           trauma-based camera shake (moves and rotates) and jolts
   sparks.js          pooled spark particles: streaks and glowing heads
@@ -179,22 +180,45 @@ The Level 3 corridor's exit lift is now the shared Calibration Lift (from the Le
 
 ---
 
-## 4. The elevator interior (reusable)
+## 4. One glass cabin for every lift
 
-[`src/elevators/interior.js`](../src/elevators/interior.js) - `buildInterior(owned)` returns one enclosed freight lift, 2.4 × 2.2 × 2.6 m, for any ride that stays inside the cabin (the task sheet's "one reusable scene for every transition and for the unlimited mode"). Every surface is a canvas texture drawn in code, so nothing has to load.
+Playtest round 4: *"Outside it looks like glass but inside it is steel. Choose one layout for all the elevators."* The Gravity Fault's cabin was glass on three sides, but its door wall and doors were solid steel - so the quiet ride, in first person, closed steel doors on the Labs; and each lift had drifted its own way (an unused all-steel interior, frosted glass in Level 3, plain glass with no rails or buttons on the Calibration Lift).
+
+Now every lift is built from **one set of parts and materials**, [`src/elevators/glass-cabin.js`](../src/elevators/glass-cabin.js) (`createGlassCabinKit(own)`), so they cannot drift apart again. Sizes still differ - the Calibration Lift is a big octagon, the Labs' freight lift takes three lanes, the roof's is a passenger lift - the design does not:
 
 | Part | What it is |
 | --- | --- |
-| Walls | Brushed steel: fine streaks, panel seams, rivets, grime at the bottom; handrails on three sides |
-| Doors | Two sliding leaves (`setDoors(0..1)`, eased). Light from the floors passing leaks through the seam while it moves; daylight behind them when they open |
-| Floor display | Over the doors: orange LED floor number and an arrow (`setFloor("12", "up")`) |
-| Button panel | Right of the doors: R, SB (skybridge), 40 … 10, L, B1; `press("SB")` lights one |
-| Ceiling light | A panel and a point light; `setLight(0..1)` dims or flickers it |
-| Speaker grille | Top left of the front wall - where the pilot's voice would come from |
-| Security camera | Dome in the back corner of the ceiling, its red recording light blinking - the lab is still watching |
-| **Environmental storytelling** | The left wall: tally marks in fives, and messages scratched by earlier subjects - *S-04 WAS HERE*, *THEY LIE ABOUT THE ROOF*, *DONT LET THEM PUT YOU UNDER*, *S-09*. On the floor: a torn Halcyon Labs badge, *ACCESS: B2* |
+| Walls | Clear glass in steel mullions: sill, head, a transom at 0.68 of the height, a mullion at every joint (panels at most 1.4 m) |
+| Posts | Steel, at the corners, each carrying a glowing conduit (the accent cyan; the Gravity Fault's use its energy shader, Level 1's its charge shader) |
+| Doors | Two glass leaves with a lit inner edge and thin steel rails, sliding apart |
+| Door frame | Steel jambs and header, a hazard-striped threshold; the floor display on the header and the **button panel** on the right-hand jamb, both inside |
+| Ceiling | Two warm-white light bars in steel housings (one material each where they flicker on their own) |
+| Handrail | Brushed steel on stand-offs round the glass walls |
+| Deck | Matte dark tread plate, tiled in metres (a polished floor mirrored whole skies) |
 
-Local frame: floor at y = 0, doors on the -Z wall (the Performer's yaw 0 faces them), `backWall` is where someone stands with their back to the back wall. `update(dt, time, speed)` runs the seam light and the camera's LED.
+| Lift | Built by |
+| --- | --- |
+| Gravity Fault, story ride, quiet ride | `elevators/kit.js` `buildCabin` - the front, side and roof panes stay named and single, so they still crack and blow out (`glass.js`); the door wall is glass now, so from inside you see the shaft and the tower through it |
+| Calibration Lift (end of Level 2, end of the Labs) | `common/calibration-lift.js` `buildCalibrationCabin` |
+| Calibration Lift (end of Level 1) | the same `buildCalibrationCabin`, with Level 1's refraction glass and layers passed in (`causeway/kit.js` `lift()`) |
+| Labs arrival, roof lift | `meltdown/elevator.js` `createLift` |
+
+The old steel interior (`interior.js`, used by nothing since round 3) is gone. `tests/elevators/checks/cabins.js` builds every cabin and checks every part is there, the glass, door glass and steel are the same in all of them, and that from inside, at eye height, the first thing between you and every pane or door is glass.
+
+Before and after (left: before; right: after), each lift from outside and inside:
+
+| | |
+| --- | --- |
+| ![Gravity Fault cabin, outside](images/elevators/glass-cabin/gf-out.jpg) | ![Gravity Fault cabin, inside, the door wall](images/elevators/glass-cabin/gf-in-doors.jpg) |
+| ![Quiet ride, first person: the doors closing on the Labs](images/elevators/glass-cabin/quiet-doors.jpg) | ![Quiet ride, first person: the doors opening on the skybridge](images/elevators/glass-cabin/quiet-arrive.jpg) |
+| ![Calibration Lift, outside](images/elevators/glass-cabin/cal-out.jpg) | ![Calibration Lift, inside](images/elevators/glass-cabin/cal-in.jpg) |
+| ![Level 1's Calibration Lift, outside](images/elevators/glass-cabin/sky-out.jpg) | ![Level 1's Calibration Lift, inside](images/elevators/glass-cabin/sky-in.jpg) |
+| ![The Labs' arrival lift, outside](images/elevators/glass-cabin/labs-out.jpg) | ![The Labs' arrival lift, inside](images/elevators/glass-cabin/labs-in.jpg) |
+| ![The roof's lift, outside](images/elevators/glass-cabin/roof-out.jpg) | ![The roof's lift, inside](images/elevators/glass-cabin/roof-in.jpg) |
+
+(The prop shots stand each cabin against the rides' burning city, out of its level, so the two versions line up; Level 1's are from the Skyline itself.)
+
+---
 
 ## 5. The quiet ride - cutscene 7
 
@@ -252,6 +276,7 @@ node tests/elevators/run.js --shots-only
 | handover from the Labs | Completing the Labs' corridor starts the quiet ride, unloads the Labs and hides the game's HUD |
 | quiet ride (cutscene 7) to the Skyline | Every shot and beat plays, both radio lines are captioned, the character wears the gear, slides down the wall to sit and picks the launcher up, the doors open, and the Skyline starts with under 1.5 s of black |
 | skin tone choice | The four swatches are on the start screen; picking one re-tints the figure, is saved, and "light" restores the model's own skin |
+| every lift the same glass cabin | Every cabin (Gravity Fault, both Calibration Lifts, Level 3's two) has every part of the design, the same glass, door glass and steel, and only glass between your eyes and every pane and door from inside |
 
 Manual checklist before merging:
 
