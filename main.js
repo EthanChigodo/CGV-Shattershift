@@ -1873,6 +1873,7 @@ const MELTDOWN_ENDINGS = {
   "THEY GOT YOU": "The roof was too much. Keep moving, dodge (SPACE) through their charges, get off a laser's line before it locks, and lure them off the open ledges.",
   "LEFT BEHIND": "The helicopter could not wait. When it hangs off the east ledge, get to the edge and jump (SPACE) for the ladder.",
   "YOU FELL": "Off the edge. The east side and the middle of the west are open, and so is the deck's - watch your footing when they knock you back.",
+  "DOWN A HATCH": "Down an open hatch. The railed, striped openings on the deck go straight down into the building - mind their open side when they knock you back.",
 };
 
 /** Level 3 finished: its numbers into the game's score, and the end screen. */
@@ -1893,6 +1894,8 @@ function finishMeltdown(escaped, result) {
   endRun(escaped, null, {
     eyebrow: escaped ? "RUN COMPLETE // OUT OF ASCENSION TOWER" : `RUN TERMINATED // ${onRoofStage || meltdown?.roof ? "THE ROOF" : "SECTOR 02 // THE LABS"}`,
     title: result.title,
+    // A fall off the roof has played its own death, in 3D (fall-scene.js).
+    scene: result.deathScene ?? null,
     text: MELTDOWN_ENDINGS[result.title],
     stats: s.onRoof && onRoofStage
       ? `${time}${hms(s.roofTime)} on the roof   ${s.breaks} broken   ${s.downs} downed   ${s.falls} over the edge   ${s.hits} hits taken`
@@ -3813,6 +3816,8 @@ function endRun(won, reason = null, detail = null) {
 function deathKind(reason, detail) {
   const title = detail?.title ?? "";
   if (currentLevel === 3) {
+    // Already played out in the level (the roof's fall: fall-scene.js).
+    if (detail?.scene) return null;
     if (title === "LEFT BEHIND") return null;
     if (title === "THEY GOT YOU") return "mauled";
     if (title === "YOU FELL" || title === "DOWN A HATCH") return "fall";
