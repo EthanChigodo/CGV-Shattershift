@@ -49,6 +49,7 @@ import { TrailerDirector } from "./src/trailer/director.js";
 import { Gamepads } from "./src/systems/gamepad.js";
 import { PadInput } from "./src/systems/pad-input.js";
 import { Versus } from "./src/versus/index.js";
+import { MenuBackdrop } from "./src/menu/backdrop.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -1579,6 +1580,22 @@ const versus = new Versus({
     music.showMenu();
   },
 });
+
+/**
+ * The menus' backdrop: a live 3D shot of the burning tower with Subject 07 on
+ * the roof across the street (src/menu/). It streams in at boot without
+ * holding the menus; until it is in (or if it fails) the Skyline's corridor
+ * stays behind the menus as before. Updated and drawn only on the menus.
+ */
+const menuBackdrop = new MenuBackdrop({
+  renderer,
+  assetBase: MELTDOWN_ASSET_BASE,
+  // (Auto means medium here: the frame-rate monitor only watches the runs.)
+  quality: () => (settings.quality === "auto" && !autoLow ? "medium" : resolvedQuality()),
+  reducedMotion: () => settings.reducedMotion,
+  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour() }),
+});
+menuBackdrop.preload();
 
 function getMeltdown() {
   if (meltdown) return meltdown;
@@ -3943,6 +3960,9 @@ function updateGame(dt, time) {
   // The briefing film has the screen while it plays.
   if (prologue?.active) { prologue.update(dt, time); return; }
   if (state === "intro") {
+    // The live 3D stage when it is in (the Versus lobby gets its own shot)...
+    if (menuBackdrop.update(dt, { versus: versus.active })) return;
+    // ...until then, the Skyline's corridor with a drifting camera.
     if (causeway) {
       const d = causeway.menuCamera(time, camera, settings.reducedMotion);
       causeway.update({ dt, time, distance: d, playing: false });
@@ -4168,6 +4188,8 @@ function updatePerformance(rawDt) {
 function renderFrame() {
   if (versus.running) { versus.render(); return; }
   if (prologue?.active) { prologue.render(); return; }
+  // The menus: the 3D stage (src/menu/backdrop.js) through the post chain.
+  if (state === "intro" && menuBackdrop.render(postfx)) return;
   if (gravityLift?.visible) { gravityLift.render(); return; }
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
@@ -4865,6 +4887,11 @@ $("#creditsBackButton").addEventListener("click", () => {
   else ui.start.classList.add("active");
 });
 
+/** Tell the menu's 3D stage (src/menu/backdrop.js) who Subject 07 is now. */
+function announceLoadout() {
+  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour() } }));
+}
+
 // Character choice: who you play as (Level 3 shows them; saved for next time).
 const characterButtons = [...document.querySelectorAll("[data-character]")];
 function showCharacterChoice() {
@@ -4883,6 +4910,7 @@ for (const button of characterButtons) {
     loadPlayerBody(button.dataset.character);
     meltdown?.setCharacter(button.dataset.character);
     showCharacterChoice();
+    announceLoadout();
   });
 }
 showCharacterChoice();
@@ -4946,6 +4974,7 @@ for (const [key, tone] of Object.entries(SKIN_TONES)) {
     playerBody.setSkinTone(key);
     meltdown?.avatar?.setSkinTone(key);
     showSkinChoice();
+    announceLoadout();
   });
   skinPick.appendChild(button);
 }
@@ -4975,6 +5004,7 @@ for (const [key, hair] of Object.entries(HAIR_COLOURS)) {
     playerBody.setHairColour(key);
     meltdown?.avatar?.setHairColour(key);
     showHairChoice();
+    announceLoadout();
   });
   hairPick.appendChild(button);
 }
@@ -5506,6 +5536,8 @@ globalThis.__dbg = {
   enterMeltdown,
   /** Versus (src/versus/index.js): openLobby(), quickStart(), state, match. */
   get versus() { return versus; },
+  /** The menus' 3D stage (src/menu/backdrop.js): .live, .shot, .stage. */
+  get menuStage() { return menuBackdrop; },
   get gravityLift() { return gravityLift; },
   get loadingScreen() { return loadingScreen; },
   get deathFx() { return deathFx; },

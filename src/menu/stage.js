@@ -169,8 +169,11 @@ export class MenuStage {
       })
       .catch((error) => console.warn("[menu stage] city model failed; procedural city only", error));
     const helis = this.helis.load(base, this.manager).catch((error) => console.warn("[menu stage] helicopters failed", error));
-    const figure = this._makeFigure(this.figureSpec).then((f) => {
-      if (f) this._placeFigure(f);
+    const wanted = this.figureSpec.character;
+    const figure = this._makeFigure({ ...this.figureSpec }).then((f) => {
+      // (A different body may have been picked meanwhile: setFigure has it.)
+      if (f && this.figureSpec.character === wanted && !this.figure) this._placeFigure(f);
+      else f?.dispose();
     });
     await Promise.all([city, helis, figure, this.roof.ready.catch(() => {})]);
     if (this.disposed) return;
