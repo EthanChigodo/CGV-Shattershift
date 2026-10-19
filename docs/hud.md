@@ -42,6 +42,10 @@ The in-game interface follows the game's look, NIGHTFALL (`src/ui/theme.css`). T
 | --- | --- |
 | ![The serum card](hud/serum-card.jpg) | ![Versus, split screen](hud/versus.jpg) |
 
+![A subtitle in a cutscene](hud/subtitles.jpg)
+
+(The top bar in these shots, with the "FRACTURE RUN" label and the PAUSE and VIEW buttons, belongs to `styles.css`. It is restyled separately, so the shots still show the old one.)
+
 ## Notes for whoever edits these
 
 - The level code still sends some strings in upper case, and a few with the old `A // B` separators. The HUDs render them in sentence case with CSS (`text-transform: lowercase` plus an upper-case `::first-letter`). The meltdown, lift and versus HUDs turn `//` into `·` when they set the text. Reaction labels are the exception: they name keys ("ALTERNATE A D FAST"), so they stay upper case as a small tracked line.
