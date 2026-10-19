@@ -173,15 +173,15 @@ body:has(.story-layer.gameplay .story-sub.show) .cw-radio { bottom: 270px; }
   background: radial-gradient(closest-side, rgba(4, 6, 9, 0.46), rgba(4, 6, 9, 0.18) 60%, rgba(4, 6, 9, 0));
 }
 .story-react.show { opacity: 1; }
-/* The verb, in sentence case (the strings are upper case: reaction.js). */
+/* The verb and how: a small tracked line (upper case, as reaction.js writes
+   it - it names keys, "ALTERNATE A D FAST", that must stay capitals). */
 .story-react .label {
-  font-size: 16px;
-  font-weight: 450;
-  letter-spacing: 0.02em;
+  padding-left: 0.22em;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: 0.22em;
   color: var(--text);
-  text-transform: lowercase;
 }
-.story-react .label::first-letter { text-transform: uppercase; }
 .story-react .keys { display: flex; gap: 18px; align-items: center; }
 .story-react .plus { font-weight: 200; font-size: 24px; color: var(--text-3); }
 

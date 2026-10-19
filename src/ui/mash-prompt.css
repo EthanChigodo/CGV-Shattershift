@@ -14,7 +14,7 @@
  */
 
 .story-react.mash { gap: 20px; }
-.story-react.mash .label { font-size: 17px; }
+.story-react.mash .label { font-size: 13.5px; }
 
 /* The key: larger, breathing until the first press. */
 .story-react.mash .story-key { width: 96px; height: 96px; animation: mash-beckon 1s var(--ease-in-out) infinite alternate; }
