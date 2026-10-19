@@ -6,7 +6,7 @@
  * then its windows lighting floor by floor from the street up as the loading
  * goes (the floor counter climbs with it), a scan line sweeping up the
  * facade, glass shards drifting past in the dark, the sector you are headed
- * for in big letters and a tip under it. All 2D canvas and DOM: the game's
+ * for in wide, thin letters and a tip under it (src/ui/loading-screen.css). All 2D canvas and DOM: the game's
  * own renderer is busy with what is loading.
  *
  *   const loading = new LoadingScreen();
@@ -263,8 +263,8 @@ export class LoadingScreen {
     const lit = this.progress * FLOORS;
     // A halo of light behind it, as it lights up.
     const halo = g.createRadialGradient(W * 0.5, yBase - towerH * 0.5, towerW * 0.3, W * 0.5, yBase - towerH * 0.5, towerH * 0.75);
-    halo.addColorStop(0, `rgba(236, 230, 218, ${0.04 + 0.08 * this.progress})`);
-    halo.addColorStop(1, "rgba(236, 230, 218, 0)");
+    halo.addColorStop(0, `rgba(244, 240, 232, ${0.04 + 0.08 * this.progress})`);
+    halo.addColorStop(1, "rgba(244, 240, 232, 0)");
     g.fillStyle = halo;
     g.fillRect(0, 0, W, H);
     // Body.
@@ -296,13 +296,13 @@ export class LoadingScreen {
         g.fillRect(x0 + col * cw + cw * 0.18, y + floorH * 0.22, cw * 0.64, floorH * 0.56);
       }
     }
-    // Edges: drawn in bone, like the elevation on an engineer's sheet, bright where it is lit.
-    g.strokeStyle = "rgba(236, 230, 218, 0.6)";
-    g.lineWidth = 1.5 * dpr;
+    // Edges: a thin warm-white line, bright where it is lit.
+    g.strokeStyle = "rgba(244, 240, 232, 0.32)";
+    g.lineWidth = 1 * dpr;
     g.strokeRect(x0, yTop, towerW, towerH);
     const litY = yBase - lit * floorH;
-    g.strokeStyle = "rgba(236, 230, 218, 1)";
-    g.shadowColor = "rgba(236, 230, 218, 0.7)";
+    g.strokeStyle = "rgba(244, 240, 232, 0.9)";
+    g.shadowColor = "rgba(244, 240, 232, 0.6)";
     g.shadowBlur = 14 * dpr;
     g.beginPath();
     g.moveTo(x0, yBase);
@@ -313,16 +313,13 @@ export class LoadingScreen {
     // The scan line: up the facade to where it has got, again and again.
     const sweep = (t * 0.6 * motion) % 1;
     const sy = yBase - sweep * (yBase - Math.min(litY, yBase - floorH));
-    g.fillStyle = "rgba(255, 59, 31, 0.9)";
-    g.fillRect(x0 - 10 * dpr, sy, towerW + 20 * dpr, 1.5 * dpr);
+    g.fillStyle = "rgba(255, 122, 61, 0.75)";
+    g.fillRect(x0 - 10 * dpr, sy, towerW + 20 * dpr, 1 * dpr);
     g.shadowBlur = 0;
     // The street.
     g.fillStyle = "rgba(255, 138, 66, 0.45)";
     g.fillRect(0, yBase, W, 1 * dpr);
 
-    // Scanlines over everything, barely there.
-    g.fillStyle = "rgba(0, 0, 0, 0.18)";
-    for (let y = 0; y < H; y += 3 * dpr) g.fillRect(0, y, W, dpr);
   }
 
   dispose() {

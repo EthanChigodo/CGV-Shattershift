@@ -85,7 +85,7 @@ body.hud-hidden .sphere-wheel, body.story-cutscene .sphere-wheel, body.cutscene 
 .sw-e { left: 122px; }
 
 /* The spheres you have: in glass, big and light, top left of the X. */
-.sw-count { position: absolute; left: -6px; top: 0; display: grid; justify-items: center; gap: 6px; text-align: center; }
+.sw-count { position: absolute; left: -26px; top: 0; display: grid; justify-items: center; gap: 6px; text-align: center; }
 .sw-count strong {
   font-stretch: var(--wide);
   font-weight: 230;
@@ -129,7 +129,7 @@ body.hud-hidden .sphere-wheel, body.story-cutscene .sphere-wheel, body.cutscene 
 @keyframes swPop { 0% { transform: scale(1); } 50% { transform: scale(1.36); } 100% { transform: scale(1.24); } }
 
 /* The loaded sphere's name, wide and tracked, and its cost, under the count. */
-.sw-label { position: absolute; left: -2px; bottom: 34px; display: grid; gap: 6px; }
+.sw-label { position: absolute; left: -34px; bottom: 34px; display: grid; gap: 6px; }
 .sw-label b {
   font-stretch: var(--wide);
   font-weight: 330;
