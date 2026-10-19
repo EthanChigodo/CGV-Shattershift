@@ -218,6 +218,8 @@ h1, h2 { margin: 0; font-weight: 200; }
 :is(.link-button, .primary-button, .text-button):is(:hover, :focus-visible, .pad-focus)::before { width: 18px; margin-right: 12px; }
 .text-button:disabled { opacity: .4; cursor: not-allowed; }
 button:focus-visible { outline: 1px solid var(--ember-2); outline-offset: 4px; }
+/* Choices with their own lit state need no ring as well. */
+:is(.menu-button, .chapter-card, .difficulty-card, .endless-card, .link-button, .primary-button, .text-button, .subject-line, .subject-button, .tab, .ball-card):focus-visible { outline: none; }
 .link-row, .button-row { display: flex; align-items: center; gap: 10px 36px; flex-wrap: wrap; margin-top: 30px; }
 .hint { position: absolute; bottom: 24px; margin: 0; color: var(--text-3); font-size: 12px; }
 .hint-inline { margin: 14px 0 0; color: var(--text-3); font-size: 12px; }
@@ -253,8 +255,8 @@ html.pad-ps .g-ps, html.pad-xbox .g-xb, html.pad-generic .g-xb { display: inline
 }
 .logo-crack { position: absolute; left: -1%; top: 0; width: 102%; height: 100%; overflow: visible; pointer-events: none; }
 .logo-crack polyline {
-  fill: none; stroke: var(--ember-2); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .75;
-  stroke-dasharray: 1200; stroke-dashoffset: 0; filter: drop-shadow(0 0 4px rgba(255, 122, 61, .9));
+  fill: none; stroke: var(--ember-2); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .5;
+  stroke-dasharray: 1200; stroke-dashoffset: 0; filter: drop-shadow(0 0 3px rgba(255, 122, 61, .7));
 }
 .logo em {
   display: flex; align-items: center; gap: 18px; margin-top: .95em; padding-left: .2em;
