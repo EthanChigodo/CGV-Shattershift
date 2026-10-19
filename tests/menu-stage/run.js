@@ -79,7 +79,7 @@ async function main() {
     await page.waitForFunction(() => globalThis.__dbg?.menuStage, null, { polling: 250 });
 
     // ---- To the menu, and the stage comes up ----
-    await page.waitForFunction(() => document.querySelector("#storySkipToMenuButton") && !document.querySelector(".loading-screen.show, .loading-screen.visible"), null, { polling: 500 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelector("#storySkipToMenuButton") && !document.querySelector(".ld-root.show, .loading-screen.visible"), null, { polling: 500 }).catch(() => {});
     await page.evaluate(() => document.querySelector("#storySkipToMenuButton").click());
     await page.waitForFunction(() => document.querySelector("#startScreen.active"), null, { polling: 250 });
     const t0 = Date.now();
@@ -189,6 +189,28 @@ async function main() {
     }, measure.toString());
     check(back.showing && back.draws > 0 && back.shot === "title" && back.picture.lit > 0.3, `back on the menu, the stage is back (${JSON.stringify(back)})`);
     await page.screenshot({ path: path.join(SHOTS, "back.jpg"), quality: 80 });
+
+    // ---- Optional: every level starts from the menu and comes back (slow) ----
+    if (process.argv.includes("--levels")) {
+      for (const env of ["foundry", "labs", "roof", "skyline"]) {
+        await page.evaluate((e) => __dbg.startEndless(e), env);
+        await page.waitForFunction(() => {
+          __dbg.step(2);
+          return __dbg.state === "playing" && !document.querySelector(".ld-root.show");
+        }, null, { polling: 1000, timeout: 240000 });
+        await page.evaluate(() => __dbg.step(20));
+        const shown = await page.evaluate((m) => {
+          const s = __dbg.menuStage.stage;
+          s._draws = 0;
+          return { state: __dbg.state, picture: eval(`(${m})`)(), draws: s._draws };
+        }, measure.toString());
+        check(shown.state === "playing" && shown.draws === 0 && shown.picture.lit > 0.15, `Endless ${env} runs, the stage stays out of it (${JSON.stringify(shown)})`);
+        await page.screenshot({ path: path.join(SHOTS, `level-${env}.jpg`), quality: 70 });
+        await page.evaluate(() => document.querySelector("#quitButton").click());
+        await page.waitForFunction(() => { __dbg.step(2); return __dbg.state === "intro" && document.querySelector("#startScreen.active") && __dbg.menuStage.showing; }, null, { polling: 500, timeout: 240000 });
+      }
+      check(true, "every level started and returned to the menu");
+    }
     check(errors.length === 0, `no page errors at all (${errors.join(" | ").slice(0, 300)})`);
     await page.close();
 
