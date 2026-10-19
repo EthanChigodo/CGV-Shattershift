@@ -1,272 +1,190 @@
 /**
- * Elevator ride HUD.
+ * Elevator ride HUD (src/ui/elevator-hud.js), in the NIGHTFALL look
+ * (src/ui/theme.css). Scoped under .elevator-ui so it sits over the game
+ * HUD without touching styles.css.
  *
- * Scoped under .elevator-ui so it sits on top of the game HUD without
- * touching styles.css. Cyan is the colour every breakable object in the
- * game shares; red is the fault.
+ * Top centre, on the picture: the floor as a big light number with the way
+ * it is going and how fast, the lift's name and where it runs in one quiet
+ * line over it; under it the alert (blood when it is a fault, ok when it is
+ * fixed) and the brake clamps still to lock. The diagnostic monitor is a
+ * hairline frame; cutscene captions are subtitles.
  */
 
 .elevator-ui {
-  --elv-cyan: #7ef4f1;
-  --elv-red: #ff4a54;
-  --elv-green: #7dff9a;
-  --elv-panel: rgba(6, 10, 14, 0.78);
-  --elv-line: rgba(126, 244, 241, 0.3);
-
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 6;
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
-  color: #f4fbff;
-  text-transform: uppercase;
+  font-family: var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow-text);
 }
+.elevator-ui[hidden] { display: none !important; }
 
-.elevator-ui[hidden] {
-  display: none !important;
-}
+/* Upper-case strings from the rides, read in sentence case. */
+.elv-eyebrow, .elv-title, .elv-label, .elv-clamps, .elv-monitor span, .elv-diag-label { text-transform: lowercase; }
+.elv-eyebrow::first-letter, .elv-title::first-letter, .elv-label::first-letter,
+.elv-clamps::first-letter, .elv-monitor span::first-letter, .elv-diag-label::first-letter { text-transform: uppercase; }
+
+/* ---- The floor counter -------------------------------------------------- */
 
 .elv-panel {
   position: absolute;
-  top: 18px;
+  top: 26px;
   left: 50%;
   transform: translateX(-50%);
-  min-width: 250px;
-  padding: 10px 16px 12px;
-  background: var(--elv-panel);
-  border: 1px solid var(--elv-line);
-  border-radius: 6px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  isolation: isolate;
   text-align: center;
 }
-
-.elv-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  font-size: 11px;
-  letter-spacing: 0.16em;
+.elv-panel::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -30px -90px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.46), rgba(4, 6, 9, 0.18) 60%, rgba(4, 6, 9, 0));
 }
-
-.elv-eyebrow {
-  color: var(--elv-cyan);
-}
-
-.elv-title {
-  color: rgba(244, 251, 255, 0.65);
-}
-
-.elv-readout {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 6px;
-}
-
-.elv-label {
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  color: rgba(244, 251, 255, 0.55);
-}
-
+.elv-panel[hidden] { display: none; }
+.elv-head { display: flex; justify-content: center; gap: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.03em; }
+.elv-eyebrow { display: block; color: var(--text-3); }
+.elv-title { display: block; color: var(--text-3); }
+.elv-eyebrow::after { content: "\00B7"; margin: 0 9px; color: var(--text-4); }
+.elv-readout { display: flex; align-items: baseline; justify-content: center; gap: 12px; }
+.elv-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-3); }
 .elv-floor {
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 34px;
-  line-height: 1;
-  color: var(--elv-cyan);
-  text-shadow: 0 0 12px rgba(126, 244, 241, 0.45);
+  font-stretch: var(--wide);
+  font-weight: 230;
+  font-size: 40px;
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+.elv-arrow { font-size: 11px; color: var(--glass); }
+.elv-arrow.down { color: var(--blood); }
+.elv-speed { min-width: 64px; text-align: left; font-weight: 450; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 
-.elv-arrow {
-  font-size: 16px;
-  color: var(--elv-cyan);
-}
-
-.elv-arrow.down {
-  color: var(--elv-red);
-}
-
-.elv-speed {
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 13px;
-  color: rgba(244, 251, 255, 0.7);
-  min-width: 70px;
-  text-align: left;
-}
+/* ---- What is happening to the lift -------------------------------------- */
 
 .elv-alert {
   position: absolute;
-  top: 118px;
+  top: 128px;
   left: 50%;
   transform: translate(-50%, -6px);
-  padding: 7px 16px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
+  padding-left: 0.22em;
+  font-stretch: var(--wide);
+  font-weight: 320;
+  font-size: 16px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.45s ease, transform 0.45s var(--ease-out);
 }
-
-.elv-alert.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-.elv-alert.info {
-  color: var(--elv-cyan);
-}
-
-.elv-alert.good {
-  color: var(--elv-green);
-}
-
+.elv-alert.show { opacity: 1; transform: translate(-50%, 0); }
+.elv-alert::after { content: ""; display: block; width: 44px; height: 1px; margin: 10px auto 0; background: currentColor; opacity: 0.6; }
+.elv-alert.info { color: var(--text); }
+.elv-alert.good { color: var(--ok); }
 .elv-alert.danger {
-  color: #fff;
-  background: rgba(255, 74, 84, 0.22);
-  border: 1px solid rgba(255, 74, 84, 0.6);
-  animation: elv-blink 0.6s steps(2, start) infinite;
+  color: var(--blood);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 22px rgba(229, 65, 45, 0.4);
+  animation: elv-breathe 1.6s var(--ease-in-out) infinite;
 }
-
-@keyframes elv-blink {
-  to {
-    border-color: rgba(255, 74, 84, 0.15);
-  }
-}
+@keyframes elv-breathe { 50% { opacity: 0.55; } }
 
 .elv-clamps {
   position: absolute;
-  top: 162px;
+  top: 172px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 5px 14px;
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 15px;
-  letter-spacing: 0.14em;
+  font-size: 14px;
+  font-weight: 450;
+  letter-spacing: 0.06em;
   white-space: nowrap;
-  color: #ffb3b8;
-  background: var(--elv-panel);
-  border: 1px solid rgba(255, 74, 84, 0.45);
-  border-radius: 4px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
-
-.elv-clamps.done {
-  color: var(--elv-green);
-  border-color: rgba(125, 255, 154, 0.45);
-}
+.elv-clamps.done { color: var(--ok); }
 
 .elv-clamps[hidden],
 .elv-monitor[hidden],
-.elv-diag-label[hidden] {
-  display: none;
-}
+.elv-diag-label[hidden] { display: none; }
 
+/* The diagnostic monitor: a hairline frame, its name small above it. */
 .elv-monitor {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid rgba(126, 244, 241, 0.7);
-  box-shadow: 0 0 0 3px rgba(6, 10, 14, 0.8), 0 0 18px rgba(126, 244, 241, 0.25);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
 }
-
 .elv-monitor span {
   position: absolute;
   left: 0;
   bottom: 100%;
-  margin-bottom: 6px;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  color: var(--elv-cyan);
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  white-space: nowrap;
 }
-
 .elv-diag-label {
   position: absolute;
   left: 50%;
   bottom: 96px;
   transform: translateX(-50%);
-  font-size: 12px;
-  letter-spacing: 0.24em;
-  color: var(--elv-cyan);
-  text-shadow: 0 0 10px rgba(126, 244, 241, 0.6);
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--text-2);
 }
 
-.elv-panel[hidden] {
-  display: none;
-}
+/* ---- Cutscenes: letterbox bars that slide in, and subtitles -------------- */
 
-/* Cutscenes: letterbox bars that slide in, and subtitles. */
 .elv-bar {
   position: absolute;
   left: 0;
   right: 0;
   height: 11vh;
   background: #000;
-  transition: transform 0.6s ease;
+  transition: transform 0.9s var(--ease-in-out);
 }
-
-.elv-bar.top {
-  top: 0;
-  transform: translateY(-100%);
-}
-
-.elv-bar.bottom {
-  bottom: 0;
-  transform: translateY(100%);
-}
-
-.elv-bar.on {
-  transform: none;
-}
+.elv-bar.top { top: 0; transform: translateY(-100%); }
+.elv-bar.bottom { bottom: 0; transform: translateY(100%); }
+.elv-bar.on { transform: none; }
 
 .elv-caption {
   position: absolute;
   left: 50%;
-  bottom: calc(11vh + 18px);
+  bottom: 3.6vh;
   transform: translateX(-50%);
-  max-width: min(760px, calc(100% - 32px));
-  padding: 8px 16px;
+  width: min(88vw, 940px);
   text-align: center;
-  text-transform: none;
-  font-size: calc(19px * var(--sub-scale, 1.25));
-  font-weight: 600;
-  line-height: 1.4;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.74);
-  border-radius: 4px;
+  font-size: calc(clamp(17px, 1.75vw, 22px) * var(--sub-scale, 1.25));
+  font-weight: 420;
+  line-height: 1.42;
+  color: var(--text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 14px rgba(0, 0, 0, 0.7), 0 0 34px rgba(0, 0, 0, 0.45);
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.25s ease;
 }
-
-.elv-caption.show {
-  opacity: 1;
-}
-
+.elv-caption.show { opacity: 1; }
 .elv-caption-who {
-  color: var(--elv-cyan);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  display: block;
+  margin-bottom: 8px;
+  font-size: calc(9.5px * var(--sub-scale, 1.25));
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
+.elv-caption-who:empty { display: none; }
 
 @media (max-width: 600px) {
-  .elv-panel {
-    min-width: 0;
-    width: calc(100% - 32px);
-  }
+  .elv-head { flex-direction: column; align-items: center; }
+  .elv-eyebrow::after { display: none; }
 }
-
-/* ---- The game's look (src/ui/theme.css): the lift's own placards ---------- */
-.elevator-ui {
-  --elv-cyan: var(--glass, #7ff3ff);
-  --elv-red: var(--hazard, #ff3b1f);
-  --elv-green: var(--ok, #2fd07a);
-  --elv-panel: rgba(13, 14, 16, 0.86);
-  --elv-line: rgba(236, 230, 218, 0.22);
-  font-family: var(--font-body, system-ui, sans-serif);
-  color: var(--bone, #ece6da);
+@media (prefers-reduced-motion: reduce) {
+  .elv-alert.danger { animation: none; }
 }
-.elv-panel { border: 0; border-radius: 0; border-top: 3px solid var(--bone, #ece6da); }
-.elv-eyebrow { font-family: var(--font-mono, monospace); }
-.elv-title, .elv-floor, .elv-speed { font-family: var(--font-display, sans-serif); }
-.elv-caption { border-radius: 0; background: rgba(13, 14, 16, 0.86); border: 0; }
-.elv-caption-who { background: var(--bone, #ece6da); color: var(--ink, #0d0e10); font-family: var(--font-mono, monospace); }
-.elv-alert { border-radius: 0; font-family: var(--font-display, sans-serif); letter-spacing: 0.04em; }
