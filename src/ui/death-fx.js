@@ -511,14 +511,15 @@ export class DeathFX {
     const cy = H * (0.42 + rand() * 0.12);
     const out = { graded, grain, cx, cy, shake: [] };
     if (accent === "shatter") {
-      out.cracks = Array.from({ length: 9 }, (_, i) => {
-        const a = (i / 9) * Math.PI * 2 + (rand() - 0.5) * 0.5;
+      // A small star of cracks round the hit, not across the whole frame.
+      out.cracks = Array.from({ length: 13 }, (_, i) => {
+        const a = (i / 13) * Math.PI * 2 + (rand() - 0.5) * 0.4;
         const pts = [[cx, cy]];
         let x = cx;
         let y = cy;
-        const steps = 4 + Math.floor(rand() * 4);
+        const steps = 3 + Math.floor(rand() * 5);
         for (let k = 0; k < steps; k += 1) {
-          const d = Math.hypot(W, H) * (0.03 + rand() * 0.07);
+          const d = Math.hypot(W, H) * (0.012 + rand() * 0.03);
           const aa = a + (rand() - 0.5) * 0.5;
           x += Math.cos(aa) * d;
           y += Math.sin(aa) * d;
@@ -586,8 +587,8 @@ export class DeathFX {
     // The place's touch.
     if (s.cracks) {
       const k = smooth(0.02, 0.4, t);
-      g.strokeStyle = "rgba(235, 248, 255, 0.55)";
-      g.lineWidth = 1 * this.dpr;
+      g.strokeStyle = "rgba(235, 248, 255, 0.5)";
+      g.lineWidth = 0.8 * this.dpr;
       for (const pts of s.cracks) {
         const n = Math.max(1, Math.round((pts.length - 1) * k));
         g.beginPath();
