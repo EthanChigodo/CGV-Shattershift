@@ -18,8 +18,8 @@
  *  - It never blocks the menus: until the stage is in (or if it fails) the
  *    host keeps its old backdrop; when it arrives it fades up from black.
  *  - It costs nothing during a run: the host stops calling update/render
- *    when it leaves the menus. Coming back (the first update after a gap)
- *    cuts to the current shot and fades up again.
+ *    when it leaves the menus. Coming back (main.js drops the body's
+ *    "pregame" class for a run) cuts to the current shot and fades up.
  */
 
 import { MenuStage } from "./stage.js";
@@ -63,7 +63,7 @@ export class MenuBackdrop {
     this.showing = false;
     this.requested = null;
     this.screenShot = "title";
-    this.lastUpdate = 0;
+    this.away = true; // nothing shown yet: the first frame cuts and fades up
 
     this._onScreens = () => {
       this.screenShot = this._activeScreenShot();
@@ -72,6 +72,11 @@ export class MenuBackdrop {
     };
     this.observer = new MutationObserver(this._onScreens);
     for (const el of document.querySelectorAll(".screen")) this.observer.observe(el, { attributes: true, attributeFilter: ["class"] });
+    // A run started (main.js keeps "pregame" on the body only on the menus).
+    this.bodyObserver = new MutationObserver(() => {
+      if (!document.body.classList.contains("pregame")) this.away = true;
+    });
+    this.bodyObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
     this.screenShot = this._activeScreenShot();
     this._onShot = (e) => { this.requested = e.detail?.shot ?? null; };
     this._onLoadout = (e) => this.stage?.setFigure(e.detail ?? {});
@@ -127,9 +132,8 @@ export class MenuBackdrop {
     this.showing = this.live;
     if (!this.showing) return false;
     const stage = this.stage;
-    const now = performance.now();
-    const back = now - this.lastUpdate > 500;
-    this.lastUpdate = now;
+    const back = this.away;
+    this.away = false;
     this._versus = versus;
     stage.setQuality(this.quality());
     stage.setReducedMotion(this.reducedMotion());
@@ -160,6 +164,7 @@ export class MenuBackdrop {
 
   dispose() {
     this.observer.disconnect();
+    this.bodyObserver.disconnect();
     removeEventListener("menu:shot", this._onShot);
     removeEventListener("loadout:change", this._onLoadout);
     removeEventListener("resize", this._onResize);
