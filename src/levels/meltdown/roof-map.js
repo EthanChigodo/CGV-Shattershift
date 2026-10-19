@@ -269,24 +269,30 @@ export class RoofMinimap {
 }
 
 const STYLE = `
+/* The NIGHTFALL look (src/ui/theme.css): a thin-outlined, translucent square
+   on the picture, a quiet line over it, the key under it - no boxed header. */
 .roof-map {
-  position: fixed; right: 22px; top: 84px; z-index: 6; width: 200px;
-  font: 800 10px/1.2 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: .14em; color: #a9bcc2;
-  opacity: 0; transition: opacity .35s ease; pointer-events: none;
+  position: fixed; right: 44px; top: 92px; z-index: 6; width: 196px;
+  font: 500 11px/1.3 var(--font, system-ui, sans-serif); letter-spacing: .02em; color: var(--text-3, rgba(244, 240, 232, .48));
+  text-shadow: var(--shadow-text, 0 1px 2px rgba(0, 0, 0, .55));
+  opacity: 0; transition: opacity .5s ease; pointer-events: none;
 }
 .roof-map.show { opacity: 1; }
 body.hud-hidden .roof-map, body.story-cutscene .roof-map, body:not(.mlt-active) .roof-map { opacity: 0; }
-/* (No background behind the view: the map is drawn into the canvas under it.) */
-.roof-map header, .roof-map footer { padding: 6px 8px; background: rgba(4, 10, 13, .72); border: 1px solid rgba(126, 244, 241, .35); }
-.roof-map header { display: flex; justify-content: space-between; border-bottom: 0; color: #7ef4f1; }
-.roof-map header b { color: #f4f6f6; }
-.roof-map-view { width: 200px; height: 200px; box-sizing: border-box; border: 1px solid rgba(126, 244, 241, .35); }
-.roof-map footer { display: flex; flex-wrap: wrap; gap: 4px 10px; border-top: 0; font-size: 8.5px; letter-spacing: .08em; }
-.roof-map footer span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; }
-.roof-map .k-you::before { background: #fff; border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.roof-map .k-patient::before { background: #ff4a3d; }
-.roof-map .k-sci::before { background: #ffb03c; }
-.roof-map .k-ledge::before { background: #ff4a3d; border-radius: 0; height: 3px; vertical-align: 2px; }
-.roof-map .k-hatch::before { border-radius: 0; background: repeating-linear-gradient(45deg, #f2c21a 0 2px, #16140f 2px 4px); box-shadow: 0 0 0 1px #f2c21a; }
+.roof-map header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; letter-spacing: .04em; }
+.roof-map header b { font-weight: 500; letter-spacing: .1em; color: var(--text-2, rgba(244, 240, 232, .72)); }
+/* (No background behind the view: the map is drawn, translucent, into the canvas under it.) */
+.roof-map-view {
+  width: 196px; height: 196px; box-sizing: border-box;
+  border: 1px solid var(--line-2, rgba(244, 240, 232, .32));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .18), 0 10px 40px rgba(0, 0, 0, .35);
+}
+.roof-map footer { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 9px; font-size: 10.5px; letter-spacing: .01em; }
+.roof-map footer span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; vertical-align: 1px; }
+.roof-map .k-you::before { width: 0; height: 0; border-radius: 0; border: solid transparent; border-width: 0 3.5px 7px; border-bottom-color: var(--text, #f4f0e8); }
+.roof-map .k-patient::before { background: var(--blood, #e5412d); }
+.roof-map .k-sci::before { background: var(--warn, #ffc457); }
+.roof-map .k-ledge::before { width: 9px; height: 1.5px; border-radius: 0; vertical-align: 3px; background: var(--blood, #e5412d); }
+.roof-map .k-hatch::before { border-radius: 1px; box-shadow: inset 0 0 0 1px var(--warn, #ffc457); }
 @media (max-width: 650px) { .roof-map { transform: scale(.72); transform-origin: top right; } }
 `;

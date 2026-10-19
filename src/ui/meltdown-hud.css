@@ -340,26 +340,4 @@
 body.mlt-active #hud,
 body.mlt-active #reticle { display: none !important; }
 
-/* ---- The roof's map (meltdown/roof-map.js): a thin-outlined, translucent
-   square top right; a quiet line over it, the key under it. ------------- */
-html .roof-map {
-  right: 44px;
-  top: 92px;
-  width: 196px;
-  font: 500 11px/1.3 var(--font);
-  letter-spacing: 0.02em;
-  color: var(--text-3);
-  text-shadow: var(--shadow-text);
-}
-html .roof-map header,
-html .roof-map footer { padding: 0; background: none; border: 0; }
-html .roof-map header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; color: var(--text-3); font-size: 11px; letter-spacing: 0.04em; }
-html .roof-map header b { font-weight: 500; color: var(--text-2); letter-spacing: 0.1em; }
-html .roof-map-view { width: 196px; height: 196px; border: 1px solid var(--line-2); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18), 0 10px 40px rgba(0, 0, 0, 0.35); }
-html .roof-map footer { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 9px; font-size: 10.5px; color: var(--text-3); letter-spacing: 0.01em; }
-html .roof-map footer span::before { width: 6px; height: 6px; margin-right: 5px; vertical-align: 1px; }
-html .roof-map .k-you::before { background: var(--text); }
-html .roof-map .k-patient::before { background: var(--blood); }
-html .roof-map .k-sci::before { background: var(--warn); }
-html .roof-map .k-ledge::before { background: var(--blood); height: 1.5px; width: 9px; vertical-align: 3px; }
-html .roof-map .k-hatch::before { background: none; box-shadow: inset 0 0 0 1px var(--warn); border-radius: 1px; }
+/* (The roof's map, meltdown/roof-map.js, carries its own styles.) */

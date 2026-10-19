@@ -84,7 +84,7 @@ export class VersusHud {
     const root = el("section", `vs-view vs-p${index + 1}`);
     root.dataset.player = String(index);
     root.innerHTML = `
-      <header class="vs-plate tag">
+      <header class="vs-plate">
         <b class="vs-chip">P${index + 1}</b>
         <div class="vs-id"><strong class="vs-name"></strong><small class="vs-device mono-label"></small></div>
         <ol class="vs-pips" aria-label="Rounds won"></ol>

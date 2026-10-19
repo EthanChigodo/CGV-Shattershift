@@ -164,7 +164,7 @@ body.hud-unified .cw-missions { display: none !important; }
 /* A warning: the hazard's colour, wide and tracked, breathing gently. */
 .cw-warn {
   position: absolute;
-  top: 24%;
+  top: 31%;
   left: 50%;
   transform: translateX(-50%);
   --tone: var(--blood);
