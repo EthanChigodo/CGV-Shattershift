@@ -95,6 +95,12 @@ export class MenuBackdrop {
 
   /** Start building the stage (models stream in the background). Safe to call twice. */
   preload() {
+    if (this.stage || this.failed || this._pending) return;
+    // (A moment later: the boot's loading screen gets its first frames first.)
+    this._pending = setTimeout(() => this._create(), 80);
+  }
+
+  _create() {
     if (this.stage || this.failed) return;
     try {
       this.stage = new MenuStage({
