@@ -51,6 +51,8 @@ export function glyph(device, action, kind = "xbox") {
 }
 
 const time = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+/** The match's lines still use the old "A // B" separators: shown as "A · B". */
+const tidy = (text) => String(text ?? "").replace(/\s*\/\/\s*/g, " · ");
 
 export class VersusHud {
   constructor({ container = document.body } = {}) {
@@ -152,7 +154,7 @@ export class VersusHud {
       v.root.classList.remove("vs-show-result");
       v.intro.querySelector(".vs-intro-round").textContent = word;
       v.intro.querySelector(".vs-intro-word").textContent = "FIGHT";
-      v.intro.querySelector(".vs-intro-sub").textContent = `FIRST UP THE LADDER // ${scores[0]} - ${scores[1]} // FIRST TO ${wins}`;
+      v.intro.querySelector(".vs-intro-sub").textContent = `First up the ladder · ${scores[0]} - ${scores[1]} · first to ${wins}`;
       v.intro.classList.remove("vs-run");
       void v.intro.offsetWidth; // restart the animation
       v.intro.classList.add("vs-run");
@@ -179,8 +181,8 @@ export class VersusHud {
     const now = performance.now();
     for (const v of this.views) {
       if (target !== "both" && target !== v.index) continue;
-      v.flash.querySelector("b").textContent = title;
-      v.flash.querySelector("small").textContent = sub;
+      v.flash.querySelector("b").textContent = tidy(title);
+      v.flash.querySelector("small").textContent = tidy(sub);
       v.flash.dataset.team = team === null ? "" : String(team);
       v.flash.classList.remove("on");
       void v.flash.offsetWidth;
@@ -200,7 +202,7 @@ export class VersusHud {
     this.pauseEl.hidden = !on;
     if (!on) return;
     this.pauseEl.innerHTML = `
-      <p class="mono-label">ROOFTOP SHOWDOWN // PAUSED</p>
+      <p class="mono-label">Rooftop showdown</p>
       <h2>Paused</h2>
       <div class="vs-buttons">
         <button type="button" class="vs-button primary" data-act="resume"><kbd class="key">${hints?.resume ?? "Esc"}</kbd>Resume</button>
@@ -241,7 +243,7 @@ export class VersusHud {
     };
     this.winnerEl.innerHTML = `
       <div class="vs-winner-card vs-team-${winner + 1}">
-        <p class="mono-label">ROOFTOP SHOWDOWN // ${rounds} ROUND${rounds === 1 ? "" : "S"}</p>
+        <p class="mono-label">Rooftop showdown · ${rounds} round${rounds === 1 ? "" : "s"}</p>
         <h1 class="vs-winner-title"><span>${w.label}</span> WINS</h1>
         <p class="vs-winner-sub">${w.name} took the only seat out of Ascension Tower.</p>
         <table class="vs-stats">
@@ -277,7 +279,7 @@ export class VersusHud {
     this._set(this.centre.querySelector(".vs-s1"), "t", String(a.roundsWon));
     this._set(this.centre.querySelector(".vs-s2"), "t", String(b.roundsWon));
     const h = state.heli;
-    const heliLabel = h.arrived ? `WAITING // ${h.side < 0 ? "WEST" : "EAST"} LEDGE` : h.inbound ? `INBOUND // ${h.side < 0 ? "WEST" : "EAST"}` : "HELICOPTER";
+    const heliLabel = h.arrived ? `Waiting · ${h.side < 0 ? "west" : "east"} ledge` : h.inbound ? `Inbound · ${h.side < 0 ? "west" : "east"}` : "Helicopter";
     this._set(this.centre.querySelector(".vs-heli-label"), "t", heliLabel);
     this._set(this.centre.querySelector(".vs-heli-time"), "t", h.arrived ? "NOW" : time(Math.ceil(h.eta)));
     this.centre.classList.toggle("vs-heli-close", h.inbound || h.arrived);
@@ -302,11 +304,11 @@ export class VersusHud {
     v.vitals.classList.toggle("low", p.integrity <= 30);
     this._set(v.spheres, "t", String(p.spheres));
     const ball = BALLS[p.ball];
-    this._set(v.ball, "t", `${ball.name.toUpperCase()} // ${p.cost === 0 ? "FREE" : `${p.cost} EACH`}`);
+    this._set(v.ball, "t", `${ball.name} · ${p.cost === 0 ? "free" : `${p.cost} each`}`);
     this._set(v.ball, "b", p.ball, (n, val) => (n.dataset.ball = val));
     v.root.classList.toggle("vs-dry", p.spheres < p.cost);
     this._set(v.serums, "s", p.serums.map((s) => `${s.key}:${Math.ceil(s.remaining)}`).join(","), (n) => {
-      n.innerHTML = p.serums.map((s) => `<span class="vs-serum" style="--serum:${SERUMS[s.key]?.colour ?? "#fff"}">${s.name.toUpperCase()} ${Math.ceil(s.remaining)}s</span>`).join("");
+      n.innerHTML = p.serums.map((s) => `<span class="vs-serum" style="--serum:${SERUMS[s.key]?.colour ?? "#fff"}">${s.name} ${Math.ceil(s.remaining)}s</span>`).join("");
     });
 
     // The feed: the last few lines, newest at the bottom, fading with age.
@@ -314,7 +316,7 @@ export class VersusHud {
     const key = `${p.feed.length}:${last?.t ?? 0}`;
     if (key !== v.feedKey) {
       v.feedKey = key;
-      v.feed.innerHTML = p.feed.slice(-4).map((f) => `<li class="vs-feed-${f.tone}" data-t="${f.t}">${f.text}</li>`).join("");
+      v.feed.innerHTML = p.feed.slice(-4).map((f) => `<li class="vs-feed-${f.tone}" data-t="${f.t}">${tidy(f.text)}</li>`).join("");
     }
     for (const li of v.feed.children) li.style.opacity = Math.max(0, 1 - (now - Number(li.dataset.t)) / 6000).toFixed(2);
 
@@ -342,7 +344,7 @@ export class VersusHud {
       k.hidden = !prompt?.action;
       k.classList.toggle("pad", p.deviceId.startsWith("pad:"));
       k.textContent = prompt?.action ? glyph(p.deviceId, prompt.action, kind) : "";
-      n.querySelector("span").textContent = prompt?.text ?? "";
+      n.querySelector("span").textContent = tidy(prompt?.text);
     });
 
     // Markers: the helicopter (or its ladder) and the rival, arrows when off screen.
