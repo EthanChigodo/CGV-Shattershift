@@ -76,7 +76,8 @@ export class RoofMinimap {
     this.group.name = "RoofMap";
     this.owned = [];
     const own = (x) => (this.owned.push(x), x);
-    const mat = (color, opacity = 1) => own(new THREE.MeshBasicMaterial({ color, fog: false, toneMapped: false, transparent: opacity < 1, opacity, depthWrite: false }));
+    // (All in the transparent pass, so the translucent deck can go under the icons by renderOrder.)
+    const mat = (color, opacity = 1) => own(new THREE.MeshBasicMaterial({ color, fog: false, toneMapped: false, transparent: true, opacity, depthWrite: false }));
     const plane = own(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
     const disc = own(new THREE.CircleGeometry(0.5, 20).rotateX(-Math.PI / 2));
     const ring = own(new THREE.RingGeometry(0.38, 0.5, 28).rotateX(-Math.PI / 2));
@@ -92,8 +93,10 @@ export class RoofMinimap {
     };
     this._add = add;
 
-    // The deck, and its edges.
-    add(plane, mat(0x18242a), 0, 0, EDGE * 2, EDGE * 2, 0);
+    // The deck, and its edges. Translucent: the frame shows through the map
+    // (render() keeps the picture under it), over a faint shade for the icons.
+    add(plane, mat(0x05090c, 0.42), 0, 0, VIEW * 4, VIEW * 4, -0.2).renderOrder = -2;
+    add(plane, mat(0x18242a, 0.62), 0, 0, EDGE * 2, EDGE * 2, 0).renderOrder = -1;
     const parapet = mat(0xc9d6da);
     for (const z of [-EDGE, EDGE]) add(plane, parapet, 0, z, EDGE * 2, 0.45, 0.1);
     const open = mat(0xff4a3d);
@@ -153,7 +156,7 @@ export class RoofMinimap {
     this.frame = document.createElement("section");
     this.frame.className = "roof-map";
     this.frame.setAttribute("aria-label", "Roof map");
-    this.frame.innerHTML = `<header>ROOF // TACTICAL <b>N</b></header><div class="roof-map-view"></div>
+    this.frame.innerHTML = `<header>The roof <b>N</b></header><div class="roof-map-view"></div>
       <footer><span class="k-you">You</span><span class="k-patient">Patient</span><span class="k-sci">Scientist</span><span class="k-ledge">Open ledge</span><span class="k-hatch">Open hatch</span></footer>`;
     this.view = this.frame.querySelector(".roof-map-view");
     document.body.append(this.frame);
@@ -247,7 +250,8 @@ export class RoofMinimap {
     renderer.setViewport(x, y, w, h);
     renderer.setClearColor(0x05090c, 1);
     renderer.autoClear = false;
-    renderer.clear(true, true, false);
+    // Depth only: the picture under the map stays (the map is translucent).
+    renderer.clear(false, true, false);
     renderer.render(this.scene, this.camera);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, size.x, size.y);

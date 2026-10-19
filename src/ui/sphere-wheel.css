@@ -1,76 +1,168 @@
 /*
- * The sphere wheel (src/ui/sphere-wheel.js): bottom right, in every level.
- * A 220 px box; the X crosses at its middle, the medallions sit on its
- * points (their centres set by --x / --y), the lit diamond slides under the
- * one in use.
+ * The sphere wheel (src/ui/sphere-wheel.js): bottom right, in every level,
+ * in the NIGHTFALL look (src/ui/theme.css). A 240 px box: an X of hairlines
+ * crossing at its middle, the four spheres on its points as thin rings
+ * (their centres set by --x / --y), a fine diamond of light sliding under
+ * the one in use, which takes its own colour. The count of spheres is the
+ * big light number, in glass; the loaded one's name and cost sit under it.
  */
 
 .sphere-wheel {
-  --c: #d9fbff;
-  position: fixed; right: 26px; bottom: 26px; z-index: 6; width: 240px; height: 240px;
-  pointer-events: none; font-family: var(--font-mono, monospace); color: var(--bone, #ece6da);
-  opacity: 0; transform: translateY(10px); transition: opacity .3s ease, transform .3s ease;
+  --c: var(--glass);
+  position: fixed;
+  right: 30px;
+  bottom: 26px;
+  z-index: 6;
+  width: 240px;
+  height: 240px;
+  isolation: isolate;
+  pointer-events: none;
+  font-family: var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow-text);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s ease, transform 0.4s var(--ease-out);
 }
 .sphere-wheel.show { opacity: 1; transform: none; }
 body.hud-hidden .sphere-wheel, body.story-cutscene .sphere-wheel, body.cutscene .sphere-wheel { opacity: 0; }
 
-/* The X: two fine lines through the middle, fading at their ends. */
+/* A soft shade under it all, for the bright levels: no edge. */
+.sphere-wheel::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -10px -30px -26px -80px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.44), rgba(4, 6, 9, 0.2) 58%, rgba(4, 6, 9, 0));
+}
+
+/* The X: two hairlines through the middle, fading at their ends. */
 .sw-x i {
-  position: absolute; left: 100px; top: 112px; width: 210px; height: 1.5px; margin-left: -105px;
-  background: linear-gradient(90deg, transparent, rgba(236, 230, 218, .6) 22%, rgba(236, 230, 218, .6) 78%, transparent);
+  position: absolute;
+  left: 100px;
+  top: 112px;
+  width: 200px;
+  height: 1px;
+  margin-left: -100px;
+  background: linear-gradient(90deg, transparent, var(--line-2) 26%, var(--line-2) 74%, transparent);
 }
 .sw-x i:first-child { transform: rotate(45deg); }
 .sw-x i:last-child { transform: rotate(-45deg); }
 
-/* The diamond under the sphere in use: a bone tile, its colour round the rim. */
+/* Under the sphere in use: a fine diamond of light in its colour. */
 .sw-panel {
-  position: absolute; left: -46px; top: -46px; width: 92px; height: 92px;
-  background: var(--grain, none), var(--bone, #ece6da);
-  border: 4px solid var(--c);
-  box-shadow: 0 0 0 1.5px var(--ink, #0d0e10), 0 10px 22px rgba(0, 0, 0, .45);
-  transition: transform .32s cubic-bezier(.2, .9, .25, 1.15), border-color .3s, box-shadow .3s;
+  position: absolute;
+  left: -33px;
+  top: -33px;
+  width: 66px;
+  height: 66px;
+  border: 1px solid color-mix(in srgb, var(--c) 70%, transparent);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--c) 18%, transparent), transparent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--c) 26%, transparent);
+  transition: transform 0.45s var(--ease-out), border-color 0.4s, box-shadow 0.4s;
 }
 
-/* The keys, in the X's left and right openings (back / on). */
+/* Q and E, in the X's upper openings (back / on): the theme's key. */
 .sw-key {
-  position: absolute; top: 112px; width: 22px; height: 22px; margin-top: -11px; display: grid; place-items: center;
-  font-size: 10px; font-weight: 800; color: var(--bone, #ece6da); border: 1.5px solid currentColor; border-radius: 3px; background: rgba(13, 14, 16, .6);
+  position: absolute;
+  top: 74px;
+  min-width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.04);
+  text-shadow: none;
 }
-/* (Four points now: the keys sit in the X's two upper openings.) */
-.sw-key { top: 74px; }
-.sw-q { left: 60px; }
-.sw-e { left: 118px; }
+.sw-q { left: 58px; }
+.sw-e { left: 122px; }
 
-/* The spheres you have, in the X's top-left corner. */
-.sw-count { position: absolute; left: 0; top: 4px; display: grid; text-align: center; }
-.sw-count strong { font-family: var(--font-stencil, sans-serif); font-size: 38px; font-weight: 900; line-height: .9; color: var(--bone, #ece6da); text-shadow: 0 2px 0 rgba(0, 0, 0, .6); font-variant-numeric: tabular-nums; }
-.sw-count span { margin-top: 3px; font-size: 7.5px; font-weight: 800; letter-spacing: .22em; color: rgba(236, 230, 218, .75); }
-.sphere-wheel.short .sw-count strong { color: var(--hazard, #ff3b1f); animation: swShort .7s ease-in-out infinite; }
-@keyframes swShort { 50% { opacity: .45; } }
+/* The spheres you have: in glass, big and light, top left of the X. */
+.sw-count { position: absolute; left: -6px; top: 0; display: grid; justify-items: center; gap: 6px; text-align: center; }
+.sw-count strong {
+  font-stretch: var(--wide);
+  font-weight: 230;
+  font-size: 40px;
+  line-height: 0.85;
+  letter-spacing: 0.01em;
+  color: var(--glass);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 18px rgba(0, 0, 0, 0.5), 0 0 26px color-mix(in srgb, var(--glass) 18%, transparent);
+}
+.sw-count span { font-size: 11px; font-weight: 500; letter-spacing: 0.04em; color: var(--text-3); text-transform: lowercase; }
+.sw-count span::first-letter { text-transform: uppercase; }
+.sphere-wheel.short .sw-count strong { color: var(--blood); animation: swShort 1.6s var(--ease-in-out) infinite; }
+@keyframes swShort { 50% { opacity: 0.5; } }
 
-/* The medallions. */
+/* The four spheres: thin rings, dim; the one in use lit in its colour. */
 .sw-slot {
-  position: absolute; left: var(--x); top: var(--y); width: 48px; height: 48px; margin: -24px 0 0 -24px;
-  color: rgba(236, 230, 218, .7); filter: grayscale(1); opacity: .7;
-  transition: transform .3s ease, color .3s, opacity .3s, filter .3s;
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  color: var(--text-3);
+  opacity: 0.8;
+  transition: transform 0.4s var(--ease-out), color 0.4s, opacity 0.4s, filter 0.4s;
 }
-.sw-slot svg { display: block; width: 100%; height: 100%; }
+.sw-slot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.sw-slot svg > circle:first-child { fill: rgba(4, 6, 9, 0.3); stroke-width: 1; }
+.sw-slot svg > circle:nth-child(2) { display: none; }
+.sw-slot svg > path:nth-child(3) { stroke-width: 1; opacity: 0.6; }
+.sw-slot svg [stroke-width="2.2"], .sw-slot svg [stroke-width="2"] { stroke-width: 1.5; }
+.sw-slot svg [stroke-width="1.6"] { stroke-width: 1.1; }
 .sw-slot.on {
-  color: var(--ink, #0d0e10); opacity: 1; transform: scale(1.38); filter: none;
+  color: var(--c);
+  opacity: 1;
+  transform: scale(1.24);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--c) 55%, transparent));
 }
-.sphere-wheel.switched .sw-slot.on { animation: swPop .35s ease-out; }
-@keyframes swPop { 0% { transform: scale(1.0); } 55% { transform: scale(1.6); } 100% { transform: scale(1.38); } }
+.sphere-wheel.switched .sw-slot.on { animation: swPop 0.45s var(--ease-out); }
+@keyframes swPop { 0% { transform: scale(1); } 50% { transform: scale(1.36); } 100% { transform: scale(1.24); } }
 
-/* The loaded sphere's name and cost, under the wheel's left side. */
-.sw-label { position: absolute; left: 0; bottom: 40px; display: grid; gap: 2px; }
-.sw-label b { font-family: var(--font-display, sans-serif); font-size: 24px; font-weight: 900; line-height: .9; letter-spacing: .03em; color: var(--bone, #ece6da); text-shadow: 0 2px 0 rgba(0, 0, 0, .5); }
-.sw-label b::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: var(--c); vertical-align: 2px; box-shadow: 0 0 8px var(--c); }
-.sw-label span { font-size: 8.5px; font-weight: 800; letter-spacing: .18em; color: rgba(236, 230, 218, .75); }
-.sphere-wheel.short .sw-label span { color: var(--hazard, #ff3b1f); }
+/* The loaded sphere's name, wide and tracked, and its cost, under the count. */
+.sw-label { position: absolute; left: -2px; bottom: 34px; display: grid; gap: 6px; }
+.sw-label b {
+  font-stretch: var(--wide);
+  font-weight: 330;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.26em;
+  color: var(--text);
+}
+.sw-label b::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 9px;
+  border-radius: 50%;
+  background: var(--c);
+  vertical-align: 2px;
+  box-shadow: 0 0 8px var(--c);
+}
+.sw-label span {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+  text-transform: lowercase;
+}
+.sw-label span::first-letter { text-transform: uppercase; }
+.sphere-wheel.short .sw-label span { color: var(--blood); }
 
 @media (max-width: 650px) {
-  .sphere-wheel { transform-origin: bottom right; transform: scale(.72); }
-  .sphere-wheel.show { transform: scale(.72); }
+  .sphere-wheel { transform-origin: bottom right; transform: scale(0.72); }
+  .sphere-wheel.show { transform: scale(0.72); }
 }
 @media (prefers-reduced-motion: reduce) {
   .sw-panel, .sw-slot { transition: none; }
@@ -78,5 +170,5 @@ body.hud-hidden .sphere-wheel, body.story-cutscene .sphere-wheel, body.cutscene 
 }
 
 /* What used to sit bottom right moves up out of its way. */
-.cw-tools { bottom: 286px !important; }
-.fdy-toasts, .mlt-toasts { bottom: 284px !important; }
+.cw-tools { bottom: 284px !important; }
+.fdy-toasts, .mlt-toasts { bottom: 360px !important; }
