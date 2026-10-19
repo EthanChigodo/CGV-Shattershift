@@ -169,6 +169,8 @@ export class MenuBackdrop {
   }
 
   dispose() {
+    clearTimeout(this._pending);
+    this.failed = true; // (no rebuilding after this)
     this.observer.disconnect();
     this.bodyObserver.disconnect();
     removeEventListener("menu:shot", this._onShot);
