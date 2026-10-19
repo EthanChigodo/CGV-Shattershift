@@ -24,7 +24,7 @@ const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 export const SHOTS = {
   // Establishing: low behind Subject 07, the tower burning beyond; the menu
   // text sits in the calm left 40% (sky and smoke).
-  title: { from: [-1.55, 0.5, 4.3], figure: [0.7, 0.3, 0.875], attention: 0.35, drift: 1 },
+  title: { from: [-1.55, 1.0, 4.3], figure: [0.7, 0.3, 0.875], attention: 0.35, drift: 1 },
   // Close on Subject 07, three-quarter front, lit by the fire: the controls
   // stand in a column on the right.
   appearance: { from: [-1.35, 1.2, 3.4], local: true, figure: [0.47, 0.13, 0.92], attention: 0.95, drift: 0.6 },

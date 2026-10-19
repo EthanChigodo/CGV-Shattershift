@@ -47,7 +47,7 @@ const BEAM_FRAGMENT = /* glsl */ `
   void main() {
     vec3 V = normalize(cameraPosition - vWorld);
     float facing = abs(dot(normalize(vNormal), V));
-    float core = pow(facing, 2.5);
+    float core = pow(facing, 3.5);
     float dist = (1.0 - vAlong) * uLength;
     float fall = 1.0 / (1.0 + dist * 0.025) * smoothstep(0.0, 0.08, vAlong);
     // Dust and smoke drifting through the light.
@@ -116,7 +116,7 @@ export class MenuHelicopters {
       const beamUniforms = {
         ...haze,
         uColor: { value: new THREE.Color(0.9, 0.95, 1.08) },
-        uOpacity: { value: i === 0 ? 0.55 : 0.6 },
+        uOpacity: { value: i === 0 ? 0.05 : 0.055 },
         uLength: { value: 100 },
         uTime: { value: 0 },
         uNoise: { value: noise },

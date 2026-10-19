@@ -24,7 +24,7 @@ import * as THREE from "../three.js";
 const TEXTURES = new URL("../../assets/meltdown/textures/", import.meta.url);
 
 /** The roof, in stage coordinates: top surface at y = 0. */
-export const ROOF = { minX: -16, maxX: 12, minZ: -6, maxZ: 24, parapet: 1.05 };
+export const ROOF = { minX: -16, maxX: 12, minZ: -6, maxZ: 24, upstand: 0.42, parapet: 1.1 };
 
 /**
  * Wet: damp everywhere, puddles in the low spots (world-space mask from the
@@ -45,9 +45,9 @@ function wetMaterial(material, noise, uniforms, { puddles = 1, damp = 0.55 } = {
         uniform float uWetTime;
         uniform float uRain;
         float wetMask() {
-          vec2 p = vWetWorld.xz * 0.045;
-          float n = texture2D(uWetNoise, p).r * 0.7 + texture2D(uWetNoise, p * 3.3 + 0.27).a * 0.3;
-          return smoothstep(0.56, 0.6, n) * ${puddles.toFixed(2)};
+          vec2 p = vWetWorld.xz * 0.028;
+          float n = texture2D(uWetNoise, p).r * 0.8 + texture2D(uWetNoise, p * 4.1 + 0.27).a * 0.2;
+          return smoothstep(0.5, 0.56, n) * ${puddles.toFixed(2)};
         }
         // Rain rings: a grid of cells, each with a ring that grows and fades.
         vec2 ripples(vec2 p, float t) {
@@ -66,7 +66,12 @@ function wetMaterial(material, noise, uniforms, { puddles = 1, damp = 0.55 } = {
         float wet = wetMask();
         diffuseColor.rgb *= mix(${(1 - damp * 0.45).toFixed(3)}, 0.22, wet);`)
       .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor * ${(1 - damp * 0.4).toFixed(3)}, 0.035, wet);`)
+        roughnessFactor = mix(roughnessFactor * ${(1 - damp * 0.4).toFixed(3)}, 0.12, wet);`)
+      // The fire is not a point: its true reflection is the environment map
+      // (the tower itself). The key light's own highlight would put a sun in
+      // every puddle, so it goes there.
+      .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+        reflectedLight.directSpecular *= 1.0 - wet * 0.94;`)
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
         normal = normalize(mix(normal, nonPerturbedNormal, wet * 0.92));
         if (uRain > 0.0 && wet > 0.1) {
@@ -156,7 +161,9 @@ export class MenuRoof {
     // ---- Parapet: concrete wall, a coping on top ----
     this.concrete = own(new THREE.MeshStandardMaterial({ color: 0x8a8580, roughness: 0.85 }));
     this.coping = own(wetMaterial(new THREE.MeshStandardMaterial({ color: 0x77736e, roughness: 0.6, metalness: 0.05 }), noise, this.uniforms, { puddles: 0, damp: 0.7 }));
-    const H = R.parapet;
+    // A low concrete upstand with a steel guard-rail on it: the street and
+    // the lit facades across it show through the rails.
+    const H = R.upstand;
     const t = 0.32;
     const walls = [
       [w + t * 2, H, t, cx, H / 2, R.minZ - t / 2],
@@ -164,9 +171,41 @@ export class MenuRoof {
       [t, H, d, R.minX - t / 2, H / 2, cz],
       [t, H, d, R.maxX + t / 2, H / 2, cz],
     ];
+    // (It casts no shadow from the fire: so low across the street, the
+    // shadow would black out the roof by the figure.)
     for (const [sx, sy, sz, x, y, z] of walls) {
-      part(this.concrete, sx, sy, sz, x, y, z);
+      part(this.concrete, sx, sy, sz, x, y, z, { cast: false });
       part(this.coping, sx + (sx > sz ? 0.06 : 0.12), 0.07, sz + (sz > sx ? 0.06 : 0.12), x, H + 0.035, z);
+    }
+    this.rail = own(new THREE.MeshStandardMaterial({ color: 0x3b3e42, roughness: 0.35, metalness: 0.85 }));
+    const railTop = R.parapet;
+    const runs = [
+      [[R.minX, R.minZ - t / 2], [R.maxX, R.minZ - t / 2]],
+      [[R.minX - t / 2, R.minZ], [R.minX - t / 2, R.maxZ]],
+      [[R.maxX + t / 2, R.minZ], [R.maxX + t / 2, R.maxZ]],
+      [[R.minX, R.maxZ + t / 2], [R.maxX, R.maxZ + t / 2]],
+    ];
+    const postGeo = own(new THREE.CylinderGeometry(0.028, 0.028, railTop - H, 8));
+    const railGeo = own(new THREE.CylinderGeometry(0.024, 0.024, 1, 8));
+    railGeo.rotateZ(Math.PI / 2);
+    for (const [[x0, z0], [x1, z1]] of runs) {
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      const ang = Math.atan2(-(z1 - z0), x1 - x0);
+      for (const y of [railTop, H + (railTop - H) * 0.5]) {
+        const rail = new THREE.Mesh(railGeo, this.rail);
+        rail.scale.x = len;
+        rail.position.set((x0 + x1) / 2, y, (z0 + z1) / 2);
+        rail.rotation.y = ang;
+        rail.castShadow = true;
+        this.root.add(rail);
+      }
+      const n = Math.max(1, Math.round(len / 1.6));
+      for (let k = 0; k <= n; k += 1) {
+        const post = new THREE.Mesh(postGeo, this.rail);
+        post.position.set(x0 + ((x1 - x0) * k) / n, H + (railTop - H) / 2, z0 + ((z1 - z0) * k) / n);
+        post.castShadow = true;
+        this.root.add(post);
+      }
     }
     // The building's face below the parapet's front (seen over the edge).
     const face = own(new THREE.MeshStandardMaterial({ color: 0x23211f, roughness: 0.9 }));

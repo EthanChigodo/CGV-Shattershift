@@ -137,14 +137,14 @@ export function noiseTexture() {
 /** The haze's uniforms: one object, shared by reference by every material. */
 export function createHazeUniforms() {
   return {
-    uHazeLow: { value: new THREE.Color(0.075, 0.05, 0.04) },
-    uHazeHigh: { value: new THREE.Color(0.018, 0.024, 0.045) },
+    uHazeLow: { value: new THREE.Color(0.042, 0.03, 0.028) },
+    uHazeHigh: { value: new THREE.Color(0.01, 0.016, 0.038) },
     uHazeDensity: { value: 0.0042 },
     uHazeFalloff: { value: 0.011 },
     uHazeFloor: { value: -96 },
     uFirePos: { value: new THREE.Vector3() },
     uFireGlow: { value: new THREE.Color(0.9, 0.32, 0.08) },
-    uMoonDir: { value: new THREE.Vector3(0.35, 0.62, -0.7).normalize() },
+    uMoonDir: { value: new THREE.Vector3(-0.32, 0.6, 0.74).normalize() },
     uMoonGlow: { value: new THREE.Color(0.32, 0.38, 0.5) },
     uDim: { value: 0 },
   };
@@ -180,7 +180,7 @@ export const HAZE_GLSL = /* glsl */ `
     vec3 c = mix(uHazeLow, uHazeHigh, up);
     vec3 tf = uFirePos - ro;
     float mf = max(dot(rd, normalize(tf)), 0.0);
-    c += uFireGlow * (0.05 * pow(mf, 3.0) + 0.22 * pow(mf, 18.0) + 0.5 * pow(mf, 90.0));
+    c += uFireGlow * (0.018 * pow(mf, 3.0) + 0.1 * pow(mf, 16.0) + 0.32 * pow(mf, 70.0));
     float mm = max(dot(rd, uMoonDir), 0.0);
     c += uMoonGlow * (0.08 * pow(mm, 6.0) + 0.25 * pow(mm, 40.0));
     return c;
@@ -283,20 +283,20 @@ const SKY_FRAGMENT = /* glsl */ `
       float n = texture2D(uNoise, cp).r * 0.6 + texture2D(uNoise, cp * 2.7 + 0.31).a * 0.3 + texture2D(uNoise, cp * 0.45).b * 0.35;
       cl = smoothstep(0.42, 0.82, n) * smoothstep(0.0, 0.18, h) * uClouds;
       float thick = smoothstep(0.55, 0.95, n);
-      vec3 under = vec3(0.07, 0.042, 0.03) * (1.0 - smoothstep(0.0, 0.5, h) * 0.6);
+      vec3 under = vec3(0.03, 0.026, 0.032) * (1.0 - smoothstep(0.0, 0.5, h) * 0.6);
       vec3 tf = normalize(uFirePos - ro);
-      float towardFire = pow(max(dot(rd, tf), 0.0), 6.0);
-      under += uFireGlow * towardFire * 0.25;
+      float towardFire = pow(max(dot(rd, tf), 0.0), 10.0);
+      under += uFireGlow * towardFire * 0.2;
       under += uMoonGlow * pow(mm, 30.0) * (1.0 - thick) * 1.2;
       col = mix(col, under * (1.0 - thick * 0.45), cl * 0.85);
     }
     col += stars * (1.0 - cl);
 
     // The haze on the horizon (the same colours the towers fade into).
-    float horizon = 1.0 - smoothstep(-0.02, 0.32, h);
+    float horizon = 1.0 - smoothstep(-0.02, 0.16, h);
     col = mix(col, hazeColour(ro, rd), clamp(horizon * 0.95 + (1.0 - smoothstep(-0.2, 0.0, h)), 0.0, 1.0));
-    // A broad warm band right on the horizon: the city's light pollution.
-    col += uHazeLow * 0.6 * exp(-abs(h - 0.01) * 16.0);
+    // A thin warm band right on the horizon: the city's light pollution.
+    col += uHazeLow * 0.45 * exp(-abs(h - 0.01) * 26.0);
 
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>

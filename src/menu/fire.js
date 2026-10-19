@@ -113,8 +113,8 @@ const FLAME_FRAGMENT = /* glsl */ `
     float x = abs(vUv.x + (turb - 0.5) * 0.55 * y);
     float w = mix(0.48, 0.05, pow(y, 0.8));
     float body = 1.0 - smoothstep(w * 0.35, w, x);
-    float heat = body * (1.15 - y * 1.05) + (turb - 0.5) * 0.9 * y;
-    heat *= smoothstep(0.0, 0.1, y) * vPower;
+    float heat = body * (1.05 - y * 1.1) + (turb - 0.5) * 0.7 * y;
+    heat *= smoothstep(0.0, 0.12, y) * vPower * (1.0 - smoothstep(0.55, 1.0, y) * 0.6);
     vec3 col = fireRamp(heat) * uIntensity;
     // Fade into the haze like everything else, but keep most of the glow.
     float a = clamp(heat * 1.4, 0.0, 1.0);
@@ -168,8 +168,8 @@ class Flames {
     this.list.push({
       position: position.clone().add(new THREE.Vector3(0, -1.2, 0)),
       normal: normal.clone(),
-      width: width * (1.3 + r() * 0.5),
-      height: 5 + r() * 6,
+      width: width * (1.5 + r() * 0.9),
+      height: 3.5 + r() * 5,
       seed: r(),
       power: 0.75 + r() * 0.35,
       target: power,
@@ -256,8 +256,8 @@ const SMOKE_FRAGMENT = /* glsl */ `
     vec2 base = vec2(vSeed * 3.17, vSeed * 7.31);
     float billow = texture2D(uNoise, rq * 0.36 + base + vec2(0.0, uTime * 0.004)).b;
     float detail = texture2D(uNoise, rq * 0.9 + base * 1.7 - vec2(uTime * 0.006, 0.0)).r;
-    float d = billow * 0.85 + detail * 0.55 - 0.42 - r2 * 0.75;
-    float dens = smoothstep(0.0, 0.42, d);
+    float d = billow * 0.7 + detail * 0.45 - 0.22 - r2 * 0.95;
+    float dens = smoothstep(0.0, 0.5, d);
     float a = dens * vParams.z;
     if (a < 0.003) discard;
 
@@ -268,12 +268,12 @@ const SMOKE_FRAGMENT = /* glsl */ `
     float fireSide = 0.3 + 0.7 * max(dot(n, toFire), 0.0);
     float under = 0.5 + 0.5 * max(-n.y, 0.0);
     float top = max(dot(n, uMoonDir), 0.0);
-    vec3 albedo = vec3(0.105, 0.097, 0.09);
-    vec3 lit = albedo * (uHazeLow * 5.5 * under + uMoonGlow * 1.2 * top + vec3(0.02, 0.025, 0.035));
+    vec3 albedo = vec3(0.1, 0.092, 0.086);
+    vec3 lit = albedo * (uHazeLow * 4.0 * under + uMoonGlow * 1.0 * top + vec3(0.015, 0.02, 0.03));
     float f = vParams.w;
-    lit += albedo * uFireLight * f * fireSide * (2.2 + uFlicker * 1.6);
+    lit += albedo * uFireLight * f * fireSide * (2.4 + uFlicker * 1.4);
     // Hot smoke right at the fire glows on its own.
-    lit += uFireLight * pow(f, 2.5) * dens * (0.35 + 0.3 * detail) * (0.7 + 0.6 * uFlicker);
+    lit += uFireLight * pow(f, 2.2) * dens * (0.22 + 0.25 * detail) * (0.7 + 0.6 * uFlicker);
     // Thick smoke shadows itself.
     lit *= mix(1.0, 0.45, smoothstep(0.25, 0.8, d));
     vec3 col = applyHaze(lit, vWorld);
@@ -372,7 +372,7 @@ class SmokePlume {
     const k = a / p.life;
     // Out of the window, then up: fast while hot, slowing as it cools; the
     // wind takes it, harder the higher it goes (shear).
-    const rise = p.near ? 2.6 * a + 0.05 * a * a : 18 * Math.log(1 + a * 0.32) + a * 1.1;
+    const rise = p.near ? 2.2 * a + 0.03 * a * a : 11 * Math.log(1 + a * 0.3) + a * 0.42;
     out.copy(e.position).addScaledVector(e.normal, 2.5 + Math.min(a, 6) * 0.9).add(p.jitter);
     out.y += rise;
     const shear = p.near ? 0.35 : 0.65 + Math.min(1.2, rise / 90);
@@ -380,11 +380,13 @@ class SmokePlume {
     // Slow lazy curls.
     out.x += Math.sin(a * 0.21 + p.seed * 30) * (3 + a * 0.25);
     out.z += Math.cos(a * 0.17 + p.seed * 21) * (2 + a * 0.2);
-    const size = p.near ? 7 + a * 1.4 + p.seed * 3 : 12 + a * 1.05 + Math.sqrt(a) * 3.2 + p.seed * 6;
+    const size = p.near ? 11 + a * 2.2 + p.seed * 5 : 18 + a * 1.4 + Math.sqrt(a) * 4 + p.seed * 8;
     const fadeIn = THREE.MathUtils.smoothstep(a, 0, p.near ? 1.2 : 3.5);
     const fadeOut = 1 - THREE.MathUtils.smoothstep(k, p.near ? 0.5 : 0.62, 1);
-    const alpha = fadeIn * fadeOut * (p.near ? 0.9 : 0.78);
-    const light = p.near ? 0.85 * Math.exp(-a / 7) + 0.15 : Math.exp(-a / 9) * 0.85 + 0.04;
+    const alpha = fadeIn * fadeOut * (p.near ? 0.95 : 0.85);
+    // Lit by the fire below: by how far the puff has drifted from it.
+    const away = out.distanceTo(this.uniforms.uFireAt.value);
+    const light = 0.95 * Math.exp(-away / 38) + 0.22 * Math.exp(-away / 160);
     return { size, alpha, light };
   }
 
@@ -660,8 +662,8 @@ export class TowerFire {
     const front = tower.fireFront;
     const span = tower.half * 2;
     const glowAt = [
-      [front.clone(), 150, 0.16],
-      [front.clone().add(new THREE.Vector3(0, 6, 0)), 70, 0.3],
+      [front.clone(), 150, 0.035],
+      [front.clone().add(new THREE.Vector3(0, 6, 0)), 70, 0.2],
       [front.clone().add(new THREE.Vector3(-span * 0.25, -4, 0)), 42, 0.35],
       [front.clone().add(new THREE.Vector3(span * 0.25, 4, 0)), 42, 0.3],
     ];
@@ -773,7 +775,7 @@ const ASH_VERTEX = /* glsl */ `
   varying float vEmber;
   varying float vSoft;
   void main() {
-    float ember = step(0.86, aSeed.w);
+    float ember = step(0.95, aSeed.w);
     vEmber = ember;
     // Drift with the wind, ash settling and embers lifting, wrapped in a box
     // round the roof so there is always some in view.
@@ -840,7 +842,7 @@ export class DriftingAsh {
       uFocus: { value: 5 },
       uAperture: { value: 0.035 },
       uAsh: { value: new THREE.Color(0.55, 0.36, 0.26) },
-      uEmber: { value: new THREE.Color(7, 2.4, 0.55) },
+      uEmber: { value: new THREE.Color(4.5, 1.5, 0.35) },
     };
     this.material = new THREE.ShaderMaterial({
       uniforms: this.uniforms,

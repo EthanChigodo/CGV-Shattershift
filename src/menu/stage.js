@@ -41,7 +41,7 @@ import { ShotRig, SHOTS } from "./shots.js";
 
 /** Where things stand (metres; the roof's surface is y = 0). */
 const SUBJECT = new THREE.Vector3(4.2, 0, -4.35);
-const TOWER = new THREE.Vector3(-34, -100, -340);
+const TOWER = new THREE.Vector3(38, -100, -330);
 const WIND = new THREE.Vector3(-5.5, 0, 1.6);
 /** The body turned a little off the tower: a three-quarter back view from the title shot. */
 const BODY_TURN = 0.38;
@@ -93,7 +93,7 @@ export class MenuStage {
     this.haze = createHazeUniforms();
 
     // ---- The tower and its fire ----
-    this.tower = new AscensionTower({ position: TOWER, rotation: 0.42, height: 228, haze: this.haze, noise: this.noise, viewFrom: SUBJECT, quality: this.quality });
+    this.tower = new AscensionTower({ position: TOWER, rotation: 0.42, height: 202, fireFloors: [36, 42], haze: this.haze, noise: this.noise, viewFrom: SUBJECT, quality: this.quality });
     this.scene.add(this.tower.root);
     this.haze.uFirePos.value.copy(this.tower.fireFront);
     this.fire = new TowerFire({ tower: this.tower, haze: this.haze, noise: this.noise, wind: WIND, quality: this.quality });
@@ -131,11 +131,11 @@ export class MenuStage {
     this.key.shadow.radius = 3;
     this.scene.add(this.key, this.key.target);
     const moonDir = this.haze.uMoonDir.value;
-    this.moon = new THREE.DirectionalLight(0x8ea6e0, 0.42);
+    this.moon = new THREE.DirectionalLight(0x8ea6e0, 1.15);
     this.moon.position.copy(SUBJECT).addScaledVector(moonDir, 50);
     this.moon.target.position.copy(SUBJECT);
     this.scene.add(this.moon, this.moon.target);
-    this.hemi = new THREE.HemisphereLight(0x22304e, 0x2a1a10, 0.55);
+    this.hemi = new THREE.HemisphereLight(0x22304e, 0x2a1a10, 0.7);
     this.scene.add(this.hemi);
 
     // ---- The camera ----
@@ -393,8 +393,8 @@ export class MenuStage {
     const p = this._v.copy(this.tower.fireFront).project(this.camera);
     for (const slot of u.uHaze.value) slot.set(0, 0, 0, 0);
     if (p.z < 1 && Math.abs(p.x) < 1.2 && Math.abs(p.y) < 1.2) {
-      const radius = THREE.MathUtils.clamp(9 / Math.max(1, this.camera.fov), 0.05, 0.5);
-      u.uHaze.value[0].set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5 + radius * 0.4, radius, this.reducedMotion ? 0.3 : 0.7);
+      const radius = THREE.MathUtils.clamp(5 / Math.max(1, this.camera.fov), 0.04, 0.22);
+      u.uHaze.value[0].set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5 + radius * 0.4, radius, this.reducedMotion ? 0.12 : 0.3);
     }
     postfx.render(this.scene, this.camera, null);
     u.uBloom.value = saved.bloom;

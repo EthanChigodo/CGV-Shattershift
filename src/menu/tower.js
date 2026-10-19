@@ -286,7 +286,7 @@ class TowerCells {
     const [lo, hi] = fireFloors;
     // Floors lit after hours: a few whole floors (cleaners, a server room),
     // and scattered offices.
-    const litFloor = Array.from({ length: floors }, () => (r() < 0.12 ? 0.75 + r() * 0.25 : 0));
+    const litFloor = Array.from({ length: floors }, () => (r() < 0.06 ? 0.75 + r() * 0.25 : 0));
     for (let fi = 0; fi < FACES; fi += 1) {
       const face = faces[fi];
       // The fire's ragged edges: each column's own bottom and top floor.
@@ -302,17 +302,20 @@ class TowerCells {
           const i = this._index(fi, c, f);
           const fireLo = lo + wobbleLo + (fi % 2 ? 1 : 0);
           const fireHi = hi + wobbleHi - (reach < 1 ? 2 : 0);
+          // Hot zones: where the fire took first it roars - windows gone,
+          // flames out of them in sheets; elsewhere rooms just glow or smoulder.
+          const hot = this._hot(fi * 40 + c, f);
           let burn = 0;
-          if (f >= fireLo && f <= fireHi) burn = (0.45 + r() * 0.55) * reach;
-          if (burn > 0 && r() < 0.12) burn *= 0.3; // a room not yet fully alight
+          if (f >= fireLo && f <= fireHi) burn = (0.25 + 0.75 * hot) * (0.75 + r() * 0.25) * reach;
+          if (burn > 0 && r() < 0.15) burn *= 0.35; // a room not yet fully alight
           let glass = 0;
-          if (burn > 0.4) glass = r() < 0.3 ? 255 : r() < 0.5 ? 128 : 0;
+          if (burn > 0.3) glass = hot > 0.62 && r() < 0.65 ? 255 : r() < 0.5 ? 128 : 0;
           let soot = 0;
           if (f > fireHi && f < fireHi + 5) soot = Math.max(0, 1 - (f - fireHi) / 5) * (0.6 + r() * 0.4);
           if (burn > 0) soot = Math.max(soot, 0.3);
           let lights = 0;
           if (!burn && f < fireLo - 1) {
-            const lit = litFloor[f] > 0 ? r() < 0.85 : r() < 0.16;
+            const lit = litFloor[f] > 0 ? r() < 0.8 : r() < 0.13;
             if (lit) lights = r() < 0.08 ? 160 + Math.floor(r() * 80) : 30 + Math.floor((litFloor[f] || 0.5 + r() * 0.5) * 90);
           }
           this.data[i] = Math.round(burn * 255);
@@ -323,6 +326,25 @@ class TowerCells {
       }
     }
     this.spreadTimer = 0;
+  }
+
+  /** Smooth 0..1 noise over (column, floor): where the fire burns hottest. */
+  _hot(x, y) {
+    const v = (a, b) => {
+      const h = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const sx = x / 7;
+    const sy = y / 2.6;
+    const x0 = Math.floor(sx);
+    const y0 = Math.floor(sy);
+    const tx = sx - x0;
+    const ty = sy - y0;
+    const u = tx * tx * (3 - 2 * tx);
+    const w = ty * ty * (3 - 2 * ty);
+    const a = v(x0, y0) + (v(x0 + 1, y0) - v(x0, y0)) * u;
+    const b = v(x0, y0 + 1) + (v(x0 + 1, y0 + 1) - v(x0, y0 + 1)) * u;
+    return a + (b - a) * w;
   }
 
   _index(face, col, floor) {

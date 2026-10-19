@@ -67,7 +67,7 @@ const BLOCKS_FRAGMENT = /* glsl */ `
       float u = dot(vWorld, T);
       // Three kinds of facade: office grid, glass bands, residential.
       float kind = floor(vHash * 3.0);
-      vec2 size = kind < 1.0 ? vec2(3.0, 3.8) : kind < 2.0 ? vec2(1.6, 4.0) : vec2(4.5, 3.2);
+      vec2 size = kind < 1.0 ? vec2(1.9, 3.7) : kind < 2.0 ? vec2(1.5, 3.9) : vec2(2.6, 3.1);
       vec2 g = vec2(u / size.x, (vWorld.y - vBase) / size.y);
       vec2 cell = floor(g);
       vec2 f = fract(g);
@@ -77,19 +77,21 @@ const BLOCKS_FRAGMENT = /* glsl */ `
       float lit = max(step(1.0 - density, h), floorLit * step(0.15, h));
       vec3 warm = mix(vec3(1.0, 0.62, 0.3), vec3(1.0, 0.82, 0.55), hash12(cell * 1.3));
       vec3 cool = vec3(0.55, 0.75, 1.0);
-      vec3 light = mix(warm, cool, step(kind < 2.0 ? 0.7 : 0.92, hash12(cell * 2.7))) * (0.5 + 0.9 * hash12(cell * 3.1));
-      float pane = step(0.12, f.x) * step(f.x, 0.88) * step(0.22, f.y) * step(f.y, 0.86);
-      vec3 win = light * lit * pane * 1.6;
+      // Most lit windows are curtained or lit from deep inside: dim, a few bright.
+      float level = 0.12 + 0.55 * pow(hash12(cell * 3.1), 2.2);
+      vec3 light = mix(warm, cool, step(kind < 2.0 ? 0.7 : 0.92, hash12(cell * 2.7))) * level;
+      float pane = step(0.18, f.x) * step(f.x, 0.82) * step(0.3, f.y) * step(f.y, 0.84);
+      vec3 win = light * lit * pane;
       // Average it out where the windows are smaller than the pixels.
       vec2 fw = fwidth(g);
       float far = smoothstep(0.25, 0.7, max(fw.x, fw.y));
-      vec3 average = mix(warm, cool, 0.25) * (density + floorLit * 0.06) * 0.66 * 0.85;
+      vec3 average = mix(warm, cool, 0.25) * (density + floorLit * 0.06) * 0.35 * 0.28;
       win = mix(win, average, far);
       vec3 wall = vec3(0.012, 0.013, 0.016) + vec3(0.015, 0.012, 0.01) * smoothstep(60.0, 0.0, vWorld.y - vBase);
       col = wall + win;
       // A lit crown on some of the tall ones.
-      float crown = step(0.78, fract(vHash * 7.13)) * smoothstep(5.0, 2.0, vTop - vWorld.y) * step(vTop, vWorld.y + 5.0);
-      col += mix(vec3(1.0, 0.85, 0.6), vec3(0.6, 0.85, 1.0), step(0.5, fract(vHash * 3.7))) * crown * 0.9;
+      float crown = step(0.86, fract(vHash * 7.13)) * step(vTop - vWorld.y, 1.6) * step(0.5, fract(u * 0.5));
+      col += mix(vec3(1.0, 0.85, 0.6), vec3(0.6, 0.85, 1.0), step(0.5, fract(vHash * 3.7))) * crown * 0.22;
     }
     gl_FragColor = vec4(applyHaze(col, vWorld), 1.0);
     #include <tonemapping_fragment>
@@ -225,11 +227,14 @@ export class MenuCity {
           // Keep the burning tower's plaza and our own roof clear.
           if (Math.hypot(x - towerAt.x, z - towerAt.z) < clearTower + Math.max(w, depth) / 2) continue;
           if (roof && x + w / 2 > roof.min.x - 6 && x - w / 2 < roof.max.x + 6 && z + depth / 2 > roof.min.z - 6 && z - depth / 2 < roof.max.z + 6) continue;
-          let height = 25 + r() * 55;
-          if (r() < 0.18) height += 30 + r() * 70;
-          height += downtown * (60 + r() * 150);
+          // Mostly well below our roof (96 m up); further out a few reach
+          // past it, and downtown (far, behind and right of the tower) rises.
+          let height = 18 + r() * 42;
+          if (r() < 0.14) height += 20 + r() * 45;
+          if (d > 450 && r() < 0.12) height += 40 + r() * 70;
+          height += downtown * (40 + r() * 170) * THREE.MathUtils.smoothstep(d, 500, 1100);
           height *= leftCalm;
-          if (d < 160) height = Math.min(height, 80 + r() * 8); // neighbours stay below our roof
+          if (d < 300) height = Math.min(height, 72 + r() * 12); // neighbours stay below our roof
           const base = STREET_Y - 40;
           pieces.push([x, base, z, w, height + 40, depth]);
           // A setback tier on some.
