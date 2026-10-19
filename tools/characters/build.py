@@ -90,6 +90,11 @@ def clip_key(name, cfg):
     return cfg["aliases"].get(key, key)
 
 
+def plain_action(name):
+    """An action's name without Blender's ".001" (a second import of the same file)."""
+    return re.sub(r"\.\d{3}$", "", name)
+
+
 def role_settings(role, cfg):
     return cfg["roles"].get(role, {})
 
@@ -348,7 +353,7 @@ def retarget(src, action, dst, name, fps):
             pose[n] = m @ Matrix.Translation(loc) @ basis_q.to_matrix().to_4x4()
     unassign(src)
 
-    out = bpy.data.actions.new(name)
+    out = bpy.data.actions.new(f"__clip__{name}")
     slot = out.slots.new(id_type="OBJECT", name=dst.name)
     cb = anim_utils.action_ensure_channelbag_for_slot(out, slot)
     for (bone, prop), samples in keys.items():
@@ -371,13 +376,13 @@ def take_clip(dst, src, action, name, fps, shared=False):
     """Put `action` (imported with `src`) on `dst` as clip `name`."""
     if src is dst or same_skeleton(src, dst):
         # The same rig: its curves address the same bone names already.
-        action.name = name
         out = action
         how = "as is"
     else:
         out = retarget(src, action, dst, name, fps)
         how = "retargeted"
-    out.name = name
+    # Final names come at the end (the source file's own actions still hold them).
+    out.name = f"__clip__{name}"
     out.use_fake_user = True
     log(f"  clip {name:<13} {how}{' (shared)' if shared else ''}, {frame_span(out)[1] - frame_span(out)[0]:.0f} frames")
     return out
@@ -612,10 +617,10 @@ def build_role(role, sources, out_dir, cfg, args):
     renames = extra.get("main_actions", {})
     for action in main_actions:
         start, end = frame_span(action)
-        name = renames.get(action.name) or clip_key(action.name, cfg)
+        name = renames.get(plain_action(action.name)) or clip_key(plain_action(action.name), cfg)
         if end - start < 2 or re.fullmatch(r"t_?pose|layer0|mixamo_com", name):
             continue
-        if action.name not in renames and name not in cfg["clips"]:
+        if plain_action(action.name) not in renames and name not in cfg["clips"]:
             continue
         if name in clips:
             continue
@@ -637,7 +642,7 @@ def build_role(role, sources, out_dir, cfg, args):
         src = armature_of(objs)
         action = None
         if spec.get("action"):
-            action = next((a for a in acts if a.name == spec["action"] or clip_key(a.name, cfg) == clip_key(spec["action"], cfg)), None)
+            action = next((a for a in acts if plain_action(a.name) == spec["action"] or clip_key(plain_action(a.name), cfg) == clip_key(spec["action"], cfg)), None)
         action = action or longest(acts)
         if not src or not action:
             warn(f"{role}: {os.path.basename(spec['file'])} has no animation, skipped")
@@ -654,6 +659,8 @@ def build_role(role, sources, out_dir, cfg, args):
         if a not in clips.values():
             bpy.data.actions.remove(a)
     actions = list(clips.values())
+    for name, action in clips.items():
+        action.name = name
     retime(actions)
 
     # Units and axes: bake to identity (metres if the file said so).

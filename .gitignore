@@ -9,3 +9,7 @@ __pycache__/
 dist/
 .audio-work/
 tests/versus/shots/
+
+# Character builds being checked before they ship (?characters=dev, tools/characters/README.md)
+assets/characters/dev
+characters-source/

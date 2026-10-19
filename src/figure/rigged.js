@@ -30,6 +30,7 @@
  * texel: warm texels are skin, dark ones on the head are hair.
  *
  * Where the files come from (dev override, for checking stand-ins):
+ *   ?characters=dev                    assets/characters/dev/ (git-ignored)
  *   ?characters=<same-origin folder>   a folder holding manifest.json + GLBs
  *   ?characters=off                    force today's models
  *   localStorage["fractureRun.characters"] the same, remembered
@@ -98,6 +99,9 @@ export function charactersBase() {
   }
   if (!value) return DEFAULT_BASE;
   if (/^(off|none|0|false)$/i.test(value)) return null;
+  // A bare name is a folder beside the real ones: ?characters=dev ->
+  // assets/characters/dev/ (git-ignored; for checking a build before it ships).
+  if (/^[\w-]+$/.test(value)) return new URL(`${value}/`, DEFAULT_BASE).href;
   try {
     const url = new URL(value.endsWith("/") ? value : `${value}/`, globalThis.location?.href ?? DEFAULT_BASE);
     // Same origin only: an override is for checking files on this server.
@@ -368,9 +372,15 @@ const FIGURE_SURFACE = /* glsl */ `
 {
   vec3 rigCol = diffuseColor.rgb;
   float rigHi = max( rigCol.r, max( rigCol.g, rigCol.b ) );
-  // Skin texels are the warm ones, judged against their own brightness so
-  // skin in shadow counts as well as the mid-tones (look.js does the same).
-  float rigWarm = smoothstep( 0.05, 0.16, ( rigCol.r - rigCol.b ) / max( rigHi, 0.03 ) ) * smoothstep( -0.04, 0.02, rigCol.r - rigCol.g ) * smoothstep( 0.003, 0.02, rigHi );
+  // Skin texels: red over green over blue, in skin's band of hue (orange,
+  // not yellow or crimson) and saturation (not grey, not dyed cloth) -
+  // judged on the colour's own proportions, so skin in shadow counts too.
+  vec3 rigS = pow( max( rigCol, vec3( 0.0 ) ), vec3( 0.4545 ) );
+  float rigSat = ( rigS.r - rigS.b ) / max( rigS.r, 0.02 );
+  float rigHue = ( rigS.g - rigS.b ) / max( rigS.r - rigS.b, 0.02 );
+  float rigWarm = smoothstep( 0.1, 0.18, rigSat ) * ( 1.0 - smoothstep( 0.72, 0.86, rigSat ) )
+    * smoothstep( 0.0, 0.1, rigHue ) * ( 1.0 - smoothstep( 0.58, 0.7, rigHue ) )
+    * step( rigS.g, rigS.r + 0.01 ) * smoothstep( 0.06, 0.14, rigS.r );
   float rigTint = 0.0;
   #if RIG_SURFACE == 1
     gRigSkin = 1.0;
@@ -510,7 +520,9 @@ function averageSkin(texture, all = false) {
       const R = data[i];
       const G = data[i + 1];
       const B = data[i + 2];
-      const skin = R > 90 && R > G * 1.05 && G > B * 0.95 && R - B > 25;
+      const sat = (R - B) / Math.max(R, 1);
+      const hue = (G - B) / Math.max(R - B, 1);
+      const skin = R > 40 && R >= G && sat > 0.18 && sat < 0.72 && hue > 0.1 && hue < 0.6;
       if (skin || (all && R + G + B > 120)) {
         r += R;
         g += G;
