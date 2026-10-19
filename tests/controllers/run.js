@@ -56,7 +56,8 @@ async function menus(page, check) {
     out.classes = document.documentElement.className;
     out.boot = __c.focus();
     out.ring = document.querySelector(".pad-focus")?.id;
-    p.tap("right");
+    // The opening's two choices are a column now: down to the second.
+    p.tap("down");
     out.skip = __c.focus();
     p.tap("cross");
     p.frame();
@@ -113,7 +114,7 @@ async function menus(page, check) {
   check("connecting a pad says so", m.toast === "CONTROLLER CONNECTED - DualSense", m.toast);
   check("a pad in use marks <html> (pad-active pad-ps)", /pad-active/.test(m.classes) && /pad-ps/.test(m.classes), m.classes);
   check("the ring starts on the screen's main action", m.boot === "storyBeginButton" && m.ring === "storyBeginButton", `${m.boot} ${m.ring}`);
-  check("the d-pad moves it (right)", m.skip === "storySkipToMenuButton", m.skip);
+  check("the d-pad moves it (down)", m.skip === "storySkipToMenuButton", m.skip);
   check("✕ presses: skip to the menu", m.menu === "startScreen" && m.menuFocus === "startButton", `${m.menu} ${m.menuFocus}`);
   check("down, ✕: Chapters", m.down === "chaptersButton" && m.chapters === "chaptersScreen", `${m.down} ${m.chapters}`);
   check("○ goes back, to where the ring was", m.back === "startScreen" && m.backFocus === "chaptersButton", `${m.back} ${m.backFocus}`);
