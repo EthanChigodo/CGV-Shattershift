@@ -12,6 +12,7 @@ import { AmmoRecovery, canAffordThrow, gateRecoveryWaiting } from "./src/systems
 import { AmmoRecoveryHint } from "./src/ui/ammo-recovery.js";
 import { SPHERE_GEOMETRY, SPHERE_FLIGHT, sphereMaterial, sphereHalo } from "./src/systems/spheres.js";
 import { buildBallPickers, buildTabs, showMoves, savedBall } from "./src/ui/menus.js";
+import { installMenuNav } from "./src/ui/menu-nav.js";
 import { PowerupBanner } from "./src/ui/powerup-banner.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
@@ -3727,7 +3728,8 @@ function endRun(won, reason = null, detail = null) {
     missions.commit({ mode: causewayMode, score: Math.floor(score), distance, files: s.files });
     refreshMenuProgress();
   }
-  // A death plays out first (src/ui/death-fx.js), made of the last frame.
+  // A death: the last moment held as a freeze frame (src/ui/death-fx.js,
+  // `still`), with the place's touch, and the end screen surfaces over it.
   const kind = won ? null : deathKind(reason, detail);
   const reveal = () => {
     if (state !== "ended") return;
@@ -3736,7 +3738,7 @@ function endRun(won, reason = null, detail = null) {
   };
   if (kind) {
     renderFrame();
-    deathFx.play(kind, renderer.domElement, reveal);
+    deathFx.play("still", renderer.domElement, reveal, { accent: kind });
   } else reveal();
 }
 
@@ -3762,20 +3764,14 @@ function deathKind(reason, detail) {
 }
 
 /**
- * The end screen's look: red and broken on a death, gold on a way out; the
- * stats line as cards; the score counting up.
+ * The end screen's look: the last moment held behind it, a quiet title; the
+ * stats line as a row of numbers; the score counting up.
  */
 function dressEndScreen(won) {
   ui.end.classList.toggle("is-win", !!won);
   ui.end.classList.toggle("is-death", !won);
-  // The tag's printed fields: the clock on your wall, and where it happened.
-  const now = new Date();
-  const two = (n) => String(n).padStart(2, "0");
-  $("#endStamp").textContent = won ? "DISCHARGED" : "DECEASED";
-  $("#endTimeLabel").textContent = won ? "Time out" : "Time of death";
-  $("#endTime").textContent = `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
-  const roof = currentLevel === 3 && (onRoofStage || meltdown?.roof);
-  $("#endWhere").textContent = won ? "Airborne" : roof ? "The roof" : `The ${(sectorNames[currentLevel] ?? "tower").toLowerCase()}`;
+  // Levels write "RUN TERMINATED // SECTOR 02": shown with a quieter mark.
+  ui.endEyebrow.textContent = ui.endEyebrow.textContent.replace(/\s*\/\/\s*/g, " \u00b7 ");
   // Replay the entrance.
   ui.end.classList.remove("enter");
   void ui.end.offsetWidth;
@@ -3792,9 +3788,10 @@ function dressEndScreen(won) {
   // The score, counted up.
   const target = Math.floor(score);
   const el = ui.final;
-  const start = performance.now();
+  // (After the title has surfaced: the numbers come in at 1.15 s.)
+  const start = performance.now() + 1150;
   const tick = (now) => {
-    const k = Math.min(1, (now - start) / 1100);
+    const k = Math.max(0, Math.min(1, (now - start) / 1400));
     el.textContent = String(Math.round(target * (1 - Math.pow(1 - k, 3)))).padStart(6, "0");
     if (k < 1 && ui.end.classList.contains("active")) requestAnimationFrame(tick);
     else el.textContent = String(target).padStart(6, "0");
@@ -4980,6 +4977,22 @@ for (const [key, hair] of Object.entries(HAIR_COLOURS)) {
 }
 showHairChoice();
 
+// The line under Subject 07 on the main menu, and the names beside the
+// swatches: who you will play as, in words.
+const appearanceScreen = $("#appearanceScreen");
+function updateSubjectLine() {
+  const body = CHARACTERS[savedCharacter()] ?? "Female";
+  const skin = SKIN_TONES[savedSkinTone()]?.label ?? "Light";
+  const hair = HAIR_COLOURS[savedHairColour()]?.label ?? "Natural";
+  $("#subjectSummary").textContent = `${body}, ${skin.toLowerCase()} skin, ${hair.toLowerCase()} hair`;
+  $("#skinName").textContent = skin;
+  $("#hairName").textContent = hair;
+}
+// After the buttons' own handlers (they run first, on the button itself).
+appearanceScreen.addEventListener("click", () => queueMicrotask(updateSubjectLine));
+updateSubjectLine();
+installMenuNav();
+
 // The sphere you start with (the loadout card; the pause menu changes it mid-run).
 const ballPickers = buildBallPickers((key) => {
   arsenal.prefer(key);
@@ -5023,6 +5036,13 @@ $("#manualButton").addEventListener("click", () => { ui.start.classList.remove("
 $("#manualBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
 $("#chaptersButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.chapters.classList.add("active"); });
 $("#chaptersBackButton").addEventListener("click", () => { ui.chapters.classList.remove("active"); ui.start.classList.add("active"); });
+// Appearance: Subject 07 up close (the menu's 3D stage turns to them), with
+// the body, skin, hair and starting sphere beside them.
+function openAppearance() { ui.start.classList.remove("active"); appearanceScreen.classList.add("active"); }
+function closeAppearance() { appearanceScreen.classList.remove("active"); ui.start.classList.add("active"); }
+$("#appearanceButton").addEventListener("click", openAppearance);
+$("#subjectLine").addEventListener("click", openAppearance);
+$("#appearanceBackButton").addEventListener("click", closeAppearance);
 for (const button of document.querySelectorAll("[data-chapter]")) {
   button.addEventListener("click", () => startChapter(button.dataset.chapter));
 }
@@ -5179,6 +5199,7 @@ addEventListener("keydown", (event) => {
     level1Audio.uiClick();
     if (photoActive) togglePhoto();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
+    else if (appearanceScreen.classList.contains("active")) closeAppearance();
     else if (ui.chapters.classList.contains("active")) { ui.chapters.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.newGame.classList.contains("active")) { ui.newGame.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.endless.classList.contains("active")) { ui.endless.classList.remove("active"); ui.start.classList.add("active"); }
@@ -5301,6 +5322,7 @@ const SESSION_SCREENS = {
   settingsScreen: "#settingsButton",
   creditsScreen: "#creditsButton",
   reportScreen: "#lastReportButton",
+  appearanceScreen: "#appearanceButton",
 };
 /** (Not for the checks driving the page, nor the trailer capture.) */
 const sessionKept = !navigator.webdriver && !trailer.enabled;

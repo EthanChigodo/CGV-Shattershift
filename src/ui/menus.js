@@ -71,8 +71,11 @@ export function buildBallPickers(onPick) {
     // picker is for): you start the run holding it.
     const b = BALLS[key];
     for (const line of document.querySelectorAll("[data-ball-desc]")) {
-      line.innerHTML = b ? `<b>${b.name} // ${b.cost} per throw</b><br />${BLURBS[key] ?? b.text}` : "";
+      line.innerHTML = b ? `<b>${b.name}</b> <span>${b.cost} per throw</span><br />${BLURBS[key] ?? b.text}` : "";
     }
+    // The main menu's line under Subject 07.
+    const start = document.querySelector("#subjectSphere");
+    if (start && b) start.textContent = `Starts with the ${b.name.toLowerCase()} sphere`;
   }
   show(savedBall());
   return { show };
