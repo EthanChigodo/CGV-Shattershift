@@ -47,7 +47,7 @@ import { createMeltdownKit, heatSignature } from "./kit.js";
 import { ashify } from "./ash.js";
 import { createFireMaterials } from "./fire.js";
 import { fillAssetSlots } from "./assets.js";
-import { cloneCharacter, HumanoidRig } from "./characters.js";
+import { cloneCharacter, createRig } from "./characters.js";
 import { Collapse, Flinch, persona, shamble, stride } from "../../figure/motion.js";
 import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
@@ -391,7 +391,7 @@ class Enemy {
     if (model) {
       this.model = model;
       this.body.add(model);
-      const rig = new HumanoidRig(model);
+      const rig = createRig(model);
       this.rig = rig.valid ? rig : null;
       heatSignature(model);
     } else {
@@ -495,7 +495,7 @@ class Patient extends Enemy {
     this.stats = k === 1 ? base : { ...base, stalk: base.stalk * k, charge: base.charge * k };
     if (opts.brute) {
       // Bigger, and harder to stop.
-      this.root.scale.setScalar(1.3);
+      this.root.scale.setScalar(opts.model?.userData.character?.role === "patient_brute" ? 1.1 : 1.3);
       this.brute = true;
     }
     this.state = "emerge";
@@ -528,7 +528,7 @@ class Patient extends Enemy {
         this.position.y = THREE.MathUtils.lerp(-1.7, 0, 1 - (1 - k) * (1 - k));
         if (this.climb) this.position.x = this.climb * THREE.MathUtils.lerp(EDGE + 0.5, EDGE - 1.4, Math.max(0, k * 1.4 - 0.4));
         this.face(player, dt, 4);
-        rig?.pose({ reach: (this.climb ? 1.4 : 1.1) - k * 0.4, lean: 0.4, headNod: 0.3, phase: time * 6, stride: 0.2 * (1 - k) });
+        rig?.pose({ clip: ["climb", "idle"], dt, reach: (this.climb ? 1.4 : 1.1) - k * 0.4, lean: 0.4, headNod: 0.3, phase: time * 6, stride: 0.2 * (1 - k) });
         if (k >= 1) this.setState("stalk");
         break;
       }
@@ -543,7 +543,7 @@ class Patient extends Enemy {
             this.face(this.exitTo, dt, 8);
             this.position.addScaledVector(_v.divideScalar(e), this.stats.stalk * 1.15 * dt);
             this.collide();
-            rig?.pose({ phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3 });
+            rig?.pose({ clip: ["walk", "run"], speed: this.stats.stalk * 1.15, dt, phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3 });
             break;
           }
         }
@@ -556,7 +556,7 @@ class Patient extends Enemy {
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
         // Each their own shamble: pace, limp or drag or lurch, arms, twitches.
-        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2 });
+        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2, speed: d > 1.2 ? this.stats.stalk * stride(this.persona, time) : 0 });
         if (d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
           this.setState("windup");
           this.level.events.emit("patient-windup", { position: this.position.clone() });
@@ -568,7 +568,7 @@ class Patient extends Enemy {
         // direction locks at the end - move and they miss.
         this.face(player, dt, 10);
         const k = Math.min(1, this.t / this.stats.windup);
-        rig?.pose({ crouch: 0.35 * k, lean: 0.5 * k, reach: -0.6 * k, headNod: -0.5 * k, elbow: 0.2 });
+        rig?.pose({ clip: ["scream", "idle"], once: true, dt, crouch: 0.35 * k, lean: 0.5 * k, reach: -0.6 * k, headNod: -0.5 * k, elbow: 0.2 });
         this.body.position.x = Math.sin(time * 60) * 0.02 * k;
         if (this.t >= this.stats.windup) {
           this.dir.subVectors(player, this.position).setY(0).normalize();
@@ -585,7 +585,7 @@ class Patient extends Enemy {
         const step = this.stats.charge * dt;
         this.position.addScaledVector(this.dir, step);
         this.travelled += step;
-        rig?.pose({ phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
+        rig?.pose({ clip: ["run", "walk"], speed: this.stats.charge, dt, phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
         // Straight off the open ledge.
         if (Math.abs(this.position.x) > EDGE - 0.1) {
           this.velocity.copy(this.dir).multiplyScalar(this.stats.charge * 0.7);
@@ -611,7 +611,7 @@ class Patient extends Enemy {
       case "recover":
       case "stunned": {
         const hold = this.state === "stunned" ? 1.5 : 0.9;
-        rig?.pose({ lean: 0.2 - this.stagger * 0.6, headNod: 0.6, headTilt: Math.sin(this.t * 9) * 0.3, reach: 0.2, elbow: 0.7 });
+        rig?.pose({ clip: this.state === "recover" ? ["attack", "idle"] : ["hit", "idle"], once: true, dt, lean: 0.2 - this.stagger * 0.6, headNod: 0.6, headTilt: Math.sin(this.t * 9) * 0.3, reach: 0.2, elbow: 0.7 });
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
@@ -627,7 +627,7 @@ class Patient extends Enemy {
         this.position.addScaledVector(this.velocity, dt);
         this.body.rotation.x -= dt * 3.2;
         this.body.rotation.z += dt * 1.3;
-        rig?.pose({ reach: 1.3, spread: 0.3, headNod: -0.5, elbow: 0.2, phase: time * 20, stride: 0.4 });
+        rig?.pose({ clip: ["fall"], dt, reach: 1.3, spread: 0.3, headNod: -0.5, elbow: 0.2, phase: time * 20, stride: 0.4 });
         if (this.position.y < -40) this.removed = true;
         break;
       }
@@ -709,7 +709,7 @@ class Scientist extends Enemy {
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
-        rig?.pose({ phase: time * 7 + this.phase, stride: 0.45, knee: 0.8, armSwing: 0.45, lean: 0.12, aimR: 0.3 });
+        rig?.pose({ clip: ["walk", "run"], speed: SCIENTIST.walk, dt, phase: time * 7 + this.phase, stride: 0.45, knee: 0.8, armSwing: 0.45, lean: 0.12, aimR: 0.3 });
         if (d <= 0.3 || this.t > 5) this.setState(this.state === "enter" ? "release" : "aim");
         break;
       }
@@ -717,7 +717,7 @@ class Scientist extends Enemy {
         // Throws an arm at you: go.
         this.face(player, dt, 5);
         const k = Math.min(1, this.t / 1.1);
-        rig?.pose({ aimL: Math.sin(k * Math.PI) * 1.2, aimR: 0.3, headNod: -0.2 });
+        rig?.pose({ clip: ["point"], dt, aimL: Math.sin(k * Math.PI) * 1.2, aimR: 0.3, headNod: -0.2 });
         if (this.t > 1.1) {
           this.cooldown = 1.2;
           this.pickSpot(player);
@@ -729,7 +729,7 @@ class Scientist extends Enemy {
         this.face(player, dt, 8);
         const k = Math.min(1, this.t / SCIENTIST.aim);
         glow = k;
-        rig?.pose({ aimR: 1, lean: -0.05, headNod: 0.1 });
+        rig?.pose({ clip: ["aim", "idle"], dt, aimR: 1, lean: -0.05, headNod: 0.1 });
         if (this.t >= SCIENTIST.aim && !ctx.frozen) {
           this.handPosition(_w);
           // Lead the target a little: standing still is how you get hit.
@@ -741,7 +741,7 @@ class Scientist extends Enemy {
         break;
       }
       case "recoil": {
-        rig?.pose({ aimR: 0.7, lean: -0.15, headNod: -0.1 });
+        rig?.pose({ clip: ["shoot", "idle"], once: true, dt, aimR: 0.7, lean: -0.15, headNod: -0.1 });
         this.face(player, dt, 4);
         if (this.cooldown <= 0) {
           if (this.random() < 0.55) {
@@ -1612,7 +1612,7 @@ export class RoofLevel {
     // The last wave brings the brute out of the far hatch (and endless, every
     // third wave after it; Hard, the second wave too).
     if (index === 3 || (index > 3 && index % 3 === 0) || (index === 2 && this.difficulty.extras)) {
-      const brute = new Patient(this, { model: this._character("patient"), position: HATCHES[2], exitTo: hatchExit(2), delay: 2.2, brute: true });
+      const brute = new Patient(this, { model: this._character("brute") ?? this._character("patient"), position: HATCHES[2], exitTo: hatchExit(2), delay: 2.2, brute: true });
       this._addEnemy(brute);
       this.events.emit("brute", { position: HATCHES[2].clone() });
     }

@@ -37,7 +37,7 @@ import { createMeltdownTextures, createSignTexture } from "./textures.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { createFire } from "./fire.js";
 import { assetSlot } from "./assets.js";
-import { HumanoidRig } from "./characters.js";
+import { createRig } from "./characters.js";
 import { ashify } from "./ash.js";
 import { Collapse, Flinch, persona, shamble } from "../../figure/motion.js";
 import { SERUMS } from "../../systems/arsenal.js";
@@ -1238,8 +1238,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       const occupant = assetSlot("patient", { size: [0, 1.66, 0], rotateY: ((seed % 5) - 2) * 0.5 }, [figure, head]);
       occupant.position.y = 0.52;
       occupant.userData.onFilled = (person) => {
-        const rig = new HumanoidRig(person);
-        if (rig.valid) rig.pose({ reach: 0.12, headNod: 0.9, headTilt: ((seed % 3) - 1) * 0.3, elbow: 0.6, spread: 0.1, lean: 0.15 });
+        const rig = createRig(person);
+        if (rig.valid) rig.pose({ clip: ["idle"], additive: 1, reach: 0.12, headNod: 0.9, headTilt: ((seed % 3) - 1) * 0.3, elbow: 0.6, spread: 0.1, lean: 0.15 });
       };
       group.add(occupant);
     }
@@ -1751,7 +1751,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     let ash = null;
     slot.userData.onFilled = (person) => {
       model = person;
-      const r = new HumanoidRig(person);
+      const r = createRig(person);
       rig = r.valid ? r : null;
       heatSignature(person);
     };
@@ -1866,13 +1866,13 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
         return;
       }
       if (state === "idle") {
-        rig.pose({ phase: time + phase0, reach: 0.2, headTilt: Math.sin(time * 0.7 + phase0) * 0.35, headNod: 0.45, lean: 0.12, elbow: 0.4 });
+        rig.pose({ clip: ["idle"], dt, phase: time + phase0, reach: 0.2, headTilt: Math.sin(time * 0.7 + phase0) * 0.35, headNod: 0.45, lean: 0.12, elbow: 0.4 });
       } else if (state === "lurch") {
-        rig.pose({ phase: time * 7 + phase0, stride: 0.5, knee: 0.8, reach: 0.85, lean: 0.35, headTilt: 0.4, spread: 0.05 });
+        rig.pose({ clip: ["walk", "run"], speed: Math.abs(lane - startX) / 1.35 * 1.5, dt, phase: time * 7 + phase0, stride: 0.5, knee: 0.8, reach: 0.85, lean: 0.35, headTilt: 0.4, spread: 0.05 });
       } else if (state === "stalk") {
         // Their own shamble (pace, limp / drag / lurch, arms, twitches);
         // a hit drops the arms, and the flinch bends them away from it.
-        shamble(rig, me, time, { cadence: 3 + Math.abs(chaseVel) * 2, stride: 0.2 + Math.abs(chaseVel) * 0.12, knee: 0.5, reach: 1.0 * (1 - stagger), lean: 0.32 });
+        shamble(rig, me, time, { cadence: 3 + Math.abs(chaseVel) * 2, stride: 0.2 + Math.abs(chaseVel) * 0.12, knee: 0.5, reach: 1.0 * (1 - stagger), lean: 0.32, speed: Math.abs(chaseVel) });
       } else if (state === "stand") {
         shamble(rig, me, time, { cadence: 2.2, stride: 0.12, knee: 0.3, reach: 0.95 * (1 - stagger), lean: 0.3, amount: 0.5 });
       }
@@ -1903,7 +1903,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     mover.add(slot);
     let rig = null;
     slot.userData.onFilled = (person) => {
-      const r = new HumanoidRig(person);
+      const r = createRig(person);
       rig = r.valid ? r : null;
       heatSignature(person);
     };
@@ -1949,9 +1949,9 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
         }
       }
       if (!rig) return;
-      if (state === "lurking") rig.pose({ phase: time * 0.8 + phase0, headNod: 0.9, headTilt: 0.25 * Math.sin(time * 0.4 + phase0), elbow: 0.2, lean: 0.1 });
-      else if (state === "spotted") rig.pose({ headNod: -0.2, headTilt: 0.5 * Math.sin(t * 40) * (1 - t / 0.55), elbow: 0.3, reach: 0.15 });
-      else if (state === "leaving") rig.pose({ phase: t * 8, stride: 0.45, knee: 0.8, armSwing: 0.4, lean: 0.25, headNod: 0.4 });
+      if (state === "lurking") rig.pose({ clip: ["idle"], dt, phase: time * 0.8 + phase0, headNod: 0.9, headTilt: 0.25 * Math.sin(time * 0.4 + phase0), elbow: 0.2, lean: 0.1 });
+      else if (state === "spotted") rig.pose({ clip: ["scream", "idle"], once: true, dt, headNod: -0.2, headTilt: 0.5 * Math.sin(t * 40) * (1 - t / 0.55), elbow: 0.3, reach: 0.15 });
+      else if (state === "leaving") rig.pose({ clip: ["walk", "run"], speed: 3.2 * Math.min(1, t * 2), dt, phase: t * 8, stride: 0.45, knee: 0.8, armSwing: 0.4, lean: 0.25, headNod: 0.4 });
     };
     return group;
   }
