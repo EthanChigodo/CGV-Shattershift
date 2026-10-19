@@ -184,7 +184,9 @@ export async function run(page, { shots }) {
     const wrong = ["KeyR", "KeyF", "KeyZ", "KeyX", "KeyG", "KeyT"].find((k) => !__t.R._s.keys.includes(k));
     __t.key(wrong);
     __t.step(20);
-    const fell = m.hero.position.y < from.y - 1;
+    // A miss plays the roof's fall scene (meltdown/fall-scene.js): the body
+    // goes over in the scene's hands while the hero waits where it jumped.
+    const fell = !!m._fall?.active || m.hero.position.y < from.y - 1;
     __t.until(() => m.phase === "roof", 200);
     const back = m.hero.position.distanceTo(from) < 1.5 && m.phase === "roof";
     const window = r.state.extractT;
