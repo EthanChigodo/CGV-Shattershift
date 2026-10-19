@@ -27,7 +27,7 @@ export const SHOTS = {
   title: { from: [-1.55, 1.0, 4.3], figure: [0.7, 0.3, 0.875], attention: 0.35, drift: 1 },
   // Close on Subject 07, three-quarter front, lit by the fire: the controls
   // stand in a column on the right.
-  appearance: { from: [-1.35, 1.2, 3.4], local: true, figure: [0.47, 0.13, 0.92], attention: 0.95, drift: 0.6 },
+  appearance: { from: [-1.45, 1.28, 2.3], local: true, figure: [0.47, 0.13, 0.92], attention: 0.95, drift: 0.6 },
   // Low behind them, looking up at the burning floors.
   newgame: { from: [0.55, 0.32, -1.75], local: true, aim: "fire", screen: [0.6, 0.27], fov: 50, attention: 0.05, drift: 1 },
   // A long lens up the tower's burning top, the tower in the right half.

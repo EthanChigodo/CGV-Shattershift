@@ -40,7 +40,7 @@ import { createFigure } from "./figure.js";
 import { ShotRig, SHOTS } from "./shots.js";
 
 /** Where things stand (metres; the roof's surface is y = 0). */
-const SUBJECT = new THREE.Vector3(4.2, 0, -4.35);
+const SUBJECT = new THREE.Vector3(4.2, 0, -3.1);
 const TOWER = new THREE.Vector3(38, -100, -330);
 const WIND = new THREE.Vector3(-5.5, 0, 1.6);
 /** The body turned a little off the tower: a three-quarter back view from the title shot. */
@@ -163,8 +163,8 @@ export class MenuStage {
       .then((gltf) => {
         if (this.disposed) return;
         this.city.addModel(gltf.scene, [
-          { position: new THREE.Vector3(TOWER.x + 190, STREET_Y, TOWER.z - 200), rotation: 0.3, scale: 30 },
-          { position: new THREE.Vector3(TOWER.x - 330, STREET_Y, TOWER.z - 380), rotation: 2.2, scale: 26 },
+          { position: new THREE.Vector3(TOWER.x + 230, STREET_Y, TOWER.z - 260), rotation: 0.3, scale: 30 },
+          { position: new THREE.Vector3(TOWER.x + 520, STREET_Y, TOWER.z + 60), rotation: 2.2, scale: 26 },
         ]);
       })
       .catch((error) => console.warn("[menu stage] city model failed; procedural city only", error));

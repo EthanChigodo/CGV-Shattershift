@@ -160,7 +160,7 @@ export class MenuRoof {
 
     // ---- Parapet: concrete wall, a coping on top ----
     this.concrete = own(new THREE.MeshStandardMaterial({ color: 0x8a8580, roughness: 0.85 }));
-    this.coping = own(wetMaterial(new THREE.MeshStandardMaterial({ color: 0x77736e, roughness: 0.6, metalness: 0.05 }), noise, this.uniforms, { puddles: 0, damp: 0.7 }));
+    this.coping = own(wetMaterial(new THREE.MeshStandardMaterial({ color: 0x77736e, roughness: 0.6, metalness: 0.05, envMapIntensity: 0.5 }), noise, this.uniforms, { puddles: 0, damp: 0.7 }));
     // A low concrete upstand with a steel guard-rail on it: the street and
     // the lit facades across it show through the rails.
     const H = R.upstand;
@@ -177,7 +177,7 @@ export class MenuRoof {
       part(this.concrete, sx, sy, sz, x, y, z, { cast: false });
       part(this.coping, sx + (sx > sz ? 0.06 : 0.12), 0.07, sz + (sz > sx ? 0.06 : 0.12), x, H + 0.035, z);
     }
-    this.rail = own(new THREE.MeshStandardMaterial({ color: 0x3b3e42, roughness: 0.35, metalness: 0.85 }));
+    this.rail = own(new THREE.MeshStandardMaterial({ color: 0x2a2c2f, roughness: 0.55, metalness: 0.5 }));
     const railTop = R.parapet;
     const runs = [
       [[R.minX, R.minZ - t / 2], [R.maxX, R.minZ - t / 2]],
@@ -196,14 +196,12 @@ export class MenuRoof {
         rail.scale.x = len;
         rail.position.set((x0 + x1) / 2, y, (z0 + z1) / 2);
         rail.rotation.y = ang;
-        rail.castShadow = true;
         this.root.add(rail);
       }
       const n = Math.max(1, Math.round(len / 1.6));
       for (let k = 0; k <= n; k += 1) {
         const post = new THREE.Mesh(postGeo, this.rail);
         post.position.set(x0 + ((x1 - x0) * k) / n, H + (railTop - H) / 2, z0 + ((z1 - z0) * k) / n);
-        post.castShadow = true;
         this.root.add(post);
       }
     }
@@ -365,12 +363,13 @@ export class MenuRoof {
         map.repeat.set(1, 1);
         nor.repeat.set(1, 1);
         rough.repeat.set(1, 1);
-        Object.assign(this.roofMat, { map, normalMap: nor, roughnessMap: rough, roughness: 1 });
+        // (The environment holds the fire at full HDR: a mirror of it blooms into an orb.)
+        Object.assign(this.roofMat, { map, normalMap: nor, roughnessMap: rough, roughness: 1, envMapIntensity: 0.45 });
         this.roofMat.color.set(0x9a948c);
         this.roofMat.normalScale.set(0.8, 0.8);
         this.roofMat.needsUpdate = true;
       }),
-      loadSet(manager, "painted_concrete", [2, 1]).then(([map, nor, rough]) => {
+      loadSet(manager, "concrete_floor_painted", [3, 1]).then(([map, nor, rough]) => {
         if (!map) return;
         own(map); own(nor); own(rough);
         for (const m of [this.concrete, hut]) {

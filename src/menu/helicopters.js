@@ -116,7 +116,7 @@ export class MenuHelicopters {
       const beamUniforms = {
         ...haze,
         uColor: { value: new THREE.Color(0.9, 0.95, 1.08) },
-        uOpacity: { value: i === 0 ? 0.05 : 0.055 },
+        uOpacity: { value: i === 0 ? 0.04 : 0.035 },
         uLength: { value: 100 },
         uTime: { value: 0 },
         uNoise: { value: noise },
@@ -144,7 +144,7 @@ export class MenuHelicopters {
     }
 
     // The light that rides the patrol's beam across our roof.
-    this.spot = new THREE.SpotLight(0xe6eeff, 0, 0, 0.06, 0.7, 0);
+    this.spot = new THREE.SpotLight(0xe6eeff, 0, 0, 0.07, 0.85, 0);
     this.spot.castShadow = quality === "high";
     this.spot.shadow.mapSize.set(512, 512);
     this.spot.shadow.camera.near = 20;
@@ -193,7 +193,7 @@ export class MenuHelicopters {
       // A long loop between our roof and the tower, low over the roofs.
       const a = t * 0.075 + 4.0;
       const mid = this._v.copy(this.subject).lerp(this.tower, 0.42);
-      out.set(mid.x - 40 + Math.cos(a) * 190, 70 + Math.sin(a * 2.0) * 14, mid.z + Math.sin(a) * 105);
+      out.set(mid.x + 40 + Math.cos(a) * 160, 70 + Math.sin(a * 2.0) * 14, mid.z + Math.sin(a) * 105);
     }
     return out;
   }
@@ -283,8 +283,8 @@ export class MenuHelicopters {
     // The spot light rides the patrol's beam while it's on our roof.
     this.spot.position.copy(b.lampAt);
     this.spot.target.position.copy(b.aim);
-    this.spot.angle = 0.06;
-    this.spot.intensity = onRoof * 28;
+    this.spot.angle = 0.07;
+    this.spot.intensity = onRoof * 5;
     const d = this._v.copy(b.aim).sub(this.subject).setY(0).length();
     this.onSubject = onRoof * THREE.MathUtils.clamp(1 - d / 4, 0, 1);
   }

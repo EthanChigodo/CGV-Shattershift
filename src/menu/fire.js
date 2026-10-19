@@ -548,7 +548,7 @@ const SHARD_FRAGMENT = /* glsl */ `
   void main() {
     vec2 q = gl_PointCoord * 2.0 - 1.0;
     if (dot(q, q) > 1.0) discard;
-    gl_FragColor = vec4(vec3(5.0, 3.2, 1.6) * vBright, 1.0);
+    gl_FragColor = vec4(vec3(2.4, 1.5, 0.8) * vBright, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -581,7 +581,7 @@ class Shards {
     this.next = 0;
   }
 
-  burst(position, normal, n = 70) {
+  burst(position, normal, n = 36) {
     for (let k = 0; k < n; k += 1) {
       const s = this.shards[this.next];
       this.next = (this.next + 1) % this.max;
