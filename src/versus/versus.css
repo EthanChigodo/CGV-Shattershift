@@ -84,6 +84,9 @@ body.vs-aiming button { cursor: pointer; }
   gap: 14px;
   isolation: isolate;
 }
+/* Side by side: P2's name sits at the top right of its half, clear of the score over the seam. */
+.vs-layout-v .vs-p2 .vs-plate { left: auto; right: 26px; flex-direction: row-reverse; text-align: right; }
+.vs-layout-v .vs-p2 .vs-pips { margin: 0 4px 0 0; }
 .vs-chip {
   font-stretch: var(--wide);
   font-weight: 260;

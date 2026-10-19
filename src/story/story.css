@@ -71,7 +71,7 @@ body.finale-film .topbar { opacity: 0 !important; transition: none !important; }
 .story-sub.show { opacity: 1; }
 /* During play (Okoro talking while you run): low and centred, above the
    score and the prompt lane, between the vitals and the sphere wheel. */
-.story-layer.gameplay .story-sub { bottom: 150px; width: min(60vw, 800px); }
+.story-layer.gameplay .story-sub { bottom: 150px; width: min(52vw, 700px); }
 .story-sub .who {
   display: block;
   margin-bottom: 8px;
@@ -241,7 +241,7 @@ body:has(.story-layer.gameplay .story-sub.show) .cw-radio { bottom: 270px; }
   letter-spacing: 0.32em;
   text-transform: uppercase;
   color: var(--text);
-  text-wrap: balance;
+  max-width: 94vw;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 0, 0, 0.6);
 }
 .story-layer .story-title h1::after { content: ""; display: block; width: 56px; height: 1px; margin: 26px auto 0; background: var(--line-2); }
