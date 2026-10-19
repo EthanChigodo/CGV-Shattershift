@@ -47,9 +47,9 @@ const _v = new THREE.Vector3();
  * The team rim, the frost and the hit flash, added to the figure's material.
  * Returns the uniforms to drive (per figure: each avatar has its own material).
  */
-function applyTeamLook(mesh, colour) {
+function applyTeamLook(mesh, colour, shared = null) {
   const material = mesh.material;
-  const uniforms = {
+  const uniforms = shared ?? {
     uTeam: { value: new THREE.Color(colour) },
     uTeamRim: { value: 0.85 },
     uFrost: { value: 0 },
@@ -238,6 +238,15 @@ export class Competitor {
       this.avatar.setModel(body.template);
       const mesh = this.avatar.model?.getObjectByName("CharacterMerged");
       if (mesh) this.look = applyTeamLook(mesh, this.team.colour);
+      else if (this.avatar.rigged) {
+        // The team's rigged Subject 07 (src/figure/rigged.js): every part
+        // of it takes the same team rim, frost and flash.
+        let shared = null;
+        this.avatar.model.traverse((o) => {
+          if (o.isMesh && !Array.isArray(o.material)) shared = applyTeamLook(o, this.team.colour, shared);
+        });
+        this.look = shared;
+      }
     }
     const launcher = assets.get("launcher");
     if (launcher && !this.launcher.model) {

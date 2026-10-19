@@ -281,6 +281,8 @@ export class Performer {
     if (this.stepping <= 0) this.phase += dt * armRate;
 
     this._apply(breath);
+    // A rigged body (src/figure/rigged.js) reads the uniforms just written.
+    this.avatar.syncRig?.(dt);
   }
 
   _apply(breath) {

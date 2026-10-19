@@ -159,13 +159,24 @@ export function stride(p, t) {
  *   (0 standing .. 1 walking), look (yaw of the head toward something, in
  *   the body's frame, radians)
  */
-export function shamble(rig, p, t, { reach = 0.9, lean = 0.3, stride: legs = 0.35, knee = 0.6, cadence = 4.2, amount = 1, look = 0 } = {}) {
+export function shamble(rig, p, t, { reach = 0.9, lean = 0.3, stride: legs = 0.35, knee = 0.6, cadence = 4.2, amount = 1, look = 0, speed = null } = {}) {
   if (!rig) return;
   // The gait's clock runs at the persona's cadence, faster in a surge, so
   // the feet keep up with the body instead of skating.
   const dt = p.clock === null ? 0 : clamp(t - p.clock, 0, 0.1);
   p.clock = t;
   const s = surge(p, t);
+  // A rigged patient (src/figure/rigged.js) walks its own mocap walk, at the
+  // persona's pace and surges; the twitches and the look still go on top.
+  if (rig.isClipRig) {
+    const walking = amount > 0.6;
+    const rate = p.cadence * (0.7 + 0.3 * s.factor) * (0.35 + 0.65 * amount) * (cadence / 4.2);
+    rig.pose({ clip: walking ? ["walk", "run"] : ["idle", "walk"], speed: walking && speed !== null ? speed : null, rate: walking ? rate : 0.8 + 0.4 * p.cadence, dt, headTilt: p.headTilt * 0.6 });
+    twitch(rig, p, t);
+    lookAside(rig, look);
+    rig.apply();
+    return;
+  }
   p.cycle += dt * cadence * p.cadence * (0.7 + 0.3 * s.factor) * (0.35 + 0.65 * amount);
   const base = p.cycle + p.phase;
   // A limp: the step onto the bad leg is short and quick, the step off it
@@ -225,8 +236,16 @@ export function shamble(rig, p, t, { reach = 0.9, lean = 0.3, stride: legs = 0.3
   // Breathing: the chest heaves (they are winded, not dead yet).
   rig.rotate("chest", X, Math.sin(t * 2.1 + p.phase) * 0.035);
 
-  // Twitches: every so often (not every interval) the head snaps aside and
-  // a shoulder jerks - a sharp attack and a quick decay.
+  twitch(rig, p, t);
+  lookAside(rig, look);
+  rig.apply();
+}
+
+/**
+ * Twitches: every so often (not every interval) the head snaps aside and a
+ * shoulder jerks - a sharp attack and a quick decay.
+ */
+function twitch(rig, p, t) {
   const ti = (t + p.phase * 3) / p.twitchEvery;
   const n = Math.floor(ti);
   const local = (ti - n) * p.twitchEvery;
@@ -238,14 +257,15 @@ export function shamble(rig, p, t, { reach = 0.9, lean = 0.3, stride: legs = 0.3
     rig.rotate(hash(n * 7.7 + p.seed) < 0.5 ? "armL" : "armR", Z, dir * 0.35 * env);
     rig.rotate("chest", Y, dir * 0.12 * env);
   }
+}
 
-  // Looking at something off to the side: the neck and head share it.
+/** Looking at something off to the side: the neck and head share it. */
+function lookAside(rig, look) {
   if (look) {
     const yaw = clamp(look, -1.1, 1.1);
     rig.rotate("neck", Y, yaw * 0.4);
     rig.rotate("head", Y, yaw * 0.5);
   }
-  rig.apply();
 }
 
 /**
@@ -265,6 +285,8 @@ export class Flinch {
     this.vPitch = 0;
     this.vRoll = 0;
     this.vTwist = 0;
+    /** Hits taken (a clip rig plays its hit clip once per new one). */
+    this.kicks = 0;
   }
 
   /**
@@ -285,6 +307,7 @@ export class Flinch {
     const sideways = _d.x * c - _d.z * s;
     const forward = _d.x * s + _d.z * c;
     const k = 9 * clamp(power, 0.4, 1.6);
+    this.kicks += 1;
     // Pushed forward tips the top forward (+pitch); pushed to +X tips it
     // toward +X (-roll). A blow to one side turns the shoulders with it.
     this.vPitch += forward * k;
@@ -320,6 +343,20 @@ export class Flinch {
       body.rotation.z = this.roll * 0.35;
     }
     if (!rig) return;
+    if (rig.isClipRig) {
+      // A rigged body plays its hit clip on a new hit; the spring goes on
+      // top of it, at the share it hands back.
+      const k = rig.react(this);
+      rig.rotate("spineLow", X, this.pitch * 0.45 * k);
+      rig.rotate("spineLow", Z, this.roll * 0.45 * k);
+      rig.rotate("chest", X, this.pitch * 0.35 * k);
+      rig.rotate("chest", Z, this.roll * 0.3 * k);
+      rig.rotate("chest", Y, this.twist * k);
+      rig.rotate("head", X, -this.vPitch * 0.03 * k);
+      rig.rotate("head", Z, -this.vRoll * 0.03 * k);
+      rig.apply();
+      return;
+    }
     rig.rotate("spineLow", X, this.pitch * 0.45);
     rig.rotate("spineLow", Z, this.roll * 0.45);
     rig.rotate("chest", X, this.pitch * 0.35);
@@ -346,6 +383,14 @@ export class Flinch {
  */
 export class Collapse {
   constructor(rig, p = null) {
+    // A rigged body (src/figure/rigged.js) dies with its die clip, held on
+    // the last frame; one without a die clip collapses procedurally, as
+    // before, on its own skeleton.
+    this.clipRig = null;
+    if (rig?.isClipRig) {
+      if (rig.has("die")) this.clipRig = rig;
+      rig = this.clipRig ? null : rig.procedural();
+    }
     this.rig = rig;
     this.side = p?.side ?? (Math.random() < 0.5 ? 1 : -1);
     this.t = 0;
@@ -363,12 +408,23 @@ export class Collapse {
     const pushSide = -this.flinch.vRoll;
     const pushFwd = this.flinch.vPitch;
     this.tip.set(0.55 * this.side + 0.06 * pushSide, 0.75 + 0.05 * pushFwd).normalize();
+    this.clipRig?.die();
   }
 
   update(dt, body = null) {
     this.t += dt;
     const t = this.t;
     this.flinch.update(dt);
+    if (this.clipRig) {
+      // The clip does the falling; the blow's jolt goes on the body.
+      this.clipRig.update(dt).apply();
+      if (body) {
+        body.rotation.order = "YXZ";
+        body.rotation.x = this.flinch.pitch * 0.3;
+        body.rotation.z = this.flinch.roll * 0.3;
+      }
+      return;
+    }
     const fall = (a, b) => {
       const k = clamp((t - a) / (b - a), 0, 1);
       return k * k;

@@ -19,7 +19,7 @@
  */
 
 import * as THREE from "../three.js";
-import { cloneCharacter, HumanoidRig } from "../levels/meltdown/characters.js";
+import { cloneCharacter, createRig } from "../levels/meltdown/characters.js";
 import { RunGait } from "../levels/meltdown/gait.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
 
@@ -34,6 +34,28 @@ export async function loadStoryCharacter(assetBase, name) {
  * update({ speed }); the rest are held poses with a little life in them.
  */
 export const ACTIONS = ["idle", "talk", "walk", "run", "point", "beckon", "offer", "aim", "crouch", "hold", "wave", "slump", "sit"];
+
+/**
+ * The clips each action plays on a rigged character (src/figure/rigged.js),
+ * first found wins; with none of them the action is posed procedurally, as
+ * on today's models. `held`: played once and held (a death's last frame).
+ */
+const ACTION_CLIPS = {
+  idle: ["idle"],
+  talk: ["talk", "idle"],
+  walk: ["walk", "run"],
+  run: ["run", "walk"],
+  point: ["point"],
+  beckon: ["point"],
+  offer: [],
+  aim: ["aim"],
+  crouch: ["kneel"],
+  hold: [],
+  wave: ["point"],
+  slump: ["die"],
+  sit: ["sit"],
+};
+const HELD = new Set(["slump"]);
 
 function shadowTexture() {
   const canvas = document.createElement("canvas");
@@ -193,16 +215,17 @@ export class Companion {
     model.rotation.y = Math.PI;
     this.body.add(model);
     this.model = model;
-    this.rig = new HumanoidRig(model);
+    this.rig = createRig(model);
     this.standIn.visible = false;
     model.traverse((o) => {
       if (o.isMesh) o.frustumCulled = false; // skinned bounds don't follow the pose
     });
     // Walking and running: the planted-foot gait the player uses (gait.js),
-    // measured on this skeleton - thigh to knee to ankle.
+    // measured on this skeleton - thigh to knee to ankle. (A rigged
+    // character walks its own mocap instead.)
     this.gait = null;
     const b = this.rig.bones;
-    if (this.rig.valid && b.calfL && b.footL) {
+    if (this.rig.valid && !this.rig.isClipRig && b.calfL && b.footL) {
       model.updateMatrixWorld(true);
       const y = (bone) => model.worldToLocal(bone.getWorldPosition(new THREE.Vector3())).y;
       const ankle = y(b.footL);
@@ -348,8 +371,11 @@ export class Companion {
       }
     }
 
+    // A rigged character with a clip for this action: the clip carries the
+    // body (its crouch, its fall to the floor); otherwise as before.
+    const clip = this.rig?.isClipRig ? this.rig.pick(ACTION_CLIPS[this.action]) : null;
     // Crouching / sitting drops the hips so the feet stay on the floor.
-    const drop = this.action === "sit" ? 0.52 : this.crouch * 0.38;
+    const drop = clip ? 0 : this.action === "sit" ? 0.52 : this.crouch * 0.38;
     if (g && gaitAction) {
       // The pelvis rides the gait exactly, or the planted feet would float or sink.
       this.body.position.y = -drop + g.bob;
@@ -363,8 +389,9 @@ export class Companion {
     this.body.position.x = this.sway;
     this.body.rotation.z = -this.sway * 0.6;
     // Slumped: down onto the floor.
-    this.body.rotation.x = -this.slump * 1.35;
-    this.body.position.z = this.slump * 0.6;
+    const slump = clip && this.action === "slump" ? 0 : this.slump;
+    this.body.rotation.x = -slump * 1.35;
+    this.body.position.z = slump * 0.6;
 
     if (this.rig?.valid) {
       const adj = this.adjust;
@@ -376,7 +403,17 @@ export class Companion {
         pose.armSwing = (pose.armSwing ?? 0) * (1 - adj.aimR * 0.7);
       }
       if (adj.aimL) pose.aimL = Math.max(pose.aimL ?? 0, adj.aimL);
-      this.rig.pose(pose);
+      if (this.rig.isClipRig) {
+        // The clip for the action (none: the procedural pose above), its
+        // walk or run kept in step with his real speed; a scene's lean and
+        // a raised arm go on top.
+        Object.assign(pose, { clip: ACTION_CLIPS[this.action], speed: gaitAction ? sp : null, once: HELD.has(this.action), dt, addLean: adj.lean });
+        this.rig.pose(pose);
+        if (clip) {
+          if (adj.aimR) this.rig.rotate("armR", _X, -adj.aimR * 1.45);
+          if (adj.aimL) this.rig.rotate("armL", _X, -adj.aimL * 1.45);
+        }
+      } else this.rig.pose(pose);
       if (g && gaitAction) {
         // Thigh and knee from the gait's IK; the foot kept flat while planted.
         for (const [side, hip, knee, planted] of [["R", g.hipR, g.kneeR, g.footR.planted], ["L", g.hipL, g.kneeL, g.footL.planted]]) {

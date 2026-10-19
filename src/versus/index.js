@@ -28,7 +28,7 @@ import { VersusMatch } from "./match.js";
 
 /** Every model the match uses: the roof's, both Subjects, the launcher. */
 const MODELS = [
-  "scientistRadioman", "scientistRust", "patient", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight", "duffelBag",
+  "scientistRadioman", "scientistRust", "patient", "brute", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight", "duffelBag",
   "launcher", "playerFemale", "playerMale",
 ];
 
