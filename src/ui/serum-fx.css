@@ -1,7 +1,9 @@
 /*
  * Serums on screen (serum-fx.js): the glow round the edges in each serum's
- * colour, each serum's own look, the banner that names it and the chips
- * that count it down. Every layer's strength is --a (0..1), set per frame.
+ * colour, each serum's own look, the announcement that names it and the
+ * countdowns - in the NIGHTFALL look (src/ui/theme.css): text on the
+ * picture, the serum's colour only where it names the serum. Every layer's
+ * strength is --a (0..1), set per frame.
  */
 
 .sx { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
@@ -89,55 +91,108 @@
 @property --ring { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
 @keyframes sxRing { from { --ring: 0%; } to { --ring: 90%; } }
 
-/* The banner: which serum, what it does, for how long. */
+/* The announcement, top centre: which serum (named in its colour), what it
+   does, for how long - text on the picture, a soft shade behind it. */
 .sx-banner {
-  position: absolute; top: 64px; left: 50%; min-width: min(420px, 86vw); max-width: 86vw;
-  padding: 12px 22px 14px; text-align: center;
-  border: 1px solid rgba(var(--rgb), 0.55); border-top: 3px solid var(--c); border-radius: 4px;
-  background: linear-gradient(180deg, rgba(var(--rgb), 0.18), rgba(4, 12, 16, 0.78) 70%);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 0 40px rgba(var(--rgb), 0.35), 0 10px 30px rgba(0, 0, 0, 0.4);
-  color: #f3f8fa; font-family: Inter, "Segoe UI", Arial, sans-serif;
-  opacity: 0; transform: translate(-50%, -14px) scale(0.96);
-  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.2, .9, .3, 1.2);
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  width: min(620px, 86vw);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  isolation: isolate;
+  color: var(--text);
+  font-family: var(--font);
+  text-shadow: var(--shadow-text);
+  opacity: 0;
+  transform: translate(-50%, -8px);
+  transition: opacity 0.6s var(--ease-in-out), transform 0.6s var(--ease-out);
 }
-.sx-banner.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
-.sx-kicker { display: block; color: var(--c); font-size: 10px; font-weight: 800; letter-spacing: 0.38em; text-transform: uppercase; }
+.sx-banner::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -40px -80px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.5), rgba(4, 6, 9, 0.22) 55%, rgba(4, 6, 9, 0));
+}
+.sx-banner.show { opacity: 1; transform: translate(-50%, 0); }
+.sx-kicker { font-size: 12px; font-weight: 500; letter-spacing: 0.04em; color: var(--c); }
 .sx-banner strong {
-  display: block; margin-top: 4px; color: var(--c); font-size: clamp(26px, 3.6vw, 40px); font-weight: 900; letter-spacing: 0.02em;
-  text-transform: uppercase; text-shadow: 0 0 24px rgba(var(--rgb), 0.7);
+  display: block;
+  padding-left: 0.24em;
+  font-stretch: var(--wide);
+  font-weight: 240;
+  font-size: clamp(24px, 2.5vw, 34px);
+  line-height: 1.1;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 26px rgba(0, 0, 0, 0.5), 0 0 30px rgba(var(--rgb), 0.28);
 }
-.sx-banner p { margin: 4px 0 8px; font-size: 14px; font-weight: 650; line-height: 1.4; }
+.sx-banner p { margin: 2px 0 0; font-size: 15px; font-weight: 420; line-height: 1.45; color: var(--text-2); }
 .sx-duration {
-  display: inline-block; padding: 3px 10px; border-radius: 999px; font-style: normal;
-  background: rgba(var(--rgb), 0.2); border: 1px solid rgba(var(--rgb), 0.5); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
 }
+.sx-duration::before { content: ""; display: block; width: 36px; height: 1px; margin: 0 auto 9px; background: rgba(var(--rgb), 0.7); }
 
-/* The chips: what's running and how long it has left. */
+/* The countdowns: a dot in the serum's colour, its name, the time, and a
+   hairline that runs down. */
 .sx-chips {
-  position: absolute; top: 62px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
-  transition: opacity 0.3s ease;
+  position: absolute;
+  top: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-family: var(--font);
+  text-shadow: var(--shadow-text);
+  transition: opacity 0.5s ease;
 }
 .sx-chips.lowered { opacity: 0; }
 .sx-chip {
-  position: relative; display: flex; align-items: center; gap: 8px; min-width: 170px; padding: 7px 12px 9px; overflow: hidden;
-  border: 1px solid rgba(var(--rgb), 0.5); border-radius: 4px; background: rgba(4, 12, 16, 0.72); backdrop-filter: blur(6px);
-  color: #f3f8fa; font: 800 11px/1 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: 0.1em; text-transform: uppercase;
-  box-shadow: 0 0 18px rgba(var(--rgb), 0.25);
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 160px;
+  padding-bottom: 8px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 400;
 }
 .sx-chip::after {
-  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--r) * 100%);
-  background: var(--c); box-shadow: 0 0 10px var(--c);
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 1px;
+  width: calc(var(--r) * 100%);
+  background: var(--c);
+  box-shadow: 0 0 6px rgba(var(--rgb), 0.6);
 }
-.sx-chip i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
-.sx-chip small { color: var(--c); font-size: 10px; }
-.sx-chip b { margin-left: auto; color: var(--c); font-variant-numeric: tabular-nums; }
-.sx-chip.ending { animation: sxEnding 0.5s ease-in-out infinite; }
+.sx-chip::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--line); }
+.sx-chip i { align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
+.sx-chip span { font-stretch: var(--wide); font-weight: 350; letter-spacing: 0.2em; text-transform: uppercase; }
+.sx-chip small { font-size: 11px; color: var(--text-3); }
+.sx-chip b { margin-left: auto; font-weight: 450; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.sx-chip.ending { animation: sxEnding 0.9s var(--ease-in-out) infinite; }
 
 body.hud-off-serums .sx-chips { display: none; }
-.cw-title { transition: opacity 0.6s ease, transform 0.6s ease, top 0.4s ease; }
-body.sx-announcing .cw-title { top: calc(17% + 130px); }
-body.sx-announcing .mlt-banner { top: calc(11% + 128px) !important; }
+/* A section title showing with the announcement steps down out of its way. */
+body.sx-announcing .cw-title,
+body.sx-announcing .mlt-banner,
+body.sx-announcing .fdy-banner { top: calc(15% + 124px) !important; }
 @media (prefers-reduced-motion: reduce) {
   .sx-prism .sx-look, .sx-thermal .sx-look, .sx-infinite .sx-look b, .sx-restore .sx-look, .sx-layer.ending .sx-edge, .sx-chip.ending { animation: none; }
 }
@@ -148,22 +203,3 @@ body.riding-lift .sx-layer,
 body.cutscene .sx-layer,
 body.story-cutscene .sx,
 body.finale-film .sx { opacity: 0 !important; transition: opacity .3s; }
-
-/* ---- The game's look (src/ui/theme.css): the dose label and its chips ---- */
-.sx-banner {
-  border: 0; border-left: 10px solid var(--c); border-radius: 0; text-align: left;
-  background: var(--grain, none), var(--bone, #ece6da); color: var(--ink, #0d0e10);
-  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
-  box-shadow: none; backdrop-filter: none; font-family: var(--font-body, system-ui, sans-serif);
-}
-.sx-kicker { color: var(--ink, #0d0e10); font-family: var(--font-mono, monospace); font-size: 9px; letter-spacing: 0.2em; }
-.sx-banner strong { color: var(--ink, #0d0e10); font-family: var(--font-display, sans-serif); font-size: clamp(34px, 4vw, 52px); line-height: 0.9; text-shadow: none; }
-.sx-banner p { color: #2a2824; }
-.sx-duration { border-radius: 0; background: var(--ink, #0d0e10); border: 0; color: var(--bone, #ece6da); font-family: var(--font-mono, monospace); font-size: 9.5px; }
-.sx-chip {
-  border: 0; border-left: 6px solid var(--c); border-radius: 0; background: rgba(13, 14, 16, 0.86); backdrop-filter: none; box-shadow: none;
-  color: var(--bone, #ece6da); font: 800 16px/1 var(--font-display, sans-serif); letter-spacing: 0.03em;
-}
-.sx-chip::after { background: var(--bone, #ece6da); box-shadow: none; }
-.sx-chip small { font-family: var(--font-mono, monospace); font-size: 9px; }
-.sx-chip b { color: var(--bone, #ece6da); font-family: var(--font-mono, monospace); font-size: 11px; }

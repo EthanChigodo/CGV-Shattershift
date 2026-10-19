@@ -56,16 +56,17 @@
   align-items: center;
   text-align: center;
   opacity: 0;
-  transition: opacity 1.1s var(--ease-in-out);
+  transition: opacity 1.1s var(--ease-in-out), top 0.4s var(--ease-out);
 }
-.fdy-banner.show { opacity: 1; transition-duration: 0.9s; }
+.fdy-banner.show { opacity: 1; transition: opacity 0.9s var(--ease-in-out), top 0.4s var(--ease-out); }
 .fdy-banner strong {
   order: 1;
   display: block;
   padding-left: 0.3em;
   font-stretch: var(--wide);
   font-weight: 220;
-  font-size: clamp(28px, 3.3vw, 48px);
+  font-size: clamp(24px, 2.6vw, 38px);
+  text-wrap: balance;
   line-height: 1.1;
   letter-spacing: 0.26em;
   text-transform: uppercase;

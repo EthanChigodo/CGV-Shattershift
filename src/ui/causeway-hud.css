@@ -89,7 +89,8 @@ body.hud-unified .cw-missions { display: none !important; }
   padding-left: 0.3em; /* the tracking's trailing space, so it centres */
   font-stretch: var(--wide);
   font-weight: 220;
-  font-size: clamp(28px, 3.3vw, 48px);
+  font-size: clamp(24px, 2.6vw, 38px);
+  text-wrap: balance;
   line-height: 1.1;
   letter-spacing: 0.26em;
   text-transform: uppercase;
