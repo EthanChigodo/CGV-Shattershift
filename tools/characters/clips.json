@@ -1,0 +1,60 @@
+{
+  "about": "How build.py names and treats clips, and each role's settings. Clip names are the brief's (docs/characters-for-the-team.md); 'aliases' turns a Mixamo name or a near miss into one of them.",
+  "clips": [
+    "idle", "run", "jump", "slide", "strafe_left", "strafe_right", "hit", "throw", "die", "fall", "dodge", "aim",
+    "climb", "hang", "kneel", "wake", "cheer", "talk", "walk", "point", "sit", "laugh", "attack", "scream", "crawl", "shoot"
+  ],
+  "aliases": {
+    "breathing_idle": "idle", "standing_idle": "idle", "neutral_idle": "idle", "happy_idle": "idle", "zombie_idle": "idle", "pistol_idle": "idle",
+    "running": "run", "fast_run": "run", "standard_run": "run", "zombie_running": "run", "zombie_run": "run", "terrified": "run",
+    "running_jump": "jump", "jumping": "jump",
+    "running_slide": "slide",
+    "left_strafe": "strafe_left", "strafe_left_run": "strafe_left", "right_strafe": "strafe_right", "strafe_right_run": "strafe_right",
+    "hit_reaction": "hit", "stumble_backwards": "hit", "zombie_reaction_hit": "hit", "reaction": "hit",
+    "throwing": "throw", "throw_object": "throw",
+    "dying": "die", "death": "die", "falling_back_death": "die", "death_from_the_front": "die", "zombie_dying": "die", "zombie_death": "die",
+    "falling_idle": "fall", "falling": "fall",
+    "sprinting_forward_roll": "dodge", "dodging": "dodge",
+    "rifle_aiming_idle": "aim",
+    "climbing_ladder": "climb", "climbing": "climb", "zombie_stand_up": "climb",
+    "hanging_idle": "hang",
+    "kneeling": "kneel",
+    "getting_up": "wake", "stand_up": "wake",
+    "victory": "cheer", "cheering": "cheer",
+    "talking": "talk", "arguing": "talk",
+    "walking": "walk", "zombie_walk": "walk", "pistol_walk": "walk",
+    "pointing": "point", "waving": "point", "pointing_forward": "point",
+    "sitting_idle": "sit", "sitting_talking": "sit", "sitting": "sit",
+    "laughing": "laugh",
+    "zombie_attack": "attack", "zombie_punching": "attack",
+    "zombie_scream": "scream",
+    "zombie_crawl": "crawl",
+    "shooting": "shoot", "pistol_shoot": "shoot"
+  },
+  "root": {
+    "about": "Root motion: 'inplace' drops the hips' horizontal travel (a loop keeps its sway, a one-shot is pinned where it starts); 'keep' leaves it (a death falls where it falls). The hips' height is always kept; 'detrend_y' also removes a steady climb (a ladder loop).",
+    "default": "inplace",
+    "die": "keep",
+    "climb": "detrend_y"
+  },
+  "essential": {
+    "subject07": ["idle", "run", "jump", "slide", "strafe_left", "strafe_right", "hit", "throw", "die", "fall"],
+    "okoro": ["idle", "talk", "walk", "run", "die"],
+    "vale": ["idle", "talk", "sit"],
+    "patient": ["idle", "walk", "run", "attack", "scream", "hit", "die"],
+    "scientist": ["idle", "walk", "shoot", "hit", "die"]
+  },
+  "loops": ["idle", "run", "walk", "strafe_left", "strafe_right", "fall", "aim", "climb", "hang", "talk", "sit", "crawl", "kneel"],
+  "locomotion": ["walk", "run", "strafe_left", "strafe_right", "crawl"],
+  "roles": {
+    "subject07_female": { "slot": "playerFemale", "height": 1.68 },
+    "subject07_male": { "slot": "playerMale", "height": 1.8 },
+    "okoro": { "slot": "scientistGood", "height": 1.8 },
+    "vale": { "slot": "scientistEvil", "height": 1.83 },
+    "patient_a": { "slot": "patient", "height": 1.74 },
+    "patient_b": { "slot": "patient", "height": 1.7, "share_clips_from": "patient_a" },
+    "patient_brute": { "slot": "brute", "height": 1.95, "share_clips_from": "patient_a" },
+    "scientist_labcoat": { "slot": "scientistRadioman", "height": 1.82 },
+    "scientist_hazmat": { "slot": "scientistRust", "height": 1.84, "share_clips_from": "scientist_labcoat" }
+  }
+}
