@@ -175,7 +175,7 @@ export class MenuRoof {
     // shadow would black out the roof by the figure.)
     for (const [sx, sy, sz, x, y, z] of walls) {
       part(this.concrete, sx, sy, sz, x, y, z, { cast: false });
-      part(this.coping, sx + (sx > sz ? 0.06 : 0.12), 0.07, sz + (sz > sx ? 0.06 : 0.12), x, H + 0.035, z);
+      part(this.coping, sx + (sx > sz ? 0.06 : 0.12), 0.07, sz + (sz > sx ? 0.06 : 0.12), x, H + 0.035, z, { cast: false });
     }
     this.rail = own(new THREE.MeshStandardMaterial({ color: 0x2a2c2f, roughness: 0.55, metalness: 0.5 }));
     const railTop = R.parapet;

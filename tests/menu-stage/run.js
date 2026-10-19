@@ -224,7 +224,7 @@ async function main() {
         await tab.page.waitForFunction(() => globalThis.__stage?.ready, null, { polling: 500 });
         for (const shot of ["title", "appearance", "newgame", "chapters", "endless", "dim"]) {
           await tab.page.evaluate((s) => { __stage.shot(s); __stage.step(s === "dim" ? 8 : 5); __stage.render(); }, shot);
-          await tab.page.screenshot({ path: path.join(DOCS, `${shot}-${w}.jpg`), quality: w > 1500 ? 72 : 80 });
+          await tab.page.screenshot({ path: path.join(DOCS, `${shot}-${w}.jpg`), quality: w > 1500 ? 55 : 80 });
         }
         check(tab.errors.length === 0, `docs ${w}x${h}: no page errors`);
         await tab.page.close();
