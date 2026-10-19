@@ -674,7 +674,9 @@ function measureBody(geometry) {
   };
 }
 
-const PLAYER_RIG_VERTEX = /* glsl */ `
+// (Exported so a depth material can pose the same way: the menu stage's
+// figure casts its shadow from the posed body, src/menu/figure.js.)
+export const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uPhase;
   uniform float uStride;
   uniform float uArmSwing;
@@ -712,7 +714,7 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   }
 `;
 
-const PLAYER_RIG_MAIN = /* glsl */ `
+export const PLAYER_RIG_MAIN = /* glsl */ `
   vec3 rigP = transformed;
   vec3 rigN = objectNormal;
   float ax = abs(rigP.x);

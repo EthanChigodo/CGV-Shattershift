@@ -179,8 +179,9 @@ export class MenuCity {
    * @param {THREE.Vector3} o.towerAt   the burning tower (kept clear)
    * @param {THREE.Box3} o.roof         our own building's footprint (kept clear)
    * @param {THREE.Vector3} o.eye       where the roof is (density falls off from here)
+   * @param {number[][]} [o.buildings]   extra blocks [x, base y, z, width, height, depth]
    */
-  constructor({ haze, noise, towerAt, roof, eye, quality = "medium" }) {
+  constructor({ haze, noise, towerAt, roof, eye, quality = "medium", buildings = [] }) {
     this.root = new THREE.Group();
     this.root.name = "MenuCity";
     this.owned = [];
@@ -241,6 +242,8 @@ export class MenuCity {
         }
       }
     }
+    // Buildings the stage places itself (the one under our roof): [x, base, z, w, h, d].
+    pieces.push(...buildings);
     const unit = own(new THREE.BoxGeometry(1, 1, 1));
     unit.translate(0, 0.5, 0);
     this.blockUniforms = { ...haze, uTime: { value: 0 } };

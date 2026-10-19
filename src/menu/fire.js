@@ -756,4 +756,115 @@ export class TowerFire {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Ash and stray embers drifting across the roof (the foreground)      */
+/* ------------------------------------------------------------------ */
+
+const ASH_VERTEX = /* glsl */ `
+  attribute vec4 aSeed;
+  uniform float uTime;
+  uniform vec3 uCentre;
+  uniform vec3 uBox;
+  uniform vec3 uWind;
+  uniform float uScale;
+  uniform float uFocus;
+  uniform float uAperture;
+  varying float vBright;
+  varying float vEmber;
+  varying float vSoft;
+  void main() {
+    float ember = step(0.86, aSeed.w);
+    vEmber = ember;
+    // Drift with the wind, ash settling and embers lifting, wrapped in a box
+    // round the roof so there is always some in view.
+    vec3 vel = uWind * (0.35 + aSeed.y * 0.3) + vec3(0.0, mix(-0.35, 0.6, ember), 0.0);
+    vec3 p = position * uBox + vel * uTime;
+    p.x += sin(uTime * (0.6 + aSeed.x) + aSeed.z * 30.0) * 0.6;
+    p.y += sin(uTime * (0.8 + aSeed.y) + aSeed.x * 20.0) * 0.4;
+    p = mod(p, uBox) - uBox * 0.5 + uCentre;
+    vec4 mv = viewMatrix * vec4(p, 1.0);
+    gl_Position = projectionMatrix * mv;
+    float dist = max(0.05, -mv.z);
+    float size = mix(0.016, 0.03, ember) * (0.6 + aSeed.z * 0.8);
+    float px = size * uScale / dist;
+    // Out of focus: a disc as wide as the circle of confusion, its light spread over it.
+    float coc = abs(1.0 / dist - 1.0 / uFocus) * uAperture * uScale;
+    float shown = clamp(max(px, coc), 1.2, 42.0);
+    gl_PointSize = shown;
+    vSoft = clamp(coc / max(px, 0.01), 0.0, 1.0);
+    float energy = min(1.0, (px * px) / (shown * shown) * 4.0);
+    float twinkle = ember > 0.5 ? 0.6 + 0.4 * sin(uTime * (7.0 + aSeed.x * 9.0) + aSeed.y * 40.0) : 1.0;
+    vBright = energy * twinkle * smoothstep(0.4, 1.2, dist) * (1.0 - smoothstep(30.0, 45.0, dist));
+  }
+`;
+
+const ASH_FRAGMENT = /* glsl */ `
+  uniform vec3 uAsh;
+  uniform vec3 uEmber;
+  varying float vBright;
+  varying float vEmber;
+  varying float vSoft;
+  void main() {
+    vec2 q = gl_PointCoord * 2.0 - 1.0;
+    float r = dot(q, q);
+    if (r > 1.0) discard;
+    // In focus a soft point; out of focus a flat disc with a brighter rim (bokeh).
+    float sharp = exp(-r * 3.5);
+    float disc = smoothstep(1.0, 0.8, r) * (0.75 + 0.25 * r);
+    float shape = mix(sharp, disc, vSoft);
+    vec3 c = mix(uAsh, uEmber, vEmber) * shape * vBright;
+    gl_FragColor = vec4(c, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+export class DriftingAsh {
+  constructor({ count = 500, centre, box = new THREE.Vector3(36, 12, 34), wind, seed = 77 }) {
+    const r = rng(seed);
+    const pos = new Float32Array(count * 3);
+    const seeds = new Float32Array(count * 4);
+    for (let i = 0; i < count; i += 1) {
+      pos.set([r(), r(), r()], i * 3);
+      seeds.set([r(), r(), r(), r()], i * 4);
+    }
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    this.geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 4));
+    this.uniforms = {
+      uTime: { value: 0 },
+      uCentre: { value: centre.clone() },
+      uBox: { value: box.clone() },
+      uWind: { value: wind.clone() },
+      uScale: { value: 800 },
+      uFocus: { value: 5 },
+      uAperture: { value: 0.035 },
+      uAsh: { value: new THREE.Color(0.55, 0.36, 0.26) },
+      uEmber: { value: new THREE.Color(7, 2.4, 0.55) },
+    };
+    this.material = new THREE.ShaderMaterial({
+      uniforms: this.uniforms,
+      vertexShader: ASH_VERTEX,
+      fragmentShader: ASH_FRAGMENT,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.points = new THREE.Points(this.geometry, this.material);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 9;
+  }
+
+  update(time, pixelScale, focus) {
+    this.uniforms.uTime.value = time;
+    this.uniforms.uScale.value = pixelScale;
+    if (focus) this.uniforms.uFocus.value = focus;
+  }
+
+  dispose() {
+    this.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
 export { Embers };

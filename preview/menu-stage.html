@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Menu stage // Preview</title>
+    <!-- "three" must resolve to the file src/three.js uses (one copy of Three). -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../lib/three/build/three.module.js",
+          "three/addons/": "../lib/three/examples/jsm/"
+        }
+      }
+    </script>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      canvas { display: block; width: 100vw; height: 100vh; }
+      .bar {
+        position: fixed; left: 16px; bottom: 14px; display: flex; gap: 6px; flex-wrap: wrap;
+        font: 600 11px/1 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase;
+      }
+      .bar button {
+        background: rgba(0, 0, 0, 0.45); color: #e8e1d8; border: 1px solid rgba(255, 255, 255, 0.18);
+        padding: 7px 10px; border-radius: 3px; cursor: pointer; font: inherit;
+      }
+      .bar button.on { border-color: #ff8a3a; color: #ffb27a; }
+      body.clean .bar { display: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <div class="bar" id="bar"></div>
+    <script type="module" src="./menu-stage.js"></script>
+  </body>
+</html>
