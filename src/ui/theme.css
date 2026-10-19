@@ -1,128 +1,118 @@
 /*
- * The game's look: SUBJECT FILE 07.
+ * The game's look: NIGHTFALL.
  *
- * Everything on screen is the tower's own paperwork, broken into: the
- * clinical labels HALCYON prints for its specimens (bone-white tags, black
- * type, registration marks, barcodes), triage colours for danger, and glass
- * that cracks and shatters as you use it. No dark glass cards, no neon
- * panels: a bright, printed, physical layer over a dark burning tower.
+ * The game is the picture. Menus are a live shot of the tower burning at
+ * night with Subject 07 on the next roof; text sits straight on that shot,
+ * as in a film's titles: no cards, no panels, no boxes. Hierarchy comes
+ * from size, weight, width and light, and colour only ever means something.
+ *
+ *   text over the scene     warm white at four strengths (--text..--text-4)
+ *   shade                   a soft gradient behind text, never a box
+ *   ember                   where you are (focus) and the way forward
+ *   blood                   damage, danger, a death
+ *   glass                   anything breakable: spheres, panes (the game's cyan)
+ *
+ * One family, Archivo (OFL, variable: width 62-125, weight 100-900), set at
+ * three widths:
+ *   wide      125   the title, headings, big numbers: thin and tracked
+ *   normal    100   menus, body text
+ *   narrow     75   dense labels in the HUD
  *
  * Tokens and the shared primitives live here; each screen's own rules live
- * in styles.css and the HUD files. Fonts are OFL and bundled (assets/fonts):
- *   display  Big Shoulders Display     tall, condensed, industrial
- *   stencil  Big Shoulders Stencil     the title, hazard markings
- *   mono     Martian Mono              labels, numbers, specimen codes
- *   hand     Reenie Beanie             Dr. Okoro's pen, used sparingly
+ * in styles.css and the HUD files.
  */
 
-@font-face { font-family: "Big Shoulders Display"; src: url("../../assets/fonts/big-shoulders-display-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
-@font-face { font-family: "Big Shoulders Display"; src: url("../../assets/fonts/big-shoulders-display-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
-@font-face { font-family: "Big Shoulders Display"; src: url("../../assets/fonts/big-shoulders-display-900.woff2") format("woff2"); font-weight: 900; font-display: swap; }
-@font-face { font-family: "Big Shoulders Stencil"; src: url("../../assets/fonts/big-shoulders-stencil-display-900.woff2") format("woff2"); font-weight: 900; font-display: swap; }
-@font-face { font-family: "Martian Mono"; src: url("../../assets/fonts/martian-mono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Martian Mono"; src: url("../../assets/fonts/martian-mono-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
-@font-face { font-family: "Martian Mono"; src: url("../../assets/fonts/martian-mono-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
-@font-face { font-family: "Reenie Beanie"; src: url("../../assets/fonts/reenie-beanie-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face {
+  font-family: "Archivo";
+  src: url("../../assets/fonts/archivo-variable.woff2") format("woff2-variations");
+  font-weight: 100 900; font-stretch: 62% 125%; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("../../assets/fonts/archivo-variable-italic.woff2") format("woff2-variations");
+  font-weight: 100 900; font-stretch: 62% 125%; font-style: italic; font-display: swap;
+}
 
 :root {
-  /* Paper and ink. */
-  --bone: #ece6da;          /* the label stock */
-  --bone-2: #d8cfbf;        /* its shadow side, rules on it */
-  --bone-3: #b3a994;        /* quiet text on bone */
-  --ink: #0d0e10;           /* type on bone; the dark field */
-  --ink-2: #1c1d21;         /* raised dark surfaces */
-  --ink-3: #2c2e33;         /* rules on dark */
-  --smoke: rgba(13, 14, 16, 0.72);
-  --ash: #8f8a80;           /* quiet text on dark */
+  /* Light on the picture. */
+  --text: #f4f0e8;
+  --text-2: rgba(244, 240, 232, 0.72);
+  --text-3: rgba(244, 240, 232, 0.48);
+  --text-4: rgba(244, 240, 232, 0.26);
+  --line: rgba(244, 240, 232, 0.16);
+  --line-2: rgba(244, 240, 232, 0.32);
+
+  /* The dark the picture sits in. */
+  --night: #06080b;
+  --night-2: #0d1116;
+  --shade: rgba(4, 6, 9, 0.66);
+  --shadow-text: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 18px rgba(0, 0, 0, 0.45);
 
   /* Meaning. Never decoration. */
-  --hazard: #ff3b1f;        /* danger, the primary action, damage */
-  --caution: #ffc21a;       /* warnings, hazard stripes */
-  --glass: #7ff3ff;         /* anything breakable (the game's own cyan) */
-  --ok: #2fd07a;            /* safe, done, health */
-  --pen: #c8221a;           /* Okoro's red pen */
+  --ember: #ff7a3d;
+  --ember-2: #ffb27e;
+  --blood: #e5412d;
+  --warn: #ffc457;
+  --glass: #8ff1ff;
+  --ok: #7fe3a6;
 
-  /* Triage (difficulty, threat): the real tags' colours. */
-  --triage-green: #2fd07a;
-  --triage-yellow: #ffc21a;
-  --triage-red: #ff3b1f;
-  --triage-black: #0d0e10;
+  --font: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --wide: 125%;
+  --narrow: 75%;
 
-  --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --font-stencil: "Big Shoulders Stencil", "Big Shoulders Display", "Arial Narrow", sans-serif;
-  --font-mono: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --font-hand: "Reenie Beanie", "Bradley Hand", cursive;
-
-  /* The tag's cut corner and the hole punched in it. */
-  --notch: 14px;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-snap: cubic-bezier(0.7, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Old names, kept so nothing unstyled breaks while files move over. */
+  --bone: var(--text);
+  --bone-2: var(--text-2);
+  --bone-3: var(--text-3);
+  --ink: var(--night);
+  --ink-2: var(--night-2);
+  --ink-3: var(--line-2);
+  --smoke: var(--shade);
+  --ash: var(--text-3);
+  --hazard: var(--blood);
+  --caution: var(--warn);
+  --pen: var(--ember);
+  --font-display: var(--font);
+  --font-stencil: var(--font);
+  --font-mono: var(--font);
+  --font-hand: var(--font);
 }
 
 /* ---- Primitives ---------------------------------------------------------- */
 
-/* A specimen tag: bone stock, black type, one corner cut. */
-.tag {
-  position: relative;
-  background: var(--bone);
-  color: var(--ink);
-  clip-path: polygon(0 0, calc(100% - var(--notch)) 0, 100% var(--notch), 100% 100%, 0 100%);
-}
-/* The dark version: ink stock, bone type (on bright scenes). */
-.tag.tag-ink { background: var(--ink); color: var(--bone); }
-
-/* The punched hole a tag hangs from. */
-.tag-hole::before {
-  content: ""; position: absolute; top: 12px; right: 30px; width: 10px; height: 10px;
-  border-radius: 50%; background: var(--ink); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+/* Thin, wide, tracked: the title and headings. */
+.wide {
+  font-family: var(--font); font-stretch: var(--wide); font-weight: 250;
+  letter-spacing: 0.18em; text-transform: uppercase;
 }
 
-/* Small mono label: "SPECIMEN", "07.3", units. */
-.mono-label {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
-  letter-spacing: 0.14em; text-transform: uppercase;
+/* A small quiet label above a value or a group: sentence case, not shouted. */
+.label {
+  font-family: var(--font); font-size: 12px; font-weight: 500; letter-spacing: 0.04em;
+  color: var(--text-3);
 }
 
-/* Hazard stripes (caution yellow and ink), for danger zones and warnings. */
-.stripes {
-  background: repeating-linear-gradient(-45deg, var(--caution) 0 10px, var(--ink) 10px 20px);
-}
-.stripes-red {
-  background: repeating-linear-gradient(-45deg, var(--hazard) 0 10px, var(--ink) 10px 20px);
-}
+/* Numbers that change (score, ammo, distance) do not jiggle. */
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
 
-/* Registration marks in the corners of a sheet (the printed look). */
-.reg-marks { position: relative; }
-.reg-marks::after {
-  content: ""; position: absolute; inset: 6px; pointer-events: none;
-  background:
-    linear-gradient(currentColor, currentColor) top left / 10px 1px no-repeat,
-    linear-gradient(currentColor, currentColor) top left / 1px 10px no-repeat,
-    linear-gradient(currentColor, currentColor) top right / 10px 1px no-repeat,
-    linear-gradient(currentColor, currentColor) top right / 1px 10px no-repeat,
-    linear-gradient(currentColor, currentColor) bottom left / 10px 1px no-repeat,
-    linear-gradient(currentColor, currentColor) bottom left / 1px 10px no-repeat,
-    linear-gradient(currentColor, currentColor) bottom right / 10px 1px no-repeat,
-    linear-gradient(currentColor, currentColor) bottom right / 1px 10px no-repeat;
-  opacity: 0.45;
-}
-
-/* A controller or key glyph in a prompt: <kbd class="key">Space</kbd>,
+/* A key or a pad button in a prompt: <kbd class="key">Esc</kbd>,
    <kbd class="key pad">✕</kbd>. The pad module swaps the text. */
 .key {
-  display: inline-grid; place-items: center; min-width: 1.9em; height: 1.9em; padding: 0 0.5em;
-  border: 1.5px solid currentColor; border-radius: 4px;
-  font-family: var(--font-mono); font-size: 0.82em; font-weight: 800; letter-spacing: 0.04em;
-  line-height: 1; text-transform: uppercase;
+  display: inline-grid; place-items: center; min-width: 1.75em; height: 1.75em; padding: 0 0.45em;
+  border: 1px solid var(--line-2); border-radius: 5px;
+  font-family: var(--font); font-size: 0.78em; font-weight: 600; letter-spacing: 0.02em;
+  line-height: 1; color: var(--text); background: rgba(255, 255, 255, 0.04);
 }
-.key.pad { border-radius: 50%; padding: 0; min-width: 2em; height: 2em; }
+.key.pad { border-radius: 50%; padding: 0; min-width: 1.9em; height: 1.9em; }
 
-/* The hand of Dr. Okoro: a note in red pen, slightly turned. */
-.pen-note {
-  font-family: var(--font-hand); color: var(--pen); font-size: 26px; line-height: 0.9;
-  transform: rotate(-4deg); display: inline-block;
-}
+/* Old primitives: plain now (the tag look is gone). */
+.tag { position: relative; }
+.pen-note { font-family: var(--font); font-style: italic; color: var(--text-2); }
+.mono-label { font-family: var(--font); font-size: 11px; font-weight: 500; color: var(--text-3); }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --ease-out: linear; --ease-snap: linear; }
+  :root { --ease-out: linear; --ease-in-out: linear; }
 }
