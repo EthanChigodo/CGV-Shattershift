@@ -137,13 +137,18 @@ export class MenuStage {
     this.scene.add(this.moon, this.moon.target);
     this.hemi = new THREE.HemisphereLight(0x22304e, 0x2a1a10, 0.7);
     this.scene.add(this.hemi);
+    // A soft fill that rides with the camera, up only for the close-up
+    // (appearance): enough to read skin and hair - a film set's bounce card.
+    this.bounce = new THREE.PointLight(0xffd9bd, 0, 7, 2);
+    this.bounceWeight = 0;
+    this.scene.add(this.bounce);
 
     // ---- The camera ----
     const facing = Math.atan2(toFire.x, toFire.z) + BODY_TURN;
     this.facing = facing;
     const fireTop = this.tower.toWorld(new THREE.Vector3(0, this.tower.top + 6, 0));
     this.rig = new ShotRig(this.camera, {
-      subject: SUBJECT, facing, figureHeight: 1.7, fire: this.tower.fireCentre.clone(), fireTop, tower: TOWER.clone(),
+      subject: SUBJECT, facing, fireYaw: facing - BODY_TURN, figureHeight: 1.7, fire: this.tower.fireCentre.clone(), fireTop, tower: TOWER.clone(),
     });
     this.rig.reducedMotion = reducedMotion;
 
@@ -341,6 +346,9 @@ export class MenuStage {
     this._rim = (this._rim ?? new THREE.Color()).setRGB(0.55, 0.21, 0.06).multiplyScalar(f + blast * 1.2 + this.helis.onSubject * 0.4);
 
     if (this.figure) this.figure.update(dt, t, this._figureContext());
+    this.bounceWeight += ((this.rig.name === "appearance" ? 1 : 0) - this.bounceWeight) * (1 - Math.exp(-dt * 1.8));
+    this.bounce.position.copy(this.camera.position).add(this._v.set(-0.7, 0.6, 0).applyQuaternion(this.camera.quaternion));
+    this.bounce.intensity = this.bounceWeight * 3.2;
 
     // A body swap: down to dark, swap, back up.
     if (this.swap) {

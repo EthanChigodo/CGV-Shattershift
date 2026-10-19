@@ -29,7 +29,7 @@ export const SHOTS = {
   // stand in a column on the right.
   appearance: { from: [-1.45, 1.28, 2.3], local: true, figure: [0.47, 0.13, 0.92], attention: 0.95, drift: 0.6 },
   // Low behind them, looking up at the burning floors.
-  newgame: { from: [0.55, 0.32, -1.75], local: true, aim: "fire", screen: [0.6, 0.27], fov: 50, attention: 0.05, drift: 1 },
+  newgame: { from: [1.2, 0.45, -2.6], local: "fire", aim: "fire", screen: [0.45, 0.3], fov: 58, attention: 0.05, drift: 1 },
   // A long lens up the tower's burning top, the tower in the right half.
   chapters: { at: [-3.5, 1.6, -5.4], aim: "fireTilt", screen: [0.68, 0.48], fov: 21, attention: 0.2, drift: 0.8 },
   // Wide over the city from the corner of the roof.
@@ -44,7 +44,7 @@ export const SHOTS = {
 export class ShotRig {
   /**
    * @param {THREE.PerspectiveCamera} camera
-   * @param {object} world  { subject: Vector3, facing: number (yaw), figureHeight, fire: Vector3, fireTop: Vector3, tower: Vector3 }
+   * @param {object} world  { subject: Vector3, facing: number (yaw), fireYaw, figureHeight, fire: Vector3, fireTop: Vector3, tower: Vector3 }
    */
   constructor(camera, world) {
     this.camera = camera;
@@ -73,7 +73,8 @@ export class ShotRig {
     if (s.at) position.fromArray(s.at);
     else {
       const offset = new THREE.Vector3().fromArray(s.from);
-      if (s.local) offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), w.facing);
+      // local: in the figure's frame (+Z where they face, +X their left); "fire": +Z toward the fire.
+      if (s.local) offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.local === "fire" ? w.fireYaw : w.facing);
       position.copy(w.subject).add(offset);
     }
     if (s.pull) position.addScaledVector(position.clone().sub(w.subject).setY(0).normalize(), Math.min(4, time * s.pull));
