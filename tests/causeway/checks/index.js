@@ -259,6 +259,16 @@ export const memory = {
       // (src/menu/backdrop.js): let it land first, so only restarts are measured.
       const t0 = performance.now();
       while (!(d.menuStage.live || d.menuStage.failed) && performance.now() - t0 < 180000) await new Promise((r) => setTimeout(r, 200));
+      // Other assets still stream in at boot (the story's people, Level 3's
+      // models) and upload when first drawn: restart until the count holds
+      // for three in a row, then measure. A real leak never holds.
+      let held = 0;
+      let last = -1;
+      for (let i = 0; i < 14 && held < 3; i += 1) {
+        const t = (await sample()).textures;
+        held = t === last ? held + 1 : 0;
+        last = t;
+      }
       const counts = [];
       for (let i = 0; i < 5; i += 1) counts.push(await sample());
       const failures = [];
