@@ -4,6 +4,7 @@
  */
 
 import { heatSignature } from "./kit.js";
+import { regrime } from "../../figure/grime.js";
 
 const ASH_NOISE = /* glsl */ `
   uniform float uAsh;
@@ -40,7 +41,8 @@ export function ashify(model, height) {
     const list = Array.isArray(node.material) ? node.material : [node.material];
     const next = list.map((m) => {
       if (!m) return m;
-      const c = m.clone();
+      // (A copy loses its shader hooks: the patients' grime goes back on.)
+      const c = regrime(m.clone(), m);
       delete c.userData.heat;
       copies.push(c);
       return c;
@@ -51,6 +53,7 @@ export function ashify(model, height) {
   heatSignature(model);
   for (const c of copies) {
     const before = c.onBeforeCompile;
+    const key = c.customProgramCacheKey.call(c);
     c.onBeforeCompile = (shader, renderer) => {
       before?.call(c, shader, renderer);
       Object.assign(shader.uniforms, uniforms);
@@ -71,7 +74,7 @@ ${ASH_NOISE}`)
         .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
           totalEmissiveRadiance += vec3(5.0, 1.5, 0.3) * ashEdge;`);
     };
-    c.customProgramCacheKey = () => "heat-ash";
+    c.customProgramCacheKey = () => `${key}+ash`;
     c.needsUpdate = true;
   }
   return { uniforms, dispose: () => copies.forEach((c) => c.dispose()) };
