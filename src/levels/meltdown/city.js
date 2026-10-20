@@ -185,6 +185,8 @@ export class CityAtNight {
     const masts = [];
     /** Tops of towers, for the rooftop clutter: [x, y, z, w, d, yaw, distance]. */
     const roofs = [];
+    /** Where the towers stand, for whatever goes on the streets: {x, z, r} from the centre. */
+    this.footprints = [];
     for (const f of withTowers ? finishes : []) {
       // Lambert, not standard: the towers are a night backdrop (dark facades,
       // lit windows), and the physically-based shading of every one of the
@@ -214,6 +216,7 @@ export class CityAtNight {
         if (setback && open) pieces.push([cx, top - setback, cz, w * 0.68, setback, depth * 0.68, yaw]);
         const topW = setback ? w * 0.68 : w;
         if (open) roofs.push([cx, top, cz, topW, setback ? depth * 0.68 : depth, yaw, d]);
+        if (open) this.footprints.push({ x: cx - centre.x, z: cz - centre.z, r: Math.hypot(w, depth) / 2 });
         if (r() < 0.3) {
           const crown = [cx, top - 2.2, cz, topW + 0.3, 2.0, (setback ? depth * 0.68 : depth) + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff];
           if (open) crowns.push(crown);
@@ -241,6 +244,7 @@ export class CityAtNight {
         const mast = [cx, top, cz, 6 + r() * 10];
         if (open) {
           roofs.push([cx, top, cz, w, depth, yaw, d]);
+          this.footprints.push({ x: cx - centre.x, z: cz - centre.z, r: Math.hypot(w, depth) / 2 });
           pieces.push([cx, base, cz, w, top - base, depth, yaw]);
           crowns.push(crown);
           masts.push(mast);

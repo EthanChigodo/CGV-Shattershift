@@ -53,6 +53,7 @@ import { CityAtNight } from "./city.js";
 import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
 import { TowerCollapse } from "./skyline-collapse.js";
 import { CbdBuildings } from "./cbd.js";
+import { StreetLife } from "./street-life.js";
 import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
@@ -1138,6 +1139,10 @@ export class RoofLevel {
     this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3, clear });
     this.city.root.name = "Skyline";
     this.root.add(this.city.root, this.landmarks.root, this.cbd.root, ...this.collapses.map((c) => c.root));
+    // On the streets below: minibus taxis and jacarandas (street-life.js),
+    // kept clear of everything that stands on them.
+    this.streets = new StreetLife({ streetY: -160, blocked: [...clear, ...this.city.footprints] });
+    this.root.add(this.streets.root);
     if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
   }
 
@@ -1656,6 +1661,7 @@ export class RoofLevel {
     this.city?.update(dt, time, { haze: this.cityHaze });
     this.landmarks?.update(dt, time);
     this.cbd?.update(dt, time);
+    this.streets?.update(dt, time);
     for (const c of this.collapses ?? []) {
       for (const e of c.update(dt, time)) {
         // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
@@ -2238,6 +2244,7 @@ export class RoofLevel {
     this.city?.dispose();
     this.landmarks?.dispose();
     this.cbd?.dispose();
+    this.streets?.dispose();
     for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
