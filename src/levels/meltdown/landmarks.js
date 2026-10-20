@@ -10,6 +10,10 @@
  *   Carlton Centre   ~223 m  a dark slab of narrow vertical concrete fins
  *   Mandela Bridge           white cable-stayed pylons over the rail yard,
  *                            lit blue at night, a train passing under it
+ *   Orlando Towers    ~95 m  Soweto's two painted cooling towers, far off to
+ *                            the west, with the walkway between their tops.
+ *                            The murals are our own designs in that spirit -
+ *                            the real ones are artists' work, not ours to copy
  *
  * They are built from primitives and drawn by one shader in four modes, so
  * there are no models to license. The Ponte sign carries a made-up name
@@ -43,17 +47,21 @@ export const LANDMARKS = {
   // Down on the streets off the west ledge, across the rail yard (Park
   // Station's yards are right by the CBD; the real bridge spans them).
   bridge: { x: -94, z: -34 },
+  // Soweto, out on the western horizon (far nearer than it really is).
+  orlando: { x: -194, z: -103 },
 };
 
-const MODE = { concrete: 0, rings: 1, fins: 2, sign: 3, rails: 4 };
+const MODE = { concrete: 0, rings: 1, fins: 2, sign: 3, rails: 4, mural: 5 };
 
 const VERTEX = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vLocal;
   varying vec3 vNormalW;
   varying float vDepth;
+  varying vec2 vUv;
   void main() {
     vLocal = position;
+    vUv = uv;
     vec4 w = modelMatrix * vec4(position, 1.0);
     vWorld = w.xyz;
     vNormalW = normalize(mat3(modelMatrix) * normal);
@@ -75,7 +83,8 @@ const FRAGMENT = /* glsl */ `
   uniform vec3 uWashColour;
   uniform float uHazeCut;    // how much less haze than the city gets
   uniform float uTime;
-  uniform sampler2D uMap;    // the sign's lettering
+  uniform sampler2D uMap;    // the sign's lettering; a mural
+  varying vec2 vUv;
   uniform vec3 fogColor;
   uniform float fogDensity;
   varying vec3 vWorld;
@@ -109,6 +118,13 @@ const FRAGMENT = /* glsl */ `
     if (uMode == ${MODE.concrete}) {
       // Floodlit from the foot: bright low down, fading up the shaft.
       glow += uWashColour * uWash * exp(-h / 70.0) * (0.6 + 0.4 * (1.0 - abs(n.y)));
+    } else if (uMode == ${MODE.mural}) {
+      // A painted cooling tower: the mural (wrapped round by the lathe's uv),
+      // floodlit from the foot; bare concrete inside.
+      vec3 paint = texture2D(uMap, vUv).rgb;
+      if (!gl_FrontFacing) paint = uColour * 0.5;
+      col = shade(paint, n) * 1.3;
+      glow += paint * uWashColour * uWash * (exp(-h / 55.0) + 0.25);
     } else if (uMode == ${MODE.rails}) {
       // The rail yard under the bridge: ballast, a track every 4.6 m whose
       // steel catches the city's glow, signal lamps, and a train going by.
@@ -207,6 +223,83 @@ function signTexture(text) {
   return t;
 }
 
+/**
+ * A mural for a cooling tower: our own design - bold bands, swoops, suns and
+ * zigzag borders - in the spirit of the painted towers. u runs round the
+ * tower, v up it (the canvas top is the tower's top).
+ */
+function muralTexture(design) {
+  const c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 512;
+  const g = c.getContext("2d");
+  const [ground, swoop, swoop2, sun, word] = design === 0
+    ? ["#1aa3a3", "#f07c1e", "#c2321f", "#ffd23f", "SOWETO"]
+    : ["#f2c230", "#1d4f9c", "#2aa36b", "#ffffff", "MZANSI"];
+  g.fillStyle = ground;
+  g.fillRect(0, 0, 1024, 512);
+  // Big swoops round the tower.
+  for (const [colour, y0, amp, width] of [[swoop, 250, 70, 70], [swoop2, 330, 50, 42], ["#ffffff", 200, 60, 14]]) {
+    g.strokeStyle = colour;
+    g.lineWidth = width;
+    g.beginPath();
+    for (let x = -20; x <= 1044; x += 16) g.lineTo(x, y0 + Math.sin((x / 1024) * Math.PI * 4) * amp);
+    g.stroke();
+  }
+  // Suns.
+  for (const [x, y, r] of [[170, 140, 46], [610, 120, 36], [880, 300, 30]]) {
+    g.fillStyle = sun;
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = sun;
+    g.lineWidth = 6;
+    for (let k = 0; k < 12; k += 1) {
+      const a = (k / 12) * Math.PI * 2;
+      g.beginPath();
+      g.moveTo(x + Math.cos(a) * (r + 8), y + Math.sin(a) * (r + 8));
+      g.lineTo(x + Math.cos(a) * (r + 24), y + Math.sin(a) * (r + 24));
+      g.stroke();
+    }
+  }
+  // The word, big, once round.
+  g.fillStyle = "#ffffff";
+  g.strokeStyle = "#111111";
+  g.lineWidth = 8;
+  g.font = "bold 120px Impact, Arial Black, sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.strokeText(word, 400, 70);
+  g.fillText(word, 400, 70);
+  // Zigzag borders near the top and above the bare concrete foot.
+  const zigzag = (y, colour) => {
+    g.fillStyle = colour;
+    g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x <= 1024; x += 32) {
+      g.lineTo(x + 16, y - 22);
+      g.lineTo(x + 32, y);
+    }
+    g.lineTo(1024, y + 14);
+    g.lineTo(0, y + 14);
+    g.fill();
+  };
+  zigzag(22, "#111111");
+  zigzag(410, "#111111");
+  // The foot: bare, stained concrete.
+  g.fillStyle = "#5f5b56";
+  g.fillRect(0, 424, 1024, 88);
+  for (let i = 0; i < 300; i += 1) {
+    g.fillStyle = `rgba(30,25,20,${Math.random() * 0.25})`;
+    g.fillRect(Math.random() * 1024, 424 + Math.random() * 88, 2 + Math.random() * 6, 6 + Math.random() * 30);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+
 /** A soft round glow for the aircraft lights. */
 function glowTexture() {
   const c = document.createElement("canvas");
@@ -251,7 +344,7 @@ export class JoburgLandmarks {
         uWashColour: { value: new THREE.Color(o.washColour ?? 0xbfd9ff) },
         uHazeCut: { value: o.hazeCut ?? 0.3 },
         uTime: { value: 0 },
-        uMap: { value: this.signMap },
+        uMap: { value: o.map ?? this.signMap },
         fogColor: { value: new THREE.Color() },
         fogDensity: { value: 0 },
         fogNear: { value: 1 },
@@ -357,7 +450,7 @@ export class JoburgLandmarks {
       const g = place("MandelaBridge", LANDMARKS.bridge);
       const view = new THREE.Vector2(LANDMARKS.bridge.x, LANDMARKS.bridge.z).normalize();
       g.rotation.y = Math.atan2(view.x, view.y); // local x square to the line of sight
-      const yard = own(new THREE.PlaneGeometry(150, 84));
+      const yard = own(new THREE.PlaneGeometry(150, 60));
       yard.rotateX(-Math.PI / 2);
       part(g, yard, material(MODE.rails, { hazeCut: 0.28 }), 0.4);
       const white = material(MODE.concrete, { colour: 0xd9d9d4, wash: 0.75, washColour: 0x6fa8ff });
@@ -404,6 +497,32 @@ export class JoburgLandmarks {
       cableLines.frustumCulled = false;
       g.add(cableLines);
     }
+
+    // ---- Orlando Towers ----
+    // A cooling tower's waisted curve - a hyperbola, r = waist * sqrt(1 +
+    // ((y - y0) / b)^2) - spun round its axis by LatheGeometry, whose uv
+    // wraps the mural round it.
+    {
+      const g = place("OrlandoTowers", LANDMARKS.orlando);
+      const view = new THREE.Vector2(LANDMARKS.orlando.x, LANDMARKS.orlando.z).normalize();
+      g.rotation.y = Math.atan2(view.x, view.y);   // the pair side by side as you look
+      const H = 95;
+      const profile = [];
+      for (let y = 0; y <= H; y += 5) profile.push(new THREE.Vector2(15 * Math.sqrt(1 + ((y - 70) / 46.8) ** 2), y));
+      const lathe = own(new THREE.LatheGeometry(profile, 56));
+      for (const [x, design] of [[-32, 0], [32, 1]]) {
+        const map = own(muralTexture(design));
+        const mat = material(MODE.mural, { colour: 0x7a7570, wash: 1.1, washColour: 0xffd9a8, hazeCut: 0.28, map, side: THREE.DoubleSide });
+        part(g, lathe, mat, 0).position.x = x;
+      }
+      // The walkway between the tops, and its cables.
+      const deck = own(new THREE.BoxGeometry(34, 1.2, 2.4));
+      part(g, deck, material(MODE.concrete, { colour: 0x55524e, wash: 0.4 }), H - 2);
+      const wires = own(new THREE.BufferGeometry());
+      wires.setAttribute("position", new THREE.Float32BufferAttribute([-17, H + 4, 0, 17, H + 4, 0, -17, H + 4, 0, 0, H - 0.8, 0, 17, H + 4, 0, 0, H - 0.8, 0], 3));
+      g.add(new THREE.LineSegments(wires, own(new THREE.LineBasicMaterial({ color: 0x9a9a9a, fog: true }))));
+      beacon(g, H + 5, 4);
+    }
   }
 
   /** Spots the generic city leaves empty (x, z from the centre; radius), metres. */
@@ -418,6 +537,7 @@ export class JoburgLandmarks {
         const view = new THREE.Vector2(x, z).normalize();
         return { x: x - view.y * d, z: z + view.x * d, r: 40 };   // along the bridge
       }),
+      { ...LANDMARKS.orlando, r: 55 },
       // And the line of sight down to it from the roof.
       { x: LANDMARKS.bridge.x * 0.55, z: LANDMARKS.bridge.z * 0.55, r: 26 },
     ];

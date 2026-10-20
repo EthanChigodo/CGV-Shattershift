@@ -75,6 +75,7 @@ const TOWER_FRAGMENT = /* glsl */ `
   uniform float uCrush;
   uniform float uDark;    // the falling block's lights going out, 0..1
   uniform float uBlast;   // the failing floor's flash, 0..1
+  uniform float uHeight;  // its top, metres above the base
   uniform float uSeed;
   uniform float uTime;
   uniform vec3 fogColor;
@@ -105,6 +106,9 @@ const TOWER_FRAGMENT = /* glsl */ `
       float flick = mix(1.0, step(0.4, fract(sin(uTime * 23.0 + r * 50.0) * 9.1)), step(0.02, uDark) * falling);
       float lit = step(0.62, r) * (1.0 - falling * dies) * flick;
       glow += mix(vec3(1.0, 0.72, 0.42), vec3(0.62, 0.8, 1.0), step(0.75, hash(id + 2.0))) * pane * lit * 0.55;
+      // Floodlit crown, as on the city's towers - until the power goes.
+      float crown = exp(-max(uHeight - vRest.y, 0.0) / 13.0) * (0.55 + 0.45 * cos(along / 3.2 * 3.14159265));
+      glow += vec3(0.42, 0.37, 0.31) * vec3(1.0, 0.7, 0.42) * crown * 0.9 * (1.0 - uDark);
       // The blast: the failing floors burn orange-white.
       glow += vec3(1.0, 0.55, 0.2) * uBlast * exp(-abs(vRest.y - uCrush) / 5.0) * (0.6 + 0.8 * r) * 2.0;
     }
@@ -200,7 +204,7 @@ export class TowerCollapse {
     box.translate(0, (height + below) / 2 - below, 0);
     this.uniforms = {
       uDrop: { value: 0 }, uCrush: { value: fail }, uTilt: { value: 0 },
-      uDark: { value: 0 }, uBlast: { value: 0 }, uSeed: { value: seed }, uTime: { value: 0 },
+      uDark: { value: 0 }, uBlast: { value: 0 }, uSeed: { value: seed }, uTime: { value: 0 }, uHeight: { value: height },
       ...fogUniforms(),
     };
     this.tower = new THREE.Mesh(box, own(new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: TOWER_VERTEX, fragmentShader: TOWER_FRAGMENT, fog: true })));

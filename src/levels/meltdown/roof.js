@@ -52,6 +52,7 @@ import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
 import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
 import { TowerCollapse } from "./skyline-collapse.js";
+import { CbdBuildings } from "./cbd.js";
 import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
@@ -71,10 +72,11 @@ const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
  * Before the doors open, the first time you come up (once per page load, so
  * a retry isn't held up, and not in Endless): the camera at the north
  * parapet looks out over Johannesburg - from Ponte, across the Hillbrow
- * Tower, down to the Mandela Bridge on the streets (landmarks.js).
+ * Tower and out to the Orlando Towers, down to the Mandela Bridge on the
+ * streets (landmarks.js).
  * The banner shows over it.
  */
-const SKYLINE_SECONDS = 5.2;
+const SKYLINE_SECONDS = 6;
 /**
  * Towers across the street that come down as the fight goes on (at these
  * `chaos` levels; skyline-collapse.js). Placed where the roof camera sees
@@ -317,6 +319,7 @@ const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _skyB = new THREE.Vector3();
 const _skyC = new THREE.Vector3();
+const _skyD = new THREE.Vector3();
 
 /** Seconds a downed body takes to burn away to ash. */
 const ASH_SECONDS = 1.45;
@@ -1127,11 +1130,14 @@ export class RoofLevel {
     // Johannesburg: Hillbrow Tower, Ponte City and the Carlton Centre stand
     // among the generic towers, which leave their spots empty.
     this.landmarks = new JoburgLandmarks({ streetY: -160 });
+    // And right round you, the CBD itself (cbd.js): Art Deco, Hillbrow flats,
+    // red brick, and a domed civic building by the bridge.
+    this.cbd = new CbdBuildings({ streetY: -160 });
     this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
-    const clear = [...this.landmarks.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
+    const clear = [...this.landmarks.footprints, ...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
     this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3, clear });
     this.city.root.name = "Skyline";
-    this.root.add(this.city.root, this.landmarks.root, ...this.collapses.map((c) => c.root));
+    this.root.add(this.city.root, this.landmarks.root, this.cbd.root, ...this.collapses.map((c) => c.root));
     if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
   }
 
@@ -1649,6 +1655,7 @@ export class RoofLevel {
     this.fire.setTime(time);
     this.city?.update(dt, time, { haze: this.cityHaze });
     this.landmarks?.update(dt, time);
+    this.cbd?.update(dt, time);
     for (const c of this.collapses ?? []) {
       for (const e of c.update(dt, time)) {
         // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
@@ -1809,17 +1816,25 @@ export class RoofLevel {
     // camera; then a cut to the game camera (a swing round would turn the
     // view through 180 degrees - the doors face away from the game camera).
     if (t < 0) {
-      // The skyline: from Ponte's sign, across the Hillbrow Tower, and down
-      // to the Mandela Bridge on the streets - a curve through the three (de
+      // The skyline: from Ponte's sign, across the Hillbrow Tower, out to
+      // the Orlando Towers on the western horizon, and down to the Mandela
+      // Bridge on the streets - a cubic curve through the four (de
       // Casteljau) - drifting west along the parapet to the open west ledge,
       // where nothing of the roof is in the way of looking straight down.
       // Held on Ponte while the level card and the fade clear, then the sweep.
       const k = smooth(a.t, 1.4, a.lead - 0.2);
       out.camera.set(THREE.MathUtils.lerp(6, -14.5, k), 4.2 + k * 2.3, THREE.MathUtils.lerp(-EDGE + 1.5, -EDGE + 3, k));
-      const { bridge, ponte, hillbrow } = LANDMARKS;
-      const ab = _w.set(ponte.x, 14, ponte.z).lerp(_skyB.set(hillbrow.x, 60, hillbrow.z), k);
-      const bc = _skyB.set(hillbrow.x, 60, hillbrow.z).lerp(_skyC.set(bridge.x, -150, bridge.z), k);
-      out.look.copy(ab.lerp(bc, k));
+      const { bridge, ponte, hillbrow, orlando } = LANDMARKS;
+      const p0 = _w.set(ponte.x, 14, ponte.z);
+      const p1 = _skyB.set(hillbrow.x, 60, hillbrow.z);
+      const p2 = _skyC.set(orlando.x, -95, orlando.z);
+      const p3 = _skyD.set(bridge.x, -150, bridge.z);
+      p0.lerp(p1, k);
+      p1.lerp(p2, k);
+      p2.lerp(p3, k);
+      p0.lerp(p1, k);
+      p1.lerp(p2, k);
+      out.look.copy(p0.lerp(p1, k));
     } else if (t < ARRIVAL_CUT) {
       const dolly = smooth(t, 0.9, ARRIVAL_CUT);
       out.camera.set(-1.3, 1.8, LIFT_DOOR.z - 5.9).lerp(_w.set(-1.6, 2.0, LIFT_DOOR.z - 7.7), dolly);
@@ -2222,6 +2237,7 @@ export class RoofLevel {
     for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
     this.landmarks?.dispose();
+    this.cbd?.dispose();
     for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
