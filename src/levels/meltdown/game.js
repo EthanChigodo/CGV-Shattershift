@@ -129,7 +129,7 @@ const ROOF_LEAN_REACH = 14;
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
 const ROOF_NAMES = [
-  "scientistRadioman", "scientistRust", "patient", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight", "duffelBag",
+  "scientistRadioman", "scientistRust", "patient", "brute", "helicopter", "gadgetBrass", "gadgetCoil", "ventFan", "utilityBox", "alarmLight", "duffelBag",
 ];
 /** Endless roof: a supply drop of spheres every this many seconds survived. */
 const SUPPLY_SECONDS = 30;

@@ -16,6 +16,7 @@ import * as THREE from "../../three.js";
 import { GLTFLoader, BufferGeometryUtils } from "../../three-addons.js";
 import { buildCharacterTemplate, cloneCharacter } from "./characters.js";
 import { buildHelicopterTemplate } from "./helicopter.js";
+import { loadRiggedFor, riggedSlots } from "../../figure/rigged.js";
 
 /**
  * Models that arrive as many small meshes sharing a few materials. Every mesh
@@ -83,7 +84,12 @@ export const MELTDOWN_ASSETS = {
   patient: "patient.glb",
 };
 
-/** Characters, and the profile each is prepared with. */
+/**
+ * Characters, and the profile each is prepared with. A slot whose role is in
+ * assets/characters/manifest.json loads the team's rigged, animated model
+ * instead (src/figure/rigged.js ROLE_SLOTS); `brute` exists only that way
+ * (without it the roof's brute is a patient, scaled up).
+ */
 export const CHARACTER_ASSETS = {
   patient: { file: "patient.glb", profile: "patient" },
   playerFemale: { file: "player_female.glb", profile: "playerFemale" },
@@ -92,6 +98,7 @@ export const CHARACTER_ASSETS = {
   scientistRust: { file: "scientist_rust.glb", profile: "scientistRust" },
   scientistGood: { file: "scientist_good.glb", profile: "scientistGood" },
   scientistEvil: { file: "scientist_evil.glb", profile: "scientistEvil" },
+  brute: { file: null, profile: null },
 };
 
 /**
@@ -136,7 +143,11 @@ export function loadedAssetNames() {
 export async function loadMeltdownAssets(baseUrl, { onProgress, names } = {}) {
   const loader = new GLTFLoader();
   const wanted = names ?? Object.keys(MELTDOWN_ASSETS);
-  const entries = wanted.map((name) => [name, CHARACTER_ASSETS[name]?.file ?? MELTDOWN_ASSETS[name] ?? ROOF_ASSETS[name] ?? EXTRA_ASSETS[name]]).filter(([, file]) => file);
+  // Rigged characters (an empty manifest: none, and nothing changes).
+  const rigged = wanted.some((name) => CHARACTER_ASSETS[name]) ? await riggedSlots() : new Set();
+  const entries = wanted
+    .map((name) => [name, CHARACTER_ASSETS[name]?.file ?? MELTDOWN_ASSETS[name] ?? ROOF_ASSETS[name] ?? EXTRA_ASSETS[name] ?? (rigged.has(name) ? "(rigged)" : null)])
+    .filter(([name, file]) => file || rigged.has(name));
   const assets = new Map();
   let done = 0;
 
@@ -160,8 +171,21 @@ export async function loadMeltdownAssets(baseUrl, { onProgress, names } = {}) {
 }
 
 async function loadOne(loader, baseUrl, name, file) {
-  const gltf = await loader.loadAsync(new URL(file, baseUrl).href);
   const character = CHARACTER_ASSETS[name];
+  if (character) {
+    // The team's rigged, animated version first; today's model if it isn't there.
+    const template = await loadRiggedFor(name).catch((error) => {
+      console.warn(`[meltdown] rigged "${name}" failed, keeping today's model`, error);
+      return null;
+    });
+    if (template) {
+      const size = new THREE.Box3().setFromObject(template).getSize(new THREE.Vector3());
+      size.y = template.userData.character.height;
+      return { template, size, character: true, rigged: true };
+    }
+    if (!character.file) return null;
+  }
+  const gltf = await loader.loadAsync(new URL(file, baseUrl).href);
   if (character) {
     const template = buildCharacterTemplate(gltf.scene, character.profile);
     template.name = `Character_${name}`;

@@ -25,6 +25,7 @@
 
 import * as THREE from "../../three.js";
 import { BufferGeometryUtils, SkeletonUtils } from "../../three-addons.js";
+import { ClipRig, cloneRigged } from "../../figure/rigged.js";
 
 /* ------------------------------------------------------------------ */
 /* Profiles                                                             */
@@ -404,11 +405,27 @@ export function buildCharacterTemplate(scene, profileName) {
   return root;
 }
 
-/** Clone a character template; skinned ones need their own skeleton. */
+/**
+ * Clone a character template; skinned ones need their own skeleton. A rigged
+ * template (the team's animated characters, src/figure/rigged.js) clones
+ * with its clips; patient variants are dealt out in turn.
+ */
 export function cloneCharacter(template) {
+  if (template.userData.character?.rigged) return cloneRigged(template);
   const clone = template.userData.character?.skinned ? SkeletonUtils.clone(template) : template.clone(true);
   clone.userData.character = { ...template.userData.character };
   return clone;
+}
+
+/**
+ * The rig for a cloned character: a HumanoidRig (procedural, as always), or
+ * for a rigged character a ClipRig - the same calls, played with its
+ * animation clips, falling back to a HumanoidRig on its skeleton for any
+ * pose it has no clip for.
+ */
+export function createRig(model) {
+  if (model.userData.character?.rigged) return new ClipRig(model, { procedural: (root) => new HumanoidRig(root) });
+  return new HumanoidRig(model);
 }
 
 /* ------------------------------------------------------------------ */

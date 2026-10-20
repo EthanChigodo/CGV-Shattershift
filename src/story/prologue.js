@@ -27,7 +27,7 @@
 import * as THREE from "../three.js";
 import { RoomEnvironment } from "../three-addons.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
-import { cloneCharacter, HumanoidRig } from "../levels/meltdown/characters.js";
+import { cloneCharacter, createRig } from "../levels/meltdown/characters.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
 import { Companion, loadStoryCharacter } from "./companion.js";
 import { WardStage } from "./stages/ward.js";
@@ -410,7 +410,7 @@ export class Prologue {
       return g;
     }
     const model = cloneCharacter(asset.template);
-    const rig = new HumanoidRig(model);
+    const rig = createRig(model);
     if (rig.valid) rig.pose(pose);
     model.traverse((o) => {
       if (o.isMesh) o.frustumCulled = false;

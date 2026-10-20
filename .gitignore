@@ -10,3 +10,7 @@ dist/
 .audio-work/
 tests/versus/shots/
 tests/menu-stage/shots/
+
+# Character builds being checked before they ship (?characters=dev, tools/characters/README.md)
+assets/characters/dev
+characters-source/

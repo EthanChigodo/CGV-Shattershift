@@ -22,6 +22,7 @@
 import * as THREE from "../../three.js";
 import { cloneCharacter, rigPlayerMesh } from "./characters.js";
 import { applyFigureLook, savedHairColour, savedSkinTone } from "../../figure/look.js";
+import { RiggedBody, cloneRigged } from "../../figure/rigged.js";
 import { RunGait } from "./gait.js";
 
 /**
@@ -114,6 +115,12 @@ export class PlayerAvatar {
       this.body.remove(this.model);
       this.model = null;
     }
+    this.rigged?.dispose();
+    this.rigged = null;
+    if (template?.userData.character?.rigged) {
+      this._setRigged(template);
+      return;
+    }
     const model = cloneCharacter(template);
     const mesh = model.getObjectByName("CharacterMerged");
     if (!mesh) return;
@@ -146,12 +153,50 @@ export class PlayerAvatar {
   }
 
   /**
+   * The team's rigged Subject 07 (src/figure/rigged.js): clips in place of
+   * the shader rig. Everything that writes the rig's uniforms still can -
+   * the rigged body reads them - and the look takes the same calls.
+   */
+  _setRigged(template) {
+    const model = cloneRigged(template, { own: true });
+    const rigged = new RiggedBody(model);
+    this.rigged = rigged;
+    this.look = rigged.look;
+    this.look.setWear(this._wear ?? 0);
+    this.look.setGear(this._gear ?? false);
+    this.look.setSkinTone(this._skinTone ?? savedSkinTone());
+    this.look.setHairColour(this._hairColour ?? savedHairColour());
+    model.rotation.y = Math.PI;
+    this.model = model;
+    this.uniforms = rigged.uniforms;
+    this.body.add(model);
+    this.standIn.visible = false;
+    const body = rigged.bodyInfo;
+    this.shoulder.position.set(body.shoulderX + 0.08, body.shoulderY + 0.12, 0.02);
+    this.shoulderBase = this.shoulder.position.clone();
+    this.back.position.set(0, body.shoulderY - 0.3, Math.max(0.14, body.shoulderX * 0.62));
+    this.backBase = this.back.position.clone();
+    this.bodyInfo = body;
+    this.gait = null;
+    rigged.update(0, this);
+  }
+
+  /**
+   * A host that drives the rig's uniforms itself (the lift's Performer)
+   * calls this after writing them, so a rigged body follows. No-op otherwise.
+   */
+  syncRig(dt) {
+    this.rigged?.update(dt, this);
+  }
+
+  /**
    * An overhand throw with the right arm (the Foundry, where the spheres are
    * thrown by hand): wind up behind the head, whip through, follow across
    * the body. The ball should leave the hand RELEASE seconds in.
    */
   throw() {
     this.throwT = 0;
+    this.rigged?.throw();
   }
 
   /** Wear a bag (an Object3D) on the back; null takes it off. */
@@ -165,6 +210,7 @@ export class PlayerAvatar {
   releasePoint(out = new THREE.Vector3()) {
     const b = this.bodyInfo;
     this.root.updateMatrixWorld(true);
+    if (this.rigged?.releasePoint(out)) return out;
     if (!b) return this.body.localToWorld(out.set(0.3, 1.6, -0.5));
     return this.body.localToWorld(out.set(b.shoulderX * 0.8, b.shoulderY + 0.22, -(b.armLength ?? 0.55) * 0.85));
   }
@@ -250,7 +296,8 @@ export class PlayerAvatar {
     this.body.rotation.z = this.lean;
     this.body.rotation.x = -this.lurch * 0.35;
     const squash = g ? g.squash : 0;
-    this.body.position.y = g ? (grounded ? g.bob : 0) - squash * 0.05 : running && height <= 0.02 && !sliding ? Math.abs(Math.sin(this.phase)) * 0.06 : 0;
+    // (A rigged body's clips carry their own bob.)
+    this.body.position.y = this.rigged ? 0 : g ? (grounded ? g.bob : 0) - squash * 0.05 : running && height <= 0.02 && !sliding ? Math.abs(Math.sin(this.phase)) * 0.06 : 0;
     this.body.scale.y = 1 - squash * 0.05;
 
     // The throw, if one is under way.
@@ -313,6 +360,18 @@ export class PlayerAvatar {
       this.standIn.scale.y = 1 - this.crouch * 0.45;
       this.standIn.rotation.z = running ? Math.sin(this.phase * 2) * 0.05 : 0;
     }
+    // The rigged body: the same state, as clips (it places the mounts itself).
+    this.rigged?.update(dt, this, {
+      speed: sliding ? speed : pushing ? Math.max(speed, 1.5) : speed,
+      lateral: lateralVel,
+      airborne: height > 0.05,
+      sliding,
+      stumble,
+      hold: this.hold,
+      reachUp: this.reachUp,
+      rest: this.uniforms?.uRest.value ?? 0,
+      dodge: sliding && speed > 9,
+    });
 
     // The contact shadow shrinks and fades as the feet leave the floor.
     const lift = THREE.MathUtils.clamp(height / 1.6, 0, 1);
@@ -351,6 +410,8 @@ export class PlayerAvatar {
     u.uLegL.value.set((0.55 * s(kick + 2.6) - 0.15) * k, (0.85 + 0.6 * s(kick + 3.8)) * k);
     u.uTwist.value = (0.38 * s(time * 3.1) + 0.12 * s(time * 7.9)) * k;
     u.uLean.value = (-0.32 + 0.28 * s(time * 2.3)) * k;
+    // A rigged body: its fall clip.
+    this.rigged?.flail(time, this);
   }
 
   /** Damage: 0 clean, 0.33 dusty, 0.66 bloodied - see src/figure/look.js. */
