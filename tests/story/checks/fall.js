@@ -78,9 +78,11 @@ export async function run(page, { shots }) {
     const f = __t.f;
     const out = { phase, active: !!f?.active, kind: f?.kind, state: __dbg.state, fx: __dbg.deathFx.playing, cutscene: document.body.classList.contains("story-cutscene") };
     // The chase: close to the body and dropping with it.
-    __t.step(24);
+    // (The arms windmill: their reach swings 0..0.8, so take its peak over the frames.)
     const u = m.avatar.uniforms;
-    out.flail = u ? { hold: u.uHold.value, reach: +u.uReachUp.value.toFixed(2), gait: u.uGait.value } : null;
+    let reach = 0;
+    for (let i = 0; i < 24; i += 1) { __t.step(1); if (u) reach = Math.max(reach, u.uReachUp.value); }
+    out.flail = u ? { hold: u.uHold.value, reach: +reach.toFixed(2), gait: u.uGait.value } : null;
     out.chaseGap = +m.camera.position.distanceTo(f.body.p).toFixed(2);
     out.camY = +m.camera.position.y.toFixed(1);
     out.facade = f.facade.visible;
