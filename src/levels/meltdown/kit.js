@@ -58,6 +58,9 @@ export function heatSignature(object) {
       if (!material || material.userData.heat || !("emissive" in material)) continue;
       material.userData.heat = true;
       const before = material.onBeforeCompile;
+      // Added to the layers already on it (the patients' grime, a rigged
+      // figure's skin), or two different shaders would share one program.
+      const key = material.customProgramCacheKey.call(material);
       material.onBeforeCompile = (shader, renderer) => {
         before?.call(material, shader, renderer);
         shader.uniforms.uThermalHeat = THERMAL_HEAT;
@@ -67,10 +70,13 @@ export function heatSignature(object) {
             if (uThermalHeat > 0.001) {
               float rim = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
               vec3 heat = mix(vec3(1.0, 0.42, 0.12), vec3(1.0, 0.96, 0.9), 0.35 + 0.65 * rim);
-              totalEmissiveRadiance += heat * uThermalHeat * (0.55 + 1.6 * rim * rim);
+              // Full sight (the serum) fills the body; the roof's faint
+              // standing glow is only a rim, so the skin keeps its colour.
+              float body = smoothstep(0.2, 0.45, uThermalHeat);
+              totalEmissiveRadiance += heat * uThermalHeat * (0.55 * body + 1.6 * rim * rim * rim);
             }`);
       };
-      material.customProgramCacheKey = () => "heat-signature";
+      material.customProgramCacheKey = () => `${key}+heat-signature`;
       material.needsUpdate = true;
     }
   });

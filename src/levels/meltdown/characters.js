@@ -26,6 +26,7 @@
 import * as THREE from "../../three.js";
 import { BufferGeometryUtils, SkeletonUtils } from "../../three-addons.js";
 import { ClipRig, cloneRigged } from "../../figure/rigged.js";
+import { dirtyClone } from "../../figure/grime.js";
 
 /* ------------------------------------------------------------------ */
 /* Profiles                                                             */
@@ -414,6 +415,8 @@ export function cloneCharacter(template) {
   if (template.userData.character?.rigged) return cloneRigged(template);
   const clone = template.userData.character?.skinned ? SkeletonUtils.clone(template) : template.clone(true);
   clone.userData.character = { ...template.userData.character };
+  // The patients: filthy, each a little differently (src/figure/grime.js).
+  if (clone.userData.character.profile === "patient") dirtyClone(clone);
   return clone;
 }
 
