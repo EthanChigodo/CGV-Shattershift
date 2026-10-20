@@ -70,11 +70,11 @@ const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
 /**
  * Before the doors open, the first time you come up (once per page load, so
  * a retry isn't held up, and not in Endless): the camera at the north
- * parapet looks out over Johannesburg - from the Carlton Centre across Ponte
- * to the Hillbrow Tower (landmarks.js).
+ * parapet looks out over Johannesburg - from Ponte, across the Hillbrow
+ * Tower, down to the Mandela Bridge on the streets (landmarks.js).
  * The banner shows over it.
  */
-const SKYLINE_SECONDS = 3.6;
+const SKYLINE_SECONDS = 5.2;
 /**
  * Towers across the street that come down as the fight goes on (at these
  * `chaos` levels; skyline-collapse.js). Placed where the roof camera sees
@@ -1809,13 +1809,16 @@ export class RoofLevel {
     // camera; then a cut to the game camera (a swing round would turn the
     // view through 180 degrees - the doors face away from the game camera).
     if (t < 0) {
-      // The skyline: drifting west along the parapet as the view sweeps
-      // east to north - a curve through the three landmarks (de Casteljau).
-      const k = smooth(a.t, 0, a.lead);
-      out.camera.set(THREE.MathUtils.lerp(7, -3, k), 4.2 + k * 1.4, -EDGE + 1.5);
-      const { carlton, ponte, hillbrow } = LANDMARKS;
-      const ab = _w.set(carlton.x, -15, carlton.z).lerp(_skyB.set(ponte.x, 16, ponte.z), k);
-      const bc = _skyB.set(ponte.x, 16, ponte.z).lerp(_skyC.set(hillbrow.x, 42, hillbrow.z), k);
+      // The skyline: from Ponte's sign, across the Hillbrow Tower, and down
+      // to the Mandela Bridge on the streets - a curve through the three (de
+      // Casteljau) - drifting west along the parapet to the open west ledge,
+      // where nothing of the roof is in the way of looking straight down.
+      // Held on Ponte while the level card and the fade clear, then the sweep.
+      const k = smooth(a.t, 1.4, a.lead - 0.2);
+      out.camera.set(THREE.MathUtils.lerp(6, -14.5, k), 4.2 + k * 2.3, THREE.MathUtils.lerp(-EDGE + 1.5, -EDGE + 3, k));
+      const { bridge, ponte, hillbrow } = LANDMARKS;
+      const ab = _w.set(ponte.x, 14, ponte.z).lerp(_skyB.set(hillbrow.x, 60, hillbrow.z), k);
+      const bc = _skyB.set(hillbrow.x, 60, hillbrow.z).lerp(_skyC.set(bridge.x, -150, bridge.z), k);
       out.look.copy(ab.lerp(bc, k));
     } else if (t < ARRIVAL_CUT) {
       const dolly = smooth(t, 0.9, ARRIVAL_CUT);

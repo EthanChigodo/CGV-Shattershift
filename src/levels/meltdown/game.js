@@ -2203,7 +2203,7 @@ export class MeltdownGame {
     this.fade.override = null;
     this.fade.value = 1;
     this.fade.target = 0;
-    this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "HOLD ON", 3200);
+    this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "JOHANNESBURG // HOLD ON", 3200);
     this.events.emit("phase", { phase: "roof" });
   }
 
