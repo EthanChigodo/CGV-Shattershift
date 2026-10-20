@@ -52,6 +52,7 @@ import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
 import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
 import { TowerCollapse } from "./skyline-collapse.js";
+import { CbdBuildings } from "./cbd.js";
 import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
@@ -1127,11 +1128,14 @@ export class RoofLevel {
     // Johannesburg: Hillbrow Tower, Ponte City and the Carlton Centre stand
     // among the generic towers, which leave their spots empty.
     this.landmarks = new JoburgLandmarks({ streetY: -160 });
+    // And right round you, the CBD itself (cbd.js): Art Deco, Hillbrow flats,
+    // red brick, and a domed civic building by the bridge.
+    this.cbd = new CbdBuildings({ streetY: -160 });
     this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
-    const clear = [...this.landmarks.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
+    const clear = [...this.landmarks.footprints, ...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
     this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3, clear });
     this.city.root.name = "Skyline";
-    this.root.add(this.city.root, this.landmarks.root, ...this.collapses.map((c) => c.root));
+    this.root.add(this.city.root, this.landmarks.root, this.cbd.root, ...this.collapses.map((c) => c.root));
     if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
   }
 
@@ -1649,6 +1653,7 @@ export class RoofLevel {
     this.fire.setTime(time);
     this.city?.update(dt, time, { haze: this.cityHaze });
     this.landmarks?.update(dt, time);
+    this.cbd?.update(dt, time);
     for (const c of this.collapses ?? []) {
       for (const e of c.update(dt, time)) {
         // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
@@ -2222,6 +2227,7 @@ export class RoofLevel {
     for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
     this.landmarks?.dispose();
+    this.cbd?.dispose();
     for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();

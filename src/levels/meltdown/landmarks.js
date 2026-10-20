@@ -357,7 +357,7 @@ export class JoburgLandmarks {
       const g = place("MandelaBridge", LANDMARKS.bridge);
       const view = new THREE.Vector2(LANDMARKS.bridge.x, LANDMARKS.bridge.z).normalize();
       g.rotation.y = Math.atan2(view.x, view.y); // local x square to the line of sight
-      const yard = own(new THREE.PlaneGeometry(150, 84));
+      const yard = own(new THREE.PlaneGeometry(150, 60));
       yard.rotateX(-Math.PI / 2);
       part(g, yard, material(MODE.rails, { hazeCut: 0.28 }), 0.4);
       const white = material(MODE.concrete, { colour: 0xd9d9d4, wash: 0.75, washColour: 0x6fa8ff });
