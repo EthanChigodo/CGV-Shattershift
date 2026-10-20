@@ -88,11 +88,11 @@ export class PowerupBanner {
     this.cardText = el("p", "pu-card-text", info);
     this.cardTime = el("div", "pu-card-stats", info);
     const act = el("div", "pu-card-action", info);
-    el("small", null, act).textContent = "WHAT TO DO";
+    el("small", null, act).textContent = "What to do";
     this.cardAction = el("span", null, act);
     this.cardButton = el("button", "pu-card-button", info);
     this.cardButton.type = "button";
-    this.cardButton.innerHTML = "<span>GOT IT</span><i>&#9654;</i>";
+    this.cardButton.innerHTML = "<span>Got it</span><i>&#9654;</i>";
     // (With a controller in use, Space reads as its ✕ / A and the rest goes: src/systems/key-glyphs.js.)
     el("p", "pu-card-keys", info).innerHTML = "<span data-pad-hide><kbd>Click</kbd> </span><kbd>Space</kbd><span data-pad-hide> or <kbd>Enter</kbd></span> to carry on";
     this.open = false;
@@ -127,10 +127,10 @@ export class PowerupBanner {
     this.cardAction.textContent = SERUM_ACTIONS[def.key] ?? "";
     const stat = (label, value) => `<div><small>${label}</small><b>${value}</b></div>`;
     // Restoration works at once: nothing to time.
-    this.cardEyebrow.innerHTML = `<i class="pu-dot"></i>NEW SERUM ACQUIRED <span>// ${def.instant ? "WORKS AT ONCE" : "TIME HELD"}</span>`;
+    this.cardEyebrow.innerHTML = `<i class="pu-dot"></i>New serum <span>· ${def.instant ? "works at once" : "for a while"}</span>`;
     this.cardTime.innerHTML = def.instant
-      ? stat("GIVES", `+${def.spheres} spheres`) + (def.heal ? stat("AND", "Full integrity") : "") + stat("LASTS", "Instant")
-      : stat("LASTS", `${def.duration} s`) + (def.charges ? stat("OR", `${def.charges} hits`) : "") + stat("TIMER", "Top of screen");
+      ? stat("Gives", `+${def.spheres} spheres`) + (def.heal ? stat("And", "Full integrity") : "") + stat("Lasts", "Instant")
+      : stat("Lasts", `${def.duration} s`) + (def.charges ? stat("Or", `${def.charges} hits`) : "") + stat("Timer", "Top of screen");
     const picture = serumPicture(def.key);
     this.cardArt.hidden = !picture;
     if (picture) this.cardArt.src = picture;

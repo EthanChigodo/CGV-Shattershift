@@ -47,7 +47,7 @@ export class VersusLobby {
     this.root.innerHTML = `
       <div class="vs-lobby-inner">
         <header class="vs-lobby-head">
-          <p class="mono-label">VERSUS // LOCAL // TWO PLAYERS // ONE SCREEN</p>
+          <p class="mono-label">Versus · two players, one screen</p>
           <h1 class="vs-lobby-title">ROOFTOP<span>SHOWDOWN</span></h1>
           <p class="vs-lobby-pitch">Two Subjects on the burning roof, one seat on the helicopter. Fight the horde - every kill brings it sooner - then get to the ladder first, and keep the other one off it.</p>
         </header>
@@ -206,7 +206,7 @@ export class VersusLobby {
     const pads = this.input.padList();
     this.root.querySelector(".vs-pads").textContent = pads.length
       ? `${pads.length} CONTROLLER${pads.length === 1 ? "" : "S"} CONNECTED`
-      : "NO CONTROLLER FOUND // PLUG ONE IN AND PRESS A BUTTON, OR SHARE THE KEYBOARD";
+      : "No controller found - plug one in and press a button, or share the keyboard";
     this._renderGo();
   }
 

@@ -1,58 +1,65 @@
 /*
  * The mash prompt: a reaction that fills a bar by tapping a key (the lift's
- * LOCK IT, the Skyline's SPRINT, the Labs' PUSH IT OFF - src/story/reaction.js).
+ * LOCK IT, the Skyline's SPRINT, the Labs' PUSH IT OFF - src/story/reaction.js),
+ * in the NIGHTFALL look (src/ui/theme.css).
  *
  * Beta feedback said these were hard to fill; the tuning is in reaction.js
- * (MASH). This makes the prompt easy to read while you hammer it: the key is
- * half as big again and beckons until the first press, then pulses with
- * every counted press; the bar is a thick track ticked off in presses (one
- * cell per press, from --step) that eases up and bumps with each one, so
- * every tap visibly does something. The classes are StoryUI's own
+ * (MASH). This makes the prompt easy to read while you hammer it, calmly:
+ * the key is larger and breathes until the first press, then gives a small
+ * kick with every counted press (its ring flashing ember); the bar is a fine
+ * hairline ticked off in presses (one cell per press, from --step) that
+ * eases up with each one. The classes are StoryUI's own
  * (src/story/story-ui.js: .story-react.mash, .tap-a / .tap-b), layered on
- * src/story/story.css; colours from the theme's tokens (src/ui/theme.css)
- * where it is loaded, with fallbacks.
+ * src/story/story.css.
  */
 
-.story-react.mash { gap: 18px; }
-.story-react.mash .label { font-size: 15px; letter-spacing: 0.22em; }
+.story-react.mash { gap: 20px; }
+.story-react.mash .label { font-size: 13.5px; }
 
-/* The key: big, beckoning until the first press. */
-.story-react.mash .story-key { width: 112px; height: 112px; animation: mash-beckon 0.5s ease-in-out infinite alternate; }
-.story-react.mash .story-key b { font-size: 36px; }
-.story-react.mash .story-key.wide b { font-size: 20px; letter-spacing: 0.14em; }
-.story-react.mash .story-key circle { stroke-width: 6; }
+/* The key: larger, breathing until the first press. */
+.story-react.mash .story-key { width: 96px; height: 96px; animation: mash-beckon 1s var(--ease-in-out) infinite alternate; }
+.story-react.mash .story-key b { font-size: 32px; }
+.story-react.mash .story-key.wide b { font-size: 13px; letter-spacing: 0.2em; padding-left: 0.2em; }
+.story-react.mash .story-key circle { stroke-width: 1.5; }
+.story-react.mash .story-key .timer { stroke-width: 2; }
 
-/* Each press: a squash and a punch out, the ring flashing. Two copies of
-   the same animation, swapped per press, so it restarts every time. */
-.story-react.mash .story-key.tap-a { animation: mash-tap-a 0.2s ease-out; }
-.story-react.mash .story-key.tap-b { animation: mash-tap-b 0.2s ease-out; }
+/* Each press: a small kick, the ring flashing ember. Two copies of the same
+   animation, swapped per press, so it restarts every time. */
+.story-react.mash .story-key.tap-a { animation: mash-tap-a 0.22s var(--ease-out); }
+.story-react.mash .story-key.tap-b { animation: mash-tap-b 0.22s var(--ease-out); }
 .story-react.mash .story-key.tap-a circle.track,
-.story-react.mash .story-key.tap-b circle.track { animation: mash-ring 0.25s ease-out; }
+.story-react.mash .story-key.tap-b circle.track { animation: mash-ring 0.3s ease-out; }
 
-/* The bar: a thick track, one cell per press. */
+/* The bar: a hairline, one cell per press. */
 .story-react.mash .bar {
-  position: relative; width: min(440px, 72vw); height: 24px; border: 2px solid rgba(255, 255, 255, 0.8); border-radius: 3px;
-  background: rgba(0, 0, 0, 0.66); box-shadow: 0 0 20px rgba(0, 0, 0, 0.6); transform-origin: 50% 50%;
+  position: relative;
+  width: min(360px, 66vw);
+  height: 3px;
+  background: var(--line);
+  transform-origin: 50% 50%;
 }
 .story-react.mash .bar i {
-  background: linear-gradient(90deg, var(--glass, #7ff3ff), #ffffff);
-  box-shadow: 0 0 14px var(--glass, #7ff3ff);
+  background: var(--text);
+  box-shadow: 0 0 10px rgba(244, 240, 232, 0.45);
   /* Up in a quick ease, so the jump of each press reads; the drain is per frame. */
-  transition: width 0.09s ease-out;
+  transition: width 0.12s var(--ease-out);
 }
 .story-react.mash .bar::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(var(--step, 100%) - 2px), rgba(0, 0, 0, 0.55) calc(var(--step, 100%) - 2px) var(--step, 100%));
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(var(--step, 100%) - 2px), rgba(4, 6, 9, 0.9) calc(var(--step, 100%) - 2px) var(--step, 100%));
 }
-.story-react.mash .bar.tap-a { animation: mash-bump-a 0.2s ease-out; }
-.story-react.mash .bar.tap-b { animation: mash-bump-b 0.2s ease-out; }
+.story-react.mash .bar.tap-a { animation: mash-bump-a 0.22s var(--ease-out); }
+.story-react.mash .bar.tap-b { animation: mash-bump-b 0.22s var(--ease-out); }
 
-@keyframes mash-beckon { from { transform: scale(1); } to { transform: scale(1.1); } }
-@keyframes mash-tap-a { 0% { transform: scale(0.84); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
-@keyframes mash-tap-b { 0% { transform: scale(0.84); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
-@keyframes mash-ring { from { stroke: var(--caution, #ffc21a); } to { stroke: rgba(255, 255, 255, 0.18); } }
-@keyframes mash-bump-a { 0% { transform: scaleY(1.45); filter: brightness(1.6); } 100% { transform: scaleY(1); filter: none; } }
-@keyframes mash-bump-b { 0% { transform: scaleY(1.45); filter: brightness(1.6); } 100% { transform: scaleY(1); filter: none; } }
+@keyframes mash-beckon { from { transform: scale(1); } to { transform: scale(1.05); } }
+@keyframes mash-tap-a { 0% { transform: scale(0.92); } 50% { transform: scale(1.07); } 100% { transform: scale(1); } }
+@keyframes mash-tap-b { 0% { transform: scale(0.92); } 50% { transform: scale(1.07); } 100% { transform: scale(1); } }
+@keyframes mash-ring { from { stroke: var(--ember); } to { stroke: var(--line-2); } }
+@keyframes mash-bump-a { 0% { transform: scaleY(1.8); filter: brightness(1.4); } 100% { transform: scaleY(1); filter: none; } }
+@keyframes mash-bump-b { 0% { transform: scaleY(1.8); filter: brightness(1.4); } 100% { transform: scaleY(1); filter: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   .story-react.mash .story-key, .story-react.mash .bar { animation: none !important; }

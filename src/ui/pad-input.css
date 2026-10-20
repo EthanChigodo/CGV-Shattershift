@@ -5,11 +5,12 @@
  * .pad-generic); the mouse or keyboard takes it off again.
  */
 
-/* The menu item the pad is on: a setting's whole row, or the control itself. */
+/* The menu item the pad is on: a setting's whole row, or the control itself
+   - a fine ember line, the theme's focus colour (src/ui/theme.css). */
 html.pad-active .pad-focus,
 html.pad-active :focus-visible {
-  outline: 3px solid var(--hazard);
-  outline-offset: 3px;
+  outline: 1.5px solid var(--ember);
+  outline-offset: 4px;
 }
 
 /* A row with the ring: one ring, not a second on the slider or box in it. */

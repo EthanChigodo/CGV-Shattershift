@@ -6,7 +6,9 @@ export class AmmoRecoveryHint {
   constructor(scene) {
     this.status = document.createElement("div");
     this.status.setAttribute("role", "status");
-    this.status.style.cssText = "position:fixed;bottom:16%;left:50%;transform:translateX(-50%);max-width:90vw;text-align:center;color:#ffd23f;background:#101820e8;padding:10px 16px;border:1px solid #ffd23f;border-radius:6px;font:600 14px system-ui;z-index:30;pointer-events:none";
+    // The NIGHTFALL look (src/ui/theme.css): a line of warn-coloured text on
+    // the picture just under the crosshair - no box.
+    this.status.style.cssText = "position:fixed;top:64%;left:50%;transform:translateX(-50%);width:max-content;max-width:min(620px,84vw);text-align:center;color:var(--warn,#ffc457);font:450 15px/1.5 var(--font,system-ui);letter-spacing:.01em;text-shadow:0 1px 2px rgba(0,0,0,.7),0 0 16px rgba(0,0,0,.6),0 0 30px rgba(0,0,0,.4);z-index:30;pointer-events:none";
     document.body.append(this.status);
     this.marker = new THREE.Mesh(new THREE.OctahedronGeometry(0.85), new THREE.MeshBasicMaterial({ color: 0xffd23f, wireframe: true }));
     this.marker.name = "AmmoRecoveryHint";
@@ -22,10 +24,10 @@ export class AmmoRecoveryHint {
   update({ active, ammunition, cost, seconds = EMERGENCY_RECHARGE_SECONDS, contact = false, targets = [], player, routeDistance = null, filter = () => true, solids = [] }) {
     this.hide();
     if (!active || ammunition > 0 && ammunition >= cost) return;
-    const instruction = contact ? "RUN THROUGH A SACK OR SHOOT IT" : "SHOOT A SPHERE CACHE";
+    const instruction = contact ? "Run through a sack or shoot it" : "Shoot a sphere cache";
     const text = ammunition < 1
-      ? `NO SPHERES — ${instruction}. +1 AFTER ${seconds}s EMPTY IN PLAY. ${cost === 0 ? "OVERDRIVE: THROWS ARE FREE." : "USE GLASS (Q/E)."}`
-      : "NOT ENOUGH SPHERES — SWITCH TO GLASS (Q/E), OR COLLECT A CACHE.";
+      ? `No spheres. ${instruction} - one comes back after ${seconds} s empty in play. ${cost === 0 ? "Overdrive: throws are free." : "Use glass (Q / E)."}`
+      : "Not enough spheres. Switch to glass (Q / E), or collect a cache.";
     if (this.status.textContent !== text) this.status.textContent = text;
     this.status.hidden = false;
     if (ammunition > 0 || !player) return;

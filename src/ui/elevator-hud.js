@@ -55,9 +55,9 @@ export class ElevatorHud {
     this.clampsEl = element("div", "elv-clamps");
     this.clampsEl.hidden = true;
     this.monitorEl = element("div", "elv-monitor");
-    this.monitorEl.append(element("span", null, "DIAGNOSTIC // ORTHO"));
+    this.monitorEl.append(element("span", null, "Diagnostic · orthographic"));
     this.monitorEl.hidden = true;
-    this.fullLabel = element("div", "elv-diag-label", "DIAGNOSTIC VIEW // ORTHOGRAPHIC // TOP");
+    this.fullLabel = element("div", "elv-diag-label", "Diagnostic view · orthographic, from above");
     this.fullLabel.hidden = true;
     panel.hidden = !showPanel;
     // Cutscenes: letterbox bars and subtitles.
@@ -92,7 +92,8 @@ export class ElevatorHud {
 
   /** @param {string|null} text  null clears it. @param {"info"|"danger"|"good"} tone */
   alert(text, tone = "info") {
-    this.alertEl.textContent = text ?? "";
+    // (The rides' alerts still carry the old "A // B" separators.)
+    this.alertEl.textContent = String(text ?? "").replace(/\s*\/\/\s*/g, " · ");
     this.alertEl.className = `elv-alert ${text ? `show ${tone}` : ""}`;
   }
 
@@ -105,7 +106,8 @@ export class ElevatorHud {
   caption(who, text) {
     this.captionEl.classList.toggle("show", !!text);
     if (!text) return;
-    this.captionWho.textContent = who ? `${who}: ` : "";
+    // The speaker sits small over the line (elevator-hud.css), so no colon.
+    this.captionWho.textContent = who ?? "";
     this.captionText.textContent = text;
   }
 
