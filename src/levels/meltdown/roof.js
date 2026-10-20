@@ -50,7 +50,7 @@ import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
-import { JoburgLandmarks } from "./landmarks.js";
+import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
 import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
@@ -66,6 +66,14 @@ const ARRIVAL_CUT = 2.9;
 /** Where the arrival hands the camera over: the host's roof camera offsets. */
 const ARRIVAL_CAMERA = new THREE.Vector3(0, 11.5, 8.5);
 const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
+/**
+ * Before the doors open, the first time you come up (once per page load, so
+ * a retry isn't held up, and not in Endless): the camera at the north
+ * parapet looks out over Johannesburg - from the Carlton Centre across Ponte
+ * to the Hillbrow Tower (landmarks.js). The banner shows over it.
+ */
+const SKYLINE_SECONDS = 3.6;
+let skylineShown = false;
 
 const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
 /** Half the hatch opening (1.2 m) less a little: your feet have to be over the hole, not the rim. */
@@ -295,6 +303,8 @@ const SKY_FRAGMENT = /* glsl */ `
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _skyB = new THREE.Vector3();
+const _skyC = new THREE.Vector3();
 
 /** Seconds a downed body takes to burn away to ash. */
 const ASH_SECONDS = 1.45;
@@ -1739,7 +1749,8 @@ export class RoofLevel {
    * player are, the host applies it. PLACEHOLDER staging (see elevator.js).
    */
   beginArrival() {
-    this._arrival = { t: 0, opened: false };
+    this._arrival = { t: 0, opened: false, lead: this.endless || skylineShown ? 0 : SKYLINE_SECONDS };
+    skylineShown = true;
     this._liftClose = 0;
     this.lift?.userData.lift.setDoors(0);
     this.cutscene = {
@@ -1755,7 +1766,8 @@ export class RoofLevel {
     const a = this._arrival;
     const out = this.cutscene;
     a.t += dt;
-    const t = a.t;
+    // Arrival time: negative while the skyline shot plays.
+    const t = a.t - a.lead;
     const smooth = THREE.MathUtils.smoothstep;
     const lift = this.lift?.userData.lift;
     if (!a.opened && t > 0.7) {
@@ -1763,7 +1775,7 @@ export class RoofLevel {
       this.events.emit("lift-open", {});
     }
     lift?.setDoors((t - 0.7) / 0.9);
-    lift?.setLight(t < 0.5 ? (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1);
+    lift?.setLight(t >= 0 && t < 0.5 ? (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1);
 
     // Walk out of the cabin to the spawn point.
     const walk = smooth(t, 1.2, 2.8);
@@ -1776,7 +1788,16 @@ export class RoofLevel {
     // In front of the housing, dollying back as the player walks toward the
     // camera; then a cut to the game camera (a swing round would turn the
     // view through 180 degrees - the doors face away from the game camera).
-    if (t < ARRIVAL_CUT) {
+    if (t < 0) {
+      // The skyline: drifting west along the parapet as the view sweeps
+      // east to north - a curve through the three landmarks (de Casteljau).
+      const k = smooth(a.t, 0, a.lead);
+      out.camera.set(THREE.MathUtils.lerp(7, -3, k), 4.2 + k * 1.4, -EDGE + 1.5);
+      const { carlton, ponte, hillbrow } = LANDMARKS;
+      const ab = _w.set(carlton.x, -15, carlton.z).lerp(_skyB.set(ponte.x, 16, ponte.z), k);
+      const bc = _skyB.set(ponte.x, 16, ponte.z).lerp(_skyC.set(hillbrow.x, 42, hillbrow.z), k);
+      out.look.copy(ab.lerp(bc, k));
+    } else if (t < ARRIVAL_CUT) {
       const dolly = smooth(t, 0.9, ARRIVAL_CUT);
       out.camera.set(-1.3, 1.8, LIFT_DOOR.z - 5.9).lerp(_w.set(-1.6, 2.0, LIFT_DOOR.z - 7.7), dolly);
       out.look.set(0, 1.3, LIFT_DOOR.z).lerp(_w.copy(out.player).setY(1.2), smooth(t, 1.2, 2.4));
