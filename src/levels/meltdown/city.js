@@ -60,7 +60,7 @@ function windowTile(seed, { lit = 0.3, warm = 0.8, cool = "160,200,255" } = {}) 
 function worldWindows(material, tileW = 18, tileH = 52) {
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;")
       .replace("#include <fog_vertex>", `#include <fog_vertex>
         mat4 cityM = modelMatrix;
         #ifdef USE_INSTANCING
@@ -70,18 +70,29 @@ function worldWindows(material, tileW = 18, tileH = 52) {
           vCityHash = 0.0;
         #endif
         vCityPos = (cityM * vec4(position, 1.0)).xyz;
+        vCityTop = (cityM * vec4(0.0, 1.0, 0.0, 1.0)).y;   // the unit box's top
         vCityNormal = normalize(mat3(cityM) * normal);`);
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;")
       .replace("#include <emissivemap_fragment>", `
         vec2 cuv = abs(vCityNormal.x) > 0.5 ? vec2(vCityPos.z, vCityPos.y) : vec2(vCityPos.x, vCityPos.y);
         cuv = cuv / vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)}) + vec2(vCityHash * 7.0, vCityHash * 3.0);
         vec4 cityWindows = texture2D(emissiveMap, cuv);
         // Roofs have no windows; the lowest floors fade into the haze.
         cityWindows.rgb *= step(abs(vCityNormal.y), 0.5);
-        totalEmissiveRadiance *= cityWindows.rgb;`);
+        totalEmissiveRadiance *= cityWindows.rgb;
+        // Floodlit crowns: most towers have lamps along the parapet washing
+        // the top floors - warm sodium or cool white - in pools between the
+        // lamps, fading down the facade. Lit stone, not just a dark box.
+        float cityWall = step(abs(vCityNormal.y), 0.5);
+        float cityBelow = max(vCityTop - vCityPos.y, 0.0);
+        float cityFloodOn = step(0.3, fract(vCityHash * 7.13));
+        vec3 cityFlood = mix(vec3(1.0, 0.7, 0.42), vec3(0.72, 0.84, 1.0), step(0.72, fract(vCityHash * 3.7)));
+        float cityPools = 0.55 + 0.45 * cos(cuv.x * 6.2831853 * 2.0);
+        vec3 cityStone = mix(diffuseColor.rgb * 3.0, vec3(0.42, 0.37, 0.31), 0.55);
+        totalEmissiveRadiance += cityStone * cityFlood * exp(-cityBelow / 20.0) * cityPools * cityFloodOn * cityWall * 1.7;`);
   };
-  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}`;
+  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}+flood`;
 }
 
 const STREETS_VERTEX = /* glsl */ `
@@ -160,9 +171,9 @@ export class CityAtNight {
 
     // Three finishes.
     const finishes = [
-      { colour: 0x16181d, metal: 0.25, rough: 0.8, tile: own(windowTile(seed + 1, { lit: 0.3, warm: 0.85 })), glow: 0.62, count: 70 },
+      { colour: 0x37332e, metal: 0.25, rough: 0.8, tile: own(windowTile(seed + 1, { lit: 0.3, warm: 0.85 })), glow: 0.62, count: 70 },
       { colour: 0x1b2633, metal: 0.75, rough: 0.22, tile: own(windowTile(seed + 2, { lit: 0.22, warm: 0.3, cool: "150,210,255" })), glow: 0.5, count: 50 },
-      { colour: 0x231d1a, metal: 0.1, rough: 0.92, tile: own(windowTile(seed + 3, { lit: 0.15, warm: 0.95 })), glow: 0.55, count: 60 },
+      { colour: 0x5a3326, metal: 0.1, rough: 0.92, tile: own(windowTile(seed + 3, { lit: 0.15, warm: 0.95 })), glow: 0.55, count: 60 },
     ];
     const towers = [];
     const m = new THREE.Matrix4();
@@ -172,6 +183,8 @@ export class CityAtNight {
     const up = new THREE.Vector3(0, 1, 0);
     const crowns = [];
     const masts = [];
+    /** Tops of towers, for the rooftop clutter: [x, y, z, w, d, yaw, distance]. */
+    const roofs = [];
     for (const f of withTowers ? finishes : []) {
       // Lambert, not standard: the towers are a night backdrop (dark facades,
       // lit windows), and the physically-based shading of every one of the
@@ -200,6 +213,7 @@ export class CityAtNight {
         if (open) pieces.push([cx, base, cz, w, top - setback - base, depth, yaw]);
         if (setback && open) pieces.push([cx, top - setback, cz, w * 0.68, setback, depth * 0.68, yaw]);
         const topW = setback ? w * 0.68 : w;
+        if (open) roofs.push([cx, top, cz, topW, setback ? depth * 0.68 : depth, yaw, d]);
         if (r() < 0.3) {
           const crown = [cx, top - 2.2, cz, topW + 0.3, 2.0, (setback ? depth * 0.68 : depth) + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff];
           if (open) crowns.push(crown);
@@ -226,6 +240,7 @@ export class CityAtNight {
         const crown = [cx, top - 2.2, cz, w + 0.3, 2.0, depth + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff];
         const mast = [cx, top, cz, 6 + r() * 10];
         if (open) {
+          roofs.push([cx, top, cz, w, depth, yaw, d]);
           pieces.push([cx, base, cz, w, top - base, depth, yaw]);
           crowns.push(crown);
           masts.push(mast);
@@ -242,6 +257,7 @@ export class CityAtNight {
       towers.push(mesh);
     }
     this.towers = towers;
+    if (withTowers) this._buildRooftops(roofs, seed, own, centre);
 
     // Lit crowns: a glowing band round some of the tops.
     if (crowns.length) {
@@ -300,6 +316,110 @@ export class CityAtNight {
 
     this.police = null;
     this.centre = centre.clone();
+  }
+
+  /**
+   * Life on the roofs you look down on: water tanks on stands, air-con
+   * units, and now and then a painted billboard for a made-up company,
+   * turned to face the tower. A random stream of its own, so the towers
+   * themselves don't move. A few instanced meshes in all.
+   */
+  _buildRooftops(roofs, seed, own, centre) {
+    const r = rng(seed + 500);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const p = new THREE.Vector3();
+    const s = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const tanks = [];
+    const stands = [];
+    const units = [];
+    const boards = [[], [], []];
+    const posts = [];
+    const near = roofs.filter(([, y, , , , , d]) => d < 260 && y > -120);
+    for (const [x, y, z, w, d, yaw] of near) {
+      const spot = (fx, fz) => {
+        const ox = (fx - 0.5) * (w - 4);
+        const oz = (fz - 0.5) * (d - 4);
+        return [x + Math.cos(yaw) * ox + Math.sin(yaw) * oz, z - Math.sin(yaw) * ox + Math.cos(yaw) * oz];
+      };
+      if (r() < 0.6) {
+        const [tx, tz] = spot(r() < 0.5 ? 0.15 : 0.85, r());
+        const radius = 1.4 + r() * 1.2;
+        stands.push([tx, y, tz, radius * 1.4, 2.2, radius * 1.4, 0]);
+        tanks.push([tx, y + 2.2, tz, radius, 3 + r() * 1.5, radius, 0]);
+      }
+      const count = r() < 0.7 ? 1 + Math.floor(r() * 3) : 0;
+      for (let i = 0; i < count; i += 1) {
+        const [ux, uz] = spot(r(), r());
+        units.push([ux, y, uz, 2.4, 1.4, 1.6, yaw]);
+      }
+      // Billboards on some of the nearer, lower roofs, facing the tower.
+      if (y > -75 && y < 15 && r() < 0.16) {
+        const [bx, bz] = spot(0.5, 0.5);
+        const face = Math.atan2(centre.x - bx, centre.z - bz);
+        const kind = Math.floor(r() * boards.length);
+        boards[kind].push([bx, y + 4.5, bz, face]);
+        for (const side of [-1, 1]) posts.push([bx + Math.cos(face) * side * 5, y, bz - Math.sin(face) * side * 5, 0.35, 4.2, 0.35, face]);
+      }
+    }
+    const unit = own(new THREE.BoxGeometry(1, 1, 1));
+    unit.translate(0, 0.5, 0);
+    const drum = own(new THREE.CylinderGeometry(1, 1, 1, 12));
+    drum.translate(0, 0.5, 0);
+    const steel = own(new THREE.MeshLambertMaterial({ color: 0x6a6c70 }));
+    const tankMat = own(new THREE.MeshLambertMaterial({ color: 0x8b8f92 }));
+    const instanced = (geometry, material, list) => {
+      if (!list.length) return;
+      const mesh = new THREE.InstancedMesh(geometry, material, list.length);
+      list.forEach(([x, y, z, sx, sy, sz, yaw], i) => {
+        q.setFromAxisAngle(up, yaw);
+        mesh.setMatrixAt(i, m.compose(p.set(x, y, z), q, s.set(sx, sy, sz)));
+      });
+      mesh.frustumCulled = false;
+      this.root.add(mesh);
+    };
+    instanced(unit, steel, stands);
+    instanced(drum, tankMat, tanks);
+    instanced(unit, steel, units);
+    instanced(unit, steel, posts);
+    const ads = [
+      ["UMNANDI COLA", "ICE COLD, EVERY DAY", "#c8231d", "#ffffff", "#ffe36b"],
+      ["IGOLIDE FM 101.6", "THE SOUND OF THE CITY", "#13306b", "#ffd23f", "#ffffff"],
+      ["SIYAKHA CEMENT", "BUILT TO LAST", "#e9e1cf", "#2b2b2b", "#b8321e"],
+    ];
+    const board = own(new THREE.PlaneGeometry(13, 4.9));
+    boards.forEach((list, k) => {
+      if (!list.length) return;
+      const [title, line, ground, ink, accent] = ads[k];
+      const c = document.createElement("canvas");
+      c.width = 512;
+      c.height = 192;
+      const g = c.getContext("2d");
+      g.fillStyle = ground;
+      g.fillRect(0, 0, 512, 192);
+      g.fillStyle = accent;
+      g.fillRect(0, 150, 512, 42);
+      g.fillStyle = ink;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.font = "bold 64px Impact, Arial Black, sans-serif";
+      g.fillText(title, 256, 78, 488);
+      g.fillStyle = ground;
+      g.font = "bold 26px Arial, sans-serif";
+      g.fillText(line, 256, 171, 480);
+      const t = own(new THREE.CanvasTexture(c));
+      t.colorSpace = THREE.SRGBColorSpace;
+      // Lit by its own lamps: a little brighter than the night round it.
+      const mat = own(new THREE.MeshBasicMaterial({ map: t, color: 0xb8aa96, fog: true }));
+      const mesh = new THREE.InstancedMesh(board, mat, list.length);
+      list.forEach(([x, y, z, face], i) => {
+        q.setFromAxisAngle(up, face);
+        mesh.setMatrixAt(i, m.compose(p.set(x, y + 2.45, z), q, s.set(1, 1, 1)));
+      });
+      mesh.frustumCulled = false;
+      this.root.add(mesh);
+    });
   }
 
   /** Police helicopters circling the tower (assets/meltdown/police_helicopter.glb). */
