@@ -8,6 +8,8 @@
  *   Ponte City       ~173 m  a hollow cylinder of flats with a giant lit
  *                            sign ring round the top
  *   Carlton Centre   ~223 m  a dark slab of narrow vertical concrete fins
+ *   Mandela Bridge           white cable-stayed pylons over the rail yard,
+ *                            lit blue at night, a train passing under it
  *
  * They are built from primitives and drawn by one shader in four modes, so
  * there are no models to license. The Ponte sign carries a made-up name
@@ -38,9 +40,12 @@ export const LANDMARKS = {
   carlton: { x: 125, z: -105 },
   ponte: { x: 70, z: -185 },
   hillbrow: { x: -5, z: -245 },
+  // Down on the streets off the west ledge, across the rail yard (Park
+  // Station's yards are right by the CBD; the real bridge spans them).
+  bridge: { x: -94, z: -34 },
 };
 
-const MODE = { concrete: 0, rings: 1, fins: 2, sign: 3 };
+const MODE = { concrete: 0, rings: 1, fins: 2, sign: 3, rails: 4 };
 
 const VERTEX = /* glsl */ `
   varying vec3 vWorld;
@@ -66,7 +71,8 @@ const FRAGMENT = /* glsl */ `
   uniform float uFloorH;     // storey height (rings, fins)
   uniform float uCols;       // windows round a ring
   uniform float uLit;        // share of windows lit
-  uniform float uWash;       // floodlight up the shaft (Hillbrow)
+  uniform float uWash;       // floodlight from the foot (Hillbrow, the bridge)
+  uniform vec3 uWashColour;
   uniform float uHazeCut;    // how much less haze than the city gets
   uniform float uTime;
   uniform sampler2D uMap;    // the sign's lettering
@@ -102,7 +108,24 @@ const FRAGMENT = /* glsl */ `
 
     if (uMode == ${MODE.concrete}) {
       // Floodlit from the foot: bright low down, fading up the shaft.
-      glow += vec3(0.75, 0.85, 1.0) * uWash * exp(-h / 70.0) * (0.6 + 0.4 * (1.0 - abs(n.y)));
+      glow += uWashColour * uWash * exp(-h / 70.0) * (0.6 + 0.4 * (1.0 - abs(n.y)));
+    } else if (uMode == ${MODE.rails}) {
+      // The rail yard under the bridge: ballast, a track every 4.6 m whose
+      // steel catches the city's glow, signal lamps, and a train going by.
+      vec2 q = vLocal.xz;                  // x across the tracks, z along them
+      col = vec3(0.05, 0.045, 0.04) * (0.7 + 0.6 * hash(floor(q * 1.5)));
+      float track = mod(q.x, 4.6);
+      float rail = (1.0 - smoothstep(0.04, 0.12, abs(track - 1.6))) + (1.0 - smoothstep(0.04, 0.12, abs(track - 3.0)));
+      col += vec3(0.5, 0.44, 0.38) * rail * 0.45;
+      vec2 sid = vec2(floor(q.x / 4.6), floor(q.y / 55.0));
+      float lamp = (1.0 - smoothstep(0.0, 0.7, length(vec2(track - 0.5, mod(q.y, 55.0) - 27.5)))) * step(0.72, hash(sid));
+      glow += mix(vec3(1.0, 0.08, 0.04), vec3(0.1, 1.0, 0.35), step(0.5, hash(sid + 5.0))) * lamp * 2.5;
+      // The train: 140 m of lit carriages on track 9, back and forth.
+      float head = mod(uTime * 14.0, 360.0) - 180.0;
+      float onTrain = step(abs(floor(q.x / 4.6) - 9.0), 0.5) * step(abs(q.y - head), 70.0) * (1.0 - smoothstep(1.3, 1.6, abs(track - 2.3)));
+      float window = step(0.3, fract((q.y - head) / 2.4)) * step(fract((q.y - head) / 24.0), 0.93);
+      col = mix(col, vec3(0.1, 0.1, 0.12), onTrain);
+      glow += vec3(1.0, 0.9, 0.72) * onTrain * window * 1.1;
     } else if (uMode == ${MODE.rings}) {
       // Window bands round a cylinder: angle gives the column, height the floor.
       float a = atan(vLocal.z, vLocal.x) / 6.2831853 + 0.5;
@@ -225,6 +248,7 @@ export class JoburgLandmarks {
         uCols: { value: o.cols ?? 64 },
         uLit: { value: o.lit ?? 0.4 },
         uWash: { value: o.wash ?? 0 },
+        uWashColour: { value: new THREE.Color(o.washColour ?? 0xbfd9ff) },
         uHazeCut: { value: o.hazeCut ?? 0.3 },
         uTime: { value: 0 },
         uMap: { value: this.signMap },
@@ -324,6 +348,62 @@ export class JoburgLandmarks {
       part(g, crown, material(MODE.concrete, { colour: 0x3a322d }), 223);
       beacon(g, 227, 6, 21, 4);
     }
+
+    // ---- Nelson Mandela Bridge ----
+    // Down at street level: a deck on two white pylons (the taller to the
+    // north), its cables fanning down to both edges, lit blue from below,
+    // over the rail yard. Turned side-on to the roof so its shape reads.
+    {
+      const g = place("MandelaBridge", LANDMARKS.bridge);
+      const view = new THREE.Vector2(LANDMARKS.bridge.x, LANDMARKS.bridge.z).normalize();
+      g.rotation.y = Math.atan2(view.x, view.y); // local x square to the line of sight
+      const yard = own(new THREE.PlaneGeometry(150, 84));
+      yard.rotateX(-Math.PI / 2);
+      part(g, yard, material(MODE.rails, { hazeCut: 0.28 }), 0.4);
+      const white = material(MODE.concrete, { colour: 0xd9d9d4, wash: 0.75, washColour: 0x6fa8ff });
+      const DECK = 14;
+      const span = 150;
+      const deck = own(new THREE.BoxGeometry(span, 1.4, 13));
+      part(g, deck, white, DECK);
+      // The approaches, down to the streets at both ends.
+      for (const side of [-1, 1]) {
+        const ramp = own(new THREE.BoxGeometry(34, 1.2, 13));
+        const mesh = part(g, ramp, white, DECK / 2);
+        mesh.position.x = side * (span / 2 + 16);
+        mesh.rotation.z = side * -Math.atan2(DECK, 34);
+      }
+      // Lights along both edges of the deck.
+      const strip = own(new THREE.BoxGeometry(span, 0.3, 0.3));
+      const stripMat = own(new THREE.MeshBasicMaterial({ color: 0xd4ecff, fog: true }));
+      for (const z of [-6.6, 6.6]) part(g, strip, stripMat, DECK + 1.1).position.z = z;
+      // Two pylons, each a pair of legs leaning in to a crossbeam.
+      const cables = [];
+      for (const [x, height, reach] of [[-30, 42, 62], [38, 27, 42]]) {
+        const leg = own(new THREE.CylinderGeometry(0.8, 1.4, height, 6));
+        leg.translate(0, height / 2, 0);
+        for (const z of [-6.8, 6.8]) {
+          const m = part(g, leg, white, 0);
+          m.position.set(x, 0, z);
+          m.rotation.x = Math.sign(z) * 0.06;
+        }
+        const beam = own(new THREE.BoxGeometry(2.2, 1.6, 12));
+        part(g, beam, white, height - 2).position.x = x;
+        // Cables: from the top of each leg to the deck edge on its side.
+        for (const z of [-6.4, 6.4]) {
+          for (let i = 1; i <= 7; i += 1) {
+            for (const dir of [-1, 1]) {
+              cables.push(x, height - 1.5, z * 0.9, x + dir * (reach * i) / 7, DECK + 0.8, z);
+            }
+          }
+        }
+        beacon(g, height + 1.5, 4);
+      }
+      const cableGeometry = own(new THREE.BufferGeometry());
+      cableGeometry.setAttribute("position", new THREE.Float32BufferAttribute(cables, 3));
+      const cableLines = new THREE.LineSegments(cableGeometry, own(new THREE.LineBasicMaterial({ color: 0xe6f1ff, fog: true, transparent: true, opacity: 0.75 })));
+      cableLines.frustumCulled = false;
+      g.add(cableLines);
+    }
   }
 
   /** Spots the generic city leaves empty (x, z from the centre; radius), metres. */
@@ -332,6 +412,14 @@ export class JoburgLandmarks {
       { ...LANDMARKS.carlton, r: 40 },
       { ...LANDMARKS.ponte, r: 42 },
       { ...LANDMARKS.hillbrow, r: 24 },
+      // The rail yard and the bridge's approaches: open ground.
+      ...[-80, -40, 0, 40, 80].map((d) => {
+        const { x, z } = LANDMARKS.bridge;
+        const view = new THREE.Vector2(x, z).normalize();
+        return { x: x - view.y * d, z: z + view.x * d, r: 40 };   // along the bridge
+      }),
+      // And the line of sight down to it from the roof.
+      { x: LANDMARKS.bridge.x * 0.55, z: LANDMARKS.bridge.z * 0.55, r: 26 },
     ];
   }
 

@@ -2203,7 +2203,7 @@ export class MeltdownGame {
     this.fade.override = null;
     this.fade.value = 1;
     this.fade.target = 0;
-    this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "HOLD ON", 3200);
+    this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "JOHANNESBURG // HOLD ON", 3200);
     this.events.emit("phase", { phase: "roof" });
   }
 
@@ -2326,6 +2326,16 @@ export class MeltdownGame {
       audio.crash(0.25 + strength * 0.3);
       this.sfx?.distantCollapse(0.5 + strength * 0.5);
       if (this.phase === "roof") hud.toast("THE BUILDING IS GOING", "", "warn", 1400);
+    });
+    // A tower across the street coming down (skyline-collapse.js): seen at
+    // once, heard - and felt - when the sound gets here.
+    on("tower-seen", () => {
+      if (this.phase === "roof") hud.toast("THE TOWER ACROSS THE STREET IS GOING", "", "warn", 1800);
+    });
+    on("tower-down", ({ kind, strength }) => {
+      this.trauma = Math.min(1, this.trauma + strength * (kind === "fall" ? 0.4 : 0.25));
+      audio.crash(0.2 + strength * 0.3);
+      this.sfx?.distantCollapse(0.6 + strength * 0.4);
     });
     on("roof-fire", ({ position }) => {
       debris.sparks(position.clone().setY(0.3), { count: 20, speed: 4 });
