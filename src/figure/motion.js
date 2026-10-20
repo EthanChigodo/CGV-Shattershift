@@ -169,7 +169,8 @@ export function shamble(rig, p, t, { reach = 0.9, lean = 0.3, stride: legs = 0.3
   // A rigged patient (src/figure/rigged.js) walks its own mocap walk, at the
   // persona's pace and surges; the twitches and the look still go on top.
   if (rig.isClipRig) {
-    const walking = amount > 0.6;
+    // Standing over you (no ground speed): their idle, not a walk on the spot.
+    const walking = amount > 0.6 && (speed === null || speed > 0.15);
     const rate = p.cadence * (0.7 + 0.3 * s.factor) * (0.35 + 0.65 * amount) * (cadence / 4.2);
     rig.pose({ clip: walking ? ["walk", "run"] : ["idle", "walk"], speed: walking && speed !== null ? speed : null, rate: walking ? rate : 0.8 + 0.4 * p.cadence, dt, headTilt: p.headTilt * 0.6 });
     twitch(rig, p, t);
