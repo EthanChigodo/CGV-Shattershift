@@ -51,6 +51,7 @@ import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
 import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
+import { TowerCollapse } from "./skyline-collapse.js";
 import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
@@ -70,9 +71,20 @@ const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
  * Before the doors open, the first time you come up (once per page load, so
  * a retry isn't held up, and not in Endless): the camera at the north
  * parapet looks out over Johannesburg - from the Carlton Centre across Ponte
- * to the Hillbrow Tower (landmarks.js). The banner shows over it.
+ * to the Hillbrow Tower (landmarks.js).
+ * The banner shows over it.
  */
 const SKYLINE_SECONDS = 3.6;
+/**
+ * Towers across the street that come down as the fight goes on (at these
+ * `chaos` levels; skyline-collapse.js). Placed where the roof camera sees
+ * them: one ahead to the right, one further off to the left - clear of
+ * the landmarks, and of the establishing shot's view of them.
+ */
+const COLLAPSES = [
+  { x: 26, z: -56, height: 178, width: 24, depth: 20, fail: 118, lean: -0.07, seed: 1, chaos: 0.42 },
+  { x: -55, z: -118, height: 176, width: 26, depth: 22, fail: 104, lean: 0.05, seed: 2, chaos: 0.78 },
+];
 let skylineShown = false;
 
 const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
@@ -1115,9 +1127,11 @@ export class RoofLevel {
     // Johannesburg: Hillbrow Tower, Ponte City and the Carlton Centre stand
     // among the generic towers, which leave their spots empty.
     this.landmarks = new JoburgLandmarks({ streetY: -160 });
-    this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3, clear: this.landmarks.footprints });
+    this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
+    const clear = [...this.landmarks.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
+    this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3, clear });
     this.city.root.name = "Skyline";
-    this.root.add(this.city.root, this.landmarks.root);
+    this.root.add(this.city.root, this.landmarks.root, ...this.collapses.map((c) => c.root));
     if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
   }
 
@@ -1635,6 +1649,12 @@ export class RoofLevel {
     this.fire.setTime(time);
     this.city?.update(dt, time, { haze: this.cityHaze });
     this.landmarks?.update(dt, time);
+    for (const c of this.collapses ?? []) {
+      for (const e of c.update(dt, time)) {
+        // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
+        this.events.emit(e.kind === "seen" ? "tower-seen" : "tower-down", { kind: e.kind, strength: e.strength, position: c.root.position });
+      }
+    }
     if (this.cutscene?.kind === "arrival") {
       // The arrival is over (the host has seen `done`): hand the roof over.
       if (!this._arrival) this.cutscene = null;
@@ -1871,6 +1891,11 @@ export class RoofLevel {
       const glow = this.points.find((p) => p.flicker && Math.sign(p.light.position.x) === side);
       if (glow) glow.flash = 1;
       s.blastTimer = 9 - chaos * 6 + this.random() * 2;
+    }
+
+    // Across the street, a tower goes (one at each chaos level in COLLAPSES).
+    for (const c of this.collapses ?? []) {
+      if (live && !c.started && chaos >= c.chaosAt) c.start(ctx?.player);
     }
 
     // The building shudders.
@@ -2194,6 +2219,7 @@ export class RoofLevel {
     for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
     this.landmarks?.dispose();
+    for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
     for (const g of this.owned.geometries) g.dispose();

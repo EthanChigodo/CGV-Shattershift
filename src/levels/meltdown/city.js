@@ -222,9 +222,14 @@ export class CityAtNight {
         const cx = Math.cos(a) * d + centre.x;
         const cz = Math.sin(a) * d + centre.z;
         const base = streetY - 260;
-        pieces.push([cx, base, cz, w, top - base, depth, yaw]);
-        crowns.push([cx, top - 2.2, cz, w + 0.3, 2.0, depth + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff]);
-        masts.push([cx, top, cz, 6 + r() * 10]);
+        const open = !clear.some((c) => Math.hypot(cx - centre.x - c.x, cz - centre.z - c.z) < c.r + w * 0.7);
+        const crown = [cx, top - 2.2, cz, w + 0.3, 2.0, depth + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff];
+        const mast = [cx, top, cz, 6 + r() * 10];
+        if (open) {
+          pieces.push([cx, base, cz, w, top - base, depth, yaw]);
+          crowns.push(crown);
+          masts.push(mast);
+        }
       }
       const mesh = new THREE.InstancedMesh(unit, material, pieces.length);
       pieces.forEach(([x, y, z, sx, sy, sz, yaw], i) => {
