@@ -146,8 +146,10 @@ export class CityAtNight {
    * @param {number} [o.streetY]   how far down the streets are
    * @param {THREE.Vector3} [o.centre]  the tower you're standing on
    * @param {boolean} [o.towers]  false: just the streets (a city model stands on them)
+   * @param {{x:number, z:number, r:number}[]} [o.clear]  spots (from the centre) left
+   *   empty, for landmarks to stand in (landmarks.js)
    */
-  constructor({ seed = 41, streetY = -160, centre = new THREE.Vector3(), towers: withTowers = true, neighbours = 0 } = {}) {
+  constructor({ seed = 41, streetY = -160, centre = new THREE.Vector3(), towers: withTowers = true, neighbours = 0, clear = [] } = {}) {
     this.root = new THREE.Group();
     this.root.name = "CityAtNight";
     this.owned = [];
@@ -192,11 +194,20 @@ export class CityAtNight {
         // narrower block on that.
         const setback = r() < 0.35 ? 12 + r() * 30 : 0;
         const base = streetY - 260;
-        pieces.push([cx, base, cz, w, top - setback - base, depth, yaw]);
-        if (setback) pieces.push([cx, top - setback, cz, w * 0.68, setback, depth * 0.68, yaw]);
+        // Inside a landmark's spot: drawn from the same random numbers (so
+        // the rest of the skyline doesn't change), just not built.
+        const open = !clear.some((c) => Math.hypot(cx - centre.x - c.x, cz - centre.z - c.z) < c.r + w * 0.7);
+        if (open) pieces.push([cx, base, cz, w, top - setback - base, depth, yaw]);
+        if (setback && open) pieces.push([cx, top - setback, cz, w * 0.68, setback, depth * 0.68, yaw]);
         const topW = setback ? w * 0.68 : w;
-        if (r() < 0.3) crowns.push([cx, top - 2.2, cz, topW + 0.3, 2.0, (setback ? depth * 0.68 : depth) + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff]);
-        if (top > -40 && r() < 0.7) masts.push([cx, top, cz, 8 + r() * 18]);
+        if (r() < 0.3) {
+          const crown = [cx, top - 2.2, cz, topW + 0.3, 2.0, (setback ? depth * 0.68 : depth) + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff];
+          if (open) crowns.push(crown);
+        }
+        if (top > -40 && r() < 0.7) {
+          const mast = [cx, top, cz, 8 + r() * 18];
+          if (open) masts.push(mast);
+        }
       }
       // Neighbours: a few towers close by (45-85 m) that come up to about
       // your height, so from the roof the city stands round you rather than

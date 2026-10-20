@@ -50,6 +50,7 @@ import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
+import { JoburgLandmarks } from "./landmarks.js";
 import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
@@ -1101,9 +1102,12 @@ export class RoofLevel {
    * lights on the masts, police helicopters circling with their searchlights.
    */
   _buildSkyline(assetBase) {
-    this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3 });
+    // Johannesburg: Hillbrow Tower, Ponte City and the Carlton Centre stand
+    // among the generic towers, which leave their spots empty.
+    this.landmarks = new JoburgLandmarks({ streetY: -160 });
+    this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3, clear: this.landmarks.footprints });
     this.city.root.name = "Skyline";
-    this.root.add(this.city.root);
+    this.root.add(this.city.root, this.landmarks.root);
     if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
   }
 
@@ -1620,6 +1624,7 @@ export class RoofLevel {
     const s = this.state;
     this.fire.setTime(time);
     this.city?.update(dt, time, { haze: this.cityHaze });
+    this.landmarks?.update(dt, time);
     if (this.cutscene?.kind === "arrival") {
       // The arrival is over (the host has seen `done`): hand the roof over.
       if (!this._arrival) this.cutscene = null;
@@ -2167,6 +2172,7 @@ export class RoofLevel {
     this.lift?.userData.dispose?.();
     for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
+    this.landmarks?.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
     for (const g of this.owned.geometries) g.dispose();
