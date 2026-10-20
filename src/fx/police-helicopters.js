@@ -226,8 +226,12 @@ function bakeTemplate(scene) {
   return root;
 }
 
-async function loadTemplate(assetBase) {
-  templatePromise ??= new GLTFLoader()
+/**
+ * The baked helicopter (shared, loaded once per page). `manager`: a loading
+ * manager of the caller's (the menu stage streams it outside the default one).
+ */
+export async function loadTemplate(assetBase, manager = undefined) {
+  templatePromise ??= new GLTFLoader(manager)
     .loadAsync(new URL("police_helicopter.glb", assetBase).href)
     .then((gltf) => bakeTemplate(gltf.scene))
     .catch((error) => {
