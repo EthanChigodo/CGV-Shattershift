@@ -14,7 +14,7 @@
 
 import * as THREE from "../src/three.js";
 import { RoomEnvironment } from "../src/three-addons.js";
-import { loadCharacterManifest, loadRole, cloneRigged, riggedLook, CLIP_NAMES } from "../src/figure/rigged.js";
+import { loadCharacterManifest, loadRole, cloneRigged, riggedLook, riggedInfo, CLIP_NAMES } from "../src/figure/rigged.js";
 import { createRig } from "../src/levels/meltdown/characters.js";
 import { SKIN_TONES, HAIR_COLOURS } from "../src/figure/look.js";
 
@@ -109,7 +109,7 @@ async function select(role) {
   state.look.setHairColour(state.hair ?? "natural");
   state.look.setWear(Number($("wear").value));
   // Clip buttons: the brief's names first (dashed if this role lacks one), then any extras.
-  const info = template.userData.character;
+  const info = riggedInfo(template);
   const clips = $("clips");
   clips.replaceChildren();
   const names = [...new Set([...CLIP_NAMES.filter((n) => info.clips.has(n) || essentialFor(role).includes(n)), ...info.clips.keys()])];
@@ -133,7 +133,7 @@ function play(name) {
 }
 
 function describe() {
-  const t = state.model.userData.character;
+  const t = riggedInfo(state.model);
   const entry = state.roles[state.role] ?? {};
   const lines = [
     `role      ${state.role}`,

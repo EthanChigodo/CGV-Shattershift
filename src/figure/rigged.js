@@ -156,6 +156,15 @@ export async function riggedSlots() {
 
 const templates = new Map();
 let loader = null;
+/** Per role: { clips, meta, body, height, variants } (kept out of userData). */
+const INFO = new Map();
+/** A model's own material copies (the player's), for dispose(). */
+const OWN = new WeakMap();
+
+/** A rigged template's or clone's clips and measurements. */
+export function riggedInfo(object) {
+  return INFO.get(object?.userData?.character?.role) ?? null;
+}
 
 /** Load one role's template (cached). */
 export function loadRole(role) {
@@ -181,7 +190,7 @@ export function loadRole(role) {
 /**
  * The rigged template for a game slot, or null (keep today's model). Variant
  * slots return the first template carrying the others in
- * userData.character.variants; cloneRigged() deals them out in turn.
+ * riggedInfo(first).variants; cloneRigged() deals them out in turn.
  */
 export async function loadRiggedFor(slot) {
   const roles = await rolesFor(slot);
@@ -196,7 +205,7 @@ export async function loadRiggedFor(slot) {
   }
   if (!loaded.length) return null;
   const first = loaded[0];
-  first.userData.character.variants = loaded;
+  riggedInfo(first).variants = loaded;
   return first;
 }
 
@@ -747,7 +756,10 @@ export function buildRiggedTemplate(gltf, role, entry = {}) {
   };
 
   const meta = entry.clips ?? {};
-  root.userData.character = { profile: role, role, rigged: true, skinned: true, height: wanted, clips, meta, body: bodyInfo, variants: null, dealt: 0 };
+  // userData stays plain JSON (Object3D.clone copies it that way); the
+  // clips and measurements live here, by role.
+  root.userData.character = { profile: role, role, rigged: true, skinned: true, height: wanted };
+  INFO.set(role, { clips, meta, body: bodyInfo, height: wanted, variants: null, dealt: 0 });
   return root;
 }
 
@@ -756,14 +768,14 @@ export function buildRiggedTemplate(gltf, role, entry = {}) {
  * turn. `own` gives it its own materials (the player: tints, team colours).
  */
 export function cloneRigged(template, { own = false } = {}) {
-  const info = template.userData.character;
+  const info = riggedInfo(template);
   let source = template;
   if (info.variants?.length > 1) {
     source = info.variants[info.dealt % info.variants.length];
     info.dealt += 1;
   }
   const clone = SkeletonUtils.clone(source);
-  clone.userData.character = { ...source.userData.character, variants: null };
+  clone.userData.character = { ...source.userData.character };
   if (own) {
     const copies = new Map();
     clone.traverse((o) => {
@@ -779,7 +791,7 @@ export function cloneRigged(template, { own = false } = {}) {
       };
       o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
     });
-    clone.userData.character.ownMaterials = [...copies.values()];
+    OWN.set(clone, [...copies.values()]);
   }
   return clone;
 }
@@ -858,7 +870,7 @@ export class ClipRig {
    * @param {(root) => object} [o.procedural]  makes a HumanoidRig for poses with no clip
    */
   constructor(root, { procedural = null } = {}) {
-    const info = root.userData.character;
+    const info = riggedInfo(root);
     this.isClipRig = true;
     this.valid = true;
     this.root = root;
@@ -900,6 +912,9 @@ export class ClipRig {
     this._kicks = 0;
     this._snap = new Map();
     this._procBones = this.proc ? [...this.proc.state.values()].map((s) => s.bone) : [];
+    // Out of the bind pose (a T-pose) at once: someone the level hasn't
+    // started animating yet stands in their idle, not with arms out.
+    if (this.play(this.pick(["idle"]) ?? [...this.clips.keys()][0] ?? "", { fade: 0 })) this._evaluate(0);
   }
 
   /** Has a clip (or a variant of it). */
@@ -973,7 +988,7 @@ export class ClipRig {
       action.play();
       if (!this.shot) {
         if (prev && prev !== action) prev.crossFadeTo(action, fade, false);
-        else if (!prev) action.fadeIn(Math.min(fade, 0.1));
+        else if (!prev && fade > 0) action.fadeIn(Math.min(fade, 0.1));
       } else {
         action.setEffectiveWeight(0);
         if (prev && prev !== action) prev.fadeOut(fade);
@@ -1277,7 +1292,7 @@ export class RiggedBody {
     this.model = model;
     this.rig = new ClipRig(model);
     this.look = riggedLook(model);
-    this.bodyInfo = model.userData.character.body;
+    this.bodyInfo = riggedInfo(model).body;
     // The shader rig's uniforms, kept as plain values: hosts write them.
     this.uniforms = {
       uPhase: { value: 0 }, uStride: { value: 0 }, uArmSwing: { value: 0 }, uLean: { value: 0 }, uCrouch: { value: 0 },
@@ -1446,6 +1461,6 @@ export class RiggedBody {
 
   dispose() {
     this.rig.dispose();
-    for (const m of this.model.userData.character.ownMaterials ?? []) m.dispose();
+    for (const m of OWN.get(this.model) ?? []) m.dispose();
   }
 }
