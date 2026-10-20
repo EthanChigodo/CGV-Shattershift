@@ -255,6 +255,10 @@ export const memory = {
         await new Promise((r) => setTimeout(r, 50));
         return { geometries: d.renderer.info.memory.geometries, textures: d.renderer.info.memory.textures };
       };
+      // The menu's 3D stage streams in at boot and uploads its textures once
+      // (src/menu/backdrop.js): let it land first, so only restarts are measured.
+      const t0 = performance.now();
+      while (!(d.menuStage.live || d.menuStage.failed) && performance.now() - t0 < 180000) await new Promise((r) => setTimeout(r, 200));
       const counts = [];
       for (let i = 0; i < 5; i += 1) counts.push(await sample());
       const failures = [];
