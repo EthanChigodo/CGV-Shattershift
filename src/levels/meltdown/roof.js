@@ -54,6 +54,7 @@ import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
 import { TowerCollapse } from "./skyline-collapse.js";
 import { CbdBuildings } from "./cbd.js";
 import { StreetLife } from "./street-life.js";
+import { Demolition } from "./demolition.js";
 import { createPropKit } from "../../story/stages/props.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
@@ -78,6 +79,26 @@ const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
  * The banner shows over it.
  */
 const SKYLINE_SECONDS = 6;
+/**
+ * Generic towers of the city brought down as the fight goes on (at these
+ * `chaos` levels; demolition.js).
+ * The first to go is a cutaway the first time: the fight holds, letterboxed,
+ * while a helicopter's-eye camera watches it fall.
+ */
+const DEMOLISH_AT = [0.22, 0.58, 0.9];
+/**
+ * The towers that come down: generic towers like the rest of the city, but
+ * placed where they can be seen go: in the gaps above the near rooftops
+ * the roof camera looks over (the brick block's, the flats'), out of the
+ * way of the landmarks in the opening shot (they hide only the foot of the
+ * Hillbrow Tower).
+ */
+const CONDEMNED = [
+  { x: -20, z: -150, top: 20, w: 26, d: 22, yaw: 0.08, finish: 0 },
+  { x: -35, z: -95, top: 4, w: 22, d: 19, yaw: -0.1, finish: 2 },
+  { x: -75, z: -150, top: 10, w: 24, d: 20, yaw: 0.2, finish: 1 },
+];
+let cutawayShown = false;
 /**
  * Towers across the street that come down as the fight goes on (at these
  * `chaos` levels; skyline-collapse.js). Placed where the roof camera sees
@@ -321,6 +342,7 @@ const _w = new THREE.Vector3();
 const _skyB = new THREE.Vector3();
 const _skyC = new THREE.Vector3();
 const _skyD = new THREE.Vector3();
+const _rayCamera = new THREE.PerspectiveCamera();
 
 /** Seconds a downed body takes to burn away to ash. */
 const ASH_SECONDS = 1.45;
@@ -1136,9 +1158,19 @@ export class RoofLevel {
     this.cbd = new CbdBuildings({ streetY: -160 });
     this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
     const clear = [...this.landmarks.footprints, ...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
-    this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3, clear });
-    this.city.root.name = "Skyline";
+    this.city = new CityAtNight({
+      seed: 41, streetY: -160, neighbours: 3, condemned: CONDEMNED,
+      // (None of the others in their spots, or right round them.)
+      clear: [...clear, ...CONDEMNED.map((c) => ({ x: c.x, z: c.z, r: Math.hypot(c.w, c.d) * 0.6 + 16 }))],
+    });
+    const demolitions = this.city.demolitions.map((tower, k) => new Demolition({ city: this.city, tower, seed: 3 + k }));
     this.root.add(this.city.root, this.landmarks.root, this.cbd.root, ...this.collapses.map((c) => c.root));
+    // The first is the cutaway, if a camera can be placed to see it whole.
+    const blocked = [...clear.map((c) => ({ ...c, top: Infinity })), ...this.city.footprints.filter((f) => !CONDEMNED.some((c) => c.x === f.x && c.z === f.z))];
+    if (demolitions[0]) demolitions[0].shot = this._cutawayShot(demolitions[0], blocked);
+    this.demolitions = demolitions.map((d, k) => Object.assign(d, { chaosAt: DEMOLISH_AT[k], cutaway: k === 0 && Boolean(d.shot) }));
+    this.city.root.name = "Skyline";
+    this.root.add(...this.demolitions.map((d) => d.root));
     // On the streets below: minibus taxis and jacarandas (street-life.js),
     // kept clear of everything that stands on them.
     this.streets = new StreetLife({ streetY: -160, blocked: [...clear, ...this.city.footprints] });
@@ -1668,6 +1700,18 @@ export class RoofLevel {
         this.events.emit(e.kind === "seen" ? "tower-seen" : "tower-down", { kind: e.kind, strength: e.strength, position: c.root.position });
       }
     }
+    for (const d of this.demolitions ?? []) {
+      for (const e of d.update(dt, time)) {
+        if (e.kind === "seen") this.events.emit("tower-seen", { position: d.root.position });
+        else this.events.emit("tower-down", { kind: e.kind === "charges" ? "blast" : "fall", strength: e.strength, position: d.root.position });
+      }
+    }
+    if (this.cutscene?.kind === "cutaway") {
+      // The fight holds while the camera watches the city (the host does too).
+      for (const piece of this._ticking) piece.userData.tick?.(dt, time);
+      this._updateCutaway(dt);
+      return [];
+    }
     if (this.cutscene?.kind === "arrival") {
       // The arrival is over (the host has seen `done`): hand the roof over.
       if (!this._arrival) this.cutscene = null;
@@ -1856,6 +1900,92 @@ export class RoofLevel {
     }
   }
 
+  /* ---------------- Cutaway (a tower coming down) ---------------- */
+
+  /**
+   * The fight holds, letterboxed (the host), while a camera placed off the
+   * tower (_cutawayShot) watches it come down, drifting round it and
+   * following it down. A cutscene like the arrival: `cutscene` says where
+   * the camera is; the host keeps the player where they stood.
+   */
+  /**
+   * Where to film a demolition from: a helicopter's view, above its top, at
+   * a distance that fits it in frame - tried round it (toward the roof
+   * first) until nothing stands in the way and the camera isn't inside a
+   * building. Null if there's no such place.
+   */
+  _cutawayShot(d, blocked) {
+    const street = this.city.streetY;
+    const target = new THREE.Vector3(d.tower.x, street + d.height * 0.75, d.tower.z);
+    const top = target.clone().setY(street + d.height - 4);
+    const solids = [this.city.root, this.cbd.root, this.landmarks.root, ...this.collapses.map((c) => c.tower)];
+    for (const root of solids) root.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    ray.camera = _rayCamera; // (sprites need one to be tested at all)
+    // Anything clearly in front of where the ray meets the tower blocks it
+    // (not what stands flush beside its edge).
+    const own = (h) => d.tower.pieces.some(([fi, index]) => h.object === this.city.towers[fi] && h.instanceId === index);
+    const clearTo = (from, to) => {
+      ray.set(from, to.clone().sub(from).normalize());
+      ray.far = from.distanceTo(to);
+      const hits = ray.intersectObjects(solids, true).filter((h) => !h.object.isSprite);
+      const meets = hits.find(own)?.distance ?? ray.far;
+      return !hits.some((h) => !own(h) && h.distance < meets - 6);
+    };
+    const DRIFT = 0.12;
+    const toRoof = new THREE.Vector3(-d.tower.x, 0, -d.tower.z).normalize();
+    // Best: from over our own roof, as if a camera rose off it.
+    const crane = toRoof.clone().multiplyScalar(-6).setY(60);
+    const craneEnd = crane.clone().sub(target).applyAxisAngle(THREE.Object3D.DEFAULT_UP, DRIFT).add(target).setY(crane.y - 10);
+    if (clearTo(crane, target) && clearTo(crane, top) && clearTo(craneEnd, target)) return { camera: crane, dir: toRoof.clone().negate(), drift: DRIFT };
+    for (const turn of [0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2.2, -2.2, Math.PI]) {
+      for (const reach of [1.25, 1.6]) {
+        const dir = toRoof.clone().applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn);
+        const camera = target.clone().addScaledVector(dir, d.height * reach).setY(street + d.height + 28);
+        if (blocked.some((f) => Math.hypot(camera.x - f.x, camera.z - f.z) < f.r + 4 && f.top > camera.y - 6)) continue;
+        if (camera.length() < 30) continue; // not on our own roof
+        // Clear at the start of the drift and at its end.
+        const end = camera.clone().sub(target).applyAxisAngle(THREE.Object3D.DEFAULT_UP, DRIFT).add(target).setY(camera.y - 10);
+        if (clearTo(camera, target) && clearTo(camera, top) && clearTo(end, target) && clearTo(end, top)) return { camera, dir, drift: DRIFT };
+      }
+    }
+    return null;
+  }
+
+  _beginCutaway(demolition) {
+    cutawayShown = true;
+    this._cut = { t: 0, d: demolition, seconds: Math.min(demolition.duration + 1, 8.5) };
+    this.cutscene = {
+      kind: "cutaway", camera: new THREE.Vector3(), look: new THREE.Vector3(), player: new THREE.Vector3(),
+      playerYaw: 0, action: "stand", timeScale: 1, done: false, hidePlayer: false, hold: 1, reachUp: 0,
+    };
+    this._updateCutaway(0);
+  }
+
+  _updateCutaway(dt) {
+    const c = this._cut;
+    c.t += dt;
+    const d = c.d;
+    const at = d.root.position;
+    // The helicopter's view (_cutawayShot), drifting slowly round it and
+    // sinking a little as the tower comes down.
+    const k = THREE.MathUtils.smoothstep(c.t, 0, c.seconds);
+    const offset = _w.copy(d.shot.camera).sub(at).applyAxisAngle(THREE.Object3D.DEFAULT_UP, k * d.shot.drift);
+    this.cutscene.camera.copy(at).add(offset).setY(d.shot.camera.y - k * 10);
+    // Zoomed in like a news camera, on its upper half for the charges, then
+    // widening a little and sinking with it.
+    this.cutscene.fov = 30 + k * 10;
+    // On the charges first, then up to its top as it starts to go, and down
+    // with it.
+    const tilt = THREE.MathUtils.smoothstep(d.t, 1.1, 2.2);
+    const lookY = THREE.MathUtils.lerp(d.height * 0.42, Math.max(d.height * 0.25, d.height - 30 - d.drop * 0.8), tilt);
+    this.cutscene.look.set(at.x, at.y + lookY, at.z);
+    if (c.t >= c.seconds) {
+      this.cutscene = null;
+      this._cut = null;
+    }
+  }
+
   /** 0 (silent) .. 1 (overhead): how loud the rotors should be. */
   get rotorLevel() {
     const s = this.state;
@@ -1920,6 +2050,12 @@ export class RoofLevel {
     // Across the street, a tower goes (one at each chaos level in COLLAPSES).
     for (const c of this.collapses ?? []) {
       if (live && !c.started && chaos >= c.chaosAt) c.start(ctx?.player);
+    }
+    // And whole towers are brought down (DEMOLISH_AT); the first, a cutaway.
+    for (const d of this.demolitions ?? []) {
+      if (!live || d.started || chaos < d.chaosAt) continue;
+      d.start(ctx?.player);
+      if (d.cutaway && !cutawayShown && !this.cutscene) this._beginCutaway(d);
     }
 
     // The building shudders.
@@ -2245,6 +2381,7 @@ export class RoofLevel {
     this.landmarks?.dispose();
     this.cbd?.dispose();
     this.streets?.dispose();
+    for (const d of this.demolitions ?? []) d.dispose();
     for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();

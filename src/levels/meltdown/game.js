@@ -751,7 +751,7 @@ export class MeltdownGame {
   get locationName() {
     if (this.roof) return "THE ROOF";
     if (!this.level) return "";
-    if (this.phase === "roof" || this.phase === "roofArrive" || this.phase === "ending" || (this.phase === "over" && this.roof)) return "THE ROOF";
+    if (this.phase === "roof" || this.phase === "roofCut" || this.phase === "roofArrive" || this.phase === "ending" || (this.phase === "over" && this.roof)) return "THE ROOF";
     const d = this.runner.distance;
     return this.level.hallAt(d)?.name ?? this.level.beatAt(d).name;
   }
@@ -1037,7 +1037,7 @@ export class MeltdownGame {
     }
     this._updateFade(dt);
     const phase = this.phase;
-    const onRoof = phase === "roof" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
+    const onRoof = phase === "roof" || phase === "roofCut" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
     const playing = onRoof ? phase === "roof" && this.runner.alive : phase === "run" && this.runner.alive && !this.runner.finished;
     const previousBalls = this.runner.balls;
     this.runner.balls = this.ammoRecovery.update(dt, previousBalls, playing && !this.paused, this.difficulty?.recharge);
@@ -1496,14 +1496,15 @@ export class MeltdownGame {
     avatar.update(sdt, { speed, height: cut.action === "jump" ? 1 : 0, aiming: false });
     // The lift cutscenes are already smooth: follow them exactly. The roof
     // endings cut between framings, so ease into each.
-    const exact = cut.kind === "arrival" || cut.kind === "departure";
+    const exact = cut.kind === "arrival" || cut.kind === "departure" || cut.kind === "cutaway";
     if (this.snapCamera || exact) camera.position.copy(cut.camera);
     else camera.position.lerp(cut.camera, 1 - Math.exp(-dt * 3));
     if (this.snapCamera || exact) V.smoothedLook.copy(cut.look);
     else V.smoothedLook.lerp(cut.look, 1 - Math.exp(-dt * 4));
     camera.up.copy(UP);
     camera.lookAt(V.smoothedLook);
-    this._setFov(BASE_FOV, dt);
+    // (A cutscene may zoom: the cutaway's telephoto, say.)
+    this._setFov(cut.fov ?? BASE_FOV, dt);
     if (cut.shake) this.trauma = Math.max(this.trauma, cut.shake);
     this._shake(dt, 0.3, 0.25, 0.02);
     this.fade.override = cut.fade ? cut.fade : this.fade.override;
@@ -2576,6 +2577,22 @@ export class MeltdownGame {
         hero.position.copy(ROOF_SPAWN);
         this.events.emit("phase", { phase: "roof-fight" });
       }
+    } else if (this.phase === "roofCut") {
+      // A cutaway (roof.js): a tower across the street coming down. The fight
+      // holds - no moving, no firing, nothing hits you - letterboxed, while
+      // the roof's camera watches; you stay where you stood.
+      roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
+      const c = roof.cutscene;
+      if (c?.kind === "cutaway") {
+        c.player.copy(hero.position);
+        c.playerYaw = hero.yaw;
+        this._applyCutscene(c, dt);
+      } else {
+        this.phase = "roof";
+        this.ui.letterbox.classList.remove("on");
+        this.snapCamera = true;
+        this._updateRoofCamera(dt);
+      }
     } else if (this.phase === "roof") {
       // Movement, camera-relative (the camera looks down -Z).
       const held = this.held;
@@ -2639,6 +2656,13 @@ export class MeltdownGame {
       const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
       for (const h of hits) this._roofHit(h);
       this._updateRoofCamera(dt);
+      if (roof.cutscene?.kind === "cutaway") {
+        this.phase = "roofCut";
+        this.ui.letterbox.classList.add("on");
+        hero.velocity.set(0, 0, 0);
+        hero.dodge = 0;
+        r.firing = false;
+      }
       // Endless: a supply drop every so often you hold out.
       if (this.mode === "endless-roof" && r.alive) {
         this._supply = (this._supply ?? 0) + dt;
@@ -2735,7 +2759,8 @@ export class MeltdownGame {
     this.hud.setDanger(danger);
     // The roof coming apart: thicker smoke, heat haze, louder everything.
     const chaos = roof?.state.chaos ?? 0;
-    this.scene.fog.density = 0.0058 + chaos * 0.007;
+    // (Thinner in a cutaway, so the tower coming down reads through it.)
+    this.scene.fog.density = (0.0058 + chaos * 0.007) * (this.phase === "roofCut" ? 0.55 : 1);
     // The wind across the top of the tallest tower in the city, gusting.
     this.sfx?.updateWind(playing ? 0.7 + Math.sin(time * 0.31) * 0.2 + Math.sin(time * 1.13) * 0.1 : 0.3);
     // The alarm below, through the roof hatches.
