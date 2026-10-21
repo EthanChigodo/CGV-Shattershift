@@ -1,454 +1,325 @@
 /**
- * Level 2 HUD - The Shifting Foundry.
+ * Level 2 HUD - The Shifting Foundry - in the NIGHTFALL look
+ * (src/ui/theme.css). Scoped under .foundry-ui so it sits over the shared
+ * HUD (causeway-hud.css) without touching styles.css.
  *
- * Scoped under .foundry-ui so it can sit on top of the existing game HUD
- * without touching styles.css. The palette is the foundry's: amber work light,
- * hazard red, and the cyan that every breakable object in the game shares.
+ * Over the brightest level in the game, so nothing here is boxed: text sits
+ * on the picture with a soft shadow, and the route list carries a radial
+ * shade with no edge. The section title is wide, thin and tracked; the way
+ * out is plain lines with a tick; what to shoot next is a glass ring by the
+ * crosshair; the junction arrows are thin ember chevrons (the way forward).
  */
 
 .foundry-ui {
-  --fdy-amber: #f0a93c;
-  --fdy-red: #ff4a54;
-  --fdy-cyan: #7ef4f1;
-  --fdy-ink: #060a0d;
-  --fdy-panel: rgba(9, 14, 18, 0.82);
-  --fdy-line: rgba(240, 169, 60, 0.28);
-
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 6;
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
-  color: #f4fbff;
-  text-transform: uppercase;
+  font-family: var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow-text);
 }
+.foundry-ui[hidden] { display: none !important; }
 
-.foundry-ui[hidden] {
-  display: none !important;
-}
+/* Upper-case strings from the level, read in sentence case. */
+.fdy-banner span,
+.fdy-system span,
+.fdy-integrity > span,
+.fdy-toast,
+.fdy-prompt small,
+.fdy-escape small,
+.fdy-summary-card > small,
+.fdy-summary-card > span,
+.fdy-summary-row span,
+.fdy-stat span { text-transform: lowercase; }
+.fdy-banner span::first-letter,
+.fdy-system span::first-letter,
+.fdy-integrity > span::first-letter,
+.fdy-toast::first-letter,
+.fdy-prompt small::first-letter,
+.fdy-escape small::first-letter,
+.fdy-summary-card > small::first-letter,
+.fdy-summary-card > span::first-letter,
+.fdy-summary-row span::first-letter,
+.fdy-stat span::first-letter { text-transform: uppercase; }
 
-/* ---------------------------------------------------------------- */
-/* Sector banner                                                     */
-/* ---------------------------------------------------------------- */
+/* ---- Section title ---------------------------------------------------- */
 
 .fdy-banner {
   position: absolute;
-  top: 16%;
+  top: 15%;
   left: 50%;
-  transform: translate(-50%, 14px);
+  width: min(92vw, 1100px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   opacity: 0;
-  transition: opacity 0.5s ease, transform 0.5s ease;
+  transition: opacity 1.1s var(--ease-in-out), top 0.4s var(--ease-out);
 }
-
-.fdy-banner.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-.fdy-banner span {
-  display: block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.42em;
-  color: var(--fdy-amber);
-}
-
+.fdy-banner.show { opacity: 1; transition: opacity 0.9s var(--ease-in-out), top 0.4s var(--ease-out); }
 .fdy-banner strong {
+  order: 1;
   display: block;
-  margin-top: 6px;
-  font-size: clamp(26px, 5vw, 46px);
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-shadow: 0 0 26px rgba(240, 169, 60, 0.45);
+  padding-left: 0.3em;
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: clamp(24px, 2.6vw, 38px);
+  text-wrap: balance;
+  line-height: 1.1;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 30px rgba(0, 0, 0, 0.6);
+  transition: letter-spacing 3.2s var(--ease-out);
+}
+.fdy-banner.show strong { letter-spacing: 0.3em; }
+.fdy-banner i { order: 2; display: block; width: 44px; height: 1px; margin: 18px 0 14px; background: var(--line-2); }
+.fdy-banner span {
+  order: 3;
+  display: block;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
 }
 
-.fdy-banner i {
-  display: block;
-  width: 132px;
-  height: 2px;
-  margin: 12px auto 0;
-  background: linear-gradient(90deg, transparent, var(--fdy-amber), transparent);
-}
-
-/* ---------------------------------------------------------------- */
-/* Systems readout                                                   */
-/* ---------------------------------------------------------------- */
+/* ---- The way out: plain lines, a thin tick before each ----------------- */
 
 .fdy-systems {
   position: absolute;
-  top: 74px;
-  left: 18px;
-  padding: 11px 13px;
-  min-width: 186px;
-  background: var(--fdy-panel);
-  border: 1px solid var(--fdy-line);
-  border-left: 2px solid var(--fdy-amber);
-  backdrop-filter: blur(7px);
+  top: 96px;
+  left: 40px;
+  min-width: 220px;
+  isolation: isolate;
 }
-
+.fdy-systems::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -34px -70px -34px -48px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.46), rgba(4, 6, 9, 0.2) 58%, rgba(4, 6, 9, 0));
+}
 .fdy-systems > span {
   display: block;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  color: #9db0b8;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
 }
-
 .fdy-system {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-top: 9px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: #6f8088;
-  transition: color 0.3s ease;
-}
-
-.fdy-system i {
-  width: 9px;
-  height: 9px;
-  flex: none;
-  border: 1px solid #4b5a62;
-  transform: rotate(45deg);
-  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-.fdy-system.online {
-  color: var(--fdy-cyan);
-}
-
-.fdy-system.online i {
-  background: var(--fdy-cyan);
-  border-color: var(--fdy-cyan);
-  box-shadow: 0 0 12px rgba(126, 244, 241, 0.8);
-}
-
-/* ---------------------------------------------------------------- */
-/* Switch prompt                                                     */
-/* ---------------------------------------------------------------- */
-
-.fdy-prompt {
-  position: absolute;
-  left: 50%;
-  bottom: 23%;
-  transform: translate(-50%, 10px);
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
-  background: rgba(9, 20, 24, 0.78);
-  border: 1px solid rgba(126, 244, 241, 0.4);
-  opacity: 0;
-  transition: opacity 0.22s ease, transform 0.22s ease;
+  margin-top: 7px;
+  font-size: 15px;
+  font-weight: 450;
+  color: var(--text);
+  transition: color 0.5s ease;
 }
-
-.fdy-prompt.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-.fdy-prompt b {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  color: var(--fdy-cyan);
-}
-
-.fdy-prompt small {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  color: #93a8b0;
-}
-
-.fdy-prompt i {
-  width: 10px;
-  height: 10px;
-  background: var(--fdy-cyan);
-  transform: rotate(45deg);
-  animation: fdy-pulse 1.1s ease-in-out infinite;
-}
-
-@keyframes fdy-pulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-
-/* ---------------------------------------------------------------- */
-/* Junction arrow                                                    */
-/* ---------------------------------------------------------------- */
-
-.fdy-junction {
-  position: absolute;
-  top: 44%;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-}
-
-.fdy-junction.left { left: 6%; }
-.fdy-junction.right { right: 6%; flex-direction: row-reverse; }
-.fdy-junction.show { opacity: 1; }
-
-.fdy-junction u {
-  width: 0;
-  height: 0;
-  border-top: 17px solid transparent;
-  border-bottom: 17px solid transparent;
-  animation: fdy-slide 0.9s ease-in-out infinite;
-}
-
-.fdy-junction.left u { border-right: 21px solid var(--fdy-amber); }
-.fdy-junction.right u { border-left: 21px solid var(--fdy-amber); }
-.fdy-junction u:nth-child(2) { animation-delay: 0.13s; }
-.fdy-junction u:nth-child(3) { animation-delay: 0.26s; }
-
-@keyframes fdy-slide {
-  0%, 100% { opacity: 0.22; }
-  50% { opacity: 1; }
-}
-
-/* ---------------------------------------------------------------- */
-/* Escape sequence                                                   */
-/* ---------------------------------------------------------------- */
-
-.fdy-escape {
-  position: absolute;
-  top: 74px;
-  left: 50%;
-  transform: translate(-50%, -12px);
-  width: min(420px, 62vw);
-  padding: 12px 16px 14px;
-  background: rgba(26, 6, 8, 0.86);
-  border: 1px solid rgba(255, 74, 84, 0.45);
-  opacity: 0;
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-/* (The countdown panel at the top is gone - playtest: clutter. The red
-   vignette round the screen still says the charges are armed.) */
-.fdy-escape { display: none !important; }
-.fdy-escape.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-.fdy-escape header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.26em;
-  color: var(--fdy-red);
-}
-
-.fdy-escape header b {
-  font-size: 19px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
-  color: #fff;
-}
-
-.fdy-escape .fdy-track {
+.fdy-system i {
   position: relative;
-  height: 5px;
-  margin-top: 9px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
+  flex: none;
+  width: 12px;
+  height: 12px;
 }
-
-.fdy-escape .fdy-fill {
+.fdy-system i::before {
+  content: "";
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 100%;
-  background: linear-gradient(90deg, var(--fdy-red), var(--fdy-amber));
-  transform-origin: left center;
-  transition: transform 0.12s linear;
+  left: 0;
+  top: 6px;
+  width: 12px;
+  height: 1px;
+  background: var(--line-2);
+  transition: all 0.4s var(--ease-out);
+}
+.fdy-system.online { color: var(--text-3); }
+.fdy-system.online i::before {
+  left: 3px;
+  top: 0;
+  width: 4px;
+  height: 8px;
+  background: none;
+  border: solid var(--ok);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
 }
 
-.fdy-escape small {
-  display: block;
-  margin-top: 9px;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  color: #ffb9bd;
-  min-height: 13px;
-}
-
-.fdy-escape.critical {
-  animation: fdy-alarm 0.7s steps(2) infinite;
-}
-
-@keyframes fdy-alarm {
-  0%, 100% { border-color: rgba(255, 74, 84, 0.45); }
-  50% { border-color: rgba(255, 74, 84, 1); }
-}
-
-/* Full-screen hazard vignette during the escape. */
-.fdy-vignette {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  transition: opacity 0.35s ease;
-  background: radial-gradient(ellipse at center, transparent 52%, rgba(150, 12, 20, 0.5) 100%);
-}
-
-.fdy-vignette.show { opacity: 0.7; }
-.fdy-vignette.critical { animation: fdy-breathe 0.85s ease-in-out infinite; }
-
-@keyframes fdy-breathe {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 0.9; }
-}
-
-/* ---------------------------------------------------------------- */
-/* Impact                                                            */
-/* ---------------------------------------------------------------- */
-
-/* Full-screen hit flash. Heaviest at the edges so it never hides the lane
-   the player is trying to read while recovering. */
-.fdy-damage {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  background:
-    radial-gradient(ellipse at center, rgba(255, 40, 40, 0.08) 30%, rgba(190, 12, 18, 0.82) 100%);
-  box-shadow: inset 0 0 120px rgba(255, 30, 40, 0.9);
-}
-
-.fdy-damage.hit {
-  animation: fdy-hit 0.42s ease-out;
-}
-
-@keyframes fdy-hit {
-  0% { opacity: 0; }
-  12% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
+/* Integrity in the same group (the shared vitals replace it in the game). */
 .fdy-integrity {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  color: #9db0b8;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
 }
-
-.fdy-integrity .fdy-track {
-  position: relative;
-  flex: 1;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-}
-
+.fdy-integrity .fdy-track { position: relative; flex: 1; height: 2px; background: var(--line); overflow: hidden; }
 .fdy-integrity .fdy-fill {
   position: absolute;
   inset: 0 auto 0 0;
   width: 100%;
-  background: linear-gradient(90deg, var(--fdy-cyan), #4fd8e0);
+  background: var(--text);
   transform-origin: left center;
-  transition: transform 0.25s ease, background 0.25s ease;
+  transition: transform 0.25s var(--ease-out), background 0.25s ease;
 }
+.fdy-integrity.hurt .fdy-fill { background: var(--warn); }
+.fdy-integrity.critical .fdy-fill { background: var(--blood); animation: fdyBreathe 1.6s var(--ease-in-out) infinite; }
+.fdy-integrity b { min-width: 26px; text-align: right; font-weight: 450; font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
 
-.fdy-integrity.hurt .fdy-fill { background: linear-gradient(90deg, var(--fdy-amber), #ffd27a); }
-.fdy-integrity.critical .fdy-fill { background: linear-gradient(90deg, var(--fdy-red), #ff8a8a); }
+/* ---- What to shoot next: a glass ring by the crosshair ----------------- */
 
-.fdy-integrity b {
-  min-width: 26px;
-  text-align: right;
-  color: #f4fbff;
-  font-variant-numeric: tabular-nums;
+.fdy-prompt {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translate(-50%, 6px);
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.35s var(--ease-out);
 }
+.fdy-prompt.show { opacity: 1; transform: translate(-50%, 0); }
+.fdy-prompt i {
+  grid-row: 1 / 3;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--glass);
+  border-radius: 50%;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--glass) 45%, transparent);
+  animation: fdyRing 1.8s var(--ease-in-out) infinite;
+}
+.fdy-prompt b {
+  font-stretch: var(--wide);
+  font-weight: 330;
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--glass);
+}
+.fdy-prompt small { font-size: 12px; font-weight: 450; color: var(--text-2); font-variant-numeric: tabular-nums; }
+@keyframes fdyRing { 50% { transform: scale(1.25); opacity: 0.55; } }
 
-/* ---------------------------------------------------------------- */
-/* Run stats: spheres, score, combo                                  */
-/* ---------------------------------------------------------------- */
+/* ---- Junction: thin ember chevrons, the way forward -------------------- */
+
+.fdy-junction {
+  position: absolute;
+  top: 46%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.fdy-junction.left { left: 7%; flex-direction: row-reverse; }
+.fdy-junction.right { right: 7%; }
+.fdy-junction.show { opacity: 1; }
+.fdy-junction u {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: solid var(--ember);
+  border-width: 2px 2px 0 0;
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 8px color-mix(in srgb, var(--ember) 40%, transparent));
+  animation: fdySlide 1.2s var(--ease-in-out) infinite;
+}
+.fdy-junction.right u { transform: rotate(45deg); }
+.fdy-junction.left u { transform: rotate(-135deg); }
+.fdy-junction.right u:nth-child(1), .fdy-junction.left u:nth-child(1) { animation-delay: 0s; }
+.fdy-junction u:nth-child(2) { animation-delay: 0.15s; }
+.fdy-junction u:nth-child(3) { animation-delay: 0.3s; }
+@keyframes fdySlide { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+
+/* ---- The escape (the countdown panel itself is off: playtest, clutter) - */
+
+.fdy-escape {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  width: min(380px, 62vw);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.4s ease, transform 0.4s var(--ease-out);
+}
+/* (Playtest: clutter. The red vignette round the screen still says the charges are armed.) */
+.fdy-escape { display: none !important; }
+.fdy-escape.show { opacity: 1; transform: translate(-50%, 0); }
+.fdy-escape header { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 500; color: var(--blood); }
+.fdy-escape header b { font-stretch: var(--wide); font-weight: 250; font-size: 24px; color: var(--text); font-variant-numeric: tabular-nums; }
+.fdy-escape .fdy-track { position: relative; height: 1px; margin-top: 10px; background: var(--line); overflow: hidden; }
+.fdy-escape .fdy-fill { position: absolute; inset: 0 auto 0 0; width: 100%; background: var(--blood); transform-origin: left center; transition: transform 0.12s linear; }
+.fdy-escape small { display: block; margin-top: 10px; min-height: 14px; font-size: 12px; color: var(--text-2); }
+.fdy-escape.critical header b { color: var(--blood); animation: fdyBreathe 1s var(--ease-in-out) infinite; }
+
+/* The charges armed: blood round the edges of the screen. */
+.fdy-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(120, 14, 8, 0.5) 100%);
+}
+.fdy-vignette.show { opacity: 0.7; }
+.fdy-vignette.critical { animation: fdyVignette 1.4s var(--ease-in-out) infinite; }
+@keyframes fdyVignette { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+@keyframes fdyBreathe { 50% { opacity: 0.5; } }
+
+/* A hit: heaviest at the edges, so the lane you're reading stays clear. */
+.fdy-damage {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(229, 65, 45, 0.06) 30%, rgba(150, 18, 10, 0.78) 100%);
+  box-shadow: inset 0 0 120px rgba(229, 65, 45, 0.8);
+}
+.fdy-damage.hit { animation: fdyHit 0.42s ease-out; }
+@keyframes fdyHit { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ---- Run stats (the shared HUD replaces these in the game) ------------- */
 
 .fdy-run {
   position: absolute;
   left: 50%;
-  bottom: 22px;
+  bottom: 30px;
   transform: translateX(-50%);
   display: flex;
-  align-items: stretch;
-  gap: 1px;
-  background: var(--fdy-line);
-  border: 1px solid var(--fdy-line);
-  backdrop-filter: blur(7px);
+  align-items: flex-end;
+  gap: 34px;
 }
-
-.fdy-stat {
-  min-width: 92px;
-  padding: 8px 14px;
-  background: var(--fdy-panel);
-  text-align: center;
-}
-
-.fdy-stat span {
-  display: block;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  color: #9db0b8;
-}
-
+.fdy-stat { position: relative; display: grid; justify-items: center; gap: 6px; }
+.fdy-stat span { order: 2; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; color: var(--text-3); }
 .fdy-stat strong {
-  display: block;
-  margin-top: 3px;
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  font-stretch: var(--wide);
+  font-weight: 260;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
 }
+.fdy-stat.spheres strong { color: var(--glass); }
+.fdy-stat.spheres.empty strong { color: var(--blood); animation: fdyBreathe 1.4s var(--ease-in-out) infinite; }
+.fdy-stat.combo strong { color: var(--ember); }
+.fdy-stat.combo.idle strong { color: var(--text-3); }
+.fdy-stat.combo .fdy-decay { order: 3; width: 100%; height: 1px; background: var(--ember); transform-origin: left center; }
+.fdy-stat.pop strong { animation: fdyPop 0.32s var(--ease-out); }
+@keyframes fdyPop { 40% { transform: scale(1.12); } }
 
-.fdy-stat.spheres strong { color: var(--fdy-cyan); }
-.fdy-stat.spheres.empty strong { color: var(--fdy-red); animation: fdy-pulse 0.7s ease-in-out infinite; }
-
-.fdy-stat.combo { position: relative; overflow: hidden; }
-.fdy-stat.combo strong { color: var(--fdy-amber); }
-.fdy-stat.combo.idle strong { color: #55646c; }
-
-/* Decay bar under the combo, so the player can see the window closing. */
-.fdy-stat.combo .fdy-decay {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 100%;
-  background: var(--fdy-amber);
-  transform-origin: left center;
-}
-
-.fdy-stat.pop strong { animation: fdy-pop 0.3s ease-out; }
-
-/* Embedded in the main game, which has its own HUD bar along the bottom and
-   already shows spheres. Lift clear of it and drop the duplicate stat. */
+/* Embedded in the main game: lift clear of its bottom row, drop the duplicates. */
 .foundry-ui.embedded .fdy-run { bottom: 104px; }
 .foundry-ui.embedded .fdy-stat.spheres,
-.foundry-ui.embedded .fdy-stat.score { display: none; }
+.foundry-ui.embedded .fdy-stat.score,
 .foundry-ui.embedded .fdy-integrity { display: none; }
-.foundry-ui.embedded .fdy-prompt { bottom: 30%; }
 
-@keyframes fdy-pop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.3); }
-  100% { transform: scale(1); }
-}
-
-/* ---------------------------------------------------------------- */
-/* Run summary                                                       */
-/* ---------------------------------------------------------------- */
+/* ---- Run summary: the picture dimmed, the words on it ------------------ */
 
 .fdy-summary {
   position: absolute;
@@ -456,147 +327,72 @@
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 8, 11, 0.82);
-  backdrop-filter: blur(5px);
+  background: radial-gradient(ellipse at center, rgba(4, 6, 9, 0.62), rgba(4, 6, 9, 0.86));
 }
-
 .fdy-summary.show { display: flex; }
-
-.fdy-summary-card {
-  width: min(420px, 88vw);
-  padding: 26px 28px;
-  background: var(--fdy-panel);
-  border: 1px solid var(--fdy-line);
-  border-top: 2px solid var(--fdy-amber);
-  text-align: center;
-}
-
-.fdy-summary-card > span {
-  display: block;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.34em;
-  color: var(--fdy-amber);
-}
-
+.fdy-summary-card { width: min(400px, 88vw); text-align: center; }
+.fdy-summary-card > span { display: block; font-size: 13px; color: var(--text-3); }
 .fdy-summary-card > h2 {
-  margin: 8px 0 20px;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  margin: 12px 0 24px;
+  padding-left: 0.26em;
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
 }
+.fdy-summary-card.failed > span { color: var(--blood); }
+.fdy-summary-rows { display: grid; text-align: left; }
+.fdy-summary-row { display: flex; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--text-3); }
+.fdy-summary-row b { font-weight: 450; color: var(--text); font-variant-numeric: tabular-nums; }
+.fdy-summary-row.total b { font-stretch: var(--wide); font-weight: 300; font-size: 18px; color: var(--ember); }
+.fdy-summary-card > small { display: block; margin-top: 22px; font-size: 12px; color: var(--text-3); }
 
-.fdy-summary-card.failed { border-top-color: var(--fdy-red); }
-.fdy-summary-card.failed > span { color: var(--fdy-red); }
-
-.fdy-summary-rows {
-  display: grid;
-  gap: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.fdy-summary-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 9px 13px;
-  background: rgba(9, 14, 18, 0.9);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: #9db0b8;
-}
-
-.fdy-summary-row b {
-  color: #f4fbff;
-  font-variant-numeric: tabular-nums;
-}
-
-.fdy-summary-row.total { background: rgba(20, 30, 36, 0.95); }
-.fdy-summary-row.total b { color: var(--fdy-amber); font-size: 15px; }
-
-.fdy-summary-card > small {
-  display: block;
-  margin-top: 18px;
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  color: #6f8088;
-}
-
-/* ---------------------------------------------------------------- */
-/* Toasts and dev readout                                            */
-/* ---------------------------------------------------------------- */
+/* ---- Toasts: right side, one line each, the value in glass -------------- */
 
 .fdy-toasts {
   position: absolute;
-  right: 18px;
-  bottom: 26%;
+  right: 44px;
+  bottom: 28%;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
-
 .fdy-toast {
-  padding: 7px 12px;
-  background: rgba(9, 20, 24, 0.85);
-  border-right: 2px solid var(--fdy-cyan);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-size: 14px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  color: var(--text);
   opacity: 0;
-  transform: translateX(14px);
-  animation: fdy-toast-in 0.28s ease forwards;
+  transform: translateX(10px);
+  animation: fdyToastIn 0.4s var(--ease-out) forwards;
 }
-
-.fdy-toast b {
-  margin-left: 9px;
-  color: var(--fdy-cyan);
-  font-variant-numeric: tabular-nums;
-}
-
-.fdy-toast.leaving {
-  animation: fdy-toast-out 0.3s ease forwards;
-}
-
-@keyframes fdy-toast-in {
-  to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes fdy-toast-out {
-  to { opacity: 0; transform: translateX(14px); }
-}
+.fdy-toast b { margin-left: 10px; font-weight: 400; color: var(--glass); font-variant-numeric: tabular-nums; }
+.fdy-toast.leaving { animation: fdyToastOut 0.32s ease forwards; }
+@keyframes fdyToastIn { to { opacity: 1; transform: none; } }
+@keyframes fdyToastOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(10px); } }
 
 .fdy-dev {
   position: absolute;
-  right: 18px;
-  top: 74px;
-  padding: 8px 11px;
-  background: rgba(6, 10, 13, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 10px;
-  line-height: 1.65;
-  letter-spacing: 0.09em;
-  color: #9db0b8;
+  right: 44px;
+  top: 84px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-
-.fdy-dev b {
-  color: #f4fbff;
-  font-weight: 700;
-}
-
+.fdy-dev b { font-weight: 500; color: var(--text); }
 .fdy-dev[hidden] { display: none; }
 
-/* ---------------------------------------------------------------- */
-/* Small screens                                                     */
-/* ---------------------------------------------------------------- */
+/* ---- Small screens ---------------------------------------------------- */
 
-@media (max-width: 640px) {
-  .fdy-systems { top: 66px; left: 10px; min-width: 150px; padding: 9px 10px; }
-  .fdy-escape { top: 66px; width: min(320px, 84vw); padding: 10px 12px 12px; }
-  .fdy-dev { right: 10px; top: 66px; }
-  .fdy-toasts { right: 10px; bottom: 30%; }
+@media (max-width: 650px) {
+  .fdy-systems { display: none; }
+  .fdy-dev { right: 16px; top: 66px; }
+  .fdy-toasts { right: 16px; bottom: 30%; }
   .fdy-junction.left { left: 3%; }
   .fdy-junction.right { right: 3%; }
 }
@@ -607,21 +403,9 @@
   animation-iteration-count: 1 !important;
   transition-duration: 0.05s !important;
 }
-
 @media (prefers-reduced-motion: reduce) {
   .foundry-ui * {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
   }
-}
-
-/* ---- health at the top left (the vitals panel), the route under it ---- */
-.fdy-systems { top: 262px; left: 22px; min-width: 220px; }
-.fdy-systems > span { font-size: 11px; }
-.fdy-system { font-size: 12px; }
-.fdy-stat { min-width: 112px; padding: 10px 18px; }
-.fdy-stat span { font-size: 10px; }
-.fdy-stat strong { font-size: 26px; }
-@media (max-width: 650px) {
-  .fdy-systems { display: none; }
 }

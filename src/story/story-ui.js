@@ -224,9 +224,17 @@ export class StoryUI {
    * @param {string[]} view.keys    key codes to draw
    * @param {"together"|"sequence"|"single"} view.layout
    * @param {boolean} [view.bar]    show the fill bar (mash / hold)
+   * @param {boolean} [view.mash]   a mash: the big key that pulses with each
+   *   press, and a thick bar ticked off in presses (src/ui/mash-prompt.css)
+   * @param {number} [view.step]    a mash: how much one press fills (0..1)
    */
-  showReaction({ label, keys, layout = "single", bar = false }) {
+  showReaction({ label, keys, layout = "single", bar = false, mash = false, step = 0 }) {
     this.react.classList.remove("success", "fail");
+    this.react.classList.toggle("mash", mash);
+    this.reactBar.classList.remove("tap-a", "tap-b");
+    if (step > 0) this.reactBar.style.setProperty("--step", `${(Math.min(1, step) * 100).toFixed(2)}%`);
+    else this.reactBar.style.removeProperty("--step");
+    this._presses = 0;
     this.reactLabel.textContent = label;
     this.reactKeys.innerHTML = "";
     this.reactKeyEls = [];
@@ -256,8 +264,23 @@ export class StoryUI {
    * @param {boolean[]} [s.done] which keys are already hit
    * @param {boolean[]} [s.held] which keys are down right now
    * @param {number} [s.bar]     0..1 fill
+   * @param {number} [s.presses] a mash: presses counted so far
+   * @param {number} [s.pressed] a mash: which key was pressed last
    */
-  updateReaction({ time = 1, index = -1, done = [], held = [], bar = null }) {
+  updateReaction({ time = 1, index = -1, done = [], held = [], bar = null, presses = 0, pressed = -1 }) {
+    // A new press: pulse its key and bump the bar. Two identical animations
+    // under two class names, swapped each press, restart it without a reflow.
+    if (presses > (this._presses ?? 0)) {
+      const tap = presses % 2 ? "tap-a" : "tap-b";
+      const untap = presses % 2 ? "tap-b" : "tap-a";
+      const key = this.reactKeyEls[Math.max(0, pressed)];
+      for (const el of [key, this.reactBar]) {
+        if (!el) continue;
+        el.classList.remove(untap);
+        el.classList.add(tap);
+      }
+    }
+    this._presses = presses;
     this.reactKeyEls.forEach((k, i) => {
       const isDone = !!done[i];
       k.classList.toggle("done", isDone);

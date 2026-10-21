@@ -68,7 +68,7 @@ export class CausewayHud {
 
     this.vitalsEl = el("div", "cw-vitals", `
       <div class="cw-vitals-head"><span>Subject 07</span><b class="cw-bpm">72 bpm</b></div>
-      <canvas width="200" height="40"></canvas>
+      <canvas width="250" height="34"></canvas>
       <div class="cw-meters">
         <label><span>Integrity</span><i><em class="cw-int"></em></i><b class="cw-int-n">100</b></label>
         <label><span>Air</span><i><em class="cw-air"></em></i><b class="cw-air-n">Clear</b></label>
@@ -334,8 +334,10 @@ export class CausewayHud {
       const x = this._ecgX;
       const y = h * 0.62 - v * h * 0.5;
       ctx.clearRect(x, 0, 6, h);
-      ctx.strokeStyle = this._integrity < 35 ? "#ff5a4a" : "#5ef0ff";
-      ctx.lineWidth = 2;
+      // A thin warm-white line, blood when integrity is critical (src/ui/theme.css).
+      ctx.strokeStyle = this._integrity < 35 ? "#e5412d" : "rgba(244, 240, 232, 0.85)";
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = "round";
       ctx.beginPath();
       ctx.moveTo(x - 1, this._lastY ?? y);
       ctx.lineTo(x, y);

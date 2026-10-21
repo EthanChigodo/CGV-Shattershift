@@ -1,279 +1,613 @@
 /**
- * Level 1 HUD - The Glass Causeway.
+ * The HUD every level shares (src/ui/causeway-hud.js), in the game's look,
+ * NIGHTFALL (src/ui/theme.css): the game is the picture, and the interface
+ * is thin, clean light laid on it - no plates, panels or boxes. Text and
+ * numbers sit on the scene with a soft shadow; where a group has to read
+ * over a bright level (the Foundry's work lights, the Roof's sodium glare)
+ * a soft radial shade sits behind it, with no edge to it.
  *
- * Palette: the Causeway's clinical white and cyan (breakable, "this way"),
- * with amber and red reserved for danger - the same readability rule the
- * level itself follows. Panels are dark smoked glass so the bright level
- * stays readable behind them.
+ *   bottom left     vitals: the heart trace, integrity as a big light
+ *                   number over a hairline, the air
+ *   bottom centre   score and combo, quiet; prompts and the intercom above
+ *   bottom right    speed and focus, over the sphere wheel (sphere-wheel.css)
+ *   top centre      section titles: wide, thin, tracked, fading slowly
+ *
+ * Colour only ever means something: blood is damage, glass is what breaks,
+ * ember is the way forward, warn is a hazard on its way.
  */
 
 .cw-ui {
-  --cw-glass: rgba(4, 16, 22, 0.66);
-  --cw-line: rgba(94, 240, 255, 0.26);
-  --cw-cyan: #5ef0ff;
-  --cw-white: #eef7fa;
-  --cw-dim: #8fb3bd;
-  --cw-amber: #ffb547;
-  --cw-red: #ff4a3d;
   position: fixed;
   inset: 0;
   z-index: 5;
   pointer-events: none;
-  color: var(--cw-white);
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  text-shadow: var(--shadow-text);
 }
 .cw-ui[hidden] { display: none !important; }
 body.cw-active .hud { display: none; }
-body.cw-active .brand small::after { content: " // CAUSEWAY"; }
 
 /*
  * One HUD for every level (the Skyline's): in the Foundry, the Labs and on
- * the Roof this panel set shows the same stats - spheres, score, combo,
- * integrity, sphere type, focus, serums - and each level's own stat panels
- * step aside. Their level-specific widgets (the Foundry's systems and escape
- * clock, the Labs' banners and prompts) stay.
+ * the Roof this set shows the same stats - spheres, score, combo, integrity,
+ * sphere type, focus, serums - and each level's own stat panels step aside.
+ * Their level-specific widgets (the Foundry's route, the Labs' titles and
+ * prompts) stay.
  */
 body.hud-unified .hud,
 body.hud-unified .fdy-run,
 body.hud-unified .fdy-integrity,
 body.hud-unified .mlt-vitals { display: none !important; }
-/* The Skyline-only panels: its minimap, missions, intercom and case files. */
+/* The Skyline-only panels: its minimap and missions. */
 body.hud-unified .cw-map,
 body.hud-unified .cw-missions { display: none !important; }
 
-.cw-ui kbd {
-  min-width: 20px; padding: 2px 5px; border: 1px solid var(--cw-line); border-radius: 3px;
-  background: rgba(4, 16, 22, 0.8); color: var(--cw-white); font-size: 9px;
-}
+.cw-ui kbd { color: var(--text); }
 
 .cw-fade { position: fixed; inset: 0; background: #000; opacity: 0; transition: opacity 0.2s linear; }
 
-/* ---- transient text -------------------------------------------------- */
+/* A soft shade behind a group, for the bright levels: a radial falloff
+   with no edge (never a visible rectangle). The group isolates it. */
+.cw-vitals::before,
+.cw-tools::before,
+.cw-core::before,
+.cw-file::before,
+.cw-intro::before,
+.cw-report::before,
+.cw-missions::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -36px -56px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.46), rgba(4, 6, 9, 0.22) 55%, rgba(4, 6, 9, 0));
+}
 
+/* ---- Transient text ---------------------------------------------------- */
+
+/* A section title: wide, thin, tracked; a hairline; a quiet line under it.
+   (The markup is kicker then name: the name shows first, the kicker under.) */
 .cw-title {
-  position: absolute; top: 17%; left: 50%; transform: translate(-50%, 10px); text-align: center;
-  opacity: 0; transition: opacity 0.6s ease, transform 0.6s ease;
+  position: absolute;
+  top: 15%;
+  left: 50%;
+  width: min(92vw, 1100px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 1.1s var(--ease-in-out), top 0.4s var(--ease-out);
 }
-.cw-title.show { opacity: 1; transform: translate(-50%, 0); }
-.cw-title span { display: block; color: var(--cw-cyan); font-size: 11px; font-weight: 700; letter-spacing: 0.4em; }
+.cw-title.show { opacity: 1; transition: opacity 0.9s var(--ease-in-out), top 0.4s var(--ease-out); }
 .cw-title strong {
-  display: block; margin-top: 8px; font-size: clamp(30px, 5.4vw, 64px); font-weight: 850; letter-spacing: -0.01em;
-  text-shadow: 0 0 34px rgba(94, 240, 255, 0.45), 0 2px 18px rgba(0, 0, 0, 0.6);
+  display: block;
+  padding-left: 0.3em; /* the tracking's trailing space, so it centres */
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: clamp(24px, 2.6vw, 38px);
+  text-wrap: balance;
+  line-height: 1.1;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 0, 0, 0.55);
+  transition: letter-spacing 3.2s var(--ease-out);
 }
+.cw-title.show strong { letter-spacing: 0.3em; }
+.cw-title strong::after {
+  content: "";
+  display: block;
+  width: 44px;
+  height: 1px;
+  margin: 18px auto 0;
+  background: var(--line-2);
+}
+.cw-title span {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+.cw-title span:empty { display: none; }
 
+/* The intercom: a subtitle, the speaker small above the line. */
 .cw-radio {
-  position: absolute; top: 88px; left: 22px; width: min(520px, 46vw); padding: 12px 16px 13px 18px;
-  border-left: 3px solid var(--cw-cyan); background: var(--cw-glass); backdrop-filter: blur(8px);
-  opacity: 0; transform: translateX(-12px); transition: opacity 0.35s ease, transform 0.35s ease;
+  position: absolute;
+  left: 50%;
+  bottom: 168px;
+  width: min(62vw, 780px);
+  transform: translate(-50%, 6px);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.35s var(--ease-out);
 }
-.cw-radio.show { opacity: 1; transform: none; }
-.cw-radio[data-speaker="vale"] { border-left-color: var(--cw-amber); }
-.cw-radio .cw-who { display: block; font-size: calc(10px * var(--sub-scale, 1.25)); font-weight: 800; letter-spacing: 0.16em; color: var(--cw-cyan); }
-.cw-radio[data-speaker="vale"] .cw-who { color: var(--cw-amber); }
-.cw-radio p { margin: 6px 0 0; min-height: 1.4em; font-size: calc(15px * var(--sub-scale, 1.25)); font-weight: 600; line-height: 1.4; }
+.cw-radio.show { opacity: 1; transform: translate(-50%, 0); }
+.cw-radio .cw-who {
+  display: block;
+  margin-bottom: 7px;
+  font-size: calc(9px * var(--sub-scale, 1.25));
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cw-radio p {
+  margin: 0;
+  font-size: calc(16px * var(--sub-scale, 1.25));
+  font-weight: 420;
+  line-height: 1.42;
+  color: var(--text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 16px rgba(0, 0, 0, 0.6), 0 0 34px rgba(0, 0, 0, 0.35);
+}
 
+/* A hint: one quiet line in the prompt lane. */
 .cw-hint {
-  position: absolute; top: 58%; left: 50%; transform: translateX(-50%); padding: 7px 14px;
-  border: 1px solid var(--cw-line); border-radius: 999px; background: var(--cw-glass);
-  font-size: 12px; font-weight: 700; opacity: 0; transition: opacity 0.25s ease;
+  position: absolute;
+  left: 50%;
+  bottom: 112px;
+  max-width: 70vw;
+  transform: translateX(-50%);
+  font-size: 15px;
+  font-weight: 450;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.4s ease;
 }
 .cw-hint.show { opacity: 1; }
 
+/* A warning: the hazard's colour, wide and tracked, breathing gently. */
 .cw-warn {
-  position: absolute; top: 26%; left: 50%; transform: translateX(-50%); text-align: center;
-  opacity: 0; transition: opacity 0.2s ease;
+  position: absolute;
+  top: 31%;
+  left: 50%;
+  transform: translateX(-50%);
+  --tone: var(--blood);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.4s ease;
 }
-.cw-warn.show { opacity: 1; animation: cwPulse 0.8s ease-in-out infinite; }
-.cw-warn strong { display: block; font-size: 20px; font-weight: 850; letter-spacing: 0.08em; color: var(--cw-red); text-shadow: 0 0 20px rgba(255, 74, 61, 0.6); }
-.cw-warn[data-tone="amber"] strong { color: var(--cw-amber); text-shadow: 0 0 20px rgba(255, 181, 71, 0.55); }
-.cw-warn[data-tone="cyan"] strong { color: var(--cw-cyan); text-shadow: 0 0 20px rgba(94, 240, 255, 0.5); }
-.cw-warn span { display: block; margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--cw-white); }
-@keyframes cwPulse { 50% { opacity: 0.55; } }
+.cw-warn[data-tone="amber"] { --tone: var(--warn); }
+.cw-warn[data-tone="cyan"] { --tone: var(--glass); }
+.cw-warn.show { opacity: 1; }
+.cw-warn strong {
+  display: block;
+  padding-left: 0.24em;
+  font-stretch: var(--wide);
+  font-weight: 300;
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--tone);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 22px color-mix(in srgb, var(--tone) 40%, transparent);
+}
+.cw-warn.show strong { animation: cwBreathe 1.8s var(--ease-in-out) infinite; }
+.cw-warn strong::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 1px;
+  margin: 10px auto 0;
+  background: color-mix(in srgb, var(--tone) 70%, transparent);
+}
+.cw-warn span { display: block; font-size: 14px; font-weight: 450; color: var(--text-2); }
+.cw-warn span:empty { display: none; }
+@keyframes cwBreathe { 50% { opacity: 0.55; } }
 
+/* A case file recovered: text on the picture, right side, a hairline at its edge. */
 .cw-file {
-  position: absolute; right: 22px; top: 340px; width: 260px; padding: 14px 16px;
-  border: 1px solid var(--cw-line); background: var(--cw-glass); backdrop-filter: blur(8px);
-  opacity: 0; transform: translateX(12px); transition: opacity 0.4s ease, transform 0.4s ease;
+  position: absolute;
+  right: 44px;
+  top: 34%;
+  width: 280px;
+  padding-left: 16px;
+  border-left: 1px solid var(--line-2);
+  isolation: isolate;
+  opacity: 0;
+  transform: translateX(10px);
+  transition: opacity 0.6s ease, transform 0.6s var(--ease-out);
 }
 .cw-file.show { opacity: 1; transform: none; }
-.cw-file { border-color: rgba(255, 196, 90, 0.45); }
-.cw-file span { font-size: 9px; font-weight: 800; letter-spacing: 0.16em; color: #ffc45a; }
-.cw-file h3 { margin: 6px 0 6px; font-size: 16px; }
-.cw-file p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--cw-dim); }
+.cw-file span { display: block; font-size: 12px; font-weight: 500; color: var(--glass); }
+.cw-file h3 {
+  margin: 8px 0 8px;
+  font-stretch: var(--wide);
+  font-weight: 300;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.cw-file p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
 
+/* The sector intro: centred, on the picture. */
 .cw-intro {
-  position: absolute; left: 50%; top: 50%; width: min(520px, 90vw); transform: translate(-50%, -44%);
-  padding: 26px 30px; border: 1px solid var(--cw-line); background: rgba(4, 16, 22, 0.8); backdrop-filter: blur(10px);
-  opacity: 0; transition: opacity 0.5s ease, transform 0.5s ease;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(520px, 90vw);
+  transform: translate(-50%, -46%);
+  isolation: isolate;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.9s var(--ease-in-out), transform 0.9s var(--ease-out);
 }
 .cw-intro.show { opacity: 1; transform: translate(-50%, -50%); }
-.cw-intro > span { font-size: 10px; font-weight: 800; letter-spacing: 0.3em; color: var(--cw-cyan); }
-.cw-intro h2 { margin: 8px 0 10px; font-size: 34px; line-height: 1; }
-.cw-intro p { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--cw-dim); }
-.cw-intro ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
-.cw-intro li { padding-left: 16px; position: relative; font-size: 13px; font-weight: 700; }
-.cw-intro li::before { content: ""; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border: 1px solid var(--cw-cyan); transform: rotate(45deg); }
+.cw-intro > span { font-size: 13px; color: var(--text-3); }
+.cw-intro h2 {
+  margin: 12px 0 16px;
+  padding-left: 0.26em;
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.cw-intro p { margin: 0 0 18px; font-size: 15px; line-height: 1.55; color: var(--text-2); }
+.cw-intro ul { margin: 0 auto; padding: 0; list-style: none; display: inline-grid; gap: 8px; text-align: left; }
+.cw-intro li { position: relative; padding-left: 22px; font-size: 14px; color: var(--text); }
+.cw-intro li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 12px; height: 1px; background: var(--line-2); }
 
-/* ---- persistent panels ---------------------------------------------- */
+/* ---- Persistent ------------------------------------------------------- */
 
-.cw-missions { position: absolute; left: 22px; top: 200px; width: 230px; }
-.cw-missions h4 { margin: 0 0 6px; font-size: 10px; font-weight: 800; letter-spacing: 0.14em; color: var(--cw-dim); }
-.cw-missions ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+/* Missions: plain lines, a thin tick before each; a done one is ticked off. */
+.cw-missions { position: absolute; left: 40px; top: 96px; width: 270px; isolation: isolate; }
+.cw-missions h4 { margin: 0 0 10px; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; color: var(--text-3); }
+.cw-missions ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
 .cw-missions li {
-  display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px;
-  background: rgba(4, 16, 22, 0.5); border-left: 2px solid var(--cw-line); font-size: 11px; font-weight: 600;
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-left: 22px;
+  font-size: 14px;
+  font-weight: 450;
 }
-.cw-missions li b { color: var(--cw-cyan); font-variant-numeric: tabular-nums; }
-.cw-missions li.done { border-left-color: #7dff9a; color: #b8ffcb; }
-.cw-missions li.done span { text-decoration: line-through; text-decoration-color: rgba(125, 255, 154, 0.6); }
+.cw-missions li::before { content: ""; position: absolute; left: 0; top: 0.68em; width: 12px; height: 1px; background: var(--line-2); }
+.cw-missions li b { font-weight: 400; color: var(--glass); font-variant-numeric: tabular-nums; }
+.cw-missions li.done { color: var(--text-3); }
+.cw-missions li.done::before {
+  top: 0.26em; left: 3px; width: 4px; height: 8px; background: none;
+  border: solid var(--ok); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+}
 
-.cw-serums { position: absolute; left: 22px; top: 330px; display: grid; gap: 6px; }
+/* Active serums (the badges at the top took over: powerup-banner.css). */
+.cw-serums { position: absolute; left: 40px; top: 300px; display: grid; gap: 10px; }
 .cw-serum {
-  position: relative; display: flex; align-items: center; gap: 8px; width: 200px; padding: 7px 10px;
-  background: rgba(4, 16, 22, 0.7); border: 1px solid color-mix(in srgb, var(--c) 50%, transparent);
-  font-size: 11px; font-weight: 800; overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 220px;
+  padding-bottom: 6px;
+  font-size: 14px;
+  font-weight: 450;
 }
-.cw-serum::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: calc(var(--r) * 100%); background: var(--c); box-shadow: 0 0 10px var(--c); }
-.cw-serum i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 12px var(--c); }
-.cw-serum b { margin-left: auto; color: var(--cw-dim); font-variant-numeric: tabular-nums; }
+.cw-serum::after { content: ""; position: absolute; left: 0; bottom: 0; height: 1px; width: calc(var(--r) * 100%); background: var(--c); }
+.cw-serum i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); align-self: center; }
+.cw-serum b { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--text-2); }
 
+/* Vitals, bottom left: the heart trace, integrity, the air. */
 .cw-vitals {
-  position: absolute; left: 22px; bottom: 20px; width: 262px; padding: 10px 12px;
-  border: 1px solid var(--cw-line); background: var(--cw-glass); backdrop-filter: blur(8px);
+  position: absolute;
+  left: 40px;
+  bottom: 34px;
+  width: 250px;
+  isolation: isolate;
 }
-.cw-vitals-head { display: flex; justify-content: space-between; font-size: 10px; font-weight: 800; letter-spacing: 0.1em; color: var(--cw-dim); }
-.cw-vitals-head b { color: var(--cw-cyan); font-variant-numeric: tabular-nums; letter-spacing: 0; }
-.cw-vitals canvas { display: block; width: 100%; height: 44px; margin: 4px 0 6px; }
-.cw-vitals.critical { border-color: rgba(255, 74, 61, 0.6); animation: cwPulse 0.9s ease-in-out infinite; }
-.cw-vitals.critical .cw-vitals-head b { color: var(--cw-red); }
-.cw-meters, .cw-gauges { display: grid; gap: 5px; }
-.cw-meters label, .cw-gauges label { display: grid; grid-template-columns: 58px 1fr 58px; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; color: var(--cw-dim); }
-.cw-meters i, .cw-gauges i { height: 5px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
-.cw-meters em, .cw-gauges em { display: block; height: 100%; transform-origin: left; background: var(--cw-cyan); transition: transform 0.15s linear; }
-.cw-meters b, .cw-gauges b { text-align: right; color: var(--cw-white); font-variant-numeric: tabular-nums; }
-.cw-vitals.critical .cw-int { background: var(--cw-red); }
-.cw-vitals.smoky .cw-air { background: var(--cw-amber); }
+.cw-vitals::before { inset: -44px -70px -34px -48px; }
+.cw-vitals-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.cw-vitals-head span { letter-spacing: 0.16em; text-transform: uppercase; font-size: 10px; color: var(--text-4); }
+.cw-vitals-head b { font-weight: 450; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.cw-vitals canvas {
+  display: block;
+  width: 100%;
+  height: 34px;
+  margin: 4px 0 8px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.6));
+}
+.cw-meters { display: grid; gap: 12px; }
+/* Integrity: the number big and light, its name beside it, a hairline under. */
+.cw-meters label { display: grid; grid-template-columns: auto 1fr; align-items: end; column-gap: 12px; row-gap: 9px; }
+.cw-meters label > span { grid-row: 1; grid-column: 2; padding-bottom: 4px; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; color: var(--text-3); }
+.cw-meters label > b {
+  grid-row: 1;
+  grid-column: 1;
+  min-width: 2ch;
+  font-stretch: var(--wide);
+  font-weight: 230;
+  font-size: 44px;
+  line-height: 0.82;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.cw-meters label > i { grid-row: 2; grid-column: 1 / -1; display: block; height: 2px; overflow: hidden; background: var(--line); }
+.cw-meters em { display: block; height: 100%; transform-origin: left; background: var(--text); transition: transform 0.25s var(--ease-out), background 0.3s; }
+/* The air: one small line - its name, a finer hairline, the word. */
+.cw-meters label + label { grid-template-columns: auto 1fr auto; row-gap: 0; }
+.cw-meters label + label > span { grid-column: 1; padding: 0; font-size: 11px; }
+.cw-meters label + label > i { grid-row: 1; grid-column: 2; height: 1px; align-self: center; }
+.cw-meters label + label > b {
+  grid-column: 3;
+  min-width: 0;
+  font-stretch: 100%;
+  font-weight: 450;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+.cw-meters label + label em { background: var(--text-2); }
+/* Low: blood, breathing gently. */
+.cw-vitals.critical .cw-int { background: var(--blood); }
+.cw-vitals.critical .cw-int-n { color: var(--blood); animation: cwBreathe 1.6s var(--ease-in-out) infinite; }
+.cw-vitals.critical label:first-child > i { animation: cwBreathe 1.6s var(--ease-in-out) infinite; }
+.cw-vitals.critical .cw-bpm { color: var(--blood); }
+.cw-vitals.smoky .cw-air { background: var(--warn); }
+.cw-vitals.smoky .cw-air-n { color: var(--warn); }
 
+/* Score and combo, bottom centre: quiet. (The sphere count is the wheel's, bottom right.) */
 .cw-core {
-  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
-  display: grid; grid-template-columns: auto auto auto auto; align-items: end; gap: 26px;
-  padding: 10px 22px; border: 1px solid var(--cw-line); background: var(--cw-glass); backdrop-filter: blur(8px);
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  gap: 34px;
+  isolation: isolate;
 }
-.cw-core > div { display: grid; gap: 2px; }
-.cw-core span { font-size: 9px; font-weight: 800; letter-spacing: 0.12em; color: var(--cw-dim); }
-.cw-core b { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.cw-spheres b { font-size: 36px; line-height: 1; color: var(--cw-cyan); text-shadow: 0 0 18px rgba(94, 240, 255, 0.4); }
-.cw-spheres.low b { color: var(--cw-red); text-shadow: 0 0 18px rgba(255, 74, 61, 0.5); animation: cwPulse 0.7s ease-in-out infinite; }
-.cw-cam b { font-size: 12px; }
-.cw-combo i { height: 3px; background: rgba(255, 255, 255, 0.1); }
-.cw-combo em { display: block; height: 100%; transform-origin: left; background: var(--cw-amber); }
-.cw-core .bump b { animation: cwBump 0.3s ease-out; }
-@keyframes cwBump { 30% { transform: scale(1.25); } }
-
-.cw-tools {
-  position: absolute; right: 22px; bottom: 20px; width: 262px; padding: 10px 12px;
-  border: 1px solid var(--cw-line); background: var(--cw-glass); backdrop-filter: blur(8px);
+.cw-core::before { inset: -30px -80px -30px; }
+.cw-core > div { display: grid; justify-items: center; gap: 6px; }
+.cw-core span { order: 2; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; color: var(--text-3); }
+.cw-core b {
+  font-stretch: var(--wide);
+  font-weight: 260;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
 }
-.cw-type { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-style: normal; font-size: 9px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c, var(--cw-cyan)); }
+.cw-ui .cw-spheres { display: none; }
+.cw-score b { color: var(--text); }
+.cw-combo { position: relative; }
+.cw-combo b { color: var(--ember); letter-spacing: 0.04em; }
+.cw-combo i { order: 3; display: block; width: 100%; height: 1px; margin-top: -2px; background: var(--line); }
+.cw-combo em { display: block; height: 100%; transform-origin: left; background: var(--ember); }
+.cw-core .bump b { animation: cwBump 0.32s var(--ease-out); }
+@keyframes cwBump { 30% { transform: scale(1.12); } }
+/* (The type and cost live in the wheel; kept here for the checks.) */
+.cw-type {
+  order: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c, var(--glass));
+}
 .cw-type u { text-decoration: none; }
-.cw-type i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--cw-cyan)); box-shadow: 0 0 8px var(--c, var(--cw-cyan)); }
+.cw-type i { width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--glass)); }
 .cw-type.dry { opacity: 0.45; }
-.cw-keys { margin: 6px 0 8px; font-size: 10px; color: var(--cw-dim); text-align: center; }
-.cw-speed { background: var(--cw-white) !important; }
-.cw-focus { background: #9fb8ff !important; }
+.cw-keys { margin: 6px 0 8px; font-size: 11px; color: var(--text-3); text-align: center; }
 
-.cw-map { position: absolute; top: 88px; right: 22px; width: 150px; }
-.cw-map-frame {
-  position: relative; height: 230px; border: 1px solid var(--cw-line);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 24px rgba(0, 0, 0, 0.35);
-  background: transparent;
+/* Speed and focus, bottom right over the wheel: two hairlines. */
+.cw-tools {
+  position: absolute;
+  right: 44px;
+  bottom: 284px;
+  width: 210px;
+  isolation: isolate;
 }
-.cw-map-frame .lane { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(94, 240, 255, 0.18); }
+.cw-tools::before { inset: -26px -40px -26px -60px; }
+.cw-gauges { display: grid; gap: 10px; }
+.cw-gauges label {
+  display: grid;
+  grid-template-columns: 44px 1fr 62px;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.cw-gauges i { display: block; height: 1px; overflow: hidden; background: var(--line); }
+.cw-gauges em { display: block; height: 100%; transform-origin: left; transition: transform 0.15s linear; }
+.cw-gauges b {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 450;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.cw-speed { background: var(--text-2); }
+.cw-focus { background: var(--glass); }
+
+/* The Skyline's old minimap (not on the page any more). */
+.cw-map { position: absolute; top: 96px; right: 44px; width: 150px; }
+.cw-map-frame { position: relative; height: 230px; border: 1px solid var(--line-2); background: rgba(4, 6, 9, 0.28); }
+.cw-map-frame .lane { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--glass) 22%, transparent); }
 .cw-map-frame .lane.l { left: 39.3%; }
 .cw-map-frame .lane.r { left: 60.7%; }
-.cw-map-key { display: flex; flex-wrap: wrap; gap: 4px 9px; margin-top: 6px; font-size: 9px; font-weight: 700; color: var(--cw-dim); }
-.cw-map-key span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 4px; vertical-align: 0; }
-.k-glass::before { background: #5ef0ff; }
-.k-hazard::before { background: #ff4a3d; }
-.k-fire::before { background: #ff8a1f; }
-.k-sprinkler::before { background: #4d8dff; }
+.cw-map-key { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; font-size: 10px; color: var(--text-3); }
+.cw-map-key span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; vertical-align: 1px; }
+.k-glass::before { background: var(--glass); }
+.k-hazard::before { background: var(--blood); }
+.k-fire::before { background: var(--ember); }
+.k-sprinkler::before { background: #6fa8ff; }
 body.cw-nomap .cw-map { display: none; }
 
+/* The sector report: text on the picture, right side. */
 .cw-report {
-  position: absolute; right: 22px; top: 50%; width: 300px; transform: translate(20px, -50%);
-  padding: 18px 20px; border: 1px solid var(--cw-line); background: rgba(4, 16, 22, 0.82); backdrop-filter: blur(10px);
-  opacity: 0; transition: opacity 0.6s ease, transform 0.6s ease;
+  position: absolute;
+  right: 56px;
+  top: 50%;
+  width: 300px;
+  transform: translate(16px, -50%);
+  isolation: isolate;
+  opacity: 0;
+  transition: opacity 0.8s var(--ease-in-out), transform 0.8s var(--ease-out);
 }
 .cw-report.show { opacity: 1; transform: translate(0, -50%); }
-.cw-report > span { font-size: 9px; font-weight: 800; letter-spacing: 0.2em; color: var(--cw-cyan); }
-.cw-report h3 { margin: 6px 0 12px; font-size: 22px; }
-.cw-report dl { margin: 0; display: grid; gap: 5px; }
-.cw-report dl div { display: flex; justify-content: space-between; font-size: 12px; }
-.cw-report dt { color: var(--cw-dim); }
-.cw-report dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
-.cw-report ol { margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid var(--cw-line); list-style: none; display: grid; gap: 4px; font-size: 11px; color: var(--cw-dim); }
-.cw-report li.done { color: #b8ffcb; }
-.cw-report li.done::before { content: "Done  "; font-weight: 800; }
+.cw-report > span { font-size: 12px; color: var(--text-3); }
+.cw-report h3 {
+  margin: 8px 0 16px;
+  font-stretch: var(--wide);
+  font-weight: 230;
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.cw-report dl { margin: 0; display: grid; }
+.cw-report dl div { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.cw-report dt { color: var(--text-3); }
+.cw-report dd { margin: 0; font-weight: 450; font-variant-numeric: tabular-nums; }
+.cw-report ol { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; color: var(--text-3); }
+.cw-report li { position: relative; padding-left: 20px; }
+.cw-report li::before { content: ""; position: absolute; left: 0; top: 0.68em; width: 10px; height: 1px; background: var(--line-2); }
+.cw-report li.done { color: var(--text); }
+.cw-report li.done::before {
+  top: 0.26em; left: 3px; width: 4px; height: 8px; background: none;
+  border: solid var(--ok); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+}
 
+/* Labels on things in the world (the first time you meet them): a thin
+   leader line on the left in the thing's colour, the words on the picture. */
 .cw-labels { position: absolute; inset: 0; }
 .cw-label {
-  position: absolute; left: 0; top: 0; width: 200px; margin: -14px 0 0 -100px; padding: 7px 10px;
-  border-left: 2px solid var(--cw-cyan); background: rgba(4, 16, 22, 0.82); font-size: 11px; line-height: 1.35;
+  --k: var(--glass);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 220px;
+  margin: -14px 0 0 -110px;
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--k);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
 }
-.cw-label strong { display: block; font-size: 12px; }
-.cw-label span { color: var(--cw-dim); }
-.cw-label[data-kind="hazard"], .cw-label[data-kind="collapse"] { border-left-color: var(--cw-red); }
-.cw-label[data-kind="fire"] { border-left-color: #ff8a1f; }
-.cw-label[data-kind="serum"] { border-left-color: #ff5ad0; }
-.cw-label[data-kind="gate"] { border-left-color: var(--cw-amber); }
+.cw-label strong {
+  display: block;
+  margin-bottom: 2px;
+  font-stretch: var(--wide);
+  font-weight: 350;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.cw-label[data-kind="hazard"], .cw-label[data-kind="collapse"] { --k: var(--blood); }
+.cw-label[data-kind="fire"] { --k: var(--ember); }
+.cw-label[data-kind="serum"] { --k: #ff7ad9; }
+.cw-label[data-kind="gate"] { --k: var(--warn); }
 
 .cw-perf {
-  position: fixed; z-index: 6; pointer-events: none; top: 80px; left: 50%; transform: translateX(-50%); margin: 0; padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.6); border: 1px solid var(--cw-line); font: 11px/1.5 Consolas, monospace; color: #b8ffcb;
+  position: fixed;
+  z-index: 6;
+  pointer-events: none;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  font: 450 11px/1.6 var(--font);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  text-shadow: var(--shadow-text);
 }
 
 body.photo-hide-hud .cw-ui, body.photo-hide-hud .topbar, body.photo-hide-hud .reticle, body.photo-hide-hud .hud { display: none !important; }
 
-/* ---- photo mode ------------------------------------------------------ */
+/* ---- Photo mode: one line of controls along the bottom ---------------- */
 
 .cw-photo { position: fixed; inset: 0; z-index: 7; cursor: grab; }
 .cw-photo[hidden] { display: none; }
 .cw-photo:active { cursor: grabbing; }
 .cw-photo-bar {
-  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px;
-  width: min(980px, calc(100vw - 32px)); padding: 12px 16px; cursor: default;
-  border: 1px solid rgba(94, 240, 255, 0.3); background: rgba(4, 16, 22, 0.85); backdrop-filter: blur(10px);
-  color: #eef7fa; font: 700 12px Inter, "Segoe UI", Arial, sans-serif;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 22px;
+  padding: 60px 24px 26px;
+  cursor: default;
+  background: linear-gradient(0deg, rgba(4, 6, 9, 0.78), rgba(4, 6, 9, 0));
+  color: var(--text);
+  font: 450 13px var(--font);
+  text-shadow: var(--shadow-text);
 }
-.cw-photo-bar > span { color: #8fb3bd; font-weight: 600; }
+.cw-photo-bar strong { font-stretch: var(--wide); font-weight: 250; font-size: 18px; letter-spacing: 0.24em; text-transform: uppercase; }
+.cw-photo-bar > span { color: var(--text-3); }
 .cw-photo-bar button {
-  height: 32px; padding: 0 12px; border: 1px solid rgba(94, 240, 255, 0.3); border-radius: 3px;
-  background: transparent; color: #eef7fa; font: inherit; cursor: pointer;
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font: 500 13px var(--font);
+  letter-spacing: 0.02em;
+  cursor: pointer;
 }
-.cw-photo-bar button:hover, .cw-photo-bar button.on { border-color: #5ef0ff; background: rgba(94, 240, 255, 0.12); }
-.cw-photo-bar button:focus-visible { outline: 2px solid #5ef0ff; outline-offset: 2px; }
-.cw-photo-bar .cw-primary { background: #5ef0ff; color: #041015; border-color: #5ef0ff; }
-.cw-photo-filters { display: flex; gap: 4px; }
-.cw-photo-bar label { display: flex; align-items: center; gap: 8px; color: #8fb3bd; }
-.cw-photo-bar input[type="range"] { width: 120px; accent-color: #5ef0ff; }
+.cw-photo-bar button:hover, .cw-photo-bar button.on { color: var(--text); border-bottom-color: var(--ember); }
+.cw-photo-bar button:focus-visible { outline: 1px solid var(--ember); outline-offset: 3px; }
+.cw-photo-bar .cw-primary { color: var(--ember); }
+.cw-photo-filters { display: flex; gap: 14px; }
+.cw-photo-bar label { display: flex; align-items: center; gap: 10px; color: var(--text-3); }
+.cw-photo-bar input[type="range"] { width: 120px; accent-color: var(--ember); }
 
 @media (max-width: 900px) {
   .cw-missions, .cw-serums { display: none; }
   .cw-map { width: 110px; }
   .cw-map-frame { height: 170px; }
-  .cw-core { gap: 14px; padding: 8px 12px; }
-  .cw-cam { display: none !important; }
+  .cw-core { gap: 22px; }
 }
 @media (max-width: 650px) {
-  .cw-vitals, .cw-tools { width: 44vw; bottom: 96px; }
-  .cw-radio { width: calc(100vw - 44px); }
+  .cw-vitals { left: 16px; bottom: 20px; width: 46vw; }
+  .cw-meters label > b { font-size: 34px; }
+  .cw-tools { right: 16px; width: 44vw; bottom: 200px; }
+  .cw-radio { width: calc(100vw - 32px); }
+  .cw-core { bottom: 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cw-warn.show, .cw-vitals.critical, .cw-spheres.low b { animation: none; }
+  .cw-warn.show strong, .cw-vitals.critical .cw-int-n, .cw-vitals.critical label:first-child > i { animation: none; }
+  .cw-title strong { transition: none; }
 }
+body.reduced-motion .cw-warn.show strong,
+body.reduced-motion .cw-vitals.critical .cw-int-n,
+body.reduced-motion .cw-vitals.critical label:first-child > i { animation: none; }
+.cw-cam { display: none !important; }
 
-/* ---- customisable panels (View menu / Settings / H) ------------------ */
+/* ---- Customisable panels (View menu / Settings / H) ------------------ */
 body.hud-off-stats .cw-core,
 body.hud-off-vitals .cw-vitals,
 body.hud-off-tools .cw-tools,
@@ -286,53 +620,3 @@ body.hud-off-minimap .cw-map,
 body.hud-off-fps .cw-perf,
 body.hud-hidden .cw-ui,
 body.hud-hidden .reticle-hint { display: none !important; }
-
-/* ---- a quieter HUD ---------------------------------------------------- */
-.cw-radio {
-  /* Above the sphere wheel (bottom right), so the two never overlap. */
-  top: auto; left: 50%; bottom: 284px; width: auto; max-width: min(620px, 80vw);
-  padding: 7px 14px; transform: translate(-50%, 8px);
-  border-left: 0; border-radius: 4px; background: rgba(2, 8, 11, 0.62); text-align: center;
-}
-.cw-radio.show { transform: translate(-50%, 0); }
-.cw-radio .cw-who { display: inline; margin-right: 8px; font-size: 9px; }
-.cw-radio p { display: inline; margin: 0; font-size: 13px; }
-.cw-title { top: 12%; }
-.cw-title span { font-size: 9px; letter-spacing: 0.3em; }
-.cw-title strong { font-size: clamp(20px, 2.6vw, 30px); text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7); }
-.cw-hint { top: auto; bottom: 150px; font-size: 11px; padding: 5px 11px; }
-.cw-warn { top: 18%; }
-.cw-warn strong { font-size: 15px; }
-.cw-warn span { font-size: 11px; }
-.cw-missions { top: 96px; }
-.cw-serums { top: auto; bottom: 150px; }
-.cw-vitals { width: 212px; padding: 8px 10px; background: rgba(4, 16, 22, 0.5); }
-.cw-vitals canvas { height: 32px; margin: 2px 0 4px; }
-.cw-meters label, .cw-gauges label { grid-template-columns: 50px 1fr 44px; font-size: 9px; }
-.cw-tools { width: 212px; padding: 8px 10px; background: rgba(4, 16, 22, 0.5); }
-.cw-gauges { margin-top: 6px; }
-.cw-core { gap: 18px; padding: 7px 16px; background: rgba(4, 16, 22, 0.5); }
-.cw-spheres b { font-size: 28px; }
-.cw-core b { font-size: 17px; }
-.cw-cam { display: none !important; }
-
-/* ---- health at the top left, and bigger (playtest feedback) ----------- */
-.cw-vitals { top: 84px; bottom: auto; left: 22px; width: 340px; padding: 12px 16px; }
-.cw-vitals-head { font-size: 13px; }
-.cw-vitals canvas { height: 54px; }
-.cw-meters label { grid-template-columns: 78px 1fr 64px; font-size: 13px; }
-.cw-meters i { height: 10px; border-radius: 2px; }
-.cw-missions { top: 280px; width: 260px; }
-.cw-missions h4 { font-size: 12px; }
-.cw-missions li { font-size: 13px; }
-.cw-serums { top: 420px; }
-.cw-serum { width: 230px; font-size: 13px; }
-.cw-core { gap: 32px; padding: 12px 28px; }
-.cw-core span { font-size: 11px; }
-.cw-core b { font-size: 27px; }
-.cw-spheres b { font-size: 48px; }
-.cw-tools { width: 300px; }
-.cw-gauges label { font-size: 12px; }
-@media (max-width: 650px) {
-  .cw-vitals { top: 66px; bottom: auto; width: 56vw; }
-}

@@ -149,8 +149,10 @@ export class MeltdownHud {
   }
 
   showBanner(label, name, hold = 2600) {
-    this.bannerLabel.textContent = label;
-    this.bannerName.textContent = name;
+    // (Some of the level's titles still carry the old "A // B" separators.)
+    const tidy = (text) => String(text ?? "").replace(/\s*\/\/\s*/g, " · ");
+    this.bannerLabel.textContent = tidy(label);
+    this.bannerName.textContent = tidy(name);
     this.banner.classList.add("show");
     clearTimeout(this._bannerTimer);
     this._bannerTimer = setTimeout(() => this.banner.classList.remove("show"), hold);

@@ -26,7 +26,9 @@
  * Options (the settings menu): `longWindows` gives every window 1.6x the
  * time; `holdInsteadOfMash` turns every mash into a hold. `pad` (a
  * controller is in use): the keys become flicks of the sticks and the
- * triggers, the same on every controller - see toPadKeys.
+ * triggers, the same on every controller - see toPadKeys. `difficulty` (a
+ * DIFFICULTIES key, or a function returning the run's) scales the mash
+ * meters - see MASH.
  */
 
 import { PAD_FLICKS, padLabel } from "../systems/input-glyphs.js";
@@ -64,6 +66,36 @@ export function toPadKeys(kind, keys) {
   return out;
 }
 
+/**
+ * The mash meters ("fill the bar"), retuned from beta feedback: "you have
+ * to press Space to fill the bar - it is difficult, rather fill it a bit
+ * faster". Each press now counts about twice as much and the bar drains a
+ * third as fast, so a relaxed tapper (~5 presses a second) fills one in 7-8
+ * presses. Presses to fill, from a steady rate (Normal):
+ *
+ *                       gain/press     drain/s       time    at 3/s   at 5/s   at 8/s
+ *   LOCK IT (the lift)  0.085 -> 0.17  0.32 -> 0.12  3.2 s   - -> 8   - -> 7   22 -> 7
+ *   SPRINT (Skyline)    0.06 -> 0.15   0.18 -> 0.10  4.5 s   - -> 9   - -> 8   27 -> 8
+ *   PUSH IT OFF (Labs)  0.075 -> 0.16  0.30 -> 0.12  3.5 s   - -> 9   - -> 8   26 -> 7
+ *
+ * ("-": the old tuning could not be filled at all below ~7 presses a
+ * second - the drain outran the taps.) The time limits are unchanged, so
+ * there is still a clock to beat. Difficulty (src/systems/difficulty.js)
+ * scales a press and the drain: Easy fills in a press or two fewer (6-7);
+ * Hard needs 9-10 at 5/s and a steady 4/s or better - a little tension,
+ * still fair.
+ */
+export const MASH = {
+  lockIt: { gain: 0.17, decay: 0.12 },
+  sprint: { gain: 0.15, decay: 0.1 },
+  struggle: { gain: 0.16, decay: 0.12 },
+};
+export const MASH_DIFFICULTY = {
+  easy: { gain: 1.15, decay: 0.75 },
+  normal: { gain: 1, decay: 1 },
+  hard: { gain: 0.85, decay: 1.5 },
+};
+
 function pickKeys(count, rng, pool = REACTION_KEYS) {
   const left = [...pool];
   const out = [];
@@ -87,7 +119,7 @@ export function reactionLadder(step, rng = Math.random) {
     kind: "sequence",
     keys: pickKeys(4, rng),
     window: Math.max(0.85, 1.2 - (step - 3) * 0.1),
-    then: { kind: "mash", keys: ["Space"], time: 4.5, gain: 0.085, decay: 0.28, label: "LOCK IT" },
+    then: { kind: "mash", keys: ["Space"], time: 4.5, ...MASH.lockIt, label: "LOCK IT" },
   };
 }
 
@@ -102,12 +134,12 @@ export function latchReaction(rng = Math.random) {
  * instead: more per press, and it drains more gently.)
  */
 export function sprintReaction({ time = 4.5 } = {}) {
-  return { kind: "mash", keys: ["KeyA", "KeyD"], alternate: true, time, gain: 0.075, decay: 0.13, label: "SPRINT" };
+  return { kind: "mash", keys: ["KeyA", "KeyD"], alternate: true, time, ...MASH.sprint, label: "SPRINT" };
 }
 
 /** Pushing something off you. */
 export function struggleReaction({ time = 5 } = {}) {
-  return { kind: "mash", keys: ["Space"], time, gain: 0.08, decay: 0.24, label: "PUSH IT OFF" };
+  return { kind: "mash", keys: ["Space"], time, ...MASH.struggle, label: "PUSH IT OFF" };
 }
 
 const LABELS = { press: "PRESS", combo: "PRESS BOTH", sequence: "IN ORDER", mash: "TAP FAST", hold: "HOLD" };
@@ -130,9 +162,9 @@ export class ReactionHits {
    * @param {import("./story-ui.js").StoryUI|null} ui  (null: headless)
    * @param {object} [options]
    */
-  constructor(ui, { longWindows = false, holdInsteadOfMash = false, pad = false } = {}) {
+  constructor(ui, { longWindows = false, holdInsteadOfMash = false, pad = false, difficulty = "normal" } = {}) {
     this.ui = ui;
-    this.options = { longWindows, holdInsteadOfMash, pad };
+    this.options = { longWindows, holdInsteadOfMash, pad, difficulty };
     /** Told when a reaction begins (the controller's rumble). */
     this.onStart = null;
     this.state = "idle";
@@ -184,14 +216,17 @@ export class ReactionHits {
     if (kind === "mash" && o.holdInsteadOfMash) kind = "hold";
     if (o.pad) keys = toPadKeys(kind, keys);
     const scale = o.longWindows ? LONG_WINDOW_SCALE : 1;
+    // The run's difficulty scales a mash's press and drain (not a hold's).
+    const level = typeof o.difficulty === "function" ? o.difficulty() : o.difficulty;
+    const tune = kind === "mash" ? MASH_DIFFICULTY[level] ?? MASH_DIFFICULTY.normal : MASH_DIFFICULTY.normal;
     this._s = {
       spec,
       kind,
       keys: kind === "hold" ? keys.slice(0, 1) : keys,
       window: (spec.window ?? 2) * scale,
       time: (spec.time ?? 3.5) * scale,
-      gain: (spec.gain ?? 0.08) * (o.longWindows ? 1.25 : 1),
-      decay: spec.decay ?? 0.3,
+      gain: (spec.gain ?? 0.08) * (o.longWindows ? 1.25 : 1) * tune.gain,
+      decay: (spec.decay ?? 0.3) * tune.decay,
       duration: spec.duration ?? 1.4,
       t: 0,
       total: 0,
@@ -213,6 +248,9 @@ export class ReactionHits {
       keys: s.keys,
       layout: kind === "combo" ? "together" : kind === "sequence" ? "sequence" : "single",
       bar: kind === "mash" || kind === "hold",
+      // A mash gets the big pulsing prompt, its bar marked in presses.
+      mash: kind === "mash",
+      step: kind === "mash" ? s.gain : 0,
     });
     this._draw();
     this.onStart?.(s);
@@ -320,6 +358,9 @@ export class ReactionHits {
       done: s.done,
       held: s.keys.map((k) => s.held.has(k)),
       bar: s.kind === "mash" || s.kind === "hold" ? s.bar : null,
+      // Each counted press pulses its key and bumps the bar.
+      presses: s.presses,
+      pressed: s.last ? s.keys.indexOf(s.last) : -1,
     });
   }
 

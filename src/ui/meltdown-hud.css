@@ -1,294 +1,241 @@
 /**
- * Level 3 HUD - The Meltdown.
+ * Level 3 HUD - the Labs and the Roof - in the NIGHTFALL look
+ * (src/ui/theme.css).
  *
- * Deliberately sparse. The design brief for this level is explicit: the only
- * things on screen at all times are the ball count and vitality - the phase
- * timer is never shown as a HUD element, only on the level's own evac signs
- * and as a brief toast when the player passes one. Everything else here
- * (banner, toasts, summary) is transient, not persistent chrome.
+ * Deliberately sparse: the only things always on screen are the sphere
+ * count and integrity (and in the game the shared HUD, causeway-hud.css,
+ * shows those). Everything here is transient - section titles, toasts, the
+ * one prompt, the summary - and all of it is light on the picture: no
+ * plates, no boxes, a soft shadow, a soft radial shade where it must read
+ * over the bright Roof. Also here: the roof's map (meltdown/roof-map.js), a
+ * thin-outlined translucent square, and the game chrome MeltdownGame owns.
  */
 
 .meltdown-ui {
-  --mlt-red: #ff3a1e;
-  --mlt-green: #0aff6a;
-  --mlt-amber: #ffb03c;
-  --mlt-panel: rgba(12, 8, 6, 0.82);
-  --mlt-line: rgba(255, 58, 30, 0.28);
-
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 6;
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
-  color: #fdf3ee;
-  text-transform: uppercase;
+  font-family: var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow-text);
 }
-
 .meltdown-ui[hidden] { display: none !important; }
 
-/* ---------------------------------------------------------------- */
-/* Banner                                                            */
-/* ---------------------------------------------------------------- */
+/* Upper-case strings from the level, read in sentence case. */
+.mlt-banner span,
+.mlt-toast,
+.mlt-loading span,
+.mlt-stat span,
+.mlt-summary-card > span,
+.mlt-summary-card > small,
+.mlt-summary-row span { text-transform: lowercase; }
+.mlt-banner span::first-letter,
+.mlt-toast::first-letter,
+.mlt-loading span::first-letter,
+.mlt-stat span::first-letter,
+.mlt-summary-card > span::first-letter,
+.mlt-summary-card > small::first-letter,
+.mlt-summary-row span::first-letter { text-transform: uppercase; }
+
+/* ---- Section title: wide, thin, tracked; a quiet line under it --------- */
 
 .mlt-banner {
   position: absolute;
   /* Above the vanishing point, clear of the runner and the lanes. */
-  top: 11%;
+  top: 13%;
   left: 50%;
-  transform: translate(-50%, 14px);
+  width: min(92vw, 1100px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 14px;
   text-align: center;
   opacity: 0;
-  transition: opacity 0.5s ease, transform 0.5s ease;
+  transition: opacity 1.1s var(--ease-in-out), top 0.4s var(--ease-out);
 }
-
-.mlt-banner.show { opacity: 1; transform: translate(-50%, 0); }
-
-.mlt-banner span {
-  display: block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.42em;
-  color: var(--mlt-amber);
-}
-
+.mlt-banner.show { opacity: 1; transition: opacity 0.9s var(--ease-in-out), top 0.4s var(--ease-out); }
 .mlt-banner strong {
   display: block;
-  margin-top: 6px;
-  font-size: clamp(20px, 3.4vw, 34px);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-shadow: 0 0 26px rgba(255, 58, 30, 0.5);
+  padding-left: 0.3em;
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: clamp(24px, 2.6vw, 38px);
+  text-wrap: balance;
+  line-height: 1.1;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 30px rgba(0, 0, 0, 0.6);
+  transition: letter-spacing 3.2s var(--ease-out);
 }
+.mlt-banner.show strong { letter-spacing: 0.3em; }
+.mlt-banner strong::after { content: ""; display: block; width: 44px; height: 1px; margin: 18px auto 0; background: var(--line-2); }
+.mlt-banner span { display: block; font-size: 15px; font-weight: 400; letter-spacing: 0.02em; color: var(--text-2); }
 
-/* ---------------------------------------------------------------- */
-/* Vitality + balls - the only persistent readouts                   */
-/* ---------------------------------------------------------------- */
+/* ---- Spheres and integrity (the shared HUD replaces these in the game) - */
 
 .mlt-vitals {
   position: absolute;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
+  left: 40px;
+  bottom: 34px;
   display: flex;
-  align-items: stretch;
-  gap: 1px;
-  background: var(--mlt-line);
-  border: 1px solid var(--mlt-line);
-  backdrop-filter: blur(7px);
+  align-items: flex-end;
+  gap: 34px;
+  isolation: isolate;
 }
-
-.mlt-stat {
-  min-width: 100px;
-  padding: 8px 14px;
-  background: var(--mlt-panel);
-  text-align: center;
+.mlt-vitals::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -36px -60px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.46), rgba(4, 6, 9, 0.2) 58%, rgba(4, 6, 9, 0));
 }
-
-.mlt-stat span {
-  display: block;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  color: #b39a8e;
-}
-
+.mlt-stat { display: grid; gap: 6px; }
+.mlt-stat span { order: 2; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; color: var(--text-3); }
 .mlt-stat strong {
-  display: block;
-  margin-top: 3px;
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  font-stretch: var(--wide);
+  font-weight: 230;
+  font-size: 40px;
+  line-height: 0.85;
   font-variant-numeric: tabular-nums;
 }
-
-.mlt-stat.balls strong { color: var(--mlt-green); }
-.mlt-stat.balls.empty strong { color: var(--mlt-red); animation: mlt-pulse 0.7s ease-in-out infinite; }
-
-.mlt-stat.vitality { min-width: 170px; text-align: left; }
-.mlt-stat.vitality .mlt-track {
-  position: relative;
-  height: 6px;
-  margin-top: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-}
+.mlt-stat.balls strong { color: var(--glass); }
+.mlt-stat.balls.empty strong { color: var(--blood); animation: mltBreathe 1.4s var(--ease-in-out) infinite; }
+.mlt-stat.vitality { grid-template-columns: auto 1fr; align-items: end; column-gap: 12px; min-width: 220px; }
+.mlt-stat.vitality strong { grid-row: 1; grid-column: 1; }
+.mlt-stat.vitality span { grid-row: 1; grid-column: 2; padding-bottom: 2px; }
+.mlt-stat.vitality .mlt-track { grid-row: 2; grid-column: 1 / -1; position: relative; height: 2px; margin-top: 4px; background: var(--line); overflow: hidden; }
 .mlt-stat.vitality .mlt-fill {
   position: absolute;
   inset: 0 auto 0 0;
   width: 100%;
-  background: linear-gradient(90deg, var(--mlt-green), #6fffb0);
+  background: var(--text);
   transform-origin: left center;
-  transition: transform 0.25s ease, background 0.25s ease;
+  transition: transform 0.25s var(--ease-out), background 0.25s ease;
 }
-.mlt-stat.vitality.hurt .mlt-fill { background: linear-gradient(90deg, var(--mlt-amber), #ffd27a); }
-.mlt-stat.vitality.critical .mlt-fill { background: linear-gradient(90deg, var(--mlt-red), #ff8a8a); animation: mlt-pulse 0.6s ease-in-out infinite; }
+.mlt-stat.vitality.hurt .mlt-fill { background: var(--warn); }
+.mlt-stat.vitality.critical .mlt-fill { background: var(--blood); animation: mltBreathe 1.6s var(--ease-in-out) infinite; }
+.mlt-stat.vitality.critical strong { color: var(--blood); }
+.mlt-stat.pop strong { animation: mltPop 0.32s var(--ease-out); }
+@keyframes mltPop { 40% { transform: scale(1.12); } }
+@keyframes mltBreathe { 50% { opacity: 0.5; } }
 
-.mlt-stat.pop strong { animation: mlt-pop 0.3s ease-out; }
-
-@keyframes mlt-pop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.3); }
-  100% { transform: scale(1); }
-}
-
-@keyframes mlt-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-}
-
-/* ---------------------------------------------------------------- */
-/* Danger vignette - reads redder and darker as vitality falls        */
-/* ---------------------------------------------------------------- */
+/* ---- Danger: blood round the edges as the fire closes ------------------ */
 
 .mlt-vignette {
   position: absolute;
   inset: 0;
   opacity: 0;
-  transition: opacity 0.4s ease;
-  background: radial-gradient(ellipse at center, transparent 40%, rgba(120, 10, 8, 0.65) 100%);
+  transition: opacity 0.6s ease;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(110, 14, 8, 0.62) 100%);
 }
+.mlt-vignette.critical { animation: mltVignette 1.4s var(--ease-in-out) infinite; }
+@keyframes mltVignette { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.95; } }
 
-.mlt-vignette.critical { animation: mlt-breathe 0.85s ease-in-out infinite; }
-
-@keyframes mlt-breathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 0.95; }
-}
-
-/* Full-screen hit flash on a hazard collision. */
+/* A hazard hit: heaviest at the edges. */
 .mlt-damage {
   position: absolute;
   inset: 0;
   opacity: 0;
-  background: radial-gradient(ellipse at center, rgba(255, 60, 30, 0.1) 28%, rgba(150, 10, 10, 0.85) 100%);
-  box-shadow: inset 0 0 130px rgba(255, 40, 20, 0.9);
+  background: radial-gradient(ellipse at center, rgba(229, 65, 45, 0.08) 28%, rgba(140, 16, 10, 0.8) 100%);
+  box-shadow: inset 0 0 130px rgba(229, 65, 45, 0.8);
 }
+.mlt-damage.hit { animation: mltHit 0.42s ease-out; }
+@keyframes mltHit { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
 
-.mlt-damage.hit { animation: mlt-hit 0.42s ease-out; }
-
-@keyframes mlt-hit {
-  0% { opacity: 0; }
-  12% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-/* ---------------------------------------------------------------- */
-/* Toasts - sign countdowns, power-ups, sack hits, warnings           */
-/* ---------------------------------------------------------------- */
+/* ---- Toasts: right side, one line each -------------------------------- */
 
 .mlt-toasts {
   position: absolute;
-  right: 18px;
-  bottom: 26%;
+  right: 44px;
+  bottom: 28%;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
-
 .mlt-toast {
-  padding: 7px 12px;
-  background: rgba(20, 10, 8, 0.85);
-  border-right: 2px solid var(--mlt-green);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-size: 14px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  color: var(--text);
   opacity: 0;
-  transform: translateX(14px);
-  animation: mlt-toast-in 0.28s ease forwards;
+  transform: translateX(10px);
+  animation: mltToastIn 0.4s var(--ease-out) forwards;
 }
+.mlt-toast b { margin-left: 10px; font-weight: 400; color: var(--glass); font-variant-numeric: tabular-nums; }
+.mlt-toast.sign b { color: var(--ok); }
+.mlt-toast.warn { color: var(--blood); }
+.mlt-toast.warn b { color: var(--text-2); }
+.mlt-toast.power { color: var(--ember); }
+.mlt-toast.leaving { animation: mltToastOut 0.32s ease forwards; }
+@keyframes mltToastIn { to { opacity: 1; transform: none; } }
+@keyframes mltToastOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(10px); } }
 
-.mlt-toast.sign { border-right-color: var(--mlt-green); }
-.mlt-toast.warn { border-right-color: var(--mlt-red); }
-.mlt-toast.power { border-right-color: var(--mlt-amber); }
-
-.mlt-toast b {
-  margin-left: 9px;
-  color: var(--mlt-green);
-  font-variant-numeric: tabular-nums;
-}
-
-.mlt-toast.leaving { animation: mlt-toast-out 0.3s ease forwards; }
-
-@keyframes mlt-toast-in { to { opacity: 1; transform: translateX(0); } }
-@keyframes mlt-toast-out { to { opacity: 0; transform: translateX(14px); } }
-
-/* ---------------------------------------------------------------- */
-/* Context prompt and model loading                                  */
-/* ---------------------------------------------------------------- */
+/* ---- The prompt for now, and the models streaming in ------------------- */
 
 .mlt-prompt {
   position: absolute;
   left: 50%;
-  bottom: 96px;
-  transform: translate(-50%, 8px);
-  padding: 8px 16px;
-  background: rgba(30, 8, 4, 0.85);
-  border: 1px solid var(--mlt-amber);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.22em;
-  color: var(--mlt-amber);
+  bottom: 112px;
+  transform: translate(-50%, 6px);
+  padding-left: 0.18em;
+  font-stretch: 112%;
+  font-weight: 380;
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ember);
+  white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.25s ease, transform 0.25s var(--ease-out);
 }
-
-.mlt-prompt.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  animation: mlt-pulse 0.5s ease-in-out infinite;
+.mlt-prompt::after {
+  content: "";
+  display: block;
+  width: 48px;
+  height: 1px;
+  margin: 10px auto 0;
+  background: color-mix(in srgb, var(--ember) 70%, transparent);
 }
+.mlt-prompt.show { opacity: 1; transform: translate(-50%, 0); animation: mltBreathe 1.2s var(--ease-in-out) infinite; }
 
 .mlt-loading {
   position: absolute;
-  left: 18px;
-  top: 74px;
+  left: 40px;
+  top: 96px;
   width: 180px;
-  padding: 8px 10px;
-  background: rgba(10, 6, 5, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 9px;
-  letter-spacing: 0.2em;
-  color: #b39a8e;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
 }
-
 .mlt-loading i {
   display: block;
-  height: 3px;
-  margin-top: 6px;
-  background: var(--mlt-green);
+  height: 1px;
+  margin-top: 8px;
+  background: var(--text-2);
   transform-origin: left center;
   transform: scaleX(0);
-  transition: transform 0.2s ease;
+  transition: transform 0.3s var(--ease-out);
 }
-
 .mlt-loading[hidden] { display: none; }
-
-/* ---------------------------------------------------------------- */
-/* Dev readout                                                       */
-/* ---------------------------------------------------------------- */
 
 .mlt-dev {
   position: absolute;
-  right: 18px;
-  top: 74px;
-  padding: 8px 11px;
-  background: rgba(10, 6, 5, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 10px;
-  line-height: 1.65;
-  letter-spacing: 0.09em;
-  color: #b39a8e;
+  right: 44px;
+  top: 84px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-
-.mlt-dev b { color: #fdf3ee; font-weight: 700; }
+.mlt-dev b { font-weight: 500; color: var(--text); }
 .mlt-dev[hidden] { display: none; }
 
-/* ---------------------------------------------------------------- */
-/* Run summary                                                       */
-/* ---------------------------------------------------------------- */
+/* ---- Run summary: the picture dimmed, the words on it ------------------ */
 
 .mlt-summary {
   position: absolute;
@@ -296,71 +243,33 @@
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 5, 4, 0.84);
-  backdrop-filter: blur(5px);
+  background: radial-gradient(ellipse at center, rgba(4, 6, 9, 0.62), rgba(4, 6, 9, 0.86));
 }
-
 .mlt-summary.show { display: flex; }
-
-.mlt-summary-card {
-  width: min(420px, 88vw);
-  padding: 26px 28px;
-  background: var(--mlt-panel);
-  border: 1px solid var(--mlt-line);
-  border-top: 2px solid var(--mlt-green);
-  text-align: center;
-}
-
-.mlt-summary-card > span {
-  display: block;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.34em;
-  color: var(--mlt-amber);
-}
-
+.mlt-summary-card { width: min(400px, 88vw); text-align: center; }
+.mlt-summary-card > span { display: block; font-size: 13px; color: var(--text-3); }
 .mlt-summary-card > h2 {
-  margin: 8px 0 20px;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  margin: 12px 0 24px;
+  padding-left: 0.26em;
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
 }
+.mlt-summary-card.failed > span { color: var(--blood); }
+.mlt-summary-rows { display: grid; text-align: left; }
+.mlt-summary-row { display: flex; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--text-3); }
+.mlt-summary-row b { font-weight: 450; color: var(--text); font-variant-numeric: tabular-nums; }
+.mlt-summary-row.total b { font-stretch: var(--wide); font-weight: 300; font-size: 18px; color: var(--ember); }
+.mlt-summary-card > small { display: block; margin-top: 22px; font-size: 12px; color: var(--text-3); }
 
-.mlt-summary-card.failed { border-top-color: var(--mlt-red); }
-.mlt-summary-card.failed > span { color: var(--mlt-red); }
-
-.mlt-summary-rows {
-  display: grid;
-  gap: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.mlt-summary-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 9px 13px;
-  background: rgba(20, 10, 8, 0.9);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: #b39a8e;
-}
-
-.mlt-summary-row b { color: #fdf3ee; font-variant-numeric: tabular-nums; }
-.mlt-summary-row.total { background: rgba(30, 14, 10, 0.95); }
-.mlt-summary-row.total b { color: var(--mlt-amber); font-size: 15px; }
-
-.mlt-summary-card > small {
-  display: block;
-  margin-top: 18px;
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  color: #8a7168;
-}
-
-@media (max-width: 640px) {
-  .mlt-dev { right: 10px; top: 66px; }
-  .mlt-toasts { right: 10px; bottom: 30%; }
+@media (max-width: 650px) {
+  .mlt-dev { right: 16px; top: 66px; }
+  .mlt-toasts { right: 16px; bottom: 30%; }
+  .mlt-vitals { left: 16px; bottom: 20px; }
+  .mlt-stat.vitality { min-width: 150px; }
 }
 
 .meltdown-ui.reduced-motion * {
@@ -368,7 +277,6 @@
   animation-iteration-count: 1 !important;
   transition-duration: 0.05s !important;
 }
-
 @media (prefers-reduced-motion: reduce) {
   .meltdown-ui * {
     animation-duration: 0.001ms !important;
@@ -376,51 +284,54 @@
   }
 }
 
-/* Credits panel (src/levels/meltdown/credits.js). */
+/* ---- Credits panel (src/levels/meltdown/credits.js) -------------------- */
+
 .mlt-credits {
   position: fixed;
   inset: 0;
   z-index: 20;
   display: grid;
   place-items: center;
-  background: rgba(6, 4, 3, 0.86);
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
-  color: #e9ddd6;
+  background: radial-gradient(ellipse at center, rgba(4, 6, 9, 0.78), rgba(4, 6, 9, 0.94));
+  font-family: var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow-text);
 }
 .mlt-credits[hidden] { display: none; }
-.mlt-credits-card {
-  width: min(860px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
-  overflow: auto;
-  padding: 22px 26px;
-  border: 1px solid rgba(255, 140, 60, 0.35);
-  background: rgba(20, 12, 9, 0.92);
+.mlt-credits-card { width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 8px 4px; }
+.mlt-credits h2 {
+  margin: 0 0 18px;
+  font-stretch: var(--wide);
+  font-weight: 230;
+  font-size: 22px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text);
 }
-.mlt-credits h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: 0.2em; text-transform: uppercase; color: #ffb03c; }
-.mlt-credits ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.55; }
+.mlt-credits ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--text-2); }
 .mlt-credits li { margin-bottom: 8px; }
-.mlt-credits li span { color: #a8928a; font-size: 11px; }
-.mlt-credits a { color: #8fd8d0; word-break: break-all; }
-.mlt-credits p { font-size: 11px; color: #a8928a; }
-.mlt-credits small { display: block; margin-top: 10px; font-size: 10px; letter-spacing: 0.2em; color: #8a7168; }
+.mlt-credits li span { color: var(--text-3); font-size: 12px; }
+.mlt-credits a { color: var(--glass); word-break: break-all; text-decoration-color: color-mix(in srgb, var(--glass) 40%, transparent); }
+.mlt-credits p { font-size: 12px; color: var(--text-3); }
+.mlt-credits small { display: block; margin-top: 12px; font-size: 12px; color: var(--text-3); }
 
 /* ---- Game chrome owned by MeltdownGame (src/levels/meltdown/game.js) ---- */
 /* Below the host's menu screens (z-index 8), above the level HUD. */
 
-/* The crosshair is the game's own (.reticle in styles.css): lines and a dot
-   that turn hot over a target. Here it only adds its two warnings. */
+/* The crosshair is the game's own (.reticle in styles.css): here it only
+   adds its two warnings - weak (warn) and overheated (blood). */
 .reticle.mlt-reticle { z-index: 7; }
 .reticle.mlt-reticle[hidden] { display: none; }
 .reticle.mlt-reticle.weak::before, .reticle.mlt-reticle.weak::after,
-.reticle.mlt-reticle.weak i::before, .reticle.mlt-reticle.weak i::after { background: #ffb03c; }
+.reticle.mlt-reticle.weak i::before, .reticle.mlt-reticle.weak i::after { background: var(--warn); }
 .reticle.mlt-reticle.overheated::before, .reticle.mlt-reticle.overheated::after,
-.reticle.mlt-reticle.overheated i::before, .reticle.mlt-reticle.overheated i::after { background: #ff3a1e; }
-.reticle.mlt-reticle.overheated { animation: mlt-reticle-hot 0.5s ease-in-out infinite; }
-@keyframes mlt-reticle-hot { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+.reticle.mlt-reticle.overheated i::before, .reticle.mlt-reticle.overheated i::after { background: var(--blood); }
+.reticle.mlt-reticle.overheated { animation: mltReticleHot 1s var(--ease-in-out) infinite; }
+@keyframes mltReticleHot { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
 .mlt-fade { position: fixed; inset: 0; z-index: 7; background: #000; opacity: 0; pointer-events: none; }
 
-.mlt-letterbox::before, .mlt-letterbox::after { content: ""; position: fixed; left: 0; right: 0; height: 0; z-index: 7; background: #000; transition: height 0.8s ease; }
+.mlt-letterbox::before, .mlt-letterbox::after { content: ""; position: fixed; left: 0; right: 0; height: 0; z-index: 7; background: #000; transition: height 0.8s var(--ease-in-out); }
 .mlt-letterbox::before { top: 0; }
 .mlt-letterbox::after { bottom: 0; }
 .mlt-letterbox.on::before, .mlt-letterbox.on::after { height: 11vh; }
@@ -429,15 +340,4 @@
 body.mlt-active #hud,
 body.mlt-active #reticle { display: none !important; }
 
-/* ---- health at the top left, and bigger (playtest feedback) ----------- */
-.mlt-vitals { left: 22px; top: 84px; bottom: auto; transform: none; }
-.mlt-stat { min-width: 120px; padding: 11px 18px; }
-.mlt-stat span { font-size: 10px; }
-.mlt-stat strong { font-size: 27px; }
-.mlt-stat.vitality { min-width: 240px; }
-.mlt-stat.vitality .mlt-track { height: 10px; border-radius: 2px; }
-.mlt-loading { top: 180px; left: 22px; }
-@media (max-width: 650px) {
-  .mlt-vitals { top: 66px; left: 12px; }
-  .mlt-stat.vitality { min-width: 150px; }
-}
+/* (The roof's map, meltdown/roof-map.js, carries its own styles.) */

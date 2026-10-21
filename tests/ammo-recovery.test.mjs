@@ -293,7 +293,7 @@ test("nearest-supply hint excludes behind, blocked, dead and distant targets, th
       player: new THREE.Vector3(0, 1, 0), routeDistance: 0, solids: [wall] });
     assert.equal(hint.marker.visible, true);
     assert.deepEqual(hint.marker.position.toArray(), reachable.position.toArray());
-    assert.match(hint.status.textContent, /RUN THROUGH A SACK/);
+    assert.match(hint.status.textContent, /run through a sack/i);
     hint.update({ active: false });
     assert.equal(hint.marker.visible, false);
     assert.equal(hint.status.hidden, true);

@@ -316,7 +316,7 @@ export class FoundryHud {
 
   showPrompt(label, metresAway) {
     this.promptLabel.textContent = label;
-    this.promptRange.textContent = `SHOOT // ${Math.max(0, Math.round(metresAway))}M`;
+    this.promptRange.textContent = `Shoot · ${Math.max(0, Math.round(metresAway))} m`;
     this.prompt.classList.add("show");
   }
 
@@ -330,7 +330,7 @@ export class FoundryHud {
     this._escapeActive = true;
     this.escape.classList.add("show");
     this.vignette.classList.add("show");
-    this.escapeHint.textContent = "SHUTTERS SEALING // KEEP TO THE CENTRE, GET TO THE LIFT";
+    this.escapeHint.textContent = "Shutters sealing. Keep to the centre, get to the lift";
     this.showBanner("THE PLANT'S CHARGES ARE ARMED", "RUN");
   }
 
@@ -348,7 +348,7 @@ export class FoundryHud {
     this._escapeActive = false;
     this.escape.classList.remove("critical");
     this.vignette.classList.remove("show", "critical");
-    this.escapeHint.textContent = survived ? "VALVE OPEN // THE LIFT IS CLEAR" : "SHUTTERS SEALED";
+    this.escapeHint.textContent = survived ? "Valve open. The lift is clear" : "Shutters sealed";
     setTimeout(() => this.escape.classList.remove("show"), survived ? 900 : 1600);
   }
 

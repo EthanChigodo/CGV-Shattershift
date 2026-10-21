@@ -385,7 +385,11 @@ const story = new StoryLayer({
   // The stage directions' sounds ([breathing hard], [a pistol shot]...).
   sfx: level1Audio,
   blurTargets: [canvas],
-  options: { longWindows: settings.longReactions, holdInsteadOfMash: settings.holdInsteadOfMash, reducedMotion: settings.reducedMotion },
+  options: {
+    longWindows: settings.longReactions, holdInsteadOfMash: settings.holdInsteadOfMash, reducedMotion: settings.reducedMotion,
+    // The mash meters follow the run's difficulty (asked as each one starts).
+    difficulty: () => diff().key,
+  },
 });
 // Esc tapped during a cutscene: the pause menu (held: skip).
 story.player.on("pause-request", () => openPause());
