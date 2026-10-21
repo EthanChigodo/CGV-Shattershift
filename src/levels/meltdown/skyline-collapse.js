@@ -124,7 +124,7 @@ const TOWER_FRAGMENT = /* glsl */ `
 
 // Dust: camera-facing quads. The quad's corner (position.xy) is added in view
 // space, so it always faces the camera - a billboard.
-const DUST_VERTEX = /* glsl */ `
+export const DUST_VERTEX = /* glsl */ `
   attribute vec3 aCentre;
   attribute vec3 aLook;     // x: size (m), y: opacity, z: seed
   varying vec2 vUv;
@@ -144,7 +144,7 @@ const DUST_VERTEX = /* glsl */ `
   }
 `;
 
-const DUST_FRAGMENT = /* glsl */ `
+export const DUST_FRAGMENT = /* glsl */ `
   uniform float uFlash;
   uniform float uBreak;   // world y of the failure (the glow comes from there)
   uniform vec3 fogColor;
@@ -172,7 +172,7 @@ const DUST_FRAGMENT = /* glsl */ `
   }
 `;
 
-const fogUniforms = () => ({ fogColor: { value: new THREE.Color() }, fogDensity: { value: 0 }, fogNear: { value: 1 }, fogFar: { value: 1000 } });
+export const fogUniforms = () => ({ fogColor: { value: new THREE.Color() }, fogDensity: { value: 0 }, fogNear: { value: 1 }, fogFar: { value: 1000 } });
 
 export class TowerCollapse {
   /**

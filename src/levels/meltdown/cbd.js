@@ -237,6 +237,22 @@ function billboardTexture([line1, line2]) {
   return t;
 }
 
+/** A soft round glow for sprites (without one they draw as squares). */
+function glowDot() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.3, "rgba(255,255,255,0.45)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export class CbdBuildings {
   /**
    * @param {object} [o]
@@ -312,7 +328,7 @@ export class CbdBuildings {
       group.add(d);
       box(group, metal, 0.12, size + 0.4, 0.12, x, y0, z);
     };
-    this.beacon = own(new THREE.SpriteMaterial({ color: 0xff2a1a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }));
+    this.beacon = own(new THREE.SpriteMaterial({ map: own(glowDot()), color: 0xff2a1a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }));
 
     // ---- Art Deco tower ----
     {
@@ -389,7 +405,7 @@ export class CbdBuildings {
       const back = box(g, metal, 14.2, 5.4, 0.2, -2, top + 3.8, 4.35);
       back.material = rust;
       for (const x of [-7, 3]) box(g, metal, 0.3, 4, 0.3, x, top, 4.2);
-      const lamp = own(new THREE.SpriteMaterial({ color: 0xffe6b0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.8 }));
+      const lamp = own(new THREE.SpriteMaterial({ map: own(glowDot()), color: 0xffe6b0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.8 }));
       for (const x of [-6, 2]) {
         const s = new THREE.Sprite(lamp);
         s.position.set(x, top + 9.6, 5.6);
