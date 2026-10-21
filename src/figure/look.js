@@ -133,6 +133,40 @@ function skinTone(atlas, cell) {
   return color;
 }
 
+/** A cloth cell's average colour (the scrubs' own), cached per atlas and cell. */
+const clothCache = new WeakMap();
+function clothTone(atlas, cell) {
+  const fallback = new THREE.Color(0.25, 0.55, 0.52);
+  const image = atlas?.image;
+  if (!image || !cell || !image.getContext) return fallback;
+  let byCell = clothCache.get(atlas);
+  if (!byCell) clothCache.set(atlas, (byCell = new Map()));
+  const id = cell.join(",");
+  if (byCell.has(id)) return byCell.get(id);
+  const [u0, v0, u1, v1] = cell;
+  const ctx = image.getContext("2d", { willReadFrequently: true });
+  let data;
+  try {
+    data = ctx.getImageData(Math.floor(u0 * image.width), Math.floor(v0 * image.height), Math.max(1, Math.floor((u1 - u0) * image.width)), Math.max(1, Math.floor((v1 - v0) * image.height))).data;
+  } catch {
+    return fallback;
+  }
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (let i = 0; i < data.length; i += 16) {
+    if (data[i + 3] < 128) continue;
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    n += 1;
+  }
+  const color = n ? new THREE.Color().setRGB(r / n / 255, g / n / 255, b / n / 255, THREE.SRGBColorSpace) : fallback;
+  byCell.set(id, color);
+  return color;
+}
+
 const LOOK_VERTEX_HEAD = /* glsl */ `
   varying vec3 vRest;
 `;
@@ -144,6 +178,10 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   uniform vec3 uSkin;
   uniform vec3 uTone;
   uniform float uToneOn;
+  uniform vec3 uOutfit;
+  uniform float uOutfitOn;
+  uniform vec3 uTopRef;
+  uniform vec3 uLegRef;
   uniform vec4 uCellTop;
   uniform vec4 uCellBody;
   uniform vec4 uCellBottom;
@@ -239,6 +277,14 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
       // creases) carried across, not one flat colour painted over it.
       vec3 tinted = col * (uTone / max(uSkin, vec3(0.02)));
       col = mix(col, clamp(tinted, 0.0, 1.0), warm);
+    }
+    // The outfit's colour (multiplayer: the controller's): the scrubs
+    // re-dyed, each pixel keeping its own light and dark - the folds, the
+    // seams - relative to the cloth's average; the trousers a shade darker.
+    if (uOutfitOn > 0.5) {
+      const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+      if (top && !(arm && along > 0.2)) col = uOutfit * clamp(dot(col, LUMA) / max(dot(uTopRef, LUMA), 0.03), 0.0, 1.7);
+      if (legs) col = uOutfit * 0.72 * clamp(dot(col, LUMA) / max(dot(uLegRef, LUMA), 0.03), 0.0, 1.7);
     }
     // Short-sleeved scrubs: past the sleeve's end the arm is bare skin.
     if (top && arm && along > 0.2) col = skin * (0.92 + 0.08 * grain);
@@ -370,6 +416,10 @@ export function applyFigureLook(mesh, body) {
     uSkin: { value: skin.clone() },
     uTone: { value: skin.clone() },
     uToneOn: { value: 0 },
+    uOutfit: { value: new THREE.Color(1, 1, 1) },
+    uOutfitOn: { value: 0 },
+    uTopRef: { value: clothTone(mesh.userData.atlas ?? material.map, cells.material) },
+    uLegRef: { value: clothTone(mesh.userData.atlas ?? material.map, cells.Bottom) },
     uCellTop: { value: cell("material") },
     uCellBody: { value: cell("Body") },
     uCellBottom: { value: cell("Bottom") },
@@ -412,6 +462,11 @@ export function applyFigureLook(mesh, body) {
     },
     setGear(on) {
       uniforms.uGear.value = on ? 1 : 0;
+    },
+    /** The scrubs' colour, a CSS colour (null: the model's own). */
+    setOutfit(color) {
+      uniforms.uOutfitOn.value = color ? 1 : 0;
+      if (color) uniforms.uOutfit.value.set(color);
     },
     /** A SKIN_TONES key ("light" = the model's own). */
     setSkinTone(name) {

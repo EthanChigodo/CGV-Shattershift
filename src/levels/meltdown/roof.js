@@ -41,6 +41,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { RoofWeather } from "./weather.js";
 import { createMeltdownKit, heatSignature } from "./kit.js";
 import { ashify } from "./ash.js";
 import { createFireMaterials } from "./fire.js";
@@ -810,6 +811,8 @@ export class RoofLevel {
     const k = this.kit;
     const mat = k.materials;
     const roofing = this._track(new THREE.MeshStandardMaterial(photoReady({ map: roofingTexture(), roughnessMap: k.textures.floorRoughness, roughness: 1, metalness: 0.05 })));
+    /** The deck's surface (the weather wets it). */
+    this.deckMaterial = roofing;
     roofing.envMapIntensity = 0.5;
     this.owned.textures.push(roofing.map);
     // Tarred gravel (Poly Haven, CC0) when it arrives; the wet patches stay.
@@ -1616,9 +1619,17 @@ export class RoofLevel {
    * @param {THREE.Vector3} p.playerVelocity
    * @returns {{damage:number, from:THREE.Vector3, knock:number, source:string}[]} hits on the player this frame
    */
+  /** The weather: "clear", "rain" or "storm" (src/levels/meltdown/weather.js). */
+  setWeather(kind, audio = null) {
+    this.weather?.dispose();
+    this.weather = kind && kind !== "clear" ? new RoofWeather(this, { kind, audio }) : null;
+    return this.weather;
+  }
+
   update({ dt, time, player, playerVelocity }) {
     const s = this.state;
     this.fire.setTime(time);
+    this.weather?.update(dt, time);
     this.city?.update(dt, time, { haze: this.cityHaze });
     if (this.cutscene?.kind === "arrival") {
       // The arrival is over (the host has seen `done`): hand the roof over.
@@ -2161,6 +2172,8 @@ export class RoofLevel {
   }
 
   dispose() {
+    this.weather?.dispose();
+    this.weather = null;
     this.root.traverse((o) => {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });

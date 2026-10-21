@@ -23,7 +23,7 @@ export function savedBall() {
   return "glass";
 }
 
-function saveBall(key) {
+export function saveBall(key) {
   try { localStorage.setItem(BALL_KEY, key); } catch (error) {}
 }
 

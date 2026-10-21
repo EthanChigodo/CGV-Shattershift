@@ -160,7 +160,7 @@ export class StoryRideDirector {
     if (this.stage === "pickup" && !r.running && ride.phase === "launcher") {
       this.wait -= dt;
       if (this.wait <= 0 && ride.state.pt >= 1.15) {
-        this._start("pickup", { kind: "press", keys: [REACTION_KEYS[Math.floor(this.rng() * REACTION_KEYS.length)]], window: 2.4, label: "PICK IT UP" });
+        this._start("pickup", { kind: "press", keys: [REACTION_KEYS[Math.floor(this.rng() * REACTION_KEYS.length)]], window: 3.2, label: "PICK IT UP" });
       }
     } else if (this.stage === "clamp" && !r.running && this.wait > 0) {
       this.wait -= dt;

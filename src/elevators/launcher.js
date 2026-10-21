@@ -17,10 +17,12 @@
 import * as THREE from "../three.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
 import { CABIN } from "./kit.js";
+import { applyLauncherSkin, savedLauncherSkin } from "../figure/launcher-skins.js";
+import { LAUNCHER_HELD } from "../figure/launcher-model.js";
 
 const LENGTH = 1.25;
 /** Where the launcher sits in PlayerAvatar.shoulder for the two-handed hold (as game.js). */
-const HELD = new THREE.Vector3(-0.04, -0.07, -0.18);
+const HELD = LAUNCHER_HELD.position;
 const _a = new THREE.Vector3();
 const _qa = new THREE.Quaternion();
 const _qb = new THREE.Quaternion();
@@ -75,6 +77,8 @@ export class LauncherProp {
     const box = new THREE.Box3().setFromObject(model);
     model.position.sub(box.getCenter(new THREE.Vector3()));
     this.root.add(model);
+    // The player's chosen finish (Customise > Launcher).
+    applyLauncherSkin(model, savedLauncherSkin());
     // Same camera layers as the prop (the diagnostic view marks it).
     model.traverse((o) => {
       o.layers.mask = this.root.layers.mask;

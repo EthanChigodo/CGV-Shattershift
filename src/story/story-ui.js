@@ -15,6 +15,7 @@
  */
 
 import { CAST } from "./script.js";
+import { padLabel } from "../systems/input-glyphs.js";
 
 function ensureStylesheet() {
   if (document.querySelector("link[data-story-ui]")) return;
@@ -34,8 +35,10 @@ function div(className, parent) {
 
 const KEY_LABELS = { Space: "SPACE", ShiftLeft: "SHIFT", Enter: "ENTER", Escape: "ESC" };
 
-/** "KeyE" -> "E", "Space" -> "SPACE". */
+/** "KeyE" -> "E", "Space" -> "SPACE", "PadRT" -> "RT" (or "R2", "ZR"). */
 export function keyLabel(code) {
+  const pad = padLabel(code);
+  if (pad) return pad;
   if (KEY_LABELS[code]) return KEY_LABELS[code];
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);

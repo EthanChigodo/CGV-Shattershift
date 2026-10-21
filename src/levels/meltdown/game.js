@@ -70,6 +70,8 @@ import { DIFFICULTIES } from "../../systems/difficulty.js";
 import { AmmoRecovery, canAffordThrow } from "../../systems/ammo-recovery.js";
 import { AmmoRecoveryHint } from "../../ui/ammo-recovery.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
+import { applyLauncherSkin } from "../../figure/launcher-skins.js";
+import { LAUNCHER_HELD } from "../../figure/launcher-model.js";
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                               */
@@ -120,6 +122,16 @@ const ROOF_SPEED = 6.4;
  * the camera swings, moves the aim again and shakes.
  */
 const _gw = new THREE.Vector3();
+/** A hit: seconds looking back at the fire, then seconds getting back up to speed. */
+const STUMBLE_LOOK = 0.9;
+const STUMBLE_RECOVER = 0.6;
+/** Running speed through a stumble: nearly stopped looking back, then easing back to full. */
+function stumbleFactor(slow) {
+  if (slow <= 0) return 1;
+  if (slow > STUMBLE_RECOVER) return 0.22;
+  const k = 1 - slow / STUMBLE_RECOVER;
+  return 0.22 + 0.78 * k * k * (3 - 2 * k);
+}
 const ROOF_AIM_FAR = 80;
 /** Where the camera stands to watch a missed jump for the ladder: back from the ledge, over it. */
 const _ledgeCam = new THREE.Vector3(-2.2, 3.4, 1.6);
@@ -835,9 +847,17 @@ export class MeltdownGame {
         launcher.heatMaterials.push(o.material);
       }
     });
+    // The player's chosen finish, on these materials (they're already the launcher's own).
+    applyLauncherSkin(model, this.launcherSkin ?? "factory", { inPlace: true });
     this.launcherStandIn.visible = false;
     launcher.model = model;
     launcher.rig.add(model);
+  }
+
+  /** The launcher's finish (src/figure/launcher-skins.js), now and from now on. */
+  setLauncherSkin(key) {
+    this.launcherSkin = key;
+    if (this.launcher?.model) applyLauncherSkin(this.launcher.model, key, { inPlace: true });
   }
 
   _bindLevelEvents(level) {
@@ -1327,7 +1347,7 @@ export class MeltdownGame {
     r.speed = 0;
     r.pushing = false;
     if (playing) {
-      r.speed = r.baseSpeed * this.speedScale * (r.slow > 0 ? 0.45 : 1) * (this.arsenal.isActive("overdrive") ? 1.25 : 1); // overdrive: +25 %, as everywhere
+      r.speed = r.baseSpeed * this.speedScale * stumbleFactor(r.slow) * (this.arsenal.isActive("overdrive") ? 1.25 : 1); // overdrive: +25 %, as everywhere
       r.distance = Math.min(r.distance + r.speed * dt, level.route.totalLength - 1);
     }
 
@@ -1524,8 +1544,8 @@ export class MeltdownGame {
       if (avatar.hold > 0.5) {
         // Sat on the shoulder, most of the tube out in front, where both
         // hands of the hold pose (characters.js) close on it.
-        launcher.rig.position.set(-0.04, -0.07, -0.18 + launcher.recoil * 0.1);
-        launcher.rig.rotation.set(launcher.recoil * 0.15, 0, 0);
+        launcher.rig.position.copy(LAUNCHER_HELD.position).z += launcher.recoil * 0.1;
+        launcher.rig.rotation.set(LAUNCHER_HELD.pitch + launcher.recoil * 0.15, 0, 0);
       } else {
         // Hands busy (the ladder): slung diagonally across the back.
         launcher.rig.position.set(-0.3, -0.35, 0.2);
@@ -1729,8 +1749,6 @@ export class MeltdownGame {
       this._fracture(object, point, ball.velocity);
       audio.glassShatter(true);
       this.trauma = Math.min(1, this.trauma + 0.15);
-      // A glass sphere punches through and keeps going, as in the Skyline.
-      if ((ball.kind ?? "glass") === "glass") return "through";
     } else if (result.kind === "sack") {
       this.ammoRecovery.reset();
       r.balls = Math.min(MAX_BALLS, r.balls + (result.spheres ?? 0));
@@ -1912,9 +1930,13 @@ export class MeltdownGame {
     const dropped = Math.min(r.balls, Math.max(r.balls > 0 ? 1 : 0, Math.round(r.balls * HIT_BALL_DROP_RATIO)));
     r.balls -= dropped;
     r.hits += 1;
-    r.invulnerable = 1.1;
-    r.slow = 0.55;
-    r.lookBack = 0.9;
+    // The stumble: you all but stop while you look back at the fire, and
+    // only then pick up speed again, facing forward - and nothing can hit
+    // you until you have your bearings (round 4 playtest: you were running
+    // into the next thing while still looking back).
+    r.invulnerable = STUMBLE_LOOK + STUMBLE_RECOVER + 0.25;
+    r.slow = STUMBLE_LOOK + STUMBLE_RECOVER;
+    r.lookBack = this.reducedMotion ? 0 : STUMBLE_LOOK;
     this.trauma = Math.min(1, this.trauma + 0.85);
     this.hitFlash = 1;
     level.impact(1);
@@ -2150,6 +2172,8 @@ export class MeltdownGame {
     });
     this.roof = roof;
     roof.addTo(this.scene);
+    // A storm over the last stand (Endless on the roof: rain).
+    roof.setWeather(this.mode === "endless-roof" ? "rain" : "storm", this.sfx);
     // The tactical map, top right (an orthographic camera of its own).
     this.roofMap = new RoofMinimap(roof, this.scene);
     // The flight records: three round the roof, clear of the cover.

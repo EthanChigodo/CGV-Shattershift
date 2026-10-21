@@ -120,7 +120,7 @@ export async function run(page) {
     }
     check("chain: the sequence hands over to the mash, then succeeds", mid === "mash" && h.state === "success", `${mid} ${h.state}`);
     const latch = latchReaction();
-    check("latch: two keys, under a second each", latch.keys.length === 2 && latch.window < 1);
+    check("latch: two keys, quick (under 1.5 s each)", latch.keys.length === 2 && latch.window < 1.5);
 
     // On screen: the shared UI shows and clears the prompt.
     const s = __story;

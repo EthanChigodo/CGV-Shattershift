@@ -23,6 +23,7 @@ import * as THREE from "../../three.js";
 import { cloneCharacter, rigPlayerMesh } from "./characters.js";
 import { applyFigureLook } from "../../figure/look.js";
 import { RunGait } from "./gait.js";
+import { OUTFITS, HEADWEAR, buildHeadwear, disposeHeadwear, headwearColour } from "../../figure/outfit.js";
 
 /**
  * The overhand throw, keyed in seconds: [t, pitch, elbow fold, inward, twist].
@@ -40,6 +41,20 @@ const THROW_SECONDS = 0.46;
 /** Seconds into a throw when the ball leaves the hand. */
 export const THROW_RELEASE = 0.13;
 
+/**
+ * Standing still, each figure has its own idle (the menus, the studio, a
+ * lobby - anywhere it waits): kept simple - a slow sway from side to side,
+ * breathing, the shoulders turning a touch with the sway. Hers is a little
+ * quicker and lighter; his slower, chest up.
+ *   period  s, one sway there and back     sway   how far over (rad)
+ *   breath  s, one breath                  depth  how deep
+ *   turn    the shoulders, with the sway   chest  stood up straighter (rad)
+ */
+export const IDLES = {
+  female: { period: 4.2, sway: 0.016, breath: 3.4, depth: 0.014, turn: 0.035, chest: 0 },
+  male: { period: 5.4, sway: 0.011, breath: 4, depth: 0.018, turn: 0.025, chest: 0.015 },
+};
+
 function shadowTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 64;
@@ -53,6 +68,51 @@ function shadowTexture() {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+/**
+ * The head of a model in its rest pose (model space: +Z is the face): its
+ * half-width and half-depth near the crown, hair included, and where its
+ * middle is front to back. `h` is from the brow line up to the crown.
+ */
+function measureHead(geometry, top) {
+  const pos = geometry.attributes.position;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < pos.count; i += 1) {
+    const y = pos.getY(i);
+    if (y < top - 0.13) continue;
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    // (Only the head: not a raised hand.)
+    if (Math.abs(x) > 0.2) continue;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+  }
+  if (!Number.isFinite(minX)) return { rx: 0.095, rz: 0.11, cz: 0, h: 0.12 };
+  // The brow: just above the tip of the nose (the face's most forward point)
+  // - so a crown of thick hair doesn't push the band down over the eyes.
+  let noseZ = -Infinity;
+  let noseY = top - 0.17;
+  for (let i = 0; i < pos.count; i += 1) {
+    const y = pos.getY(i);
+    if (y < top - 0.2 || y > top - 0.07 || Math.abs(pos.getX(i)) > 0.04) continue;
+    const z = pos.getZ(i);
+    if (z > noseZ) { noseZ = z; noseY = y; }
+  }
+  return {
+    rx: Math.max(0.07, (maxX - minX) / 2),
+    rz: Math.max(0.08, (maxZ - minZ) / 2),
+    cz: (minZ + maxZ) / 2,
+    // (A fringe can stand further forward than the nose: then the "nose" is
+    // the fringe, high up, and the crown is a head of hair - the band goes
+    // lower, under it.)
+    h: top - (noseY + 0.08) < 0.07 ? 0.115 : Math.min(0.16, top - (noseY + 0.08)),
+  };
 }
 
 export class PlayerAvatar {
@@ -83,6 +143,12 @@ export class PlayerAvatar {
     this.back.position.set(0, 1.2, 0.2);
     this.body.add(this.back);
     this.backBase = this.back.position.clone();
+    // The head: where headwear sits (the middle of the cranium).
+    this.head = new THREE.Object3D();
+    this.head.name = "HeadMount";
+    this.head.position.set(0, 1.62, 0);
+    this.body.add(this.head);
+    this.headBase = this.head.position.clone();
     /** The right arm's throw, seconds since it started (null = not throwing). */
     this.throwT = null;
 
@@ -104,6 +170,10 @@ export class PlayerAvatar {
     this.hold = 1;
     /** 0..1 arms overhead - set by the host for the ladder. */
     this.reachUp = 0;
+    /** The idle standing still: "female" or "male" (from the model), or false for none. */
+    this.idleStyle = "female";
+    this.idleW = 0;
+    this.idleT = Math.random() * 20;
   }
 
   /** Swap in a prepared character template (from loadMeltdownAssets). */
@@ -122,10 +192,12 @@ export class PlayerAvatar {
     this.look.setWear(this._wear ?? 0);
     this.look.setGear(this._gear ?? false);
     this.look.setSkinTone(this._skinTone ?? "light");
+    this.look.setOutfit(OUTFITS[this._outfit]?.color ?? null);
     // Models face +Z; the runner travels down -Z.
     model.rotation.y = Math.PI;
     this.model = model;
     this.uniforms = uniforms;
+    if (this.idleStyle) this.idleStyle = model.userData.character?.profile === "playerMale" ? "male" : "female";
     this.body.add(model);
     this.standIn.visible = false;
     // Seat the launcher on the right shoulder (model -X, so +X once turned).
@@ -134,7 +206,13 @@ export class PlayerAvatar {
     // The bag between the shoulder blades, just behind the back.
     this.back.position.set(0, body.shoulderY - 0.3, Math.max(0.14, body.shoulderX * 0.62));
     this.backBase = this.back.position.clone();
+    // The head, measured: its width and depth (hair included) over the top
+    // 13 cm, and the brow line 12 cm under the crown - where a hat's band sits.
+    this._headSize = measureHead(mesh.geometry, body.height);
+    this.head.position.set(0, body.height - this._headSize.h, -this._headSize.cz);
+    this.headBase = this.head.position.clone();
     this.bodyInfo = body;
+    this._dressHead();
     // The planted-foot running gait (gait.js).
     this.gait = new RunGait(body);
   }
@@ -255,6 +333,12 @@ export class PlayerAvatar {
       else thrown = this._throwPose(this.throwT);
     }
 
+    // The idle, eased in as the figure comes to a stop.
+    const standing = this.idleStyle && !this.idleOff && !aiming && this.throwT === null && !running && grounded && !sliding && this.reachUp < 0.05;
+    this.idleW += ((standing ? 1 : 0) - this.idleW) * k(standing ? 2.5 : 10);
+    const idle = this.idleW > 0.001 ? this._idlePose(dt) : null;
+    if (idle) this.body.rotation.z += idle.tilt;
+
     const u = this.uniforms;
     if (u) {
       if (u.uThrow) {
@@ -279,6 +363,10 @@ export class PlayerAvatar {
       } else {
         u.uLean.value = (running ? 0.12 + speed * 0.008 : 0) + (pushing ? 0.35 : 0) - this.crouch * 0.55 + breath + rock;
       }
+      if (idle) {
+        u.uTwist.value += idle.twist;
+        u.uLean.value += idle.lean;
+      }
       // A landing folds the knees for a moment.
       u.uCrouch.value = this.crouch + squash * 0.22;
       u.uTuck.value = this.tuck;
@@ -302,6 +390,11 @@ export class PlayerAvatar {
         const bz = this.backBase.z;
         this.back.position.set(0, hip + by * c - bz * s - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, by * s + bz * c);
         this.back.rotation.x = angle;
+        // ...and the head, with whatever is on it.
+        const hy = this.headBase.y - hip;
+        const hz = this.headBase.z;
+        this.head.position.set(0, hip + hy * c - hz * s - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, hy * s + hz * c);
+        this.head.rotation.x = angle;
       }
     } else {
       this.standIn.scale.y = 1 - this.crouch * 0.45;
@@ -315,6 +408,21 @@ export class PlayerAvatar {
     this.shadowMaterial.opacity = 1 - lift * 0.65;
   }
 
+  /** This frame's idle, weighted by how far into standing still the figure is. */
+  _idlePose(dt) {
+    const I = IDLES[this.idleStyle] ?? IDLES.female;
+    const w = this.idleW;
+    const t = (this.idleT += dt);
+    const sway = Math.sin((t / I.period) * Math.PI * 2);
+    return {
+      tilt: sway * I.sway * w,
+      // (Not with the launcher held: the mount doesn't turn, the hands would slide.)
+      twist: sway * I.turn * w * (1 - this.hold),
+      // (On top of the rest pose's own breath.)
+      lean: (Math.sin((t / I.breath) * Math.PI * 2) * I.depth - I.chest) * w,
+    };
+  }
+
   /** Damage: 0 clean, 0.33 dusty, 0.66 bloodied - see src/figure/look.js. */
   setWear(value) {
     this._wear = value;
@@ -325,6 +433,31 @@ export class PlayerAvatar {
   setSkinTone(name) {
     this._skinTone = name;
     this.look?.setSkinTone(name);
+  }
+
+  /** The scrubs' colour, an OUTFITS key (src/figure/outfit.js); its headwear follows it. */
+  setOutfit(key) {
+    this._outfit = OUTFITS[key] ? key : "scrubs";
+    this.look?.setOutfit(OUTFITS[this._outfit].color);
+    this._dressHead();
+  }
+
+  /** Something on the head, a HEADWEAR key ("none" takes it off). */
+  setHeadwear(kind) {
+    this._headwear = HEADWEAR[kind] ? kind : "none";
+    this._dressHead();
+  }
+
+  _dressHead() {
+    if (this.hat) {
+      this.head.remove(this.hat);
+      disposeHeadwear(this.hat);
+      this.hat = null;
+    }
+    const kind = this._headwear ?? "none";
+    if (kind === "none" || !this.model) return;
+    this.hat = buildHeadwear(kind, headwearColour(this._outfit), this._headSize);
+    this.head.add(this.hat);
   }
 
   /** The scientist's vest and radio, after his sacrifice. */

@@ -700,6 +700,9 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uTwist;
   // The right arm's throw: (pitch, elbow fold, inward, weight).
   uniform vec4 uThrow;
+  // Each arm on the launcher (uHold 1): (pitch, elbow fold, inward) - HOLD_POSE.
+  uniform vec3 uHoldR;
+  uniform vec3 uHoldL;
 
   mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
   mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
@@ -731,9 +734,10 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     float free = (1.0 - uHold) * (1.0 - uReachUp);
     float swing = -sin(uPhase) * side * uArmSwing * free;
     // Running with free hands: elbows bent, as a runner's are.
-    float fold = (right ? 0.35 + uHold * 1.5 : 0.35 + uHold * 0.2) + uGait * free * min(1.0, uArmSwing * 2.0) * 0.75;
-    float pitch = right ? uHold * 0.95 : uHold * 1.5;
-    float inward = right ? uHold * 0.12 : uHold * 0.42;
+    vec3 holdPose = right ? uHoldR : uHoldL;
+    float fold = 0.35 + uHold * (holdPose.y - 0.35) + uGait * free * min(1.0, uArmSwing * 2.0) * 0.75;
+    float pitch = uHold * holdPose.x;
+    float inward = uHold * holdPose.z;
     fold = fold * (1.0 - uReachUp * 0.85) + max(0.0, swing) * 0.5;
     pitch += uReachUp * 2.75;
     fold = mix(fold, 0.06, uRest);
@@ -800,6 +804,17 @@ const PLAYER_RIG_MAIN = /* glsl */ `
  * (slide), uTuck (jump), uHold (both hands on the launcher), uReachUp
  * (arms overhead: hanging from or climbing the ladder).
  */
+/**
+ * Both hands on the shoulder launcher: (pitch - the upper arm raised forward
+ * from hanging, elbow fold, inward - across the body). The right hand on the
+ * grip under the tube, near the shoulder; the left arm reaching forward and
+ * across, its hand under the tube.
+ */
+export const HOLD_POSE = {
+  right: new THREE.Vector3(0.75, 1.55, 0.25),
+  left: new THREE.Vector3(1.3, 0.4, 0.95),
+};
+
 export function rigPlayerMesh(mesh) {
   const body = measureBody(mesh.geometry);
   const uniforms = {
@@ -823,6 +838,8 @@ export function rigPlayerMesh(mesh) {
     uLegL: { value: new THREE.Vector2() },
     uTwist: { value: 0 },
     uThrow: { value: new THREE.Vector4() },
+    uHoldR: { value: HOLD_POSE.right.clone() },
+    uHoldL: { value: HOLD_POSE.left.clone() },
   };
   const material = mesh.material.clone();
   material.onBeforeCompile = (shader) => {
@@ -844,7 +861,7 @@ export function rigPlayerMesh(mesh) {
     );
     shader.vertexShader = shader.vertexShader.replace(/(#include <defaultnormal_vertex>[\s\S]*?)#include <begin_vertex>/, "$1");
   };
-  material.customProgramCacheKey = () => "meltdown-player-rig-gait-throw";
+  material.customProgramCacheKey = () => "meltdown-player-rig-gait-throw-hold";
   mesh.material = material;
   // The rig moves vertices outside the rest-pose bounds.
   mesh.frustumCulled = false;

@@ -1,0 +1,62 @@
+/* Customise (single player): the studio on the left, the panel on the right. */
+
+.lk-root { pointer-events: none; }
+.lk-panel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(46vw, 560px); padding: 34px 34px 24px;
+  display: flex; flex-direction: column; gap: 14px; overflow-y: auto; pointer-events: auto;
+  background: linear-gradient(270deg, rgba(8, 11, 15, .96) 70%, rgba(8, 11, 15, 0));
+}
+.lk-panel h2 { text-align: left !important; margin: 0 !important; font-size: 44px !important; }
+.lk-tabs { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.lk-tabs button {
+  flex: 1; padding: 10px 14px; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase;
+  color: #9fb0ba; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .1); cursor: pointer;
+}
+.lk-tabs button.on { color: #0b0f14; background: #7ef4f1; border-color: #7ef4f1; box-shadow: 0 0 22px rgba(126, 244, 241, .35); }
+.lk-row { padding: 12px 14px; border-radius: 14px; border: 1px solid transparent; background: rgba(255, 255, 255, .025); transition: border-color .15s, background .15s; }
+.lk-row.on { border-color: rgba(126, 244, 241, .55); background: rgba(126, 244, 241, .06); }
+.lk-row header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
+.lk-row header span { font-size: 11px; font-weight: 900; letter-spacing: .2em; text-transform: uppercase; color: #9fb0ba; }
+.lk-row header b { font-size: 15px; font-weight: 900; }
+.lk-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.lk-opt {
+  min-width: 64px; padding: 8px 12px; border-radius: 9px; font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: #dfe8ee; background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .12); cursor: pointer;
+  transition: transform .12s, border-color .12s, box-shadow .12s;
+}
+.lk-opt:hover { border-color: rgba(126, 244, 241, .5); }
+.lk-opt.picked { border-color: #7ef4f1; box-shadow: 0 0 0 2px rgba(126, 244, 241, .35), 0 0 16px rgba(126, 244, 241, .25); }
+.lk-opt.sw { min-width: 0; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: grid; place-items: center; }
+.lk-opt.sw i { width: 26px; height: 26px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+.lk-opt.sw.picked { transform: scale(1.1); }
+.lk-opt.orb i { box-shadow: 0 0 10px var(--sw), inset -3px -4px 8px rgba(0, 0, 0, .45); }
+/* The launcher's finishes: tiles with the pattern on them. */
+.lk-options.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.lk-opt.tile { width: auto; height: auto; border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+.lk-opt.tile i { width: 100%; height: 38px; border-radius: 7px; background: var(--sw); }
+.lk-opt.tile small { font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+.lk-opt.tile.picked { transform: translateY(-2px); }
+.lk-note { margin: 2px 2px 0; font-size: 12px; color: #9fb0ba; line-height: 1.5; }
+.lk-foot { display: flex; gap: 18px; flex-wrap: wrap; margin-top: auto; font-size: 12px; color: #b8c2c8; }
+.lk-done {
+  align-self: flex-start; padding: 12px 34px; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase;
+  color: #0b0f14; background: #ff9a4a; border: 0; cursor: pointer; box-shadow: 0 8px 20px rgba(255, 154, 74, .25);
+}
+
+@media (max-width: 900px) {
+  .lk-panel { width: 100%; top: 40%; background: rgba(8, 11, 15, .96); }
+  .lk-options.tiles { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Kit pieces (src/figure/kits.js): a ring in the kit's colour; locked, dimmed with a padlock. */
+.lk-opt { position: relative; }
+.lk-opt.kit { border-color: color-mix(in srgb, var(--kc) 55%, transparent); }
+.lk-opt.kit:not(.locked)::after { content: "KIT"; position: absolute; top: -7px; right: -6px; padding: 1px 4px; border-radius: 4px; font-size: 7.5px; font-weight: 900; letter-spacing: .1em; color: #0b0f14; background: var(--kc); }
+.lk-opt.locked { cursor: not-allowed; opacity: .55; filter: grayscale(.8); }
+.lk-opt.locked:hover { border-color: color-mix(in srgb, var(--kc) 70%, transparent); opacity: .8; }
+.lk-lock { position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; background: rgba(8, 10, 14, .55); color: #e6edf2; }
+.lk-lock svg { width: 14px; height: 14px; }
+.lk-locked-note { color: var(--kc, #ffcf4a); font-weight: 800; }
+/* On a word button, the padlock sits after the word rather than over it. */
+.lk-opt:not(.sw) .lk-lock { position: static; display: inline-grid; background: none; margin-left: 6px; vertical-align: -2px; }
+.lk-opt:not(.sw).locked { filter: grayscale(.6); }

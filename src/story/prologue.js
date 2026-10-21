@@ -330,6 +330,8 @@ export class Prologue {
     this.ui.title = this.ui.card.querySelector(".pl-title");
     this.ui.text = this.ui.card.querySelector(".pl-text");
     this.ui.skipButton = el("button", "pl-skip", "SKIP (ESC)");
+    // (OPTIONS / MENU while a controller is in use: src/ui/key-names.js.)
+    this.ui.skipButton.dataset.keys = "";
     this.ui.skipButton.type = "button";
     this.ui.skipButton.addEventListener("click", () => this.skip());
     // The recording's look: grain, vignette, the camera overlay, the chapter splash.

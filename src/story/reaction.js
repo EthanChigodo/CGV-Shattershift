@@ -24,8 +24,12 @@
  * or sequence: no mashing every key to get through.
  *
  * Options (the settings menu): `longWindows` gives every window 1.6x the
- * time; `holdInsteadOfMash` turns every mash into a hold.
+ * time; `holdInsteadOfMash` turns every mash into a hold. `pad` (a
+ * controller is in use): the keys become flicks of the sticks and the
+ * triggers, the same on every controller - see toPadKeys.
  */
+
+import { PAD_FLICKS, padLabel } from "../systems/input-glyphs.js";
 
 /**
  * Keys reactions draw from - clear of WASD/Space movement, Esc, and the
@@ -36,6 +40,30 @@ export const REACTION_KEYS = ["KeyR", "KeyF", "KeyZ", "KeyX", "KeyG", "KeyT"];
 
 const LONG_WINDOW_SCALE = 1.6;
 
+/**
+ * A reaction played on a controller. Each reaction key is a flick of a
+ * stick (R F Z X on the left stick, G T on the right); tapping Space is the
+ * right trigger; alternating A D is the two triggers in turn. Two keys at
+ * once ("PRESS BOTH") are always one on each stick, so both can be pushed.
+ */
+const PAD_FOR = {
+  KeyR: "PadLUp", KeyF: "PadLDown", KeyZ: "PadLLeft", KeyX: "PadLRight",
+  KeyG: "PadRLeft", KeyT: "PadRRight", KeyQ: "PadRUp", KeyE: "PadRDown",
+  Space: "PadRT", KeyA: "PadLT", KeyD: "PadRT", ShiftLeft: "PadLT",
+};
+const OTHER_STICK = { L: "R", R: "L" };
+export function toPadKeys(kind, keys) {
+  const out = keys.map((k) => PAD_FOR[k] ?? k);
+  if (kind === "combo") {
+    for (let i = 1; i < out.length; i += 1) {
+      const a = out[i - 1];
+      const b = out[i];
+      if (PAD_FLICKS.includes(a) && PAD_FLICKS.includes(b) && a[3] === b[3]) out[i] = `Pad${OTHER_STICK[b[3]]}${b.slice(4)}`;
+    }
+  }
+  return out;
+}
+
 function pickKeys(count, rng, pool = REACTION_KEYS) {
   const left = [...pool];
   const out = [];
@@ -44,37 +72,42 @@ function pickKeys(count, rng, pool = REACTION_KEYS) {
 }
 
 /**
- * The elevator's break points: harder each time.
- *   0  one key, 2 s
- *   1  two keys together, 1.7 s
- *   2  three in sequence, 1.15 s each
- *   3+ four in sequence, 0.85 s each, then mash
+ * The elevator's break points: harder each time. (Round 4 playtest: every
+ * timed event slowed down again - about 1.4x the time it had.)
+ *   0  one key, 2.8 s
+ *   1  two keys together, 2.4 s
+ *   2  three in sequence, 1.6 s each
+ *   3+ four in sequence, 1.2 s each, then mash
  */
 export function reactionLadder(step, rng = Math.random) {
-  if (step <= 0) return { kind: "press", keys: pickKeys(1, rng), window: 2.0 };
-  if (step === 1) return { kind: "combo", keys: pickKeys(2, rng), window: 1.7 };
-  if (step === 2) return { kind: "sequence", keys: pickKeys(3, rng), window: 1.15 };
+  if (step <= 0) return { kind: "press", keys: pickKeys(1, rng), window: 2.8 };
+  if (step === 1) return { kind: "combo", keys: pickKeys(2, rng), window: 2.4 };
+  if (step === 2) return { kind: "sequence", keys: pickKeys(3, rng), window: 1.6 };
   return {
     kind: "sequence",
     keys: pickKeys(4, rng),
-    window: Math.max(0.6, 0.85 - (step - 3) * 0.08),
-    then: { kind: "mash", keys: ["Space"], time: 3.2, gain: 0.085, decay: 0.32, label: "LOCK IT" },
+    window: Math.max(0.85, 1.2 - (step - 3) * 0.1),
+    then: { kind: "mash", keys: ["Space"], time: 4.5, gain: 0.085, decay: 0.28, label: "LOCK IT" },
   };
 }
 
-/** Grabbing a ledge (the bridge, the helicopter ladder): two keys, fast. */
+/** Grabbing a ledge (the bridge, the helicopter ladder): two keys, quick. */
 export function latchReaction(rng = Math.random) {
-  return { kind: "sequence", keys: pickKeys(2, rng), window: 0.95, label: "GRAB" };
+  return { kind: "sequence", keys: pickKeys(2, rng), window: 1.35, label: "GRAB" };
 }
 
-/** Sprinting off a falling bridge: alternate two keys. */
+/**
+ * Sprinting off a falling bridge: alternate two keys. (Its time is the
+ * scene's - the bridge falls when it falls - so it is made slower to fill
+ * instead: more per press, and it drains more gently.)
+ */
 export function sprintReaction({ time = 4.5 } = {}) {
-  return { kind: "mash", keys: ["KeyA", "KeyD"], alternate: true, time, gain: 0.06, decay: 0.18, label: "SPRINT" };
+  return { kind: "mash", keys: ["KeyA", "KeyD"], alternate: true, time, gain: 0.075, decay: 0.13, label: "SPRINT" };
 }
 
 /** Pushing something off you. */
-export function struggleReaction({ time = 3.5 } = {}) {
-  return { kind: "mash", keys: ["Space"], time, gain: 0.075, decay: 0.3, label: "PUSH IT OFF" };
+export function struggleReaction({ time = 5 } = {}) {
+  return { kind: "mash", keys: ["Space"], time, gain: 0.08, decay: 0.24, label: "PUSH IT OFF" };
 }
 
 const LABELS = { press: "PRESS", combo: "PRESS BOTH", sequence: "IN ORDER", mash: "TAP FAST", hold: "HOLD" };
@@ -86,7 +119,7 @@ const LABELS = { press: "PRESS", combo: "PRESS BOTH", sequence: "IN ORDER", mash
  * FAST", or (with "Hold instead of mash") "HOLD SPACE".
  */
 function howTo(kind, spec, keys) {
-  const names = keys.map((k) => (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
+  const names = keys.map((k) => padLabel(k) ?? (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
   if (kind === "hold") return `HOLD ${names}`;
   if (kind === "mash") return spec.alternate ? `ALTERNATE ${names} FAST` : `TAP ${names} FAST`;
   return null;
@@ -97,9 +130,11 @@ export class ReactionHits {
    * @param {import("./story-ui.js").StoryUI|null} ui  (null: headless)
    * @param {object} [options]
    */
-  constructor(ui, { longWindows = false, holdInsteadOfMash = false } = {}) {
+  constructor(ui, { longWindows = false, holdInsteadOfMash = false, pad = false } = {}) {
     this.ui = ui;
-    this.options = { longWindows, holdInsteadOfMash };
+    this.options = { longWindows, holdInsteadOfMash, pad };
+    /** Told when a reaction begins (the controller's rumble). */
+    this.onStart = null;
     this.state = "idle";
     this.failReason = null;
     this.onResult = null;
@@ -144,9 +179,10 @@ export class ReactionHits {
   start(spec) {
     const o = this.options;
     let kind = spec.kind;
-    const keys = [...(spec.keys ?? ["Space"])];
+    let keys = [...(spec.keys ?? ["Space"])];
     // Accessibility: a mash becomes a hold of one key.
     if (kind === "mash" && o.holdInsteadOfMash) kind = "hold";
+    if (o.pad) keys = toPadKeys(kind, keys);
     const scale = o.longWindows ? LONG_WINDOW_SCALE : 1;
     this._s = {
       spec,
@@ -179,6 +215,7 @@ export class ReactionHits {
       bar: kind === "mash" || kind === "hold",
     });
     this._draw();
+    this.onStart?.(s);
     return this;
   }
 
@@ -190,7 +227,7 @@ export class ReactionHits {
     const s = this._s;
     if (this.state !== "running" || !s) return false;
     const mine = s.keys.includes(code);
-    const pool = mine || REACTION_KEYS.includes(code);
+    const pool = mine || REACTION_KEYS.includes(code) || PAD_FLICKS.includes(code);
     if (!pool) return false;
     if (repeat) return true;
     s.held.add(code);

@@ -727,12 +727,15 @@ export class GravityFaultRide {
       avatar.setWear(this.figureState.wear);
       avatar.setGear(this.figureState.gear);
       if (this.figureState.skinTone) avatar.setSkinTone(this.figureState.skinTone);
+      if (this.figureState.outfit) avatar.setOutfit(this.figureState.outfit);
+      if (this.figureState.headwear) avatar.setHeadwear(this.figureState.headwear);
     }
     avatar.setModel(template);
     this._avatar = avatar;
     return {
       root: avatar.root,
-      pose: (float, time, dt = 0) => avatar.update(dt, { speed: 0 }),
+      // (No idle while it floats.)
+      pose: (float, time, dt = 0) => { avatar.idleOff = float > 0.05; avatar.update(dt, { speed: 0 }); },
     };
   }
 
