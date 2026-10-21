@@ -45,6 +45,7 @@ import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone, HAIR_COLOURS, sav
 import { OUTFITS, HEADWEAR, savedOutfit, saveOutfit, savedHeadwear, saveHeadwear } from "./src/figure/outfit.js";
 import { applyLauncherSkin, savedLauncherSkin } from "./src/figure/launcher-skins.js";
 import { LAUNCHER_HELD } from "./src/figure/launcher-model.js";
+import { MenuBackdrop } from "./src/menu/backdrop.js";
 import { DIFFICULTIES, loadDifficulty, saveDifficulty } from "./src/systems/difficulty.js";
 import { loadSave, writeSave, clearSave, SAVE_STAGE_NAMES } from "./src/systems/story-save.js";
 import { TrailerDirector } from "./src/trailer/director.js";
@@ -1679,6 +1680,22 @@ const MELTDOWN_AUDIO = true;
 let meltdownPrepared = null;
 const MELTDOWN_ASSET_BASE = new URL("./assets/meltdown/", import.meta.url).href;
 let meltdownEntering = false;
+
+/**
+ * The menus' backdrop: a live 3D shot of the burning tower with Subject 07 on
+ * the roof across the street (src/menu/). It streams in at boot without
+ * holding the menus; until it is in (or if it fails) the Skyline's corridor
+ * stays behind the menus as before. Updated and drawn only on the menus.
+ */
+const menuBackdrop = new MenuBackdrop({
+  renderer,
+  assetBase: MELTDOWN_ASSET_BASE,
+  // (Auto means medium here: the frame-rate monitor only watches the runs.)
+  quality: () => (settings.quality === "auto" && !autoLow ? "medium" : resolvedQuality()),
+  reducedMotion: () => settings.reducedMotion,
+  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit() }),
+});
+menuBackdrop.preload();
 
 function getMeltdown() {
   if (meltdown) return meltdown;
@@ -3965,6 +3982,8 @@ function updateGame(dt, time) {
   level1Audio.duckForVoice(speaking);
   const inCauseway = currentLevel === 1 && causeway && causeway.root.visible;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
+  // The menus over the live 3D stage (src/menu/): lighter shading, glass cards.
+  document.body.classList.toggle("menu-live", state === "intro" && menuBackdrop.showing);
   document.body.classList.toggle("paused", paused);
   document.body.classList.toggle("riding-lift", state === "lift");
   document.body.classList.toggle("cw-active", !!inCauseway && (state === "playing" || state === "lift" || state === "ended"));
@@ -4002,6 +4021,9 @@ function updateGame(dt, time) {
   // The briefing film has the screen while it plays.
   if (prologue?.active) { prologue.update(dt, time); return; }
   if (state === "intro") {
+    // The live 3D stage when it is in...
+    if (menuBackdrop.update(dt, { versus: false })) return;
+    // ...until then, the Skyline's corridor with a drifting camera.
     if (causeway) {
       const d = causeway.menuCamera(time, camera, settings.reducedMotion);
       causeway.update({ dt, time, distance: d, playing: false });
@@ -4226,6 +4248,8 @@ function updatePerformance(rawDt) {
 
 function renderFrame() {
   if (prologue?.active) { prologue.render(); return; }
+  // The menus: the 3D stage (src/menu/backdrop.js) through the post chain.
+  if (state === "intro" && menuBackdrop.render(postfx)) return;
   if (gravityLift?.visible) { gravityLift.render(); return; }
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
@@ -5456,6 +5480,8 @@ function applyLook(patch) {
   }
   if (patch.ball) { saveBall(patch.ball); arsenal.prefer(patch.ball); ballPickers.show(patch.ball); }
   refreshDossier();
+  // Subject 07 on the menu's roof (src/menu/backdrop.js) too.
+  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit() } }));
 }
 let locker = null;
 async function openCustomise(tab = "character") {
@@ -6143,6 +6169,9 @@ globalThis.__dbg = {
   sphereFlight: SPHERE_FLIGHT,
   get playerBodyTemplate() { return playerBodyTemplate; },
   get playerBody() { return playerBody; },
+  /** The menus' 3D stage (src/menu/backdrop.js): .live, .shot, .stage. */
+  get menuStage() { return menuBackdrop; },
+  THREE,
   demoGravityLift,
   demoQuietRide,
   startFoundryLift,

@@ -860,3 +860,23 @@ html.restoring #storyPrompt::after {
 .ghost-chip b { color: #ff9a5c; font-size: 13px; letter-spacing: .04em; }
 .ghost-chip.ahead b { color: #7dff9a; }
 body.hud-hidden .ghost-chip, body.story-cutscene .ghost-chip, body.cutscene .ghost-chip { display: none; }
+
+/* ---- The menus over the live 3D stage (src/menu/backdrop.js) -------------
+   The picture is the backdrop: no blur, shade only behind the words, the
+   cards turn to glass so the burning tower reads through them. */
+body.menu-live .screen {
+  backdrop-filter: none;
+  background:
+    linear-gradient(90deg, rgba(8, 4, 3, .8) 0%, rgba(8, 4, 3, .52) 38%, rgba(8, 4, 3, .12) 66%, rgba(8, 4, 3, 0) 100%),
+    linear-gradient(0deg, rgba(8, 4, 3, .45), transparent 32%);
+}
+body.menu-live #storyScreen {
+  background: radial-gradient(ellipse 58% 52% at 50% 50%, rgba(8, 4, 3, .72), rgba(8, 4, 3, .2) 72%, rgba(8, 4, 3, 0));
+}
+body.menu-live :is(#trophiesScreen, #settingsScreen, #manualScreen, #creditsScreen, #reportScreen, #chaptersScreen, #endlessScreen) {
+  background: rgba(8, 4, 3, .58);
+}
+body.menu-live .menu-card {
+  background: linear-gradient(180deg, rgba(10, 18, 22, .6), rgba(8, 10, 12, .52));
+  backdrop-filter: blur(6px);
+}
