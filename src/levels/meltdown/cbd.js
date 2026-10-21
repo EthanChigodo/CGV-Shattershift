@@ -1,10 +1,11 @@
 /**
- * The Johannesburg CBD right round the roof: the buildings the roof camera
- * sees all fight, in place of the generic dark towers with lit windows.
+ * The old downtown right round the roof: the buildings the roof camera
+ * sees all fight, in place of the generic dark towers with lit windows -
+ * several sets of them (CBD_SETS), each building optional in a set.
  *
  *   Art Deco tower    pale sandstone, pilasters and chevron spandrels,
  *                     stepped crowns floodlit from their setbacks, a spire
- *   Hillbrow flats    painted concrete, real balconies, washing out,
+ *   Tower flats       painted concrete, real balconies, washing out,
  *                     curtains in every colour, dishes, a shack on the roof
  *   Red-brick block   brick with white stone trim and sash windows, a
  *                     painted billboard on the roof
@@ -29,6 +30,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { BufferGeometryUtils } from "../../three-addons.js";
 
 /** Where they stand, from the tower you're on (x east, -z north), metres; yaw in radians. */
 export const CBD = {
@@ -38,8 +40,49 @@ export const CBD = {
   civic: { x: -60, z: 35, yaw: Math.PI / 2 }, // its front faces east, to the tower
 };
 
+/**
+ * More of them, further out (round the towers that come down, roof.js
+ * COLLAPSES / CONDEMNED): the roof's own view and the Skyline's backdrop.
+ */
+export const CBD_SETS = [
+  CBD,
+  { deco: { x: 70, z: -112, yaw: 0.4 }, flats: { x: 96, z: -40, yaw: -0.6 }, brick: { x: 42, z: -140, yaw: 0.25 }, civic: { x: -118, z: -62, yaw: 0.9 } },
+  { deco: { x: -112, z: 10, yaw: -0.3 }, flats: { x: 12, z: -205, yaw: 0.1 }, brick: { x: 112, z: 22, yaw: 1.2 } },
+];
+
+/** A building's meshes merged into one per material (in the group's frame). */
+function mergeByMaterial(group, own) {
+  group.updateMatrixWorld(true);
+  const inverse = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const byMaterial = new Map();
+  group.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || Array.isArray(o.material)) return;
+    const mode = o.material.uniforms?.uMode?.value;
+    if (mode === MODE.clock || mode === MODE.copper) return;
+    if (!byMaterial.has(o.material)) byMaterial.set(o.material, []);
+    byMaterial.get(o.material).push(o);
+  });
+  const m = new THREE.Matrix4();
+  for (const [material, meshes] of byMaterial) {
+    if (meshes.length < 2) continue;
+    const parts = meshes.map((mesh) => {
+      const g = mesh.geometry.clone().applyMatrix4(m.multiplyMatrices(inverse, mesh.matrixWorld));
+      const flat = g.index ? g.toNonIndexed() : g;
+      if (flat !== g) g.dispose();
+      for (const name of Object.keys(flat.attributes)) if (!["position", "normal", "uv"].includes(name)) flat.deleteAttribute(name);
+      return flat;
+    });
+    const merged = BufferGeometryUtils.mergeGeometries(parts);
+    for (const part of parts) part.dispose();
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(own(merged), material);
+    group.add(mesh);
+    for (const old of meshes) old.removeFromParent();
+  }
+}
+
 /** A made-up company for the painted billboard. */
-export const BILLBOARD = ["JOZI MILLING CO.", "MEALIE MEAL SINCE 1936"];
+export const BILLBOARD = ["ASCENSION MILLING CO.", "FLOUR SINCE 1936"];
 
 const MODE = { deco: 0, civic: 1, flats: 2, brick: 3, copper: 4, clock: 5 };
 
@@ -259,7 +302,9 @@ export class CbdBuildings {
    * @param {number} [o.streetY]
    * @param {THREE.Vector3} [o.centre]  the tower you're standing on
    */
-  constructor({ streetY = -160, centre = new THREE.Vector3() } = {}) {
+  constructor({ streetY = -160, centre = new THREE.Vector3(), sets = [CBD] } = {}) {
+    this.sets = sets;
+    this.frames = [];
     this.root = new THREE.Group();
     this.root.name = "CbdBuildings";
     this.owned = [];
@@ -296,6 +341,7 @@ export class CbdBuildings {
         fogFar: { value: 1000 },
       };
       this.uniforms.push(uniforms);
+      this.frames.push({ uniforms, group });
       return own(new THREE.ShaderMaterial({ uniforms, vertexShader: VERTEX, fragmentShader: FRAGMENT, fog: true, side: o.side ?? THREE.FrontSide }));
     };
     /** A box from `y0` up, centred at (x, z) in the building's frame. */
@@ -330,150 +376,168 @@ export class CbdBuildings {
     };
     this.beacon = own(new THREE.SpriteMaterial({ map: own(glowDot()), color: 0xff2a1a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }));
 
-    // ---- Art Deco tower ----
-    {
-      const g = place("DecoTower", CBD.deco);
-      const stone = facade(g, MODE.deco, { colour: 0xcdbb98, trim: 0x8f7a5c, glass: 0xffd29a, floorH: 3.8, bayW: 2.6, lit: 0.3, tiers: [140, 154, 162], seed: 3 });
-      box(g, stone, 26, 140, 22);
-      box(g, stone, 20, 14, 16, 0, 140);
-      box(g, stone, 13, 8, 10, 0, 154);
-      cylinder(g, metal, 0.15, 0.6, 15, 0, 162, 0, 8);
-      const light = new THREE.Sprite(this.beacon);
-      light.position.set(0, 177.5, 0);
-      light.scale.setScalar(4);
-      g.add(light);
-      waterTank(g, -9, 140, 7);
-      box(g, metal, 2.4, 1.4, 1.6, 8, 140, -8);
-      box(g, metal, 2.4, 1.4, 1.6, 8, 140, -5);
-      dish(g, 6, 154, 5, 0.6);
-      dish(g, -6, 154, -5, -0.4, 0.7);
-    }
+    for (const [set, at] of sets.entries()) {
+      // ---- Art Deco tower ----
+      if (at.deco) {
+        const g = place("DecoTower", at.deco);
+        const stone = facade(g, MODE.deco, { colour: 0xcdbb98, trim: 0x8f7a5c, glass: 0xffd29a, floorH: 3.8, bayW: 2.6, lit: 0.3, tiers: [140, 154, 162], seed: 3 + set * 17 });
+        box(g, stone, 26, 140, 22);
+        box(g, stone, 20, 14, 16, 0, 140);
+        box(g, stone, 13, 8, 10, 0, 154);
+        cylinder(g, metal, 0.15, 0.6, 15, 0, 162, 0, 8);
+        const light = new THREE.Sprite(this.beacon);
+        light.position.set(0, 177.5, 0);
+        light.scale.setScalar(4);
+        g.add(light);
+        waterTank(g, -9, 140, 7);
+        box(g, metal, 2.4, 1.4, 1.6, 8, 140, -8);
+        box(g, metal, 2.4, 1.4, 1.6, 8, 140, -5);
+        dish(g, 6, 154, 5, 0.6);
+        dish(g, -6, 154, -5, -0.4, 0.7);
+      }
 
-    // ---- Hillbrow flats ----
-    {
-      const g = place("HillbrowFlats", CBD.flats);
-      const top = 154;
-      const concrete = facade(g, MODE.flats, { colour: 0xb9b3a6, floorH: 3.0, bayW: 3.6, lit: 0.55, flood: 0.35, seed: 5 });
-      box(g, concrete, 36, top, 15);
-      // Balconies on the side that faces the roof: one slab per floor, instanced.
-      const floors = Math.floor(top / 3.0) - 1;
-      const slab = own(new THREE.BoxGeometry(34, 0.25, 1.3));
-      const balconies = new THREE.InstancedMesh(slab, concrete, floors);
-      const m = new THREE.Matrix4();
-      for (let i = 0; i < floors; i += 1) balconies.setMatrixAt(i, m.makeTranslation(0, 3 + i * 3.0, 7.5 + 0.65));
-      g.add(balconies);
-      // The roof: tanks, dishes, washing lines and a shack.
-      waterTank(g, -12, top, -3);
-      waterTank(g, -6.5, top, -3, 1.8);
-      for (let i = 0; i < 5; i += 1) dish(g, -14 + i * 7, top, 6.5, 0.2 * i, 0.6 + (i % 2) * 0.3);
-      box(g, rust, 4.5, 2.6, 3.2, 11, top, -2);
-      const roofSheet = box(g, metal, 5, 0.1, 3.8, 11, top + 2.7, -2);
-      roofSheet.rotation.x = 0.12;
-      const lines = [];
-      const clothes = [];
-      for (let k = 0; k < 3; k += 1) {
-        const z = -5 + k * 2.2;
-        lines.push(-2, top + 1.8, z, 6, top + 1.8, z);
-        for (let j = 0; j < 9; j += 1) clothes.push([-1.5 + j * 0.85, top + 1.3, z]);
+      // ---- Tower flats ----
+      if (at.flats) {
+        const g = place("TowerFlats", at.flats);
+        const top = 154;
+        const concrete = facade(g, MODE.flats, { colour: 0xb9b3a6, floorH: 3.0, bayW: 3.6, lit: 0.55, flood: 0.35, seed: 5 + set * 17 });
+        box(g, concrete, 36, top, 15);
+        // Balconies on the side that faces the roof: one slab per floor, instanced.
+        const floors = Math.floor(top / 3.0) - 1;
+        const slab = own(new THREE.BoxGeometry(34, 0.25, 1.3));
+        const balconies = new THREE.InstancedMesh(slab, concrete, floors);
+        const m = new THREE.Matrix4();
+        for (let i = 0; i < floors; i += 1) balconies.setMatrixAt(i, m.makeTranslation(0, 3 + i * 3.0, 7.5 + 0.65));
+        g.add(balconies);
+        // The roof: tanks, dishes, washing lines and a shack.
+        waterTank(g, -12, top, -3);
+        waterTank(g, -6.5, top, -3, 1.8);
+        for (let i = 0; i < 5; i += 1) dish(g, -14 + i * 7, top, 6.5, 0.2 * i, 0.6 + (i % 2) * 0.3);
+        box(g, rust, 4.5, 2.6, 3.2, 11, top, -2);
+        const roofSheet = box(g, metal, 5, 0.1, 3.8, 11, top + 2.7, -2);
+        roofSheet.rotation.x = 0.12;
+        const lines = [];
+        const clothes = [];
+        for (let k = 0; k < 3; k += 1) {
+          const z = -5 + k * 2.2;
+          lines.push(-2, top + 1.8, z, 6, top + 1.8, z);
+          for (let j = 0; j < 9; j += 1) clothes.push([-1.5 + j * 0.85, top + 1.3, z]);
+        }
+        const lineGeometry = own(new THREE.BufferGeometry());
+        lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
+        g.add(new THREE.LineSegments(lineGeometry, own(new THREE.LineBasicMaterial({ color: 0x9a9a9a }))));
+        const cloth = new THREE.InstancedMesh(own(new THREE.PlaneGeometry(0.6, 0.9)), own(new THREE.MeshLambertMaterial({ side: THREE.DoubleSide })), clothes.length);
+        const colour = new THREE.Color();
+        const palette = [0xc43b2e, 0x2f6fb5, 0xe9c33f, 0xf2f2f2, 0x3f9c5c, 0xd96aa0];
+        clothes.forEach(([x, y, z], i) => {
+          cloth.setMatrixAt(i, m.makeTranslation(x, y, z));
+          cloth.setColorAt(i, colour.set(palette[(i * 7) % palette.length]));
+        });
+        g.add(cloth);
       }
-      const lineGeometry = own(new THREE.BufferGeometry());
-      lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
-      g.add(new THREE.LineSegments(lineGeometry, own(new THREE.LineBasicMaterial({ color: 0x9a9a9a }))));
-      const cloth = new THREE.InstancedMesh(own(new THREE.PlaneGeometry(0.6, 0.9)), own(new THREE.MeshLambertMaterial({ side: THREE.DoubleSide })), clothes.length);
-      const colour = new THREE.Color();
-      const palette = [0xc43b2e, 0x2f6fb5, 0xe9c33f, 0xf2f2f2, 0x3f9c5c, 0xd96aa0];
-      clothes.forEach(([x, y, z], i) => {
-        cloth.setMatrixAt(i, m.makeTranslation(x, y, z));
-        cloth.setColorAt(i, colour.set(palette[(i * 7) % palette.length]));
-      });
-      g.add(cloth);
-    }
 
-    // ---- Red-brick block ----
-    {
-      const g = place("BrickBlock", CBD.brick);
-      const top = 148;
-      const brick = facade(g, MODE.brick, { colour: 0x8a3a26, trim: 0xe9e2d2, glass: 0xffc17a, floorH: 3.9, bayW: 3.2, lit: 0.32, flood: 1.0, seed: 7 });
-      const trim = facade(g, MODE.deco, { colour: 0xe2dccb, trim: 0xc9c0aa, lit: 0, flood: 1.0, tiers: [top - 2, 0, 0], seed: 8 });
-      box(g, brick, 24, top, 20);
-      box(g, trim, 25.6, 1.6, 21.6, 0, top - 1.6);           // the cornice
-      waterTank(g, 7, top, 5);
-      // The billboard: on two posts, lit by two lamps on arms.
-      const board = new THREE.Mesh(own(new THREE.PlaneGeometry(14, 5.25)), own(new THREE.MeshBasicMaterial({ map: own(billboardTexture(BILLBOARD)), fog: true, color: 0xd8c8b0 })));
-      board.position.set(-2, top + 6.5, 4.5);
-      g.add(board);
-      const back = box(g, metal, 14.2, 5.4, 0.2, -2, top + 3.8, 4.35);
-      back.material = rust;
-      for (const x of [-7, 3]) box(g, metal, 0.3, 4, 0.3, x, top, 4.2);
-      const lamp = own(new THREE.SpriteMaterial({ map: own(glowDot()), color: 0xffe6b0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.8 }));
-      for (const x of [-6, 2]) {
-        const s = new THREE.Sprite(lamp);
-        s.position.set(x, top + 9.6, 5.6);
-        s.scale.setScalar(1.4);
-        g.add(s);
+      // ---- Red-brick block ----
+      if (at.brick) {
+        const g = place("BrickBlock", at.brick);
+        const top = 148;
+        const brick = facade(g, MODE.brick, { colour: 0x8a3a26, trim: 0xe9e2d2, glass: 0xffc17a, floorH: 3.9, bayW: 3.2, lit: 0.32, flood: 1.0, seed: 7 + set * 17 });
+        const trim = facade(g, MODE.deco, { colour: 0xe2dccb, trim: 0xc9c0aa, lit: 0, flood: 1.0, tiers: [top - 2, 0, 0], seed: 8 + set * 17 });
+        box(g, brick, 24, top, 20);
+        box(g, trim, 25.6, 1.6, 21.6, 0, top - 1.6);           // the cornice
+        waterTank(g, 7, top, 5);
+        // The billboard: on two posts, lit by two lamps on arms.
+        const board = new THREE.Mesh(own(new THREE.PlaneGeometry(14, 5.25)), own(new THREE.MeshBasicMaterial({ map: own(billboardTexture(BILLBOARD)), fog: true, color: 0xd8c8b0 })));
+        board.position.set(-2, top + 6.5, 4.5);
+        g.add(board);
+        const back = box(g, metal, 14.2, 5.4, 0.2, -2, top + 3.8, 4.35);
+        back.material = rust;
+        for (const x of [-7, 3]) box(g, metal, 0.3, 4, 0.3, x, top, 4.2);
+        const lamp = own(new THREE.SpriteMaterial({ map: own(glowDot()), color: 0xffe6b0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.8 }));
+        for (const x of [-6, 2]) {
+          const s = new THREE.Sprite(lamp);
+          s.position.set(x, top + 9.6, 5.6);
+          s.scale.setScalar(1.4);
+          g.add(s);
+        }
       }
-    }
 
-    // ---- Civic building (sandstone, clock tower, copper dome) ----
-    {
-      const g = place("CivicBuilding", CBD.civic);
-      const stone = facade(g, MODE.civic, { colour: 0xd2bf98, trim: 0xeee2c8, glass: 0xffcf8e, floorH: 5.2, bayW: 4.2, lit: 0.4, flood: 1.4, tiers: [24, 0, 0], seed: 9 });
-      const copper = facade(g, MODE.copper, { colour: 0x5f9c8a, flood: 1.1, tiers: [50, 0, 0] });
-      box(g, stone, 54, 24, 28);
-      box(g, stone, 56, 1.2, 30, 0, 24);                       // the cornice
-      // The colonnade along the front (+z).
-      for (let i = 0; i < 12; i += 1) cylinder(g, stone, 0.55, 0.65, 9, -22 + i * 4, 0, 15.2, 10);
-      box(g, stone, 50, 1.6, 3.4, 0, 9, 15.2);                 // the entablature on them
-      // The clock tower, rising from the middle of the front.
-      box(g, stone, 11, 32, 11, 0, 25.2, 8);
-      box(g, stone, 12.4, 1, 12.4, 0, 57.2, 8);
-      for (const [x, z, yaw] of [[0, 13.55, 0], [0, 2.45, Math.PI], [5.55, 8, Math.PI / 2], [-5.55, 8, -Math.PI / 2]]) {
-        const face = new THREE.Mesh(own(new THREE.CircleGeometry(2.6, 32)), facade(g, MODE.clock));
-        face.position.set(x, 49, z);
-        face.rotation.y = yaw;
-        g.add(face);
-      }
-      // Cupola and dome, with a lantern and a finial.
-      cylinder(g, stone, 4, 4, 4, 0, 58.2, 8, 20);
-      const dome = new THREE.Mesh(own(new THREE.SphereGeometry(4.6, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2)), copper);
-      dome.position.set(0, 62.2, 8);
-      g.add(dome);
-      cylinder(g, copper, 0.9, 1.1, 2.4, 0, 66.6, 8, 10);
-      cylinder(g, metal, 0.05, 0.15, 3, 0, 69, 8, 6);
-      // Small domes on the front corners.
-      for (const x of [-24, 24]) {
-        cylinder(g, stone, 2.6, 2.6, 3, x, 25.2, 12, 16);
-        const small = new THREE.Mesh(own(new THREE.SphereGeometry(2.9, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)), copper);
-        small.position.set(x, 28.2, 12);
-        g.add(small);
-      }
-      // Palms along the pavement in front.
-      const trunk = own(new THREE.MeshLambertMaterial({ color: 0x5a4632 }));
-      const frond = own(new THREE.MeshLambertMaterial({ color: 0x2f5a2a, side: THREE.DoubleSide }));
-      const leaf = own(new THREE.PlaneGeometry(0.9, 4.2));
-      leaf.translate(0, 2.1, 0);
-      for (let i = 0; i < 6; i += 1) {
-        const x = -25 + i * 10;
-        cylinder(g, trunk, 0.25, 0.4, 11, x, 0, 21, 6);
-        for (let k = 0; k < 8; k += 1) {
-          const l = new THREE.Mesh(leaf, frond);
-          l.position.set(x, 11, 21);
-          l.rotation.set(1.15, (k / 8) * Math.PI * 2 + i, 0, "YXZ");
-          g.add(l);
+      // ---- Civic building (sandstone, clock tower, copper dome) ----
+      if (at.civic) {
+        const g = place("CivicBuilding", at.civic);
+        const stone = facade(g, MODE.civic, { colour: 0xd2bf98, trim: 0xeee2c8, glass: 0xffcf8e, floorH: 5.2, bayW: 4.2, lit: 0.4, flood: 1.4, tiers: [24, 0, 0], seed: 9 + set * 17 });
+        const copper = facade(g, MODE.copper, { colour: 0x5f9c8a, flood: 1.1, tiers: [50, 0, 0] });
+        box(g, stone, 54, 24, 28);
+        box(g, stone, 56, 1.2, 30, 0, 24);                       // the cornice
+        // The colonnade along the front (+z).
+        for (let i = 0; i < 12; i += 1) cylinder(g, stone, 0.55, 0.65, 9, -22 + i * 4, 0, 15.2, 10);
+        box(g, stone, 50, 1.6, 3.4, 0, 9, 15.2);                 // the entablature on them
+        // The clock tower, rising from the middle of the front.
+        box(g, stone, 11, 32, 11, 0, 25.2, 8);
+        box(g, stone, 12.4, 1, 12.4, 0, 57.2, 8);
+        for (const [x, z, yaw] of [[0, 13.55, 0], [0, 2.45, Math.PI], [5.55, 8, Math.PI / 2], [-5.55, 8, -Math.PI / 2]]) {
+          const face = new THREE.Mesh(own(new THREE.CircleGeometry(2.6, 32)), facade(g, MODE.clock));
+          face.position.set(x, 49, z);
+          face.rotation.y = yaw;
+          g.add(face);
+        }
+        // Cupola and dome, with a lantern and a finial.
+        cylinder(g, stone, 4, 4, 4, 0, 58.2, 8, 20);
+        const dome = new THREE.Mesh(own(new THREE.SphereGeometry(4.6, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2)), copper);
+        dome.position.set(0, 62.2, 8);
+        g.add(dome);
+        cylinder(g, copper, 0.9, 1.1, 2.4, 0, 66.6, 8, 10);
+        cylinder(g, metal, 0.05, 0.15, 3, 0, 69, 8, 6);
+        // Small domes on the front corners.
+        for (const x of [-24, 24]) {
+          cylinder(g, stone, 2.6, 2.6, 3, x, 25.2, 12, 16);
+          const small = new THREE.Mesh(own(new THREE.SphereGeometry(2.9, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)), copper);
+          small.position.set(x, 28.2, 12);
+          g.add(small);
+        }
+        // Palms along the pavement in front.
+        const trunk = own(new THREE.MeshLambertMaterial({ color: 0x5a4632 }));
+        const frond = own(new THREE.MeshLambertMaterial({ color: 0x2f5a2a, side: THREE.DoubleSide }));
+        const leaf = own(new THREE.PlaneGeometry(0.9, 4.2));
+        leaf.translate(0, 2.1, 0);
+        for (let i = 0; i < 6; i += 1) {
+          const x = -25 + i * 10;
+          cylinder(g, trunk, 0.25, 0.4, 11, x, 0, 21, 6);
+          for (let k = 0; k < 8; k += 1) {
+            const l = new THREE.Mesh(leaf, frond);
+            l.position.set(x, 11, 21);
+            l.rotation.set(1.15, (k / 8) * Math.PI * 2 + i, 0, "YXZ");
+            g.add(l);
+          }
         }
       }
     }
+    // One draw per material per building, not one per column, palm leaf and
+    // tank (178 draws of a roof frame were these): each building's meshes
+    // merged by material, in the building's frame. Not the clock faces or the
+    // copper (their shading reads each mesh's own coordinates).
+    for (const g of this.root.children) mergeByMaterial(g, own);
+    this.root.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = false;
+        o.receiveShadow = false;
+      }
+    });
     this._clockMinute = -1;
+  }
+
+  /**
+   * After a building has moved (the Skyline wraps them along the route):
+   * its facades' frame again, so the windows stay on the walls.
+   */
+  refresh(group) {
+    group.updateMatrixWorld(true);
+    for (const f of this.frames) if (f.group === group) f.uniforms.uToBuilding.value.copy(group.matrixWorld).invert();
   }
 
   /** Spots the generic city leaves empty (x, z from the centre; radius), metres. */
   get footprints() {
-    return [
-      { ...CBD.deco, r: 18 },
-      { ...CBD.flats, r: 24 },
-      { ...CBD.brick, r: 16 },
-      { ...CBD.civic, r: 34 },
-    ];
+    const r = { deco: 18, flats: 24, brick: 16, civic: 34 };
+    return this.sets.flatMap((at) => Object.keys(r).filter((k) => at[k]).map((k) => ({ ...at[k], r: r[k] })));
   }
 
   update() {

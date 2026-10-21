@@ -19,6 +19,7 @@ whose case does not match the file on disk is a 404, as it would be there.
 
 import http.server
 import os
+import socket
 import sys
 import urllib.parse
 
@@ -64,12 +65,47 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         return True
 
 
+class SingleServer(http.server.ThreadingHTTPServer):
+    # One server per port: on Windows, address reuse lets a second server
+    # bind the same port silently, and requests land on either at random.
+    allow_reuse_address = False
+    daemon_threads = True
+    # The page asks for ~100 modules at once. Python's default queue of 5
+    # waiting connections overflows, and Windows refuses the rest outright
+    # (ERR_CONNECTION_REFUSED on random files). Room for all of them.
+    request_queue_size = 512
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+class DualStackServer(SingleServer):
+    # Both IPv4 and IPv6: Windows often resolves "localhost" to ::1 first,
+    # and a browser that doesn't fall back to 127.0.0.1 gets "connection
+    # refused" from an IPv4-only server.
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 4173
     if len(sys.argv) > 2:
         NoCacheHandler.root = os.path.abspath(os.path.join(ROOT, sys.argv[2]))
         NoCacheHandler.strict_case = True
-    server = http.server.ThreadingHTTPServer(("", port), NoCacheHandler)
+    try:
+        server = DualStackServer(("::", port), NoCacheHandler)
+    except OSError:
+        # (No IPv6 on this machine: IPv4 only.)
+        try:
+            server = SingleServer(("", port), NoCacheHandler)
+        except OSError:
+            print(f"Port {port} is already in use - is the game already being served? Close that one, or use another port: python tools/serve.py {port + 1}", flush=True)
+            sys.exit(1)
     where = "the build, case-sensitive" if NoCacheHandler.strict_case else "the source"
-    print(f"Fracture Run: http://localhost:{port}  (serving {NoCacheHandler.root} - {where}; Ctrl+C to stop)")
+    print(f"Fracture Run: http://localhost:{port}  (serving {NoCacheHandler.root} - {where}; Ctrl+C to stop)", flush=True)
     server.serve_forever()

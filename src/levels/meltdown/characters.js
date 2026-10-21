@@ -25,6 +25,8 @@
 
 import * as THREE from "../../three.js";
 import { BufferGeometryUtils, SkeletonUtils } from "../../three-addons.js";
+import { ClipRig, cloneRigged } from "../../figure/rigged.js";
+import { dirtyClone } from "../../figure/grime.js";
 
 /* ------------------------------------------------------------------ */
 /* Profiles                                                             */
@@ -370,9 +372,19 @@ export function atlasMerge(root, { recolor = {}, roughness = 0.78 } = {}) {
   merged.frustumCulled = !reference; // skinned bounds do not follow the pose
   for (const m of meshes) m.parent?.remove(m);
   for (const m of materials) m.dispose?.();
-  merged.userData.atlas = texture;
+  atlasOf(merged, texture);
   merged.userData.cells = cells;
   return merged;
+}
+
+/**
+ * Keep the atlas on the mesh's userData out of sight of JSON: three.js
+ * copies userData through JSON on every clone, and a texture there is
+ * encoded to a PNG data URL each time (seconds, for an atlas). Clones fall
+ * back on the material's map, which is this same texture.
+ */
+function atlasOf(mesh, texture) {
+  Object.defineProperty(mesh.userData, "atlas", { value: texture, enumerable: false, writable: true, configurable: true });
 }
 
 /**
@@ -394,7 +406,7 @@ export function buildCharacterTemplate(scene, profileName) {
     const clean = new THREE.Group();
     const mesh = new THREE.Mesh(merged.geometry, merged.material);
     mesh.name = "CharacterMerged";
-    mesh.userData.atlas = merged.userData.atlas;
+    atlasOf(mesh, merged.userData.atlas);
     mesh.userData.cells = merged.userData.cells;
     clean.add(mesh);
     clean.userData.character = { profile: profileName, skinned: false, height: profile.height };
@@ -404,11 +416,29 @@ export function buildCharacterTemplate(scene, profileName) {
   return root;
 }
 
-/** Clone a character template; skinned ones need their own skeleton. */
+/**
+ * Clone a character template; skinned ones need their own skeleton. A rigged
+ * template (the team's animated characters, src/figure/rigged.js) clones
+ * with its clips; patient variants are dealt out in turn.
+ */
 export function cloneCharacter(template) {
+  if (template.userData.character?.rigged) return cloneRigged(template);
   const clone = template.userData.character?.skinned ? SkeletonUtils.clone(template) : template.clone(true);
   clone.userData.character = { ...template.userData.character };
+  // The patients: filthy, each a little differently (src/figure/grime.js).
+  if (clone.userData.character.profile === "patient") dirtyClone(clone);
   return clone;
+}
+
+/**
+ * The rig for a cloned character: a HumanoidRig (procedural, as always), or
+ * for a rigged character a ClipRig - the same calls, played with its
+ * animation clips, falling back to a HumanoidRig on its skeleton for any
+ * pose it has no clip for.
+ */
+export function createRig(model) {
+  if (model.userData.character?.rigged) return new ClipRig(model, { procedural: (root) => new HumanoidRig(root) });
+  return new HumanoidRig(model);
 }
 
 /* ------------------------------------------------------------------ */
@@ -671,17 +701,29 @@ function measureBody(geometry) {
     shoulderY,
     elbowX: shoulderX + (reach - shoulderX) * 0.45,
     armLength: reach - shoulderX,
+    // The hand (about 11% of the height): its knuckles half way in from the
+    // fingertips, the fingers' middle joints a quarter of the way.
+    knuckleX: reach - top * 0.054,
+    fingerX: reach - top * 0.027,
   };
 }
 
-const PLAYER_RIG_VERTEX = /* glsl */ `
+// (Exported so a depth material can pose the same way: the menu stage's
+// figure casts its shadow from the posed body, src/menu/figure.js.)
+export const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uPhase;
   uniform float uStride;
   uniform float uArmSwing;
   uniform float uLean;
   uniform float uCrouch;
+  // The slide: feet first, on your back (0..1) - SLIDE_POSE.
+  uniform float uSlide;
   uniform float uTuck;
   uniform float uHold;
+  // The fingers closed round something (the launcher's grip and tube), 0..1.
+  uniform float uGrip;
+  uniform float uKnuckleX;
+  uniform float uFingerX;
   uniform float uReachUp;
   // Arms at rest: straight down the sides, elbows unbent (lying in a bed).
   uniform float uRest;
@@ -700,6 +742,14 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uTwist;
   // The right arm's throw: (pitch, elbow fold, inward, weight).
   uniform vec4 uThrow;
+  // Each arm on the launcher (uHold 1): (pitch, elbow fold, inward) - HOLD_POSE.
+  uniform vec3 uHoldR;
+  uniform vec3 uHoldL;
+
+  #define SLIDE_BACK 1.12
+  #define SLIDE_DROP 0.6
+  #define SLIDE_CHIN 0.62
+  #define SLIDE_AIM 0.95
 
   mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
   mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
@@ -712,7 +762,7 @@ const PLAYER_RIG_VERTEX = /* glsl */ `
   }
 `;
 
-const PLAYER_RIG_MAIN = /* glsl */ `
+export const PLAYER_RIG_MAIN = /* glsl */ `
   vec3 rigP = transformed;
   vec3 rigN = objectNormal;
   float ax = abs(rigP.x);
@@ -723,6 +773,14 @@ const PLAYER_RIG_MAIN = /* glsl */ `
   // height gate keeps the chest from being dragged along with the arm.
   float armW = smoothstep(uShoulderX - 0.03, uShoulderX + 0.07, ax) * smoothstep(uShoulderY - 0.2, uShoulderY - 0.09, rigP.y);
   if (armW > 0.0) {
+    // Fingers curling in to grip (T-pose frame, palms down): the middle
+    // joints first, then the whole finger at the knuckles, toward the palm.
+    if (uGrip > 0.0 && ax > uKnuckleX - 0.01) {
+      float knuckle = smoothstep(uKnuckleX - 0.008, uKnuckleX + 0.01, ax) * uGrip;
+      float middle = smoothstep(uFingerX - 0.006, uFingerX + 0.008, ax) * uGrip;
+      turn(rigP, rigN, vec3(side * uFingerX, uShoulderY, 0.0), rotZ(-side * 1.55 * middle));
+      turn(rigP, rigN, vec3(side * uKnuckleX, uShoulderY, 0.0), rotZ(-side * 1.4 * knuckle));
+    }
     // Two-handed shoulder-launcher hold: the right hand (model -X) on the
     // grip just under the tube, elbow tucked; the left arm reaching forward
     // and across to cradle the tube further out. uReachUp raises both arms
@@ -731,11 +789,16 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     float free = (1.0 - uHold) * (1.0 - uReachUp);
     float swing = -sin(uPhase) * side * uArmSwing * free;
     // Running with free hands: elbows bent, as a runner's are.
-    float fold = (right ? 0.35 + uHold * 1.5 : 0.35 + uHold * 0.2) + uGait * free * min(1.0, uArmSwing * 2.0) * 0.75;
-    float pitch = right ? uHold * 0.95 : uHold * 1.5;
-    float inward = right ? uHold * 0.12 : uHold * 0.42;
+    vec3 holdPose = right ? uHoldR : uHoldL;
+    float fold = 0.35 + uHold * (holdPose.y - 0.35) + uGait * free * min(1.0, uArmSwing * 2.0) * 0.75;
+    float pitch = uHold * holdPose.x - uHold * uSlide * SLIDE_AIM;
+    float inward = uHold * holdPose.z;
     fold = fold * (1.0 - uReachUp * 0.85) + max(0.0, swing) * 0.5;
     pitch += uReachUp * 2.75;
+    // Sliding with a hand free: the left trails back to the floor, the right
+    // forward for balance.
+    pitch += uSlide * free * (right ? 0.55 : -0.95);
+    swing *= 1.0 - uSlide;
     fold = mix(fold, 0.06, uRest);
     pitch *= 1.0 - uRest;
     inward *= 1.0 - uRest;
@@ -774,9 +837,13 @@ const PLAYER_RIG_MAIN = /* glsl */ `
     vec2 leg = legSide >= 0.0 ? uLegL : uLegR;
     float gaitKnee = leg.y * abs(legSide);
     float gaitHip = leg.x * abs(legSide);
-    float kneeBend = (mix(sineKnee, gaitKnee, uGait) + uCrouch * 1.5 + uTuck * 1.6) * kneeW * abs(legSide);
+    // Sliding: the right leg (model -X) straight out ahead, the left tucked under it.
+    bool tucked = legSide >= 0.0;
+    float slideKnee = uSlide * (tucked ? 1.25 : 0.12);
+    float slideHip = uSlide * (tucked ? -0.55 : 0.05);
+    float kneeBend = (mix(sineKnee, gaitKnee, uGait) * (1.0 - uSlide) + uCrouch * 1.5 + uTuck * 1.6 + slideKnee) * kneeW * abs(legSide);
     turn(rigP, rigN, vec3(rigP.x, uKneeY, 0.0), rotX(kneeBend));
-    float hip = (mix(sineHip, gaitHip, uGait) - uCrouch * 0.8 - uTuck * 1.1) * legW;
+    float hip = (mix(sineHip, gaitHip, uGait) * (1.0 - uSlide) - uCrouch * 0.8 - uTuck * 1.1 + slideHip) * legW;
     turn(rigP, rigN, vec3(rigP.x, uHipY, 0.0), rotX(hip));
   }
 
@@ -788,7 +855,15 @@ const PLAYER_RIG_MAIN = /* glsl */ `
   float torsoW = smoothstep(uHipY - 0.05, uHipY + 0.1, rigP.y);
   // Positive lean tips the torso forward (+Z, the way the model faces).
   turn(rigP, rigN, vec3(0.0, uHipY, 0.0), rotX((uLean + uCrouch * 0.25) * torsoW));
-  rigP.y -= uCrouch * 0.42 + uTuck * 0.15;
+
+  // ---- The slide: the chin tucked to see ahead, then the whole body tipped
+  // back about the hips (feet first, on your back) and down to the floor. ----
+  if (uSlide > 0.0) {
+    float headW = smoothstep(uShoulderY + 0.02, uShoulderY + 0.12, rigP.y) * (1.0 - smoothstep(uShoulderX - 0.12, uShoulderX - 0.04, ax));
+    turn(rigP, rigN, vec3(0.0, uShoulderY + 0.06, 0.0), rotX(SLIDE_CHIN * uSlide * headW));
+    turn(rigP, rigN, vec3(0.0, uHipY, 0.0), rotX(-SLIDE_BACK * uSlide));
+  }
+  rigP.y -= uCrouch * 0.42 + uTuck * 0.15 + uSlide * SLIDE_DROP;
 
   transformed = rigP;
   objectNormal = rigN;
@@ -800,6 +875,26 @@ const PLAYER_RIG_MAIN = /* glsl */ `
  * (slide), uTuck (jump), uHold (both hands on the launcher), uReachUp
  * (arms overhead: hanging from or climbing the ladder).
  */
+/**
+ * Both hands on the shoulder launcher: (pitch - the upper arm raised forward
+ * from hanging, elbow fold, inward - across the body). The right hand on the
+ * grip under the tube, near the shoulder; the left arm reaching forward and
+ * across, its hand under the tube.
+ */
+/**
+ * The slide, feet first on your back: how far the body tips back about the
+ * hips (rad), how far it drops (m), the chin tucked forward (rad) so the
+ * head still looks down the run, and the arms raised (rad) when they hold the
+ * launcher, so it points ahead rather than at the sky. The shader reads them as constants; player.js
+ * moves the mounts (launcher, bag, headwear) the same way.
+ */
+export const SLIDE_POSE = { back: 1.12, drop: 0.6, chin: 0.62, aim: 0.95 };
+
+export const HOLD_POSE = {
+  right: new THREE.Vector3(0.75, 1.55, 0.25),
+  left: new THREE.Vector3(1.3, 0.4, 0.95),
+};
+
 export function rigPlayerMesh(mesh) {
   const body = measureBody(mesh.geometry);
   const uniforms = {
@@ -808,8 +903,12 @@ export function rigPlayerMesh(mesh) {
     uArmSwing: { value: 0 },
     uLean: { value: 0 },
     uCrouch: { value: 0 },
+    uSlide: { value: 0 },
     uTuck: { value: 0 },
     uHold: { value: 1 },
+    uGrip: { value: 0 },
+    uKnuckleX: { value: body.knuckleX },
+    uFingerX: { value: body.fingerX },
     uReachUp: { value: 0 },
     uRest: { value: 0 },
     uHipY: { value: body.hipY },
@@ -823,8 +922,23 @@ export function rigPlayerMesh(mesh) {
     uLegL: { value: new THREE.Vector2() },
     uTwist: { value: 0 },
     uThrow: { value: new THREE.Vector4() },
+    uHoldR: { value: HOLD_POSE.right.clone() },
+    uHoldL: { value: HOLD_POSE.left.clone() },
   };
   const material = mesh.material.clone();
+  rigMaterial(material, uniforms);
+  mesh.material = material;
+  // The rig moves vertices outside the rest-pose bounds.
+  mesh.frustumCulled = false;
+  return { uniforms, body };
+}
+
+/**
+ * Pose `material` with the player rig, driven by `uniforms` (rigPlayerMesh's).
+ * Anything modelled round the body in its rest pose - shoes (src/figure/
+ * shoes.js) - then moves exactly as the body does.
+ */
+export function rigMaterial(material, uniforms, key = "") {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -844,9 +958,35 @@ export function rigPlayerMesh(mesh) {
     );
     shader.vertexShader = shader.vertexShader.replace(/(#include <defaultnormal_vertex>[\s\S]*?)#include <begin_vertex>/, "$1");
   };
-  material.customProgramCacheKey = () => "meltdown-player-rig-gait-throw";
-  mesh.material = material;
-  // The rig moves vertices outside the rest-pose bounds.
-  mesh.frustumCulled = false;
-  return { uniforms, body };
+  material.customProgramCacheKey = () => `meltdown-player-rig-gait-throw-hold-slide-grip${key}`;
+  return material;
+}
+
+/**
+ * Each foot's box in the model's rest pose (model space: +Z where it faces,
+ * left foot at +X): { left, right: { minX, maxX, minZ, maxZ, top }, height }.
+ */
+const feetCache = new WeakMap();
+export function measureFeet(geometry) {
+  if (feetCache.has(geometry)) return feetCache.get(geometry);
+  const pos = geometry.attributes.position;
+  let top = 0;
+  for (let i = 0; i < pos.count; i += 1) top = Math.max(top, pos.getY(i));
+  // (Low enough to leave the trouser hems out: the foot itself.)
+  const below = top * 0.045;
+  const box = () => ({ minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, top: 0 });
+  const feet = { left: box(), right: box(), height: top };
+  for (let i = 0; i < pos.count; i += 1) {
+    const y = pos.getY(i);
+    if (y > below) continue;
+    const x = pos.getX(i);
+    const f = x >= 0 ? feet.left : feet.right;
+    f.minX = Math.min(f.minX, x);
+    f.maxX = Math.max(f.maxX, x);
+    f.minZ = Math.min(f.minZ, pos.getZ(i));
+    f.maxZ = Math.max(f.maxZ, pos.getZ(i));
+    f.top = Math.max(f.top, y);
+  }
+  feetCache.set(geometry, feet);
+  return feet;
 }

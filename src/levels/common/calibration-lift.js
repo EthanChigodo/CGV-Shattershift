@@ -2,11 +2,13 @@
  * The Calibration Lift - Level 1's glass elevator, as a stand-alone prop so
  * Levels 2 and 3 can end the same way Level 1 does.
  *
- * Level 1 builds its lift from its own kit (src/levels/causeway/kit.js
- * `lift()`), whose glass depends on Level 1's refraction pipeline. This is the
- * same design - octagonal cabin on a steel floor, eight posts with glowing
- * conduits, a glass wall, two sliding glass doors, a tall glass shaft on four
- * rails - with plain materials that work in any scene, and the same ride:
+ * The cabin is the tower's one glass cabin (src/elevators/glass-cabin.js),
+ * octagonal: a glass wall in steel mullions on a tread-plate deck, steel
+ * posts with glowing conduits, two glass doors with lit edges in a steel
+ * frame (the button panel inside), light bars, a handrail - built by
+ * `buildCalibrationCabin`, which Level 1's own lift (src/levels/causeway/
+ * kit.js `lift()`) uses too, with its refraction glass. Around it a tall
+ * glass shaft on four rails, and the same ride:
  * the doors close, the cabin accelerates up to 11 m/s, the camera drops back
  * behind the player and then circles the shaft as the cabin climbs away.
  *
@@ -23,6 +25,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { createGlassCabinKit, GLASS_CABIN } from "../../elevators/glass-cabin.js";
 
 /** Seconds from the doors starting to close to the end of the ride. */
 export const RIDE_SECONDS = 7.4;
@@ -31,6 +34,74 @@ const RIDE_SECONDS_REDUCED = 6.2;
 export const LIFT_RADIUS = 4.5;
 /** The glass shaft's radius. */
 const R_SHAFT = 5;
+/** The cabin's glass wall: its radius and height, and the doorway's angle (radians, centred on +Z). */
+const R_GLASS = 4.3;
+const WALL_H = 5.4;
+const DOORWAY = 1.25;
+/** The doors: one leaf's width, their height, the plane they slide in. */
+const DOOR = { leaf: 2.3, height: 5.0, z: LIFT_RADIUS - 0.25 };
+
+/**
+ * The Calibration Lift's cabin, from the tower's glass-cabin kit - for this
+ * prop and for Level 1's own lift, which passes its refraction glass (and
+ * layer hooks) in `kitOptions` (see createGlassCabinKit). Floor at y = 0,
+ * doors toward +Z. Returns { cabin, doors, conduits }; each door leaf's
+ * userData has closedX and openX.
+ */
+export function buildCalibrationCabin(own, kitOptions = {}) {
+  const kit = createGlassCabinKit(own, kitOptions);
+  const { steel, darkSteel, glass } = kit.materials;
+  const cabin = new THREE.Group();
+  cabin.name = "LiftCabin";
+  const R = LIFT_RADIUS;
+  kit.octagonDeck(cabin, R);
+  const roof = new THREE.Mesh(own(new THREE.CylinderGeometry(R, R, 0.4, 8).rotateY(Math.PI / 8)), darkSteel);
+  roof.position.y = WALL_H + 0.25;
+  cabin.add(roof);
+  // The glass, all round but the doorway, and its steel: sill, transom, head.
+  const wall = new THREE.Mesh(own(new THREE.CylinderGeometry(R_GLASS, R_GLASS, WALL_H, 32, 1, true, DOORWAY / 2, Math.PI * 2 - DOORWAY)), glass);
+  wall.name = "CabinGlass";
+  wall.position.y = WALL_H / 2 + 0.05;
+  wall.renderOrder = 2;
+  kitOptions.onGlass?.(wall);
+  cabin.add(wall);
+  const arc = Math.PI * 2 - DOORWAY;
+  for (const [y, t] of [[0.05 + GLASS_CABIN.rail / 2, GLASS_CABIN.rail], [0.05 + WALL_H * GLASS_CABIN.transom, GLASS_CABIN.mullion], [WALL_H, GLASS_CABIN.rail]]) {
+    // A torus round the XY plane, laid flat and turned so its gap is the doorway.
+    const ring = new THREE.Mesh(own(new THREE.TorusGeometry(R_GLASS, t / 2, 6, 40, arc).rotateX(Math.PI / 2).rotateY(-(Math.PI / 2 + DOORWAY / 2))), steel);
+    ring.name = "CabinMullion";
+    ring.position.y = y;
+    cabin.add(ring);
+  }
+  // Posts with conduits at the octagon's corners (none across the doorway),
+  // and a mullion halfway along each face of glass.
+  const conduits = [];
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    if (Math.abs(Math.sin(a) - 1) < 0.2) continue;
+    conduits.push(kit.post(cabin, Math.cos(a) * (R - 0.2), Math.sin(a) * (R - 0.2), WALL_H + 0.05));
+    const c = a + Math.PI / 8;
+    if (Math.sin(c) < 0.5) kit.box(cabin, steel, GLASS_CABIN.mullion, WALL_H, GLASS_CABIN.mullion, Math.cos(c) * R_GLASS, WALL_H / 2 + 0.05, Math.sin(c) * R_GLASS).name = "CabinMullion";
+  }
+  // The doors in their frame (the buttons on the inside), and glass returns
+  // from the wall's ends to the jambs.
+  const doors = kit.doors(cabin, { width: DOOR.leaf * 2, height: DOOR.height, y0: 0.05, z: DOOR.z, depth: 0.08 });
+  kit.doorFrame(cabin, { width: DOOR.leaf * 2, height: DOOR.height + 0.05, z: DOOR.z, inward: -1, depth: 0.2, ceiling: WALL_H + 0.05 });
+  const ex = Math.sin(DOORWAY / 2) * R_GLASS;
+  const ez = Math.cos(DOORWAY / 2) * R_GLASS;
+  for (const s of [-1, 1]) kit.glassWall(cabin, [s * ex, ez], [s * (DOOR.leaf + GLASS_CABIN.post / 2), DOOR.z], WALL_H, { y0: 0.05, transom: false });
+  // Light bars under the roof; a handrail round the faces clear of the doorway.
+  kit.lightBars(cabin, { span: 1.5, length: 5.2, y: WALL_H + 0.03 });
+  for (let i = 0; i < 8; i += 1) {
+    const c = (i / 8) * Math.PI * 2;
+    if (Math.sin(c) > 0.3) continue;
+    const at = (ang, k) => [Math.cos(ang) * (R - 0.2) * k, Math.sin(ang) * (R - 0.2) * k];
+    const [a0, b0] = [at(c - Math.PI / 8, 0.93), at(c + Math.PI / 8, 0.93)];
+    const lerp = (k) => [a0[0] + (b0[0] - a0[0]) * k, a0[1] + (b0[1] - a0[1]) * k];
+    kit.handrail(cabin, lerp(0.1), lerp(0.9), [Math.cos(c), Math.sin(c)]);
+  }
+  return { cabin, doors: doors.leaves, conduits };
+}
 
 export class CalibrationLift {
   /**
@@ -46,8 +117,6 @@ export class CalibrationLift {
   constructor({ accent = 0x7ef4f1, landing = 0, landingWidth = 11, shaftHeight = 80, core = null } = {}) {
     this.root = new THREE.Group();
     this.root.name = "CalibrationLift";
-    this.cabin = new THREE.Group();
-    this.cabin.name = "LiftCabin";
     this.owned = [];
     const own = (x) => (this.owned.push(x), x);
 
@@ -56,17 +125,10 @@ export class CalibrationLift {
     this.conduit = own(new THREE.MeshBasicMaterial({ color: accent }));
     this.accent = new THREE.Color(accent);
     const strip = own(new THREE.MeshBasicMaterial({ color: accent }));
-    const glass = own(new THREE.MeshStandardMaterial({ color: 0xe8fbff, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 0.4 }));
-    const door = own(new THREE.MeshStandardMaterial({ color: 0xdff8ff, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 0.5 }));
     const shaftGlass = own(new THREE.MeshStandardMaterial({ color: 0xbfe4ec, metalness: 0.1, roughness: 0.1, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide }));
 
     const box = own(new THREE.BoxGeometry(1, 1, 1));
-    const octagon = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 8));
     const tube = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 32, 1, true));
-    // The cabin's glass wall leaves a doorway at the front (+Z, theta 0).
-    const DOORWAY = 1.25;
-    const wall = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 32, 1, true, DOORWAY / 2, Math.PI * 2 - DOORWAY));
-    const rod = own(new THREE.CylinderGeometry(0.5, 0.5, 1, 8));
     const mesh = (geometry, material, sx, sy, sz, x, y, z, parent = this.cabin) => {
       const m = new THREE.Mesh(geometry, material);
       m.scale.set(sx, sy, sz);
@@ -75,32 +137,11 @@ export class CalibrationLift {
       return m;
     };
 
-    // Cabin: floor and roof, glass wall, posts with conduits, a lit trim ring.
+    // The cabin (the tower's glass cabin, octagonal); the doors open until the ride starts.
     const R = LIFT_RADIUS;
-    // A matte, ribbed deck (polished steel mirrored the whole level's sky -
-    // a bright blue slab across the bottom of the view inside).
-    const deck = own(new THREE.MeshStandardMaterial({ color: 0x23272b, metalness: 0.3, roughness: 0.82, envMapIntensity: 0.25 }));
-    mesh(octagon, deck, 9, 0.4, 9, 0, -0.15, 0).rotation.y = Math.PI / 8;
-    mesh(octagon, steel, 9, 0.4, 9, 0, 5.6, 0).rotation.y = Math.PI / 8;
-    mesh(wall, glass, 8.6, 5.4, 8.6, 0, 2.75, 0);
-    for (let i = 0; i < 8; i += 1) {
-      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-      // No post across the doorway (the +Z face).
-      if (Math.abs(Math.sin(a) - 1) < 0.2) continue;
-      mesh(box, steel, 0.2, 5.4, 0.2, Math.cos(a) * (R - 0.2), 2.75, Math.sin(a) * (R - 0.2));
-      mesh(rod, this.conduit, 0.1, 5.2, 0.1, Math.cos(a) * (R - 0.45), 2.75, Math.sin(a) * (R - 0.45));
-    }
-    mesh(box, strip, 8.4, 0.05, 0.1, 0, 5.35, 0);
-    mesh(box, strip, 0.1, 0.05, 8.4, 0, 5.35, 0);
-
-    // Doors: two glass leaves, open until the ride starts.
-    this.doors = [-1, 1].map((side) => {
-      const leaf = mesh(box, door, 2.3, 5.0, 0.08, side * 3.4, 2.6, R - 0.25);
-      mesh(box, strip, 0.04 / 2.3, 1, 1.2, -side * 0.49, 0, 0, leaf); // lit inner edge (leaf-local units)
-      leaf.userData.openX = side * 3.4;
-      leaf.userData.closedX = side * 1.15;
-      return leaf;
-    });
+    const built = buildCalibrationCabin(own, { conduit: this.conduit, accent });
+    this.cabin = built.cabin;
+    this.doors = built.doors;
     this.root.add(this.cabin);
 
     // The shaft: a tall glass tube on four steel rails.

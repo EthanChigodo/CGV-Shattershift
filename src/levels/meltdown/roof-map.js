@@ -9,7 +9,9 @@
  * few dozen quads. The icons:
  *
  *   the deck, the parapets (north and south) and the open ledges (east and
- *   west, red and broken); cover, the hatches, the helipad, the lift hut;
+ *   west, red and broken); cover, the hatches (a pulsing yellow/black
+ *   striped square with a warning triangle - holes you can fall down, as
+ *   on the roof itself: hatch-guard.js), the helipad, the lift hut;
  *   you, an arrow pointing where you aim; patients (red; a brute bigger),
  *   scientists (amber); the supply drop (green, pulsing); the helicopter,
  *   and - while it waits off the ledge - its ladder, a pulsing cyan ring.
@@ -21,16 +23,50 @@
  */
 
 import * as THREE from "../../three.js";
-import { EDGE } from "./roof.js";
+import { EDGE, HATCHES } from "./roof.js";
 
 export const MAP_LAYER = 9;
 /** Half the width the map shows (the roof, the ledges and the helicopter's hold point). */
 const VIEW = EDGE + 5;
 const MAX_ENEMIES = 32;
+/** A hatch's icon, metres across (bigger than the hatch, so it reads at 200 px). */
+const HATCH_ICON = 3.4;
 
 const HELIPAD = new THREE.Vector3(0, 0, -8);
-const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
 const LIFT_HUT = new THREE.Vector3(0, 0, EDGE - 1.7);
+
+/**
+ * A hatch on the map: a yellow/black striped square (the rails and the
+ * painted band) round the black hole, a warning triangle with "!" on it.
+ */
+function hatchIconTexture() {
+  const S = 64;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  g.fillStyle = "#16140f";
+  g.fillRect(0, 0, S, S);
+  g.fillStyle = "#f2c21a";
+  for (let x = -S; x < S * 2; x += 16) {
+    g.beginPath();
+    g.moveTo(x, 0); g.lineTo(x + 8, 0); g.lineTo(x + 8 + S, S); g.lineTo(x + S, S);
+    g.closePath();
+    g.fill();
+  }
+  g.fillStyle = "#050708";
+  g.fillRect(14, 14, S - 28, S - 28);
+  g.fillStyle = "#f2c21a";
+  g.beginPath();
+  g.moveTo(S / 2, 18); g.lineTo(S - 19, S - 21); g.lineTo(19, S - 21);
+  g.closePath();
+  g.fill();
+  g.fillStyle = "#16140f";
+  g.fillRect(S / 2 - 1.5, 27, 3, 9);
+  g.fillRect(S / 2 - 1.5, 38, 3, 3);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 export class RoofMinimap {
   constructor(roof, scene) {
@@ -40,7 +76,8 @@ export class RoofMinimap {
     this.group.name = "RoofMap";
     this.owned = [];
     const own = (x) => (this.owned.push(x), x);
-    const mat = (color, opacity = 1) => own(new THREE.MeshBasicMaterial({ color, fog: false, toneMapped: false, transparent: opacity < 1, opacity, depthWrite: false }));
+    // (All in the transparent pass, so the translucent deck can go under the icons by renderOrder.)
+    const mat = (color, opacity = 1) => own(new THREE.MeshBasicMaterial({ color, fog: false, toneMapped: false, transparent: true, opacity, depthWrite: false }));
     const plane = own(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
     const disc = own(new THREE.CircleGeometry(0.5, 20).rotateX(-Math.PI / 2));
     const ring = own(new THREE.RingGeometry(0.38, 0.5, 28).rotateX(-Math.PI / 2));
@@ -56,8 +93,10 @@ export class RoofMinimap {
     };
     this._add = add;
 
-    // The deck, and its edges.
-    add(plane, mat(0x18242a), 0, 0, EDGE * 2, EDGE * 2, 0);
+    // The deck, and its edges. Translucent: the frame shows through the map
+    // (render() keeps the picture under it), over a faint shade for the icons.
+    add(plane, mat(0x05090c, 0.42), 0, 0, VIEW * 4, VIEW * 4, -0.2).renderOrder = -2;
+    add(plane, mat(0x18242a, 0.62), 0, 0, EDGE * 2, EDGE * 2, 0).renderOrder = -1;
     const parapet = mat(0xc9d6da);
     for (const z of [-EDGE, EDGE]) add(plane, parapet, 0, z, EDGE * 2, 0.45, 0.1);
     const open = mat(0xff4a3d);
@@ -67,16 +106,18 @@ export class RoofMinimap {
     // Cover, hatches, the helipad, the lift hut.
     const cover = mat(0x5d6b72);
     for (const box of roof.cover ?? []) {
+      // (A hatch's rails are part of its icon, not cover to draw.)
+      if (box.fence) continue;
       const sx = box.max.x - box.min.x;
       const sz = box.max.z - box.min.z;
       if (sx > 0 && sz > 0 && sx < 12 && sz < 12) add(plane, cover, (box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2, sx, sz, 0.2);
     }
-    const hatch = mat(0x050708);
-    const hatchRim = mat(0xff8a42);
-    for (const h of HATCHES) {
-      add(plane, hatchRim, h.x, h.z, 1.7, 1.7, 0.25);
-      add(plane, hatch, h.x, h.z, 1.2, 1.2, 0.3);
-    }
+    // The hatches: hazard icons, pulsing with the amber strips round them.
+    const hatchIcon = mat(0xffffff);
+    hatchIcon.map = own(hatchIconTexture());
+    hatchIcon.needsUpdate = true;
+    this.hatchIcon = hatchIcon;
+    this.hatches = HATCHES.map((h) => add(plane, hatchIcon, h.x, h.z, HATCH_ICON, HATCH_ICON, 0.3));
     add(ring, mat(0xf4f6f6), HELIPAD.x, HELIPAD.z, 7, 7, 0.25);
     add(plane, mat(0x7ef4f1, 0.8), LIFT_HUT.x, LIFT_HUT.z, 5, 2.8, 0.25);
 
@@ -115,8 +156,8 @@ export class RoofMinimap {
     this.frame = document.createElement("section");
     this.frame.className = "roof-map";
     this.frame.setAttribute("aria-label", "Roof map");
-    this.frame.innerHTML = `<header>ROOF // TACTICAL <b>N</b></header><div class="roof-map-view"></div>
-      <footer><span class="k-you">You</span><span class="k-patient">Patient</span><span class="k-sci">Scientist</span><span class="k-ledge">Open ledge</span></footer>`;
+    this.frame.innerHTML = `<header>The roof <b>N</b></header><div class="roof-map-view"></div>
+      <footer><span class="k-you">You</span><span class="k-patient">Patient</span><span class="k-sci">Scientist</span><span class="k-ledge">Open ledge</span><span class="k-hatch">Open hatch</span></footer>`;
     this.view = this.frame.querySelector(".roof-map-view");
     document.body.append(this.frame);
     if (!document.querySelector("style[data-roof-map]")) {
@@ -135,6 +176,15 @@ export class RoofMinimap {
     this.frame.classList.toggle("show", visible);
     if (!visible) return;
     const roof = this.roof;
+    // The hatches pulse slowly (as their strips do on the roof), and swell a
+    // little when you are near one.
+    const pulse = 0.5 + 0.5 * Math.sin(time * 3.7);
+    this.hatchIcon.color.setScalar(0.72 + 0.28 * pulse);
+    for (const [i, icon] of this.hatches.entries()) {
+      const near = hero ? Math.max(0, 1 - Math.hypot(hero.position.x - HATCHES[i].x, hero.position.z - HATCHES[i].z) / 5) : 0;
+      const s = HATCH_ICON * (1 + near * 0.3 * pulse);
+      icon.scale.set(s, 1, s);
+    }
     if (hero) {
       this.player.position.set(hero.position.x, 1.2, hero.position.z);
       const dx = hero.aim.x - hero.position.x;
@@ -200,7 +250,8 @@ export class RoofMinimap {
     renderer.setViewport(x, y, w, h);
     renderer.setClearColor(0x05090c, 1);
     renderer.autoClear = false;
-    renderer.clear(true, true, false);
+    // Depth only: the picture under the map stays (the map is translucent).
+    renderer.clear(false, true, false);
     renderer.render(this.scene, this.camera);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, size.x, size.y);
@@ -218,23 +269,30 @@ export class RoofMinimap {
 }
 
 const STYLE = `
+/* The NIGHTFALL look (src/ui/theme.css): a thin-outlined, translucent square
+   on the picture, a quiet line over it, the key under it - no boxed header. */
 .roof-map {
-  position: fixed; right: 22px; top: 84px; z-index: 6; width: 200px;
-  font: 800 10px/1.2 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: .14em; color: #a9bcc2;
-  opacity: 0; transition: opacity .35s ease; pointer-events: none;
+  position: fixed; right: 44px; top: 92px; z-index: 6; width: 196px;
+  font: 500 11px/1.3 var(--font, system-ui, sans-serif); letter-spacing: .02em; color: var(--text-3, rgba(244, 240, 232, .48));
+  text-shadow: var(--shadow-text, 0 1px 2px rgba(0, 0, 0, .55));
+  opacity: 0; transition: opacity .5s ease; pointer-events: none;
 }
 .roof-map.show { opacity: 1; }
 body.hud-hidden .roof-map, body.story-cutscene .roof-map, body:not(.mlt-active) .roof-map { opacity: 0; }
-/* (No background behind the view: the map is drawn into the canvas under it.) */
-.roof-map header, .roof-map footer { padding: 6px 8px; background: rgba(4, 10, 13, .72); border: 1px solid rgba(126, 244, 241, .35); }
-.roof-map header { display: flex; justify-content: space-between; border-bottom: 0; color: #7ef4f1; }
-.roof-map header b { color: #f4f6f6; }
-.roof-map-view { width: 200px; height: 200px; box-sizing: border-box; border: 1px solid rgba(126, 244, 241, .35); }
-.roof-map footer { display: flex; flex-wrap: wrap; gap: 4px 10px; border-top: 0; font-size: 8.5px; letter-spacing: .08em; }
-.roof-map footer span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; }
-.roof-map .k-you::before { background: #fff; border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.roof-map .k-patient::before { background: #ff4a3d; }
-.roof-map .k-sci::before { background: #ffb03c; }
-.roof-map .k-ledge::before { background: #ff4a3d; border-radius: 0; height: 3px; vertical-align: 2px; }
+.roof-map header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; letter-spacing: .04em; }
+.roof-map header b { font-weight: 500; letter-spacing: .1em; color: var(--text-2, rgba(244, 240, 232, .72)); }
+/* (No background behind the view: the map is drawn, translucent, into the canvas under it.) */
+.roof-map-view {
+  width: 196px; height: 196px; box-sizing: border-box;
+  border: 1px solid var(--line-2, rgba(244, 240, 232, .32));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .18), 0 10px 40px rgba(0, 0, 0, .35);
+}
+.roof-map footer { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 9px; font-size: 10.5px; letter-spacing: .01em; }
+.roof-map footer span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; vertical-align: 1px; }
+.roof-map .k-you::before { width: 0; height: 0; border-radius: 0; border: solid transparent; border-width: 0 3.5px 7px; border-bottom-color: var(--text, #f4f0e8); }
+.roof-map .k-patient::before { background: var(--blood, #e5412d); }
+.roof-map .k-sci::before { background: var(--warn, #ffc457); }
+.roof-map .k-ledge::before { width: 9px; height: 1.5px; border-radius: 0; vertical-align: 3px; background: var(--blood, #e5412d); }
+.roof-map .k-hatch::before { border-radius: 1px; box-shadow: inset 0 0 0 1px var(--warn, #ffc457); }
 @media (max-width: 650px) { .roof-map { transform: scale(.72); transform-origin: top right; } }
 `;

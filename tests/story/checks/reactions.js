@@ -8,7 +8,7 @@ export const name = "reactions";
 
 export async function run(page) {
   const result = await page.evaluate(async () => {
-    const { ReactionHits, reactionLadder, latchReaction, sprintReaction, REACTION_KEYS } = await import("/src/story/reaction.js");
+    const { ReactionHits, reactionLadder, latchReaction, sprintReaction, struggleReaction, REACTION_KEYS } = await import("/src/story/reaction.js");
     const out = [];
     const check = (label, ok, detail = "") => out.push([label, !!ok, detail]);
     const fresh = (opts) => new ReactionHits(null, opts);
@@ -120,7 +120,41 @@ export async function run(page) {
     }
     check("chain: the sequence hands over to the mash, then succeeds", mid === "mash" && h.state === "success", `${mid} ${h.state}`);
     const latch = latchReaction();
-    check("latch: two keys, under a second each", latch.keys.length === 2 && latch.window < 1);
+    check("latch: two keys, quick (under 1.5 s each)", latch.keys.length === 2 && latch.window < 1.5);
+
+    // The mash meters' tuning (beta feedback: "difficult - fill it a bit
+    // faster"): at a relaxed 5 presses a second each fills in 6-9 presses,
+    // a slow 3/s still makes it on Normal, and Hard asks for more.
+    const mashSpecs = { lockIt: reactionLadder(3, () => 0.3).then, sprint: sprintReaction(), struggle: struggleReaction() };
+    const pressesToFill = (spec, rate, difficulty) => {
+      const m = fresh({ difficulty }).start(spec);
+      let presses = 0;
+      let t = 0;
+      let next = 0;
+      while (m.state === "running") {
+        if (t >= next) {
+          const k = spec.alternate ? spec.keys[presses % 2] : spec.keys[0];
+          m.keyDown(k);
+          m.keyUp(k);
+          presses += 1;
+          next += 1 / rate;
+        }
+        if (m.state !== "running") break;
+        m.update(1 / 120);
+        t += 1 / 120;
+      }
+      return m.state === "success" ? presses : Infinity;
+    };
+    for (const [name, spec] of Object.entries(mashSpecs)) {
+      const relaxed = pressesToFill(spec, 5, "normal");
+      check(`mash ${name}: 6-9 presses at 5/s`, relaxed >= 6 && relaxed <= 9, `${relaxed}`);
+      check(`mash ${name}: a slow 3/s still fills it`, Number.isFinite(pressesToFill(spec, 3, "normal")));
+      const hard = pressesToFill(spec, 5, "hard");
+      const easy = pressesToFill(spec, 5, "easy");
+      check(`mash ${name}: Hard asks for more, Easy for fewer, both fillable at 5/s`, Number.isFinite(hard) && hard > relaxed && easy <= relaxed, `easy ${easy} normal ${relaxed} hard ${hard}`);
+    }
+    const asked = fresh({ difficulty: () => "hard" }).start(struggleReaction());
+    check("mash: the difficulty can be asked for as it starts", asked._s.gain < struggleReaction().gain && asked._s.decay > struggleReaction().decay);
 
     // On screen: the shared UI shows and clears the prompt.
     const s = __story;
@@ -132,6 +166,20 @@ export async function run(page) {
     s.press("KeyE");
     check("ui: prompt shows the keys and marks progress", shown && keyCount === 2 && firstDone === 1, `${shown} ${keyCount} ${firstDone}`);
     check("ui: keyboard events reach the reaction", s.reactions.state === "success", s.reactions.state);
+    // A mash: the big prompt, a bar ticked in presses, and a pulse per press.
+    s.reactions.start(struggleReaction());
+    const react = document.querySelector(".story-react");
+    const bar = react.querySelector(".bar");
+    const step = bar.style.getPropertyValue("--step");
+    s.press("Space");
+    const first = [react.querySelector(".story-key").className, bar.className];
+    s.press("Space");
+    const second = [react.querySelector(".story-key").className, bar.className];
+    const fill = parseFloat(react.querySelector(".bar i").style.width);
+    check("ui: a mash gets the big prompt, its bar ticked per press", react.classList.contains("mash") && step === `${(struggleReaction().gain * 100).toFixed(2)}%`, `${react.className} ${step}`);
+    check("ui: each press pulses the key and bumps the bar", /tap-a/.test(first[0]) && /tap-a/.test(first[1]) && /tap-b/.test(second[0]) && !/tap-a/.test(second[0]) && /tap-b/.test(second[1]), `${first} | ${second}`);
+    check("ui: two presses visibly fill the bar", fill > 25, `${fill}%`);
+    s.reactions.cancel();
     return out;
   });
   const failures = result.filter(([, ok]) => !ok).map(([label, , detail]) => `${label}${detail ? ` (${detail})` : ""}`);

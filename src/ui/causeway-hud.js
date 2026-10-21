@@ -68,7 +68,7 @@ export class CausewayHud {
 
     this.vitalsEl = el("div", "cw-vitals", `
       <div class="cw-vitals-head"><span>Subject 07</span><b class="cw-bpm">72 bpm</b></div>
-      <canvas width="200" height="40"></canvas>
+      <canvas width="250" height="34"></canvas>
       <div class="cw-meters">
         <label><span>Integrity</span><i><em class="cw-int"></em></i><b class="cw-int-n">100</b></label>
         <label><span>Air</span><i><em class="cw-air"></em></i><b class="cw-air-n">Clear</b></label>
@@ -82,7 +82,7 @@ export class CausewayHud {
     this.toolsEl.innerHTML = `
       <div class="cw-gauges">
         <label><span>Speed</span><i><em class="cw-speed"></em></i><b class="cw-speed-n">0</b></label>
-        <label><span>Focus</span><i><em class="cw-focus"></em></i><b>RMB</b></label>
+        <label class="cw-focus-row"><span>Focus</span><i><em class="cw-focus"></em></i><b>RMB</b></label>
       </div>`;
 
     this.coreEl = el("div", "cw-core", `
@@ -235,6 +235,19 @@ export class CausewayHud {
     node?.classList.add("bump");
   }
 
+  /**
+   * Integrity's colour, by band: white 100-80, yellow 79-55, orange 54-30,
+   * red 29-11, and a deep, dark blood red from 10 down.
+   */
+  static integrityColour(integrity) {
+    const n = Math.round(integrity);
+    if (n >= 80) return "#f4f0e8";
+    if (n >= 55) return "#ffd23f";
+    if (n >= 30) return "#ff8a3d";
+    if (n >= 11) return "#e5412d";
+    return "#8a0a0f";
+  }
+
   setVitals({ integrity, smoke, heat, sedation = 0 }) {
     // (The checks make you unkillable with a huge health: keep the readout sane.)
     integrity = Math.min(100, Math.max(0, integrity));
@@ -248,6 +261,9 @@ export class CausewayHud {
     this.vitalsEl.querySelector(".cw-air").style.transform = `scaleX(${(1 - smoke).toFixed(3)})`;
     this.vitalsEl.querySelector(".cw-air-n").textContent = smoke > 0.6 ? "Toxic" : smoke > 0.3 ? "Smoky" : "Clear";
     this.vitalsEl.classList.toggle("critical", integrity < 35);
+    this._hpColour = CausewayHud.integrityColour(integrity);
+    this.vitalsEl.style.setProperty("--hp", this._hpColour);
+    this.vitalsEl.classList.toggle("bleeding", Math.round(integrity) <= 10);
     this.vitalsEl.classList.toggle("smoky", smoke > 0.55);
   }
 
@@ -334,8 +350,11 @@ export class CausewayHud {
       const x = this._ecgX;
       const y = h * 0.62 - v * h * 0.5;
       ctx.clearRect(x, 0, 6, h);
-      ctx.strokeStyle = this._integrity < 35 ? "#ff5a4a" : "#5ef0ff";
-      ctx.lineWidth = 2;
+      // A thin warm-white line, blood when integrity is critical (src/ui/theme.css).
+      // (In integrity's own colour: white, yellow, orange, red, blood.)
+      ctx.strokeStyle = this._hpColour ?? "rgba(244, 240, 232, 0.85)";
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = "round";
       ctx.beginPath();
       ctx.moveTo(x - 1, this._lastY ?? y);
       ctx.lineTo(x, y);

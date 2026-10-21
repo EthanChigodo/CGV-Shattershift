@@ -31,7 +31,8 @@
  * hides Phase A's root while the roof is up.
  *
  *   RoofRoot
- *   |-- Set         slab, parapets, stair hut, hatches, helipad, cover, skyline
+ *   |-- Set         slab, parapets, stair hut, hatches (railed, striped and
+ *   |               signed: hatch-guard.js), helipad, cover, skyline
  *   |-- Hazards     smoke off the ledges, ash
  *   |-- Pickups     ball sacks
  *   |-- Enemies     scientists and patients (their hurtboxes are breakables)
@@ -41,21 +42,23 @@
  */
 
 import * as THREE from "../../three.js";
+import { RoofWeather } from "./weather.js";
 import { createMeltdownKit, heatSignature } from "./kit.js";
 import { ashify } from "./ash.js";
 import { createFireMaterials } from "./fire.js";
 import { fillAssetSlots } from "./assets.js";
-import { cloneCharacter, HumanoidRig } from "./characters.js";
+import { cloneCharacter, createRig } from "./characters.js";
+import { Collapse, Flinch, persona, shamble, stride } from "../../figure/motion.js";
 import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
-import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
 import { TowerCollapse } from "./skyline-collapse.js";
-import { CbdBuildings } from "./cbd.js";
-import { StreetLife } from "./street-life.js";
+import { CbdBuildings, CBD_SETS } from "./cbd.js";
 import { Demolition } from "./demolition.js";
 import { createPropKit } from "../../story/stages/props.js";
+import { buildHatchGuards } from "./hatch-guard.js";
+import { compileReady } from "../../systems/warm-up.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -73,9 +76,9 @@ const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
 /**
  * Before the doors open, the first time you come up (once per page load, so
  * a retry isn't held up, and not in Endless): the camera at the north
- * parapet looks out over Johannesburg - from Ponte, across the Hillbrow
- * Tower and out to the Orlando Towers, down to the Mandela Bridge on the
- * streets (landmarks.js).
+ * parapet looks out over the downtown - from the Art Deco tower's crown,
+ * across to the far buildings and down to the civic dome on the streets
+ * (cbd.js).
  * The banner shows over it.
  */
 const SKYLINE_SECONDS = 6;
@@ -90,8 +93,7 @@ const DEMOLISH_AT = [0.22, 0.58, 0.9];
  * The towers that come down: generic towers like the rest of the city, but
  * placed where they can be seen go: in the gaps above the near rooftops
  * the roof camera looks over (the brick block's, the flats'), out of the
- * way of the landmarks in the opening shot (they hide only the foot of the
- * Hillbrow Tower).
+ * way of the downtown's buildings (cbd.js CBD_SETS).
  */
 const CONDEMNED = [
   { x: -20, z: -150, top: 20, w: 26, d: 22, yaw: 0.08, finish: 0 },
@@ -103,7 +105,7 @@ let cutawayShown = false;
  * Towers across the street that come down as the fight goes on (at these
  * `chaos` levels; skyline-collapse.js). Placed where the roof camera sees
  * them: one ahead to the right, one further off to the left - clear of
- * the landmarks, and of the establishing shot's view of them.
+ * the downtown's buildings.
  */
 const COLLAPSES = [
   { x: 26, z: -56, height: 178, width: 24, depth: 20, fail: 118, lean: -0.07, seed: 1, chaos: 0.42 },
@@ -111,9 +113,19 @@ const COLLAPSES = [
 ];
 let skylineShown = false;
 
-const HATCHES = [new THREE.Vector3(-10, 0, 3), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
+/** The open hatches the patients climb out of (holes: step in and you fall). */
+export const HATCHES = [new THREE.Vector3(-10.5, 0, 2.6), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
+/**
+ * Each hatch's open side (hatch-guard.js rails off the other three): into
+ * the roof, clear of the cover beside it. The patients step out this way.
+ */
+export const HATCH_MOUTHS = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0)];
+/** How far out of the mouth a patient walks before it goes for you. */
+const HATCH_EXIT = 1.95;
 /** Half the hatch opening (1.2 m) less a little: your feet have to be over the hole, not the rim. */
 const HATCH_HOLE = 0.5;
+/** Where a patient out of hatch `i` has walked clear of its rails. */
+const hatchExit = (i) => HATCHES[i].clone().addScaledVector(HATCH_MOUTHS[i], HATCH_EXIT);
 const MACHINE_DOOR = new THREE.Vector3(12.5, 0, -12.5);
 
 /** Seconds the helicopter waits at the ledge for you to jump for the ladder. */
@@ -367,11 +379,17 @@ class Enemy {
     this.alive = true;
     this.removed = false;
     this.rig = null;
+    // Procedural life (src/figure/motion.js): who they are (their own gait),
+    // a hit reaction by the hit's direction, a collapse when they go down.
+    // The body tilts about its own axes (YXZ), not the world's.
+    this.persona = persona(Math.random() * 1e6);
+    this.flinch = new Flinch();
+    this.body.rotation.order = "YXZ";
 
     if (model) {
       this.model = model;
       this.body.add(model);
-      const rig = new HumanoidRig(model);
+      const rig = createRig(model);
       this.rig = rig.valid ? rig : null;
       heatSignature(model);
     } else {
@@ -400,6 +418,8 @@ class Enemy {
     if (!this.alive) return false;
     this.hp = Math.max(0, this.hp - power);
     this.stagger = 1;
+    this.flinch.hit(from, this.position, this.yaw, 0.7 + power * 0.25);
+    this._hitFrom = from ? from.clone() : null;
     if (from) {
       _v.subVectors(this.position, from).setY(0).normalize();
       this.velocity.addScaledVector(_v, 2.5);
@@ -436,14 +456,15 @@ class Enemy {
       if (this.glow) this.glow.visible = false;
       this.level.events.emit("enemy-ash", { enemy: this, position: _v.copy(this.position).setY(this.position.y + 1.1).clone(), start: true });
     }
-    const jolt = THREE.MathUtils.smoothstep(t, 0, 0.22);
     this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
     this.position.addScaledVector(this.velocity, dt);
-    // Lifted a little as it goes, shaking.
-    this.body.position.y = 0.12 * THREE.MathUtils.smoothstep(t, 0.2, ASH_SECONDS);
-    this.body.position.x = Math.sin(t * 47) * 0.025 * jolt;
-    this.body.rotation.x = -0.32 * jolt;
-    this.rig?.pose({ reach: -0.55 * jolt, spread: 0.5 * jolt, headNod: -0.75 * jolt, lean: -0.45 * jolt, elbow: 0.25, crouch: 0.12 * jolt });
+    // The body crumples as it burns: the blow's jolt, the knees going, the
+    // torso folding over them, the arms hanging, a topple to one side.
+    if (!this._collapse) {
+      this._collapse = new Collapse(this.rig, this.persona);
+      this._collapse.start(this._hitFrom, this.position, this.yaw);
+    }
+    this._collapse.update(dt, this.body);
     const burn = THREE.MathUtils.clamp((t - 0.18) / (ASH_SECONDS - 0.3), 0, 1.2);
     if (this._ash.uniforms) {
       this._ash.uniforms.uAsh.value = burn;
@@ -472,11 +493,14 @@ class Patient extends Enemy {
     this.stats = k === 1 ? base : { ...base, stalk: base.stalk * k, charge: base.charge * k };
     if (opts.brute) {
       // Bigger, and harder to stop.
-      this.root.scale.setScalar(1.3);
+      this.root.scale.setScalar(opts.model?.userData.character?.role === "patient_brute" ? 1.1 : 1.3);
       this.brute = true;
     }
     this.state = "emerge";
     this.hatch = opts.position.clone();
+    /** Out through the hatch's mouth first (its rails pen the other three sides). */
+    this.exitTo = opts.exitTo ?? null;
+    this.exitT = 0;
     this.position.y = -1.7;
     // A climber comes up the outside of the building and over an open ledge
     // (x = +/-EDGE) instead of out of a hatch.
@@ -502,20 +526,35 @@ class Patient extends Enemy {
         this.position.y = THREE.MathUtils.lerp(-1.7, 0, 1 - (1 - k) * (1 - k));
         if (this.climb) this.position.x = this.climb * THREE.MathUtils.lerp(EDGE + 0.5, EDGE - 1.4, Math.max(0, k * 1.4 - 0.4));
         this.face(player, dt, 4);
-        rig?.pose({ reach: (this.climb ? 1.4 : 1.1) - k * 0.4, lean: 0.4, headNod: 0.3, phase: time * 6, stride: 0.2 * (1 - k) });
+        rig?.pose({ clip: ["climb", "idle"], dt, reach: (this.climb ? 1.4 : 1.1) - k * 0.4, lean: 0.4, headNod: 0.3, phase: time * 6, stride: 0.2 * (1 - k) });
         if (k >= 1) this.setState("stalk");
         break;
       }
       case "stalk": {
+        if (this.exitTo) {
+          // Out of the railed pen round the hatch, through its mouth.
+          _v.subVectors(this.exitTo, this.position).setY(0);
+          const e = _v.length();
+          this.exitT += dt;
+          if (e < 0.3 || this.exitT > 2.5) this.exitTo = null;
+          else {
+            this.face(this.exitTo, dt, 8);
+            this.position.addScaledVector(_v.divideScalar(e), this.stats.stalk * 1.15 * dt);
+            this.collide();
+            rig?.pose({ clip: ["walk", "run"], speed: this.stats.stalk * 1.15, dt, phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3 });
+            break;
+          }
+        }
         this.face(player, dt, 5);
         _v.subVectors(player, this.position).setY(0);
         const d = _v.length();
-        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * dt);
+        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * stride(this.persona, time) * dt);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
-        rig?.pose({ phase: time * 4.2 + this.phase, stride: 0.35, knee: 0.6, reach: 0.9, lean: 0.3, headTilt: Math.sin(time * 1.7 + this.phase) * 0.3 });
+        // Each their own shamble: pace, limp or drag or lurch, arms, twitches.
+        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2, speed: d > 1.2 ? this.stats.stalk * stride(this.persona, time) : 0 });
         if (d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
           this.setState("windup");
           this.level.events.emit("patient-windup", { position: this.position.clone() });
@@ -527,7 +566,7 @@ class Patient extends Enemy {
         // direction locks at the end - move and they miss.
         this.face(player, dt, 10);
         const k = Math.min(1, this.t / this.stats.windup);
-        rig?.pose({ crouch: 0.35 * k, lean: 0.5 * k, reach: -0.6 * k, headNod: -0.5 * k, elbow: 0.2 });
+        rig?.pose({ clip: ["scream", "idle"], once: true, dt, crouch: 0.35 * k, lean: 0.5 * k, reach: -0.6 * k, headNod: -0.5 * k, elbow: 0.2 });
         this.body.position.x = Math.sin(time * 60) * 0.02 * k;
         if (this.t >= this.stats.windup) {
           this.dir.subVectors(player, this.position).setY(0).normalize();
@@ -544,7 +583,7 @@ class Patient extends Enemy {
         const step = this.stats.charge * dt;
         this.position.addScaledVector(this.dir, step);
         this.travelled += step;
-        rig?.pose({ phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
+        rig?.pose({ clip: ["run", "walk"], speed: this.stats.charge, dt, phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
         // Straight off the open ledge.
         if (Math.abs(this.position.x) > EDGE - 0.1) {
           this.velocity.copy(this.dir).multiplyScalar(this.stats.charge * 0.7);
@@ -570,7 +609,7 @@ class Patient extends Enemy {
       case "recover":
       case "stunned": {
         const hold = this.state === "stunned" ? 1.5 : 0.9;
-        rig?.pose({ lean: 0.2 - this.stagger * 0.6, headNod: 0.6, headTilt: Math.sin(this.t * 9) * 0.3, reach: 0.2, elbow: 0.7 });
+        rig?.pose({ clip: this.state === "recover" ? ["attack", "idle"] : ["hit", "idle"], once: true, dt, lean: 0.2 - this.stagger * 0.6, headNod: 0.6, headTilt: Math.sin(this.t * 9) * 0.3, reach: 0.2, elbow: 0.7 });
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
@@ -586,7 +625,7 @@ class Patient extends Enemy {
         this.position.addScaledVector(this.velocity, dt);
         this.body.rotation.x -= dt * 3.2;
         this.body.rotation.z += dt * 1.3;
-        rig?.pose({ reach: 1.3, spread: 0.3, headNod: -0.5, elbow: 0.2, phase: time * 20, stride: 0.4 });
+        rig?.pose({ clip: ["fall"], dt, reach: 1.3, spread: 0.3, headNod: -0.5, elbow: 0.2, phase: time * 20, stride: 0.4 });
         if (this.position.y < -40) this.removed = true;
         break;
       }
@@ -596,9 +635,11 @@ class Patient extends Enemy {
       default:
         break;
     }
-    if (this.stagger > 0 && this.alive && this.state !== "charge") {
-      this.body.rotation.x = -this.stagger * 0.3;
-    } else if (this.alive) this.body.rotation.x = 0;
+    // A hit's flinch, on top of whatever the state posed.
+    if (this.alive) {
+      this.flinch.update(dt);
+      this.flinch.apply(rig, this.body);
+    }
   }
 
   setState(state) {
@@ -666,7 +707,7 @@ class Scientist extends Enemy {
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
-        rig?.pose({ phase: time * 7 + this.phase, stride: 0.45, knee: 0.8, armSwing: 0.45, lean: 0.12, aimR: 0.3 });
+        rig?.pose({ clip: ["walk", "run"], speed: SCIENTIST.walk, dt, phase: time * 7 + this.phase, stride: 0.45, knee: 0.8, armSwing: 0.45, lean: 0.12, aimR: 0.3 });
         if (d <= 0.3 || this.t > 5) this.setState(this.state === "enter" ? "release" : "aim");
         break;
       }
@@ -674,7 +715,7 @@ class Scientist extends Enemy {
         // Throws an arm at you: go.
         this.face(player, dt, 5);
         const k = Math.min(1, this.t / 1.1);
-        rig?.pose({ aimL: Math.sin(k * Math.PI) * 1.2, aimR: 0.3, headNod: -0.2 });
+        rig?.pose({ clip: ["point"], dt, aimL: Math.sin(k * Math.PI) * 1.2, aimR: 0.3, headNod: -0.2 });
         if (this.t > 1.1) {
           this.cooldown = 1.2;
           this.pickSpot(player);
@@ -686,7 +727,7 @@ class Scientist extends Enemy {
         this.face(player, dt, 8);
         const k = Math.min(1, this.t / SCIENTIST.aim);
         glow = k;
-        rig?.pose({ aimR: 1, lean: -0.05, headNod: 0.1 });
+        rig?.pose({ clip: ["aim", "idle"], dt, aimR: 1, lean: -0.05, headNod: 0.1 });
         if (this.t >= SCIENTIST.aim && !ctx.frozen) {
           this.handPosition(_w);
           // Lead the target a little: standing still is how you get hit.
@@ -698,7 +739,7 @@ class Scientist extends Enemy {
         break;
       }
       case "recoil": {
-        rig?.pose({ aimR: 0.7, lean: -0.15, headNod: -0.1 });
+        rig?.pose({ clip: ["shoot", "idle"], once: true, dt, aimR: 0.7, lean: -0.15, headNod: -0.1 });
         this.face(player, dt, 4);
         if (this.cooldown <= 0) {
           if (this.random() < 0.55) {
@@ -715,10 +756,12 @@ class Scientist extends Enemy {
         break;
     }
 
-    if (this.alive && this.stagger > 0) {
-      this.body.rotation.x = -this.stagger * 0.28;
-      if (this.state === "aim") this.t = Math.min(this.t, SCIENTIST.aim * 0.3); // a hit spoils the shot
-    } else if (this.alive) this.body.rotation.x = 0;
+    if (this.alive && this.stagger > 0 && this.state === "aim") this.t = Math.min(this.t, SCIENTIST.aim * 0.3); // a hit spoils the shot
+    // A hit's flinch, on top of whatever the state posed.
+    if (this.alive) {
+      this.flinch.update(dt);
+      this.flinch.apply(rig, this.body);
+    }
 
     this.handPosition(this.glow.position).sub(this.position);
     this.glowMaterial.opacity = glow * (0.6 + Math.sin(time * 40) * 0.2);
@@ -750,8 +793,11 @@ export class RoofLevel {
    *   (src/systems/difficulty.js `roof`, plus `extras` for Hard): time
    *   between waves, patients' speed, the helicopter's wait
    */
-  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null } = {}) {
+  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null, light = false } = {}) {
     this.assets = assets;
+    // Below High quality (a laptop's own graphics): fewer downtown buildings
+    // and one police helicopter, not three - the roof is the heaviest scene.
+    this.light = light;
     this.endless = endless;
     this.difficulty = { waves: 1, damage: 1, enemySpeed: 1, heli: 1, lastWave: 3, extras: false, ...difficulty };
     this.events = createEmitter();
@@ -859,6 +905,8 @@ export class RoofLevel {
     const k = this.kit;
     const mat = k.materials;
     const roofing = this._track(new THREE.MeshStandardMaterial(photoReady({ map: roofingTexture(), roughnessMap: k.textures.floorRoughness, roughness: 1, metalness: 0.05 })));
+    /** The deck's surface (the weather wets it). */
+    this.deckMaterial = roofing;
     roofing.envMapIntensity = 0.5;
     this.owned.textures.push(roofing.map);
     // Tarred gravel (Poly Haven, CC0) when it arrives; the wet patches stay.
@@ -926,14 +974,31 @@ export class RoofLevel {
     this._box(7, 3.8, 5, concrete, EDGE - 4.6, 0, -EDGE + 3.6, { solid: true, cover: true });
     this._box(1.5, 2.4, 0.1, mat.pitBlack, MACHINE_DOOR.x - 0.8, 0, -EDGE + 6.12);
 
-    // Hatches the patients climb out of.
-    for (const h of HATCHES) {
+    // Hatches the patients climb out of, each lid swung open against a
+    // side rail (not the mouth, not the sign's side: the north rail, or
+    // the back one when the mouth is north).
+    for (const [i, h] of HATCHES.entries()) {
       this._box(1.6, 0.35, 1.6, mat.darkMetal, h.x, 0, h.z);
       this._box(1.2, 0.02, 1.2, mat.pitBlack, h.x, 0.35, h.z);
+      const mouth = HATCH_MOUTHS[i];
+      const sign = mouth.z < -0.5 ? 1 : -1;
+      const side = [[-1, 0], [1, 0], [0, 1], [0, -1]].find(([x, z]) => !(x === mouth.x && z === mouth.z) && !(x === 0 && z === sign));
       const lid = this._box(1.6, 0.08, 1.6, mat.paintedMetal, h.x, 0, h.z);
-      lid.position.set(h.x - 0.8, 0.75, h.z);
-      lid.rotation.z = 1.2;
+      lid.position.set(h.x + side[0] * 0.8, 0.75, h.z + side[1] * 0.8);
+      // The edge toward the hole up, leaning in.
+      lid.rotation.z = -1.2 * side[0];
+      lid.rotation.x = 1.2 * side[1];
     }
+    // Their site-safety gear: rails, striping, a pulsing strip, a sign. The
+    // rails are cover; balls fly over them.
+    const guard = buildHatchGuards({ hatches: HATCHES, mouths: HATCH_MOUTHS, own: (x) => {
+      (x.isMaterial ? this.owned.materials : x.isTexture ? this.owned.textures : this.owned.geometries).push(x);
+      return x;
+    } });
+    this.hatchGuard = guard.group;
+    this.groups.set.add(guard.group);
+    this._ticking.push(guard.group);
+    this.cover.push(...guard.fences);
 
     // Helipad.
     const pad = this._track(new THREE.MeshStandardMaterial({ map: helipadTexture(), transparent: true, roughness: 0.7, metalness: 0.1 }));
@@ -1150,32 +1215,26 @@ export class RoofLevel {
    * lights on the masts, police helicopters circling with their searchlights.
    */
   _buildSkyline(assetBase) {
-    // Johannesburg: Hillbrow Tower, Ponte City and the Carlton Centre stand
-    // among the generic towers, which leave their spots empty.
-    this.landmarks = new JoburgLandmarks({ streetY: -160 });
-    // And right round you, the CBD itself (cbd.js): Art Deco, Hillbrow flats,
-    // red brick, and a domed civic building by the bridge.
-    this.cbd = new CbdBuildings({ streetY: -160 });
+    // Right round you, the old downtown (cbd.js): Art Deco, tower flats, red
+    // brick, a domed civic building - several sets of them, the generic
+    // towers leaving their spots empty.
+    this.cbd = new CbdBuildings({ streetY: -160, sets: this.light ? CBD_SETS.slice(0, 2) : CBD_SETS });
     this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
-    const clear = [...this.landmarks.footprints, ...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
+    const clear = [...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
     this.city = new CityAtNight({
       seed: 41, streetY: -160, neighbours: 3, condemned: CONDEMNED,
       // (None of the others in their spots, or right round them.)
       clear: [...clear, ...CONDEMNED.map((c) => ({ x: c.x, z: c.z, r: Math.hypot(c.w, c.d) * 0.6 + 16 }))],
     });
     const demolitions = this.city.demolitions.map((tower, k) => new Demolition({ city: this.city, tower, seed: 3 + k }));
-    this.root.add(this.city.root, this.landmarks.root, this.cbd.root, ...this.collapses.map((c) => c.root));
+    this.root.add(this.city.root, this.cbd.root, ...this.collapses.map((c) => c.root));
     // The first is the cutaway, if a camera can be placed to see it whole.
     const blocked = [...clear.map((c) => ({ ...c, top: Infinity })), ...this.city.footprints.filter((f) => !CONDEMNED.some((c) => c.x === f.x && c.z === f.z))];
     if (demolitions[0]) demolitions[0].shot = this._cutawayShot(demolitions[0], blocked);
     this.demolitions = demolitions.map((d, k) => Object.assign(d, { chaosAt: DEMOLISH_AT[k], cutaway: k === 0 && Boolean(d.shot) }));
     this.city.root.name = "Skyline";
     this.root.add(...this.demolitions.map((d) => d.root));
-    // On the streets below: minibus taxis and jacarandas (street-life.js),
-    // kept clear of everything that stands on them.
-    this.streets = new StreetLife({ streetY: -160, blocked: [...clear, ...this.city.footprints] });
-    this.root.add(this.streets.root);
-    if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
+    if (assetBase) this.city.loadHelicopters(assetBase, { count: this.light ? 1 : 3 }).catch(() => {});
   }
 
   _buildLights() {
@@ -1542,13 +1601,13 @@ export class RoofLevel {
     // Hard: one more patient out of a hatch in the first two waves.
     const hatches = this.difficulty.extras && index < 3 ? [...spec.hatches, index === 1 ? 3 : 0] : spec.hatches;
     for (const [i, hatch] of hatches.entries()) {
-      const patient = new Patient(this, { model: this._character("patient"), position: HATCHES[hatch], delay: 0.6 + i * 0.8 });
+      const patient = new Patient(this, { model: this._character("patient"), position: HATCHES[hatch], exitTo: hatchExit(hatch), delay: 0.6 + i * 0.8 });
       this._addEnemy(patient);
     }
     // The last wave brings the brute out of the far hatch (and endless, every
     // third wave after it; Hard, the second wave too).
     if (index === 3 || (index > 3 && index % 3 === 0) || (index === 2 && this.difficulty.extras)) {
-      const brute = new Patient(this, { model: this._character("patient"), position: HATCHES[2], delay: 2.2, brute: true });
+      const brute = new Patient(this, { model: this._character("brute") ?? this._character("patient"), position: HATCHES[2], exitTo: hatchExit(2), delay: 2.2, brute: true });
       this._addEnemy(brute);
       this.events.emit("brute", { position: HATCHES[2].clone() });
     }
@@ -1687,13 +1746,19 @@ export class RoofLevel {
    * @param {THREE.Vector3} p.playerVelocity
    * @returns {{damage:number, from:THREE.Vector3, knock:number, source:string}[]} hits on the player this frame
    */
+  /** The weather: "clear", "rain" or "storm" (src/levels/meltdown/weather.js). */
+  setWeather(kind, audio = null) {
+    this.weather?.dispose();
+    this.weather = kind && kind !== "clear" ? new RoofWeather(this, { kind, audio }) : null;
+    return this.weather;
+  }
+
   update({ dt, time, player, playerVelocity }) {
     const s = this.state;
     this.fire.setTime(time);
+    this.weather?.update(dt, time);
     this.city?.update(dt, time, { haze: this.cityHaze });
-    this.landmarks?.update(dt, time);
     this.cbd?.update(dt, time);
-    this.streets?.update(dt, time);
     for (const c of this.collapses ?? []) {
       for (const e of c.update(dt, time)) {
         // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
@@ -1866,19 +1931,19 @@ export class RoofLevel {
     // camera; then a cut to the game camera (a swing round would turn the
     // view through 180 degrees - the doors face away from the game camera).
     if (t < 0) {
-      // The skyline: from Ponte's sign, across the Hillbrow Tower, out to
-      // the Orlando Towers on the western horizon, and down to the Mandela
-      // Bridge on the streets - a cubic curve through the four (de
+      // The skyline: from the Art Deco tower's floodlit crown, across the
+      // downtown, out to the tower flats on the far side, and down to the
+      // civic dome on the street - a cubic curve through the four (de
       // Casteljau) - drifting west along the parapet to the open west ledge,
       // where nothing of the roof is in the way of looking straight down.
-      // Held on Ponte while the level card and the fade clear, then the sweep.
+      // Held on the crown while the level card and the fade clear, then the sweep.
       const k = smooth(a.t, 1.4, a.lead - 0.2);
       out.camera.set(THREE.MathUtils.lerp(6, -14.5, k), 4.2 + k * 2.3, THREE.MathUtils.lerp(-EDGE + 1.5, -EDGE + 3, k));
-      const { bridge, ponte, hillbrow, orlando } = LANDMARKS;
-      const p0 = _w.set(ponte.x, 14, ponte.z);
-      const p1 = _skyB.set(hillbrow.x, 60, hillbrow.z);
-      const p2 = _skyC.set(orlando.x, -95, orlando.z);
-      const p3 = _skyD.set(bridge.x, -150, bridge.z);
+      const [near, far] = CBD_SETS;
+      const p0 = _w.set(near.deco.x, 14, near.deco.z);
+      const p1 = _skyB.set(far.deco.x, 40, far.deco.z);
+      const p2 = _skyC.set(far.civic.x, -95, far.civic.z);
+      const p3 = _skyD.set(near.civic.x, -150, near.civic.z);
       p0.lerp(p1, k);
       p1.lerp(p2, k);
       p2.lerp(p3, k);
@@ -1918,7 +1983,7 @@ export class RoofLevel {
     const street = this.city.streetY;
     const target = new THREE.Vector3(d.tower.x, street + d.height * 0.75, d.tower.z);
     const top = target.clone().setY(street + d.height - 4);
-    const solids = [this.city.root, this.cbd.root, this.landmarks.root, ...this.collapses.map((c) => c.tower)];
+    const solids = [this.city.root, this.cbd.root, ...this.collapses.map((c) => c.tower)];
     for (const root of solids) root.updateMatrixWorld(true);
     const ray = new THREE.Raycaster();
     ray.camera = _rayCamera; // (sprites need one to be tested at all)
@@ -2350,7 +2415,7 @@ export class RoofLevel {
   }
 
   /** Compile and upload everything before the roof is shown. */
-  prewarm(renderer, camera) {
+  async prewarm(renderer, camera) {
     const scene = this.root.parent ?? this.root;
     // The burn-to-ash shader too (a downed enemy's own copies of its
     // materials), so the first one down doesn't stall the fight compiling
@@ -2365,22 +2430,39 @@ export class RoofLevel {
       warm.add(model);
     }
     scene.add(warm);
-    renderer.compile(scene, camera);
+    // Everything hidden for now as well (renderer.compile skips what isn't
+    // visible): the demolitions' dust, the collapses, the weather, the
+    // helicopter's ladder... - or each one compiles the moment it first
+    // shows, and the fight stalls (the arrival crawled through them). Lights
+    // stay as they are: their count is part of every program.
+    const shown = [];
+    this.root.traverse((o) => {
+      if (!o.visible && !o.isLight) {
+        o.visible = true;
+        shown.push(o);
+      }
+    });
+    // Queued now (it has to see the hidden ones), then waited on without
+    // blocking (systems/warm-up.js): the pieces can go straight back.
+    // (Drawn through the game's composer: compiled for a render target.)
+    const compiled = compileReady(renderer, scene, camera, { throughTarget: true });
+    for (const o of shown) o.visible = false;
     scene.remove(warm);
     // Kept until the roof goes: a disposed material gives its program back.
     this._warmAshes = ashes;
+    await compiled;
   }
 
   dispose() {
+    this.weather?.dispose();
+    this.weather = null;
     this.root.traverse((o) => {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });
     this.lift?.userData.dispose?.();
     for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
-    this.landmarks?.dispose();
     this.cbd?.dispose();
-    this.streets?.dispose();
     for (const d of this.demolitions ?? []) d.dispose();
     for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();

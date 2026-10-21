@@ -28,8 +28,9 @@ import { serve } from "../foundry/lib/server.js";
 import * as gravityChecks from "./checks/gravity-lift.js";
 import * as figureChecks from "./checks/figure.js";
 import * as quietChecks from "./checks/quiet-ride.js";
+import * as cabinChecks from "./checks/cabins.js";
 
-const checks = { ...gravityChecks, ...figureChecks, ...quietChecks };
+const checks = { ...gravityChecks, ...figureChecks, ...quietChecks, ...cabinChecks };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");

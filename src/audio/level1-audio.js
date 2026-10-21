@@ -318,24 +318,106 @@ export class Level1Audio {
 
   /* ---- The player --------------------------------------------------- */
 
+  /** The player's own voice - grunts, pain, screams, breathing (Settings > Sound). */
+  get playerVoice() {
+    return this._playerVoice ?? true;
+  }
+
+  set playerVoice(on) {
+    this._playerVoice = Boolean(on);
+  }
+
   /** Hit: a grunt of pain (the character's own voice). */
   hurt(strength = 1) {
+    if (!this.playerVoice) return;
     this._play(this._pick(`hurt-${this.gender}`), { volume: LEVEL1_SFX_VOLUME.player * clamp(strength, 0.5, 1.2), cooldown: 0.45, cooldownKey: "hurt" });
   }
 
   /** Effort: a jump, a climb, pulling yourself up. */
   grunt() {
+    if (!this.playerVoice) return;
     this._play(`grunt-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 0.6 });
   }
 
   /** Over the edge. */
   fallScream() {
+    if (!this.playerVoice) return;
     this._play(`scream-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 2 });
   }
 
   /** A breath one-shot: "pant" (out of breath), "scared" (hiding), "recover" (slowing down). */
   breath(kind) {
+    if (!this.playerVoice) return;
     this._play(`breath-${kind}-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 1.5, cooldownKey: `breath-${kind}` });
+  }
+
+  /* ---- The weather (synthesized) ------------------------------------ */
+
+  /** A second of noise, made once. */
+  _noise() {
+    if (this._noiseBuffer || !this.context) return this._noiseBuffer;
+    const ctx = this.context;
+    const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i += 1) d[i] = Math.random() * 2 - 1;
+    this._noiseBuffer = b;
+    return b;
+  }
+
+  /** Rain, 0..1 (0 stops it): a hiss of filtered noise, looped. */
+  rain(level = 0) {
+    if (!this.context) this.unlock();
+    const ctx = this.context;
+    if (!ctx) return;
+    this._ensureBuses();
+    if (!this._rain && level > 0) {
+      const src = ctx.createBufferSource();
+      src.buffer = this._noise();
+      src.loop = true;
+      const hi = ctx.createBiquadFilter();
+      hi.type = "highpass";
+      hi.frequency.value = 900;
+      const lo = ctx.createBiquadFilter();
+      lo.type = "lowpass";
+      lo.frequency.value = 6500;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(hi).connect(lo).connect(gain).connect(this.buses.ambient);
+      src.start();
+      this._rain = { src, gain };
+    }
+    if (this._rain) {
+      this._rain.gain.gain.setTargetAtTime(level * 0.16, ctx.currentTime, 0.8);
+      if (level <= 0) {
+        const r = this._rain;
+        this._rain = null;
+        setTimeout(() => { try { r.src.stop(); } catch {} }, 3000);
+      }
+    }
+  }
+
+  /** Thunder, 0..1 (nearer is louder and sharper): a crack, then the rumble rolling away. */
+  thunder(power = 1) {
+    const ctx = this.context;
+    if (!ctx) return;
+    this._ensureBuses();
+    const t = ctx.currentTime;
+    const p = Math.max(0.2, Math.min(1, power));
+    const src = ctx.createBufferSource();
+    src.buffer = this._noise();
+    src.playbackRate.value = 0.5 + Math.random() * 0.2;
+    const lo = ctx.createBiquadFilter();
+    lo.type = "lowpass";
+    lo.frequency.setValueAtTime(900 * p + 200, t);
+    lo.frequency.exponentialRampToValueAtTime(90, t + 3.5);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.55 * p, t + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.18 * p, t + 0.6);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 4.2);
+    src.connect(lo).connect(gain).connect(this.buses.sfx);
+    src.start(t);
+    src.stop(t + 4.4);
   }
 
   /* ---- The building ------------------------------------------------- */

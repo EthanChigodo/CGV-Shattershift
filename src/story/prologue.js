@@ -27,7 +27,7 @@
 import * as THREE from "../three.js";
 import { RoomEnvironment } from "../three-addons.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
-import { cloneCharacter, HumanoidRig } from "../levels/meltdown/characters.js";
+import { cloneCharacter, createRig } from "../levels/meltdown/characters.js";
 import { PlayerAvatar } from "../levels/meltdown/player.js";
 import { Companion, loadStoryCharacter } from "./companion.js";
 import { WardStage } from "./stages/ward.js";
@@ -36,6 +36,7 @@ import { createPropKit } from "./stages/props.js";
 import { createMedicalProps } from "./stages/medical-props.js";
 import { CityAtNight } from "../levels/meltdown/city.js";
 import { VOICE_LINES } from "../audio/voice-lines.js";
+import { compileReady } from "../systems/warm-up.js";
 
 /**
  * The film, chapter by chapter: which set, how long, the card and the
@@ -330,6 +331,8 @@ export class Prologue {
     this.ui.title = this.ui.card.querySelector(".pl-title");
     this.ui.text = this.ui.card.querySelector(".pl-text");
     this.ui.skipButton = el("button", "pl-skip", "SKIP (ESC)");
+    // (OPTIONS / MENU while a controller is in use: src/ui/key-names.js.)
+    this.ui.skipButton.dataset.keys = "";
     this.ui.skipButton.type = "button";
     this.ui.skipButton.addEventListener("click", () => this.skip());
     // The recording's look: grain, vignette, the camera overlay, the chapter splash.
@@ -373,8 +376,10 @@ export class Prologue {
       this.police.root.position.y = 115;
       this.sets.city.scene.add(this.police.root);
       await this.police.load(base);
-      // Compile every set now, so a cut never stalls.
-      for (const set of Object.values(this.sets)) this.renderer.compile(set.scene, this.camera);
+      // Every set's programs linked now (and what shows later in each), so a
+      // cut never stalls - the patients' in the theatre held the film up for
+      // seconds on a laptop's own graphics. (systems/warm-up.js)
+      for (const set of Object.values(this.sets)) await compileReady(this.renderer, set.scene, this.camera, { hidden: true });
       this.loaded = true;
     })();
     await this._loading;
@@ -410,7 +415,7 @@ export class Prologue {
       return g;
     }
     const model = cloneCharacter(asset.template);
-    const rig = new HumanoidRig(model);
+    const rig = createRig(model);
     if (rig.valid) rig.pose(pose);
     model.traverse((o) => {
       if (o.isMesh) o.frustumCulled = false;

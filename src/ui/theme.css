@@ -1,0 +1,118 @@
+/*
+ * The game's look: NIGHTFALL.
+ *
+ * The game is the picture. Menus are a live shot of the tower burning at
+ * night with Subject 07 on the next roof; text sits straight on that shot,
+ * as in a film's titles: no cards, no panels, no boxes. Hierarchy comes
+ * from size, weight, width and light, and colour only ever means something.
+ *
+ *   text over the scene     warm white at four strengths (--text..--text-4)
+ *   shade                   a soft gradient behind text, never a box
+ *   ember                   where you are (focus) and the way forward
+ *   blood                   damage, danger, a death
+ *   glass                   anything breakable: spheres, panes (the game's cyan)
+ *
+ * One family, Archivo (OFL, variable: width 62-125, weight 100-900), set at
+ * three widths:
+ *   wide      125   the title, headings, big numbers: thin and tracked
+ *   normal    100   menus, body text
+ *   narrow     75   dense labels in the HUD
+ *
+ * Tokens and the shared primitives live here; each screen's own rules live
+ * in styles.css and the HUD files.
+ */
+
+@font-face {
+  font-family: "Archivo";
+  src: url("../../assets/fonts/archivo-variable.woff2") format("woff2-variations");
+  font-weight: 100 900; font-stretch: 62% 125%; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("../../assets/fonts/archivo-variable-italic.woff2") format("woff2-variations");
+  font-weight: 100 900; font-stretch: 62% 125%; font-style: italic; font-display: swap;
+}
+
+:root {
+  /* Light on the picture. */
+  --text: #f4f0e8;
+  --text-2: rgba(244, 240, 232, 0.72);
+  --text-3: rgba(244, 240, 232, 0.48);
+  --text-4: rgba(244, 240, 232, 0.26);
+  --line: rgba(244, 240, 232, 0.16);
+  --line-2: rgba(244, 240, 232, 0.32);
+
+  /* The dark the picture sits in. */
+  --night: #06080b;
+  --night-2: #0d1116;
+  --shade: rgba(4, 6, 9, 0.66);
+  --shadow-text: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 18px rgba(0, 0, 0, 0.45);
+
+  /* Meaning. Never decoration. */
+  --ember: #ff7a3d;
+  --ember-2: #ffb27e;
+  --blood: #e5412d;
+  --warn: #ffc457;
+  --glass: #8ff1ff;
+  --ok: #7fe3a6;
+
+  --font: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --wide: 125%;
+  --narrow: 75%;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Old names, kept so nothing unstyled breaks while files move over. */
+  --bone: var(--text);
+  --bone-2: var(--text-2);
+  --bone-3: var(--text-3);
+  --ink: var(--night);
+  --ink-2: var(--night-2);
+  --ink-3: var(--line-2);
+  --smoke: var(--shade);
+  --ash: var(--text-3);
+  --hazard: var(--blood);
+  --caution: var(--warn);
+  --pen: var(--ember);
+  --font-display: var(--font);
+  --font-stencil: var(--font);
+  --font-mono: var(--font);
+  --font-hand: var(--font);
+}
+
+/* ---- Primitives ---------------------------------------------------------- */
+
+/* Thin, wide, tracked: the title and headings. */
+.wide {
+  font-family: var(--font); font-stretch: var(--wide); font-weight: 250;
+  letter-spacing: 0.18em; text-transform: uppercase;
+}
+
+/* A small quiet label above a value or a group: sentence case, not shouted. */
+.label {
+  font-family: var(--font); font-size: 12px; font-weight: 500; letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+/* Numbers that change (score, ammo, distance) do not jiggle. */
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* A key or a pad button in a prompt: <kbd class="key">Esc</kbd>,
+   <kbd class="key pad">✕</kbd>. The pad module swaps the text. */
+.key {
+  display: inline-grid; place-items: center; min-width: 1.75em; height: 1.75em; padding: 0 0.45em;
+  border: 1px solid var(--line-2); border-radius: 5px;
+  font-family: var(--font); font-size: 0.78em; font-weight: 600; letter-spacing: 0.02em;
+  line-height: 1; color: var(--text); background: rgba(255, 255, 255, 0.04);
+}
+.key.pad { border-radius: 50%; padding: 0; min-width: 1.9em; height: 1.9em; }
+
+/* Old primitives: plain now (the tag look is gone). */
+.tag { position: relative; }
+.pen-note { font-family: var(--font); font-style: italic; color: var(--text-2); }
+.mono-label { font-family: var(--font); font-size: 11px; font-weight: 500; color: var(--text-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --ease-out: linear; --ease-in-out: linear; }
+}

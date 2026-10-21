@@ -20,6 +20,7 @@
  *   banner.closeIntro();
  *   banner.update(arsenal.list(), { shieldCharges });
  */
+import { padLabel } from "../systems/input-glyphs.js";
 
 import { serumPicture } from "./menus.js";
 
@@ -88,12 +89,12 @@ export class PowerupBanner {
     this.cardText = el("p", "pu-card-text", info);
     this.cardTime = el("div", "pu-card-stats", info);
     const act = el("div", "pu-card-action", info);
-    el("small", null, act).textContent = "WHAT TO DO";
+    el("small", null, act).textContent = "What to do";
     this.cardAction = el("span", null, act);
     this.cardButton = el("button", "pu-card-button", info);
     this.cardButton.type = "button";
-    this.cardButton.innerHTML = "<span>GOT IT</span><i>&#9654;</i>";
-    el("p", "pu-card-keys", info).innerHTML = "<kbd>Click</kbd> <kbd>Space</kbd> or <kbd>Enter</kbd> to carry on";
+    this.cardButton.innerHTML = "<span>Got it</span><i>&#9654;</i>";
+    el("p", "pu-card-keys", info).innerHTML = `<span class="kb-only"><kbd>Click</kbd> <kbd>Space</kbd> or <kbd>Enter</kbd> to carry on</span><span class="pad-only"><kbd data-pad="PadA">${padLabel("PadA")}</kbd> to carry on</span>`;
     this.open = false;
   }
 
@@ -126,10 +127,10 @@ export class PowerupBanner {
     this.cardAction.textContent = SERUM_ACTIONS[def.key] ?? "";
     const stat = (label, value) => `<div><small>${label}</small><b>${value}</b></div>`;
     // Restoration works at once: nothing to time.
-    this.cardEyebrow.innerHTML = `<i class="pu-dot"></i>NEW SERUM ACQUIRED <span>// ${def.instant ? "WORKS AT ONCE" : "TIME HELD"}</span>`;
+    this.cardEyebrow.innerHTML = `<i class="pu-dot"></i>New serum <span>· ${def.instant ? "works at once" : "for a while"}</span>`;
     this.cardTime.innerHTML = def.instant
-      ? stat("GIVES", `+${def.spheres} spheres`) + (def.heal ? stat("AND", "Full integrity") : "") + stat("LASTS", "Instant")
-      : stat("LASTS", `${def.duration} s`) + (def.charges ? stat("OR", `${def.charges} hits`) : "") + stat("TIMER", "Top of screen");
+      ? stat("Gives", `+${def.spheres} spheres`) + (def.heal ? stat("And", "Full integrity") : "") + stat("Lasts", "Instant")
+      : stat("Lasts", `${def.duration} s`) + (def.charges ? stat("Or", `${def.charges} hits`) : "") + stat("Timer", "Top of screen");
     const picture = serumPicture(def.key);
     this.cardArt.hidden = !picture;
     if (picture) this.cardArt.src = picture;

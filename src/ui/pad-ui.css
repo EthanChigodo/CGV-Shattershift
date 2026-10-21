@@ -1,0 +1,49 @@
+/* Controllers: connect / disconnect cards, the connected list, the focus ring. */
+
+.pad-toasts {
+  position: fixed; z-index: 60; top: 18px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none;
+}
+.pad-toast {
+  --pad: #3aa0ff;
+  position: relative; display: flex; align-items: center; gap: 14px; min-width: 300px; max-width: min(92vw, 460px);
+  padding: 10px 18px 10px 14px; border-radius: 10px; overflow: hidden;
+  background: rgba(6, 8, 11, .78); backdrop-filter: blur(18px) saturate(.8); -webkit-backdrop-filter: blur(18px) saturate(.8);
+  border: 0; box-shadow: 0 20px 44px rgba(0, 0, 0, .45);
+  color: var(--text); font-family: var(--font);
+  opacity: 0; transform: translateY(-14px); transition: opacity .3s, transform .5s var(--ease-out);
+}
+/* The controller's colour as a hairline along the bottom. */
+.pad-toast::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--pad), transparent); }
+.pad-toast.in { opacity: 1; transform: none; }
+.pad-toast.gone { filter: saturate(.35); }
+.pad-toast .pad-icon { width: 36px; color: var(--pad); flex: none; }
+.pad-toast .pad-icon svg { display: block; width: 100%; }
+.pad-toast .pad-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.pad-toast b { font-stretch: 112%; font-size: 10.5px; font-weight: 600; letter-spacing: .24em; text-transform: uppercase; color: var(--pad); }
+.pad-toast small { color: var(--text-2); font-size: 13px; opacity: 1; }
+.pad-toast .pad-slot {
+  flex: none; font-stretch: var(--wide); font-weight: 200; font-size: 22px; color: var(--pad); background: none;
+  border-radius: 0; padding: 0 2px;
+}
+
+.pad-list { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 10px; }
+.pad-chip {
+  --pad: #3aa0ff;
+  display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; border-radius: 0; border: 0; background: none;
+  color: var(--text-2); font-size: 12.5px; text-shadow: var(--shadow-text);
+}
+.pad-chip b { color: var(--pad); font-weight: 500; letter-spacing: .04em; }
+.pad-chip .pad-icon { width: 22px; color: var(--pad); display: inline-flex; }
+.pad-chip .pad-icon svg { width: 100%; }
+.pad-chip.none { --pad: var(--text-3); color: var(--text-3); opacity: 1; }
+
+/* Playing with a controller: no mouse cursor; the picked control gets a thin ember outline. */
+body.pad-mode, body.pad-mode * { cursor: none !important; }
+body.pad-mode .pad-focus {
+  outline: 1px solid var(--ember-2) !important; outline-offset: 4px;
+  box-shadow: 0 0 14px rgba(255, 122, 61, .25) !important;
+}
+/* Hints for the device in use. */
+body.pad-mode .kb-only { display: none !important; }
+body:not(.pad-mode) .pad-only { display: none !important; }

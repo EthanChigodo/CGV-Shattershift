@@ -14,10 +14,16 @@
  * Light-free like the Fireball: lit windows are emissive, the blasts are
  * additive sprites and flashing bands - no real lights, so nothing in the
  * level recompiles mid-cutscene.
+ *
+ * And it burns: the menu's tower fire (src/menu/fire.js) - flames roaring
+ * out of the windows of each floor as its charge goes, on the faces the
+ * bridge sees, still burning as it comes down; embers pouring up round it.
  */
 
 import * as THREE from "../../three.js";
 import { Fireball } from "./fireball.js";
+import { Flames, Embers } from "../../menu/fire.js";
+import { createHazeUniforms, noiseTexture } from "../../menu/atmosphere.js";
 
 /** A facade of office windows, some lit, on a dark concrete frame. */
 function facadeTexture(seed = 7) {
@@ -106,6 +112,23 @@ export class DemolitionTower {
     for (const f of [...this.pool, ...this.big]) this.root.add(f.root);
     this._next = 0;
 
+    // Fire out of the windows, and embers (menu/fire.js). Flames take world
+    // positions: each is placed from the falling body every frame (_burn).
+    const haze = createHazeUniforms();
+    // (Barely any of the menu's night haze: the Skyline has its own fog.)
+    haze.uHazeDensity.value = 0.0012;
+    this.noise = noiseTexture();
+    this.flames = new Flames({ haze, noise: this.noise, max: 72 });
+    this.flames.uniforms.uWind.value.set(-0.6, 0, 0.2).normalize();
+    this.flameSpots = [];
+    this.embers = new Embers({
+      count: 520, origin: new THREE.Vector3(), spread: new THREE.Vector3(width * 1.6, this.height * 0.8, width * 1.6),
+      wind: new THREE.Vector3(-1.4, 0, 0.5), size: 0.5, rise: 9, life: 7, seed: 23,
+    });
+    this.embers.points.visible = false;
+    this.root.add(this.flames.mesh, this.embers.points);
+    this._local = new THREE.Vector3();
+
     this.time = 0;
     this.started = false;
     this.state = { floorsGone: 0, whole: 0, sink: 0, done: false };
@@ -146,11 +169,48 @@ export class DemolitionTower {
     f.burst(new THREE.Vector3(x, y + this.body.position.y, z), { size, spread });
   }
 
+  /** Flames out of three windows of floor `i` on each face the bridge sees. */
+  _ignite(i) {
+    const half = this.width / 2 + 0.2;
+    for (const side of this.towardFaces) {
+      const n = new THREE.Vector3(side === 0 ? 1 : side === 2 ? -1 : 0, 0, side === 1 ? 1 : side === 3 ? -1 : 0);
+      for (let k = 0; k < 3; k += 1) {
+        // (Not every window: most floors, a different three.)
+        if ((i * 7 + k * 3 + side) % 4 === 0) continue;
+        const along = ((k + ((i * 5) % 3) * 0.33) / 3 - 0.4) * this.width * 0.8;
+        const local = new THREE.Vector3(n.x ? n.x * half : along, (i + 0.35) * FLOOR_HEIGHT, n.z ? n.z * half : along);
+        this.flameSpots.push({ local, normal: n });
+        this.flames.add({ position: local.clone(), normal: n, width: 2.8 }, { grow: 0.5, power: 1 });
+      }
+    }
+  }
+
+  /** The flames ride the falling body; the embers come from it. */
+  _burn(dt) {
+    this.body.updateMatrixWorld(true);
+    // (Flames.add keeps the latest `max`: the oldest spots dropped first.)
+    const spots = this.flameSpots.slice(-this.flames.list.length);
+    const m = this.body.matrixWorld;
+    spots.forEach((s, i) => {
+      const f = this.flames.list[i];
+      if (!f) return;
+      f.position.copy(this._local.copy(s.local).applyMatrix4(m)).y -= 1.2;
+      f.normal.copy(s.normal).transformDirection(m);
+    });
+    this.flames.update(dt, this.time);
+    this.embers.points.visible = this.started && this.state.floorsGone > 0 && !this.state.done;
+    if (this.embers.points.visible) {
+      this.embers.uniforms.uOrigin.value.copy(this._local.set(0, this.height * 0.45, 0).applyMatrix4(m));
+      this.embers.update(this.time, 900);
+    }
+  }
+
   update(dt) {
     for (const f of [...this.pool, ...this.big]) f.update(dt);
     if (!this.started) return;
     this.time += dt;
     const t = this.time;
+    this._burn(dt);
     for (const [i, b] of this.bands.entries()) {
       if (t < b.at) continue;
       if (!b.mesh.visible) {
@@ -158,6 +218,7 @@ export class DemolitionTower {
         b.glow = 1;
         this.state.floorsGone = i + 1;
         this._burst((i + 0.5) * FLOOR_HEIGHT, 15 + (i % 3) * 4);
+        this._ignite(i);
         this.onFloor?.(i);
       }
       // A flash that settles into a lasting glow (the floor's on fire now).
@@ -184,6 +245,7 @@ export class DemolitionTower {
       this.material.emissiveIntensity = Math.max(0.05, 0.55 - k * 0.3);
       if (this.state.sink > this.height) {
         this.body.visible = false;
+        this.flames.mesh.visible = false;
         this.state.done = true;
       }
     }
@@ -192,6 +254,9 @@ export class DemolitionTower {
   dispose() {
     this.root.removeFromParent();
     for (const f of [...this.pool, ...this.big]) f.dispose();
+    this.flames.dispose?.();
+    this.embers.dispose();
+    this.noise.dispose();
     for (const m of this._materials) m.dispose();
     for (const g of this._geometries) g.dispose();
     this.texture.dispose();

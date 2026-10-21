@@ -8,7 +8,7 @@
  *   flight    its type's speed and gravity (arsenal.js BALLS), 3 s of life
  *   walls     a corridor's walls and ceiling hand it back at full speed
  *             (a clean ricochet), solid hazards at 45 %, the floor at 42 %
- *   glass     a glass sphere punches through a pane and keeps going at 82 %
+ *   breaks    whatever a sphere breaks (or whoever it hits), it is gone in the burst
  *
  * And the pickups: a serum is the Skyline's capsule (a glass orb with the
  * serum alive inside it, ray marched), in that serum's own colour; a sphere
@@ -41,6 +41,141 @@ export const SPHERE_FLIGHT = Object.freeze({
 
 /** Radius 1: scale it by the sphere type's radius. */
 export const SPHERE_GEOMETRY = new THREE.SphereGeometry(1, 16, 12);
+
+/* ------------------------------------------------------------------ */
+/* The flight - one set of rules for the story and the Race             */
+/* ------------------------------------------------------------------ */
+
+const _flyRay = new THREE.Raycaster();
+_flyRay.layers.enableAll();
+const _flyOld = new THREE.Vector3();
+const _flySeg = new THREE.Vector3();
+const _flyLine = new THREE.Line3();
+const _flyClosest = new THREE.Vector3();
+const _flySphere = new THREE.Sphere();
+const _flyUp = new THREE.Vector3(0, 1, 0);
+
+/** A target's bounding sphere, in the world. */
+export function worldSphere(mesh, out = _flySphere) {
+  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+  mesh.updateWorldMatrix(true, false);
+  return out.copy(mesh.geometry.boundingSphere).applyMatrix4(mesh.matrixWorld);
+}
+
+/**
+ * A near miss on a small target counts: the segment a -> b passing within
+ * `tolerance` of a target's bounding sphere hits it (panes and doors are big
+ * enough already).
+ */
+export function grazeTarget(targets, a, b, tolerance) {
+  _flyLine.set(a, b);
+  let best = null;
+  let bestDistance = Infinity;
+  for (const t of targets) {
+    if (!t.geometry) continue;
+    const sphere = worldSphere(t);
+    if (sphere.radius > 1.1) continue;
+    _flyLine.closestPointToPoint(sphere.center, true, _flyClosest);
+    const d = _flyClosest.distanceTo(sphere.center) - sphere.radius;
+    if (d < tolerance && d < bestDistance) {
+      bestDistance = d;
+      best = { object: t, point: _flyClosest.clone(), distance: a.distanceTo(_flyClosest) };
+    }
+  }
+  return best;
+}
+
+/** A sphere hit something: it slows from now on, and is spent within SPHERE_FLIGHT.afterHit seconds. */
+export function touchSphere(p) {
+  if (p.touched) return;
+  p.touched = true;
+  p.life = Math.min(p.life, SPHERE_FLIGHT.afterHit);
+}
+
+/**
+ * The throw: at `speed`, aimed high by exactly the drop over the flight time
+ * so it arcs onto `aim`.
+ */
+export function launchVelocity(origin, aim, speed, gravity, out = new THREE.Vector3()) {
+  out.subVectors(aim, origin);
+  const t = out.length() / speed;
+  return out.normalize().multiplyScalar(speed).addScaledVector(_flyUp, 0.5 * gravity * t);
+}
+
+/**
+ * One step of a sphere's flight. `p`: { mesh (its position is the sphere's,
+ * its scale.x the radius), velocity, gravity, life, ball, touched, bounces }.
+ * `world`: { targets (what it can break), solids, surfaceHit(start, end, r),
+ * graze (near misses on small targets count) }.
+ *
+ * It falls, slows once it has hit something, moves, and finds the first thing
+ * along the way. Walls and ceilings hand it back (a ricochet); glass bounces
+ * off a solid thing - twice, then it's spent; the host decides what a
+ * target hit, or another type meeting a solid, does. Returns what it met:
+ *   { type: "target", hit }            hit.object, hit.point, hit.distance
+ *   { type: "surface", surface }       surface.surface: "ceiling" | a wall
+ *   { type: "solid", solid, normal, detonate, spent }
+ *   null
+ * `p.from` is where it was at the start of the step.
+ */
+export function flySphere(p, dt, { targets = [], solids = [], surfaceHit = null, graze = false } = {}) {
+  const pos = p.mesh.position;
+  const radius = p.mesh.scale.x;
+  p.from ??= new THREE.Vector3();
+  _flyOld.copy(pos);
+  p.from.copy(pos);
+  p.velocity.y -= p.gravity * dt;
+  if (p.touched) p.velocity.multiplyScalar(Math.exp(-SPHERE_FLIGHT.drag * dt));
+  pos.addScaledVector(p.velocity, dt);
+  p.life -= dt;
+  _flySeg.copy(pos).sub(_flyOld);
+  const length = _flySeg.length();
+  if (length <= 1e-5) return null;
+  _flyRay.set(_flyOld, _flySeg.divideScalar(length));
+  _flyRay.far = length + radius;
+  let hit = targets.length ? _flyRay.intersectObjects(targets, false)[0] : null;
+  const solid = solids.length ? _flyRay.intersectObjects(solids, false)[0] : null;
+  const surface = surfaceHit ? surfaceHit(_flyOld, pos, radius) : null;
+  _flyRay.far = Infinity;
+  if (!hit && graze) hit = grazeTarget(targets, _flyOld, pos, radius + 0.25);
+  if (hit && (!solid || hit.distance <= solid.distance) && (!surface || hit.distance <= surface.distance)) return { type: "target", hit };
+  if (surface && (!solid || surface.distance <= solid.distance)) {
+    const speed = p.velocity.length();
+    p.velocity.reflect(surface.normal).normalize().multiplyScalar(speed * SPHERE_FLIGHT.wall);
+    pos.copy(surface.position);
+    touchSphere(p);
+    return { type: "surface", surface };
+  }
+  if (solid) {
+    // (A charged one bursts whatever it is: systems/charge.js.)
+    if (p.ball !== "glass" || p.charged) return { type: "solid", solid, detonate: true };
+    // Ricochet off solid hazards: reflect about the face normal.
+    const normal = solid.face ? solid.face.normal.clone().transformDirection(solid.object.matrixWorld) : new THREE.Vector3(0, 0, 1);
+    p.velocity.reflect(normal).multiplyScalar(SPHERE_FLIGHT.solid);
+    touchSphere(p);
+    pos.copy(solid.point).addScaledVector(normal, 0.2);
+    p.bounces = (p.bounces ?? 0) + 1;
+    return { type: "solid", solid, normal, spent: p.bounces > SPHERE_FLIGHT.solidBounces };
+  }
+  return null;
+}
+
+/**
+ * The floor (at `floorY`): glass bounces off it ("bounce"); any other type
+ * - or a charged one - goes off there ("detonate"). null: not at the floor.
+ */
+export function floorSphere(p, floorY = 0) {
+  const pos = p.mesh.position;
+  const radius = p.mesh.scale.x;
+  if (p.life <= 0 || pos.y >= floorY + radius || p.velocity.y >= 0) return null;
+  if (p.ball !== "glass" || p.charged) return "detonate";
+  p.velocity.y *= -SPHERE_FLIGHT.floor;
+  p.velocity.x *= SPHERE_FLIGHT.floorFriction;
+  p.velocity.z *= SPHERE_FLIGHT.floorFriction;
+  pos.y = floorY + radius;
+  touchSphere(p);
+  return "bounce";
+}
 
 let looks = null;
 /** The orb for a sphere type (shared; never dispose it). */

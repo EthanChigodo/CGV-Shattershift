@@ -1,0 +1,113 @@
+/* Customise (single player): the studio on the left, the panel on the right - in the
+   NIGHTFALL look (src/ui/theme.css): words and swatches on a shade, hairlines, one ember line.
+   (The look's rules carry .lk-root: they sit over the layout rules above them.) */
+
+.lk-root { pointer-events: none; }
+.lk-panel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(46vw, 560px); padding: 34px 34px 24px;
+  display: flex; flex-direction: column; gap: 14px; overflow-y: auto; pointer-events: auto;
+  background: linear-gradient(270deg, rgba(8, 11, 15, .96) 70%, rgba(8, 11, 15, 0));
+}
+.lk-panel h2 { text-align: left !important; margin: 0 !important; font-size: 44px !important; }
+.lk-tabs { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.lk-tabs button {
+  flex: 1; padding: 10px 14px; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase;
+  color: #9fb0ba; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .1); cursor: pointer;
+}
+.lk-tabs button.on { color: #0b0f14; background: #7ef4f1; border-color: #7ef4f1; box-shadow: 0 0 22px rgba(126, 244, 241, .35); }
+.lk-row { padding: 12px 14px; border-radius: 14px; border: 1px solid transparent; background: rgba(255, 255, 255, .025); transition: border-color .15s, background .15s; }
+.lk-row.on { border-color: rgba(126, 244, 241, .55); background: rgba(126, 244, 241, .06); }
+.lk-row header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
+.lk-row header span { font-size: 11px; font-weight: 900; letter-spacing: .2em; text-transform: uppercase; color: #9fb0ba; }
+.lk-row header b { font-size: 15px; font-weight: 900; }
+.lk-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.lk-opt {
+  min-width: 64px; padding: 8px 12px; border-radius: 9px; font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: #dfe8ee; background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .12); cursor: pointer;
+  transition: transform .12s, border-color .12s, box-shadow .12s;
+}
+.lk-opt:hover { border-color: rgba(126, 244, 241, .5); }
+.lk-opt.picked { border-color: #7ef4f1; box-shadow: 0 0 0 2px rgba(126, 244, 241, .35), 0 0 16px rgba(126, 244, 241, .25); }
+.lk-opt.sw { min-width: 0; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: grid; place-items: center; }
+.lk-opt.sw i { width: 26px; height: 26px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+.lk-opt.sw.picked { transform: scale(1.1); }
+.lk-opt.orb i { box-shadow: 0 0 10px var(--sw), inset -3px -4px 8px rgba(0, 0, 0, .45); }
+/* The launcher's finishes: tiles with the pattern on them. */
+.lk-options.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.lk-opt.tile { width: auto; height: auto; border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+.lk-opt.tile i { width: 100%; height: 38px; border-radius: 7px; background: var(--sw); }
+.lk-opt.tile small { font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+.lk-opt.tile.picked { transform: translateY(-2px); }
+.lk-note { margin: 2px 2px 0; font-size: 12px; color: #9fb0ba; line-height: 1.5; }
+.lk-foot { display: flex; gap: 18px; flex-wrap: wrap; margin-top: auto; font-size: 12px; color: #b8c2c8; }
+.lk-done {
+  align-self: flex-start; padding: 12px 34px; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase;
+  color: #0b0f14; background: #ff9a4a; border: 0; cursor: pointer; box-shadow: 0 8px 20px rgba(255, 154, 74, .25);
+}
+
+@media (max-width: 900px) {
+  .lk-root .lk-panel { width: 100%; top: 40%; padding-left: 24px; background: rgba(3, 5, 8, .9); }
+  .lk-options.tiles { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ---- The look ---- */
+.lk-root .lk-panel {
+  width: min(42vw, 500px); padding: clamp(32px, 6vh, 64px) var(--gutter) 28px 0; gap: 0;
+  background: linear-gradient(270deg, rgba(3, 5, 8, .86) 0%, rgba(3, 5, 8, .62) 62%, rgba(3, 5, 8, 0) 100%);
+  font-family: var(--font); text-shadow: var(--shadow-text);
+}
+.lk-root .ar-eyebrow { color: var(--ember-2); font-stretch: 112%; font-size: 11px; font-weight: 600; letter-spacing: .24em; }
+.lk-root .lk-panel h2 { font-family: var(--font); font-stretch: var(--wide) !important; font-weight: 200 !important; font-size: clamp(32px, 3.6vw, 48px) !important; letter-spacing: .03em; margin: 6px 0 18px !important; }
+.lk-root .lk-tabs { gap: 26px; margin: 0 0 6px; border-bottom: 1px solid var(--line); }
+.lk-root .lk-tabs kbd { display: none; }
+.lk-root .lk-tabs button {
+  flex: none; position: relative; padding: 0 0 10px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  color: var(--text-3); font-size: 14px; font-weight: 500; letter-spacing: .01em; text-transform: none;
+}
+.lk-root .lk-tabs button::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--ember); transform: scaleX(0); transform-origin: left; transition: transform .4s var(--ease-out); }
+.lk-root .lk-tabs button.on { color: var(--text); background: none; box-shadow: none; }
+.lk-root .lk-tabs button.on::after { transform: scaleX(1); }
+.lk-root .lk-row { position: relative; padding: 14px 0 14px 18px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+.lk-root .lk-row::before { content: ""; position: absolute; left: 0; top: 50%; width: 0; height: 1px; background: var(--ember); box-shadow: 0 0 10px rgba(255, 122, 61, .8); transition: width .4s var(--ease-out); }
+.lk-root .lk-row.on { border-color: var(--line); background: linear-gradient(90deg, rgba(255, 122, 61, .07), rgba(255, 122, 61, 0) 70%); }
+.lk-root .lk-row.on::before { width: 10px; }
+.lk-root .lk-row header span { color: var(--text-3); font-size: 12px; font-weight: 500; letter-spacing: .04em; text-transform: none; }
+.lk-root .lk-row header b { font-size: 15px; font-weight: 400; }
+.lk-root .lk-opt:not(.sw) {
+  min-width: 0; padding: 4px 0 6px; margin-right: 14px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  color: var(--text-3); font-size: 14px; font-weight: 400; letter-spacing: .01em; text-transform: none; position: relative;
+}
+.lk-root .lk-opt:not(.sw)::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--ember); transform: scaleX(0); transform-origin: left; transition: transform .4s var(--ease-out); }
+.lk-root .lk-opt:not(.sw):hover { color: var(--text-2); }
+.lk-root .lk-opt:not(.sw).picked { color: var(--text); box-shadow: none; }
+.lk-root .lk-opt:not(.sw).picked::before { transform: scaleX(1); }
+.lk-root .lk-opt.sw { border: 0; background: none; }
+.lk-root .lk-opt.sw.picked { box-shadow: none; outline: 1px solid var(--text); outline-offset: 1px; }
+.lk-root .lk-opt.tile { border: 1px solid var(--line); border-radius: 4px; }
+.lk-root .lk-opt.tile.picked { border-color: var(--text); outline: 0; }
+.lk-root .lk-opt.tile small { font-weight: 500; letter-spacing: .02em; color: var(--text-2); }
+.lk-root .lk-note { margin-top: 16px; color: var(--text-3); }
+.lk-root .lk-foot { margin-top: 14px; color: var(--text-3); }
+.lk-root .lk-done {
+  margin-top: 10px; padding: 10px 0; border-radius: 0; background: none; box-shadow: none;
+  color: var(--text); font-stretch: 112%; font-size: 12.5px; font-weight: 600; letter-spacing: .2em;
+}
+.lk-root .lk-done::before { content: ""; display: inline-block; vertical-align: middle; width: 18px; height: 1px; margin-right: 12px; background: var(--ember); }
+
+/* Kit pieces (src/figure/kits.js): a ring in the kit's colour; locked, dimmed with a padlock. */
+.lk-opt { position: relative; }
+.lk-opt.kit.sw i { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18), 0 0 0 2px color-mix(in srgb, var(--kc) 55%, transparent); }
+.lk-opt.kit:not(.locked)::after { content: "KIT"; position: absolute; top: -8px; right: -10px; padding: 0; border-radius: 0; font-stretch: 112%; font-size: 7.5px; font-weight: 600; letter-spacing: .14em; color: var(--kc); background: none; }
+.lk-opt.locked { cursor: not-allowed; opacity: .55; filter: grayscale(.8); }
+.lk-opt.locked:hover { border-color: color-mix(in srgb, var(--kc) 70%, transparent); opacity: .8; }
+.lk-lock { position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; background: rgba(3, 5, 8, .55); color: var(--text-2); }
+.lk-lock svg { width: 14px; height: 14px; }
+.lk-locked-note { color: var(--kc, #ffcf4a); font-weight: 500; }
+/* On a word button, the padlock sits after the word rather than over it. */
+.lk-opt:not(.sw) .lk-lock { position: static; display: inline-grid; background: none; margin-left: 6px; vertical-align: -2px; }
+.lk-opt:not(.sw).locked { filter: grayscale(.6); }
+
+/* Turning the figure: grab anywhere off the panel. */
+/* (Over the arena's crosshair rule, which Customise shares the body class with.) */
+body.in-arena:has(.lk-root:not([hidden])) #game { cursor: grab !important; }
+body.in-arena.lk-turning, body.in-arena.lk-turning * { cursor: grabbing !important; }

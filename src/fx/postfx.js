@@ -32,6 +32,7 @@
 
 import * as THREE from "../three.js";
 import { LAYERS } from "../levels/causeway/layers.js";
+import { CHARGE_GLSL, CHARGE_UNIFORMS } from "../systems/charge.js";
 
 const quadVertex = /* glsl */ `
 varying vec2 vUv;
@@ -100,6 +101,7 @@ uniform float uPulse;
 uniform float uSedation;
 uniform float uSharpen;
 varying vec2 vUv;
+${CHARGE_GLSL}
 
 vec3 fxaa(vec2 uv, vec2 rcp) {
   vec3 nw = texture2D(tScene, uv + vec2(-1.0, -1.0) * rcp).rgb;
@@ -168,10 +170,13 @@ void main() {
     }
   }
 
+  // The charged shot (systems/charge.js): drawn in, then a ring out.
+  uv = chargeWarp(uv);
+
   vec3 colour = uFxaa > 0.5 ? fxaa(uv, rcp) : texture2D(tScene, uv).rgb;
 
   // Chromatic aberration grows toward the edge of the screen and with damage.
-  float ca = uChroma + uDamage * 0.006 + uPrism * 0.012 + uOverdrive * 0.004;
+  float ca = uChroma + uDamage * 0.006 + uPrism * 0.012 + uOverdrive * 0.004 + chargeSplit();
   vec2 caDir = centred * ca;
   colour.r = mix(colour.r, texture2D(tScene, uv + caDir).r, 0.85);
   colour.b = mix(colour.b, texture2D(tScene, uv - caDir).b, 0.85);
@@ -258,6 +263,7 @@ void main() {
     colour *= 1.0 - edge * 0.35;
   }
 
+  colour = chargeColour(colour, vUv, uTime);
   colour *= 1.0 - edge * uVignette - edge * uFocus * 0.4 - edge * uPulse * 0.35;
   colour += vec3(1.0, 0.75, 0.5) * uFlash;
   colour += (rand(vUv * uResolution + fract(uTime) * 100.0) - 0.5) * uGrain;
@@ -320,6 +326,7 @@ export class PostFX {
       uPulse: { value: 0 },
       uSedation: { value: 0 },
       uSharpen: { value: 0.35 },
+      ...CHARGE_UNIFORMS,
     };
     this.composite = new THREE.ShaderMaterial({
       vertexShader: quadVertex,

@@ -193,11 +193,15 @@ The helicopter carries a **rope ladder** that hangs from its side door and swing
 
 Cutscenes are letterboxed and scripted: the level returns where the camera is and looks, where the player is, which way they face and what their arms are doing (on the launcher, or up on the ladder), and the host applies it (the same data-driven pattern as the `state === "launch"` intro in `main.js`). Losing is otherwise the same as elsewhere: vitality to 0 ("THEY GOT YOU").
 
+**Going off the roof** - an open ledge ("YOU FELL"), down a hatch ("DOWN A HATCH"), or the story's missed jump for the ladder - plays a death in 3D before the end screen (`src/levels/meltdown/fall-scene.js`, playtest round 4): the scream, the camera diving after you and chasing from above and behind for 1.5 s while the body flails (`PlayerAvatar.flail()` drives the rig's uniforms: windmilling arms, kicking legs, an arched back) past the burning tower's lit windows, ember and smoke streaks rising through the frame; then the camera stops dead in mid-air and you fall on without it, shrinking into the haze, and black. Down a hatch the walls streaming past are a service shaft's. Any key, click or pad button skips it after 0.5 s. The level's `failed` result carries `deathScene`, so `main.js` skips its 2D fall effect; a missed ladder jump plays the same scene, then retries.
+
+**The hatches** are marked as a site marks a hole in a deck (`src/levels/meltdown/hatch-guard.js`, playtest round 4 - a tester walked into one): yellow/black barrier rails on three sides (cover: the open side faces into the roof, and the patients step out through it), hazard striping painted round the curb and its rim, a slowly pulsing amber LED strip (emissive and bloom only - no new lights), and a DANGER - KEEP CLEAR sign with a falling-figure pictogram; the tactical map draws them as pulsing hazard icons ("Open hatch" in its key). All four share five draw calls.
+
 ![The leap](images/meltdown-roof-leap.jpg)
 
 ### Controls on the roof
 
-`WASD` moves relative to the camera (high and behind, looking north over your head, leaning toward your aim). The mouse aims - over an enemy or sack, at them; otherwise at chest height on the roof. `SPACE` is a **dodge**: a quick sidestep (13 m/s for 0.24 s) with 0.32 s of invulnerability, 0.75 s cooldown. It is how you make a charge miss - and near a ledge, how you make it fall. You cannot fall off yourself. With the helicopter waiting and the ladder in reach, `SPACE` is the jump for the ladder instead.
+`WASD` moves relative to the camera (high and behind, looking north over your head, leaning toward your aim). The mouse aims - over an enemy or sack, at them; otherwise at chest height on the roof. `SPACE` is a **dodge**: a quick sidestep (13 m/s for 0.24 s) with 0.32 s of invulnerability, 0.75 s cooldown. It is how you make a charge miss - and near a ledge, how you make it fall. Step off an open ledge or into a hatch's open side yourself and you fall too. With the helicopter waiting and the ladder in reach, `SPACE` is the jump for the ladder instead.
 
 ---
 

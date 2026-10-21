@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "about": "The team's rigged characters. tools/characters/build.py adds a role here when it writes assets/characters/<role>.glb; a role not listed keeps today's model. See tools/characters/README.md.",
+  "roles": {}
+}

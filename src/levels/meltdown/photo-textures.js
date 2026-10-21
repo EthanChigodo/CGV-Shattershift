@@ -26,7 +26,12 @@ export const PHOTO_SETS = {
   roofing: "tarred_gravel",
 };
 
-const loader = new THREE.TextureLoader();
+// Decoded as ImageBitmaps - off the main thread, as they load - rather than
+// <img>s, which the browser decodes on the main thread at the moment of
+// upload (a long stall per 1K photo when a level starts). A bitmap ignores
+// flipY: it is flipped as it decodes instead.
+const loader = new THREE.ImageBitmapLoader();
+loader.setOptions({ imageOrientation: "flipY", premultiplyAlpha: "none", colorSpaceConversion: "none" });
 const cache = new Map();
 
 /** One image, loaded once per page (null if it can't be). */
@@ -35,7 +40,10 @@ function loadImage(file, srgb) {
     cache.set(file, new Promise((resolve) => {
       loader.load(
         new URL(file, BASE).href,
-        (t) => {
+        (bitmap) => {
+          const t = new THREE.Texture(bitmap);
+          t.flipY = false;
+          t.needsUpdate = true;
           t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
           t.wrapS = t.wrapT = THREE.RepeatWrapping;
           t.anisotropy = 4;
