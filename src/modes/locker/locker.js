@@ -1,27 +1,39 @@
 /**
  * Customise (single player): Subject 07 in the studio, two screens -
- *   CHARACTER  who you play as, complexion, hair colour, the scrubs' colour, headwear
+ *   CHARACTER  who you play as, complexion, hair colour, the scrubs' colour, headwear, shoes
  *   LAUNCHER   the launcher's finish (tiger, camo, carbon...), the sphere you start with
  * Every change shows on the figure at once and is kept for every
  * single-player game (the story, the chapters, Endless).
  *
- *   const locker = new Locker({ renderer, pads, assetBase, audio, look, apply, onExit });
+ *   const locker = new Locker({ renderer, pads, assetBase, audio, look, apply, onExit, backdrop });
  *   await locker.open("character");
  *   // every frame: locker.update(dt); locker.render();
+ *
+ * With the menu's 3D stage up (`backdrop`, src/menu/backdrop.js) it happens
+ * there, as the teammates' Appearance page did: the camera comes round to
+ * Subject 07 on the roof, the game's own figure in their place (headwear,
+ * the launcher on the Launcher screen), the choices on the right; the host
+ * draws the stage (locker.onStage). Without it, the studio (common/studio.js).
  *
  * `look()` returns the saved choices; `apply(patch)` saves one and puts it
  * on the game's own figure and launchers.
  *
  * Controls: a controller (D-pad / stick: rows and choices, LB / RB the two
- * screens, B back), the keyboard (arrows, Q / E, Esc) or the mouse.
+ * screens, B back), the keyboard (arrows, Q / E, Esc) or the mouse. Subject
+ * 07 turns round with L2 / R2 (or the right stick), or by holding the mouse
+ * down anywhere off the panel and dragging.
  */
 
 import { Studio } from "../common/studio.js";
+import { PlayerAvatar } from "../../levels/meltdown/player.js";
+import { buildLauncher, mountLauncher, unmountLauncher, setLauncherSkin } from "../../figure/launcher-model.js";
+import { requestMenuShot } from "../../menu/backdrop.js";
 import { loadMeltdownAssets } from "../../levels/meltdown/assets.js";
 import { B } from "../../systems/gamepads.js";
 import { padLabel } from "../../systems/input-glyphs.js";
 import { SKIN_TONES, HAIR_COLOURS } from "../../figure/look.js";
 import { OUTFITS, HEADWEAR } from "../../figure/outfit.js";
+import { SHOES } from "../../figure/shoes.js";
 import { LAUNCHER_SKINS, LAUNCHER_SKIN_ORDER } from "../../figure/launcher-skins.js";
 import { KITS, kitLocked } from "../../figure/kits.js";
 import { BALLS, BALL_ORDER } from "../../systems/arsenal.js";
@@ -49,6 +61,7 @@ function rows(tab) {
       ["hair", "Hair", Object.entries(HAIR_COLOURS).map(([value, h]) => ({ value, label: h.label, swatch: h.swatch }))],
       ["outfit", "Outfit", Object.entries(OUTFITS).map(([value, o]) => ({ value, label: o.label, swatch: o.swatch, kit: o.kit, locked: kitLocked(o) }))],
       ["headwear", "Headwear", Object.entries(HEADWEAR).map(([value, h]) => ({ value, label: h.label, kit: h.kit, locked: kitLocked(h) }))],
+      ["shoes", "Shoes", Object.entries(SHOES).map(([value, s]) => ({ value, label: s.label, kit: s.kit, locked: kitLocked(s) }))],
     ];
   }
   return [
@@ -58,7 +71,8 @@ function rows(tab) {
 }
 
 export class Locker {
-  constructor({ renderer, pads, assetBase, audio = null, look, apply, onExit }) {
+  constructor({ renderer, pads, assetBase, audio = null, look, apply, onExit, backdrop = null }) {
+    this.backdrop = backdrop;
     ensureStylesheets();
     this.renderer = renderer;
     this.pads = pads;
@@ -76,6 +90,23 @@ export class Locker {
     this.root.hidden = true;
     document.body.appendChild(this.root);
     this._onKey = (e) => this._key(e);
+    // Click, hold and drag (off the panel): turn the figure.
+    this._drag = null;
+    this._onDown = (e) => {
+      if (e.button !== 0 || e.target.closest?.(".lk-panel")) return;
+      this._drag = { x: e.clientX, id: e.pointerId };
+      document.body.classList.add("lk-turning");
+    };
+    this._onMove = (e) => {
+      if (!this._drag || e.pointerId !== this._drag.id) return;
+      this._turn((e.clientX - this._drag.x) * 0.012);
+      this._drag.x = e.clientX;
+    };
+    this._onUp = (e) => {
+      if (!this._drag || e.pointerId !== this._drag.id) return;
+      this._drag = null;
+      document.body.classList.remove("lk-turning");
+    };
     this._nav = { dir: null, wait: 0 };
   }
 
@@ -85,27 +116,80 @@ export class Locker {
 
   async open(tab = "character") {
     this.assets ??= await loadMeltdownAssets(this.assetBase, { names: ["playerFemale", "playerMale", "launcher"] });
-    this.studio ??= new Studio(this.renderer, this.assets);
+    this.onStage = Boolean(this.backdrop?.live);
+    if (!this.onStage) this.studio ??= new Studio(this.renderer, this.assets);
     this.state = "open";
     this.tab = tab;
     this.row = 0;
     this.root.hidden = false;
     addEventListener("keydown", this._onKey, true);
+    addEventListener("pointerdown", this._onDown);
+    addEventListener("pointermove", this._onMove);
+    addEventListener("pointerup", this._onUp);
+    addEventListener("pointercancel", this._onUp);
     this._figure();
     this._draw();
   }
 
   close() {
+    if (this.onStage) {
+      this.backdrop.stage?.standIn(null);
+      this.rig = null;
+      this.avatar = null;
+    }
     this.state = "closed";
     this.root.hidden = true;
     removeEventListener("keydown", this._onKey, true);
+    removeEventListener("pointerdown", this._onDown);
+    removeEventListener("pointermove", this._onMove);
+    removeEventListener("pointerup", this._onUp);
+    removeEventListener("pointercancel", this._onUp);
+    this._drag = null;
+    document.body.classList.remove("lk-turning");
   }
 
   /** The figure, as the saved choices have it; the launcher on its shoulder on the Launcher screen. */
   _figure() {
     const l = this.look();
-    this.studio.setFigures([{ id: "me", character: l.character, skin: l.skin, hair: l.hair, outfit: l.outfit, headwear: l.headwear, launcher: this.tab === "launcher", launcherSkin: l.launcherSkin, colour: "#7ef4f1" }]);
+    if (this.onStage) {
+      this._stageFigure(l);
+      return;
+    }
+    this.studio.setFigures([{ id: "me", character: l.character, skin: l.skin, hair: l.hair, outfit: l.outfit, shoes: l.shoes, headwear: l.headwear, launcher: this.tab === "launcher", launcherSkin: l.launcherSkin, colour: "#7ef4f1" }]);
     this.studio.frame(this.tab === "launcher" ? "launcher" : "body", { offsetX: 1.15, spin: false });
+  }
+
+  /** On the stage: the figure in Subject 07's place, dressed as saved; the launcher on the Launcher screen. */
+  _stageFigure(l) {
+    const stage = this.backdrop.stage;
+    if (!stage) return;
+    if (!this.avatar || this.avatar.character !== l.character) {
+      const a = new PlayerAvatar();
+      a.character = l.character;
+      a.hold = 0;
+      const template = this.assets.get(l.character)?.template;
+      if (template) a.setModel(template);
+      this.avatar = a;
+      this.rig = null;
+      stage.standIn(a);
+    }
+    const a = this.avatar;
+    a.setSkinTone(l.skin);
+    a.setHairColour(l.hair ?? "natural");
+    a.setOutfit(l.outfit);
+    a.setHeadwear(l.headwear);
+    a.setShoes(l.shoes ?? "clogs");
+    const launcher = this.tab === "launcher";
+    if (launcher && !this.rig) {
+      this.rig = buildLauncher(this.assets.get("launcher"), l.launcherSkin);
+      this.rigSkin = l.launcherSkin;
+      mountLauncher(a, this.rig);
+    } else if (!launcher && this.rig) {
+      unmountLauncher(a, this.rig);
+      this.rig = null;
+    }
+    if (this.rig && this.rigSkin !== l.launcherSkin) { setLauncherSkin(this.rig, l.launcherSkin); this.rigSkin = l.launcherSkin; }
+    requestMenuShot(launcher ? "kit" : "appearance");
   }
 
   _set(key, value) {
@@ -138,7 +222,7 @@ export class Locker {
             </div>
           </section>`).join("")}
         <p class="lk-note">${this.tab === "launcher" ? "The finish on your launcher in the Labs, the Skyline and on the roof. The sphere you start each run with." : "Who you are in every single-player run - the story, the chapters and Endless."}</p>
-        <footer class="lk-foot"><span><kbd>▲▼</kbd> pick</span><span><kbd>◀▶</kbd> change</span><span><kbd>${padLabel("PadB")}</kbd> / <kbd>Esc</kbd> done</span></footer>
+        <footer class="lk-foot"><span><kbd>▲▼</kbd> pick</span><span><kbd>◀▶</kbd> change</span><span><kbd>${padLabel("PadLT")}</kbd><kbd>${padLabel("PadRT")}</kbd> / drag: turn</span><span><kbd>${padLabel("PadB")}</kbd> / <kbd>Esc</kbd> done</span></footer>
         <button type="button" class="lk-done">Done</button>
       </aside>`;
     for (const b of this.root.querySelectorAll("[data-tab]")) b.onclick = () => this._tab(b.dataset.tab);
@@ -201,13 +285,16 @@ export class Locker {
   }
 
   update(dt) {
-    this.studio?.update(dt);
+    if (this.onStage) this.avatar?.update(dt, { speed: 0 });
+    else this.studio?.update(dt);
     // Any controller drives it.
     for (const rec of this.pads.pads.values()) {
       if (this.pads.pressed(rec, B.B) || this.pads.pressed(rec, B.START)) { this.onExit?.(); return; }
       if (this.pads.pressed(rec, B.LB) || this.pads.pressed(rec, B.RB)) this._tab(this.tab === "character" ? "launcher" : "character");
       // The right stick turns the figure.
-      if (rec.right.m > 0.2) this.studio.turn(rec.right.x * dt * 3);
+      // L2 / R2 (or the right stick) turn the figure round.
+      const turn = (rec.rt ?? 0) - (rec.lt ?? 0) + (rec.right.m > 0.2 ? rec.right.x : 0);
+      if (Math.abs(turn) > 0.08) this._turn(turn * dt * 3);
       let dir = null;
       if (rec.buttons[B.UP] || rec.left.y < -0.55) dir = "up";
       else if (rec.buttons[B.DOWN] || rec.left.y > 0.55) dir = "down";
@@ -227,7 +314,14 @@ export class Locker {
     }
   }
 
+  /** Turn the figure round (radians; + is to the right). */
+  _turn(amount) {
+    if (this.onStage) { if (this.avatar) this.avatar.root.rotation.y += amount; }
+    else this.studio?.turn(amount);
+  }
+
+  /** (On the stage the host draws it: menuBackdrop.render.) */
   render() {
-    this.studio?.render();
+    if (!this.onStage) this.studio?.render();
   }
 }

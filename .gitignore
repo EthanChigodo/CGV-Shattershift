@@ -3,6 +3,7 @@ Thumbs.db
 *.log
 node_modules/
 tests/story/shots/
+tests/menu-stage/shots/
 .vendor/
 __pycache__/
 dist/

@@ -620,3 +620,18 @@ body.hud-off-minimap .cw-map,
 body.hud-off-fps .cw-perf,
 body.hud-hidden .cw-ui,
 body.hud-hidden .reticle-hint { display: none !important; }
+
+/* Integrity in its band's colour (causeway-hud.js integrityColour): white,
+   yellow, orange, red, and from 10 down a deep blood red - lit from behind so
+   it still reads on a dark scene, and beating. */
+.cw-vitals .cw-meters label:first-child > b { color: var(--hp, var(--text)); transition: color 0.3s ease; }
+.cw-vitals .cw-meters label:first-child em { background: var(--hp, var(--text)); }
+.cw-vitals.bleeding .cw-meters label:first-child > b {
+  text-shadow: 0 0 14px rgba(160, 10, 18, 0.85), 0 0 2px rgba(255, 60, 60, 0.6);
+  animation: cw-bleed 0.9s ease-in-out infinite;
+}
+@keyframes cw-bleed { 50% { opacity: 0.72; } }
+body.reduced-motion .cw-vitals.bleeding .cw-meters label:first-child > b { animation: none; }
+
+/* Focus not earned yet in the story (systems/progression.js). */
+body.no-focus .cw-focus-row { display: none; }

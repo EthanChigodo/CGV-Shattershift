@@ -73,8 +73,10 @@ import { DIFFICULTIES } from "../../systems/difficulty.js";
 import { AmmoRecovery, canAffordThrow } from "../../systems/ammo-recovery.js";
 import { AmmoRecoveryHint } from "../../ui/ammo-recovery.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
-import { applyLauncherSkin } from "../../figure/launcher-skins.js";
+import { applyLauncherSkin, trailColours } from "../../figure/launcher-skins.js";
 import { LAUNCHER_HELD } from "../../figure/launcher-model.js";
+import { CHARGE, chargedShot } from "../../systems/charge.js";
+import { ChargeTrails } from "../../fx/charge-trail.js";
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                               */
@@ -86,7 +88,7 @@ const MAX_BALLS = 45;
 const HIT_VITALITY = 14;
 const HIT_FIRE_BURST = 6;
 const HIT_BALL_DROP_RATIO = 0.25;
-const FIRE_INTERVAL = 0.2; // held trigger: five shots a second
+const FIRE_INTERVAL = 0.2; // at most five shots a second (held, without a charge: the preview)
 /**
  * The level's old power-up vials hold the Skyline's serums now (one rule set
  * for every level): which serum each kind of vial gives.
@@ -237,13 +239,19 @@ export class MeltdownGame {
    * @param {boolean} [o.devKeys]    R restarts, P skips to the roof, F dev stats
    * @param {boolean} [o.summary]    show the level's own end-of-run card
    */
-  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null }) {
+  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null }) {
     /**
      * The sphere types and serums (src/systems/arsenal.js) - the host's, so
      * the type you picked and the serums running carry between levels; the
      * preview makes its own (and ticks it itself).
      */
     this.arsenal = arsenal ?? new Arsenal();
+    /**
+     * The host's charged shot (systems/charge.js): it fires as the trigger
+     * comes up - a click a plain shot; held, it charges first. Without one
+     * (the preview), a held trigger keeps firing as it used to.
+     */
+    this.charge = charge;
     /** Sharing the game's arsenal means the game's HUD shows the serums. */
     this.arsenalShared = !!arsenal;
     this._ownArsenal = !arsenal;
@@ -309,6 +317,8 @@ export class MeltdownGame {
     this.hud = new MeltdownHud({ container, dev: false, reducedMotion });
     this.audio = audio ? new MeltdownAudio({ volume: 0.8 }) : SILENT_AUDIO;
     this.projectiles = new Projectiles(scene);
+    /** The charged shot's air stripes (fx/charge-trail.js). */
+    this.chargeTrails = new ChargeTrails(scene);
     this.debris = new Debris(scene);
     // Level 1's glass physics (GPU shards: radial fracture, spin, one floor
     // bounce) and its sampled sound effects, on top of this level's own.
@@ -961,12 +971,20 @@ export class MeltdownGame {
     this.audio.start();
     if (event.button === 0) {
       this.runner.firing = true;
-      this.runner.fireCooldown = 0;
+      // With the host's charge the shot waits for the trigger to come up.
+      if (this.charge) this.charge.press(BALLS[this.arsenal.ball]?.colour);
+      else this.runner.fireCooldown = 0;
     }
   }
 
   onPointerUp(event) {
-    if (event.button === 0) this.runner.firing = false;
+    if (event.button !== 0) return;
+    this.runner.firing = false;
+    if (!this.charge?.holding) return;
+    // Up: a plain shot, or - held long enough - a charged one.
+    const level = this.charge.release();
+    if (level) this.runner.chargedQueued = level;
+    else this.runner.shotQueued = true;
   }
 
   onBlur() {
@@ -1050,6 +1068,14 @@ export class MeltdownGame {
   /* ================================================================ */
 
   render() {
+    // The roof's programs still linking (startRoof, under the black): a draw
+    // now would wait on all of them, the page frozen - black it is.
+    if (this._warming) {
+      this.renderer.setRenderTarget(null);
+      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.clear();
+      return;
+    }
     this.director?.beforeRender(this.renderer);
     // The host renders shadows on demand (autoUpdate is off in the game).
     if (this.quality.shadows) this.renderer.shadowMap.needsUpdate = true;
@@ -1109,7 +1135,19 @@ export class MeltdownGame {
     // Held trigger. (No heat: the Skyline's rules - the spheres are the limit.)
     this.launcher.recoil = Math.max(0, this.launcher.recoil - dt * 7);
     r.fireCooldown -= dt;
-    if (playing && r.firing && r.fireCooldown <= 0) {
+    if (this.charge) {
+      // The trigger came up: a plain shot or a charged one (the host's ChargeShot).
+      if (playing && r.shotQueued && r.fireCooldown <= 0) {
+        this._shoot();
+        r.fireCooldown = FIRE_INTERVAL;
+        r.shotQueued = false;
+      }
+      if (!playing) r.shotQueued = false;
+      if (r.chargedQueued) {
+        if (playing) this._shoot({ charged: r.chargedQueued });
+        r.chargedQueued = 0;
+      }
+    } else if (playing && r.firing && r.fireCooldown <= 0) {
       this._shoot();
       r.fireCooldown = FIRE_INTERVAL;
     }
@@ -1234,6 +1272,7 @@ export class MeltdownGame {
     // first person with the body hidden: the launcher stays in your hands, in
     // view - not on the shoulder of a body that isn't drawn.
     this._placeLauncher(firstPerson || this.phase === "story");
+    this.chargeTrails.update(dt);
     this.projectiles.update(dt, {
       breakables: level.breakables, solids: level.obstacles,
       surface: (a, b, radius) => level.surfaceHit(a, b, radius),
@@ -1584,13 +1623,14 @@ export class MeltdownGame {
    * chosen (Q/E), at its cost and speed, on its gravity arc (aimed high by
    * the drop, so it lands on the reticle), three at once under prism.
    */
-  _shoot() {
+  /** `charged`: the charge it went out with (0 none; systems/charge.js). */
+  _shoot({ charged = 0 } = {}) {
     const { runner: r, level, audio } = this;
     const V = this._v;
     if (!r.alive || (!level && !this.roof)) return;
     if (this.phase === "run" && r.finished) return;
     const def = this.arsenal.current;
-    const cost = this.arsenal.cost();
+    const cost = this.arsenal.cost() * (charged ? CHARGE.cost : 1);
     if (!canAffordThrow(r.balls, cost)) {
       audio.dry();
       this.hud.toast(r.balls > 0 ? `${def.name.toUpperCase()} NEEDS ${cost}` : "NO SPHERES",
@@ -1622,16 +1662,24 @@ export class MeltdownGame {
       this.hero.lastShot = 0;
     }
     // Ballistic compensation: up by the drop over the flight time.
-    const flight = V.aim.distanceTo(V.muzzle) / def.speed;
+    // (Charged: faster, flatter and bigger, the more the charge - systems/charge.js.)
+    const boost = charged ? chargedShot(charged) : null;
+    const speed = def.speed * (boost?.speed ?? 1);
+    const gravity = def.gravity * (boost?.gravity ?? 1);
+    const flight = V.aim.distanceTo(V.muzzle) / speed;
     for (let i = 0; i < count; i += 1) {
       const dir = V.fireDir.clone();
       if (count > 1) dir.applyAxisAngle(UP, (i - 1) * 0.07);
-      dir.multiplyScalar(def.speed).addScaledVector(UP, 0.5 * def.gravity * flight);
-      this.projectiles.fire(V.muzzle, dir, dir.length(), {
-        power: this._currentPower(), inherit: V.forwardVel, gravity: def.gravity, kind: def.key, radius: def.radius,
+      dir.multiplyScalar(speed).addScaledVector(UP, 0.5 * gravity * flight);
+      const ball = this.projectiles.fire(V.muzzle, dir, dir.length(), {
+        power: boost?.power ?? this._currentPower(), inherit: V.forwardVel, gravity, kind: def.key,
+        radius: def.radius * (boost?.radius ?? 1), charged,
       });
+      // Air stripes round it, as strong as the charge, in the launcher's colours.
+      if (charged) this.chargeTrails.add(ball.mesh, ball.velocity, charged, trailColours(this.launcherSkin), () => ball.active && ball.charged === charged);
     }
     this.launcher.recoil = 1;
+    if (charged) this.trauma = Math.min(1, this.trauma + 0.3 * charged);
     audio.shot(false);
     this.sfx?.throwBall();
   }
@@ -1801,8 +1849,46 @@ export class MeltdownGame {
   /** A sphere hit something breakable: break it, and a special one goes off. */
   _onBallHit(object, point, ball) {
     const consumed = this._onBallBreakable(object, point, ball);
+    if (ball.charged) {
+      this._overcharge(ball, point);
+      return true;
+    }
     if (ball.kind && ball.kind !== "glass") this._detonate(ball, point);
     return consumed;
+  }
+
+  /**
+   * A charged sphere bursting (systems/charge.js): everything breakable in
+   * CHARGE.splash metres goes - the scenery at once, the roof's people hit
+   * hard (3: a patient or a scientist down, a brute half gone) - with its
+   * own type's effect on top, bigger (a gravity well wider, cryo pushing the
+   * fire further back).
+   */
+  _overcharge(ball, point) {
+    const radius = chargedShot(ball.charged).splash;
+    const targets = this.roof ? this.roof.breakables : this.level?.breakables ?? [];
+    this.sphereImpact.splash(point, ball.kind === "glass" ? "shock" : ball.kind, radius, null, {});
+    this.debris.sparks(point, { count: 60, speed: 9 });
+    this._chunks(point, 40, { tint: 0xe8fbff, speed: 7, radius: radius * 0.3, size: 0.1 });
+    if (ball.kind === "gravity") this._gravityWell(point, radius * 1.3);
+    const at = new THREE.Vector3();
+    let broken = 0;
+    for (const target of targets.slice()) {
+      if (!target.parent) continue;
+      target.getWorldPosition(at);
+      if (at.distanceTo(point) > radius) continue;
+      const data = target.userData;
+      if (data.kind === "powerup") continue;
+      if (ball.kind === "gravity" && (data.kind === "sack" || data.kind === "enemy")) continue;
+      const enemy = data.kind === "enemy";
+      if (this._onBallBreakable(target, at.clone(), { power: enemy ? (ball.charged >= 1 ? 3 : 2) : 99, velocity: ball.velocity.clone(), kind: "glass" }) !== false) broken += 1;
+    }
+    if (ball.kind === "cryo" && this.level && !this.roof) this.runner.fireDistance -= 10;
+    this.trauma = Math.min(1, this.trauma + 0.25 + 0.3 * ball.charged);
+    this.hitFlash = Math.max(this.hitFlash, 0.25);
+    this.sfx?.glassBreak();
+    this.audio.clang();
+    if (broken) this.hud.toast("OVERCHARGED", `${broken} BROKEN`, "power", 1200);
   }
 
   /** Off a wall or the ceiling: the Skyline's ricochet sparks and sound. */
@@ -1815,7 +1901,10 @@ export class MeltdownGame {
     this.debris.sparks(point, { count: 14, speed: 5 });
     this.audio.clang();
     this.sfx?.surfaceRicochet();
-    if (ball?.kind && ball.kind !== "glass") {
+    if (ball?.charged) {
+      this._overcharge(ball, point);
+      ball.life = 99;
+    } else if (ball?.kind && ball.kind !== "glass") {
       this._detonate(ball, point);
       ball.life = 99; // spent
     }
@@ -1823,6 +1912,11 @@ export class MeltdownGame {
 
   /** A cryo or shock sphere goes off where it lands; glass just bounces. */
   _onBallFloor(point, ball) {
+    if (ball.charged) {
+      this._overcharge(ball, point.clone());
+      ball.life = 99;
+      return;
+    }
     if (!ball.kind || ball.kind === "glass") return;
     this._detonate(ball, point.clone(), true);
     ball.life = 99;
@@ -2178,6 +2272,8 @@ export class MeltdownGame {
     const roof = new RoofLevel({
       assets: this.roofAssets, endless: this.mode === "endless-roof", assetBase: this.assetBase,
       difficulty: { ...this.difficulty.roof, extras: this.difficulty.extras },
+      // (High quality is the one with shadows: below it, the lighter roof.)
+      light: !this.quality.shadows,
       ...this.roofOptions,
     });
     this.roof = roof;
@@ -2232,14 +2328,22 @@ export class MeltdownGame {
     this.snapCamera = true;
     this._applyCutscene(this.cut, 0.016);
     this._applyShadowFlags();
-    roof.prewarm(this.renderer, this.camera);
+    // (The driver links the roof's programs on its own threads meanwhile: the
+    // page keeps going - the loading screen, the pause - instead of freezing.)
+    this._warming = true;
+    try {
+      await roof.prewarm(this.renderer, this.camera);
+    } finally {
+      this._warming = false;
+    }
+    if (this.roof !== roof || this.phase !== "fade") return;
     this._logTextureMemory("the Roof");
 
     this.phase = "roofArrive";
     this.fade.override = null;
     this.fade.value = 1;
     this.fade.target = 0;
-    this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "JOHANNESBURG // HOLD ON", 3200);
+    this.hud.showBanner(this.mode === "endless-roof" ? "ENDLESS // THE ROOF" : "THE ROOF", this.mode === "endless-roof" ? "THEY NEVER STOP COMING" : "HOLD ON // THE HELICOPTER IS COMING", 3200);
     this.events.emit("phase", { phase: "roof" });
   }
 
@@ -2815,6 +2919,7 @@ export class MeltdownGame {
     this._placeKeyLight(hero.position);
     this.police?.update(dt, time, { worldZ: (d) => 70 - d, distance: 0, deckY: 0, overDeck: true, cityY: -60, spotZ: 0, spotSpread: 14 });
     // Balls fly through the cutscene's slow motion too.
+    this.chargeTrails.update(sdt);
     this.projectiles.update(sdt, { breakables: roof.breakables, solids: roof.solids, onBreakable: (o, p, b) => this._onBallHit(o, p, b), onSolid: (o, p, b) => this._onBallSolid(o, p, b), onFloor: (p, b) => this._onBallFloor(p, b) });
     this.debris.update(sdt);
     this.shatter.update(sdt);

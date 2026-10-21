@@ -147,7 +147,8 @@ export function flySphere(p, dt, { targets = [], solids = [], surfaceHit = null,
     return { type: "surface", surface };
   }
   if (solid) {
-    if (p.ball !== "glass") return { type: "solid", solid, detonate: true };
+    // (A charged one bursts whatever it is: systems/charge.js.)
+    if (p.ball !== "glass" || p.charged) return { type: "solid", solid, detonate: true };
     // Ricochet off solid hazards: reflect about the face normal.
     const normal = solid.face ? solid.face.normal.clone().transformDirection(solid.object.matrixWorld) : new THREE.Vector3(0, 0, 1);
     p.velocity.reflect(normal).multiplyScalar(SPHERE_FLIGHT.solid);
@@ -161,13 +162,13 @@ export function flySphere(p, dt, { targets = [], solids = [], surfaceHit = null,
 
 /**
  * The floor (at `floorY`): glass bounces off it ("bounce"); any other type
- * goes off there ("detonate"). null: not at the floor.
+ * - or a charged one - goes off there ("detonate"). null: not at the floor.
  */
 export function floorSphere(p, floorY = 0) {
   const pos = p.mesh.position;
   const radius = p.mesh.scale.x;
   if (p.life <= 0 || pos.y >= floorY + radius || p.velocity.y >= 0) return null;
-  if (p.ball !== "glass") return "detonate";
+  if (p.ball !== "glass" || p.charged) return "detonate";
   p.velocity.y *= -SPHERE_FLIGHT.floor;
   p.velocity.x *= SPHERE_FLIGHT.floorFriction;
   p.velocity.z *= SPHERE_FLIGHT.floorFriction;

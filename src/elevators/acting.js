@@ -297,6 +297,7 @@ export class Performer {
       u.uCrouch.value = c.crouch;
       u.uTuck.value = c.tuck;
       u.uHold.value = c.hold;
+      if (u.uGrip) u.uGrip.value = c.hold;
       u.uReachUp.value = c.reach;
     }
     // The rig drops the whole body by 0.42 m per unit of crouch (it was made

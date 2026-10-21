@@ -74,6 +74,7 @@ export class Portrait {
       a.setHairColour(look.hair ?? "natural");
       a.setOutfit(look.outfit);
       a.setHeadwear(look.headwear);
+      a.setShoes(look.shoes ?? "clogs");
       if (template) a.setModel(template);
       // Three-quarters on, the launcher's side to us.
       a.root.rotation.y = Math.PI - 0.5;
@@ -89,6 +90,7 @@ export class Portrait {
       this.avatar.setHairColour(look.hair ?? "natural");
       this.avatar.setOutfit(look.outfit);
       this.avatar.setHeadwear(look.headwear);
+      this.avatar.setShoes(look.shoes ?? "clogs");
     }
     if (this.rig && this.rigSkin !== look.launcherSkin) { setLauncherSkin(this.rig, look.launcherSkin); this.rigSkin = look.launcherSkin; }
   }

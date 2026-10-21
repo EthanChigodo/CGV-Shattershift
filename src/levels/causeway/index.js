@@ -39,6 +39,7 @@ import { ReflectionProbe } from "./probe.js";
 import { LAYERS, setLayer } from "./layers.js";
 import { createGlassShared } from "./shaders/glass.js";
 import { createSky, createSkyline } from "./shaders/sky.js";
+import { CbdBuildings } from "../meltdown/cbd.js";
 import {
   createShardMaterial, buildFractureGeometry, buildChunkGeometry,
   EmberSystem, WaterSystem, SmokeSystem, SootSystem, VentFlowSystem, createBurst,
@@ -84,6 +85,21 @@ const LABELS = {
   sculpture: ["Rotating sculpture", "Steel pole blocks the centre. Blades are glass."],
   gate: ["Lift gate", "Break the three locks in order: I, II, III."],
   lift: ["Calibration lift", "Your way up to Sector 2."],
+};
+
+/**
+ * The downtown buildings round the causeway (cbd.js): out either side of
+ * the glass, their streets far below, spread along `span` metres of the
+ * route and wrapped round the runner (each one jumps `span` ahead once it
+ * is behind). The corridor runs down local -Z.
+ */
+const DOWNTOWN = {
+  street: -125,
+  span: 900,
+  sets: [
+    { deco: { x: -128, z: -60, yaw: 0.3 }, flats: { x: 150, z: -190, yaw: -1.2 }, brick: { x: -150, z: -330, yaw: 1.4 }, civic: { x: 175, z: -470, yaw: -Math.PI / 2 } },
+    { deco: { x: 140, z: -600, yaw: -0.4 }, flats: { x: -160, z: -700, yaw: 1.0 }, brick: { x: 125, z: -820, yaw: -1.3 } },
+  ],
 };
 
 export class CausewayLevel {
@@ -141,6 +157,15 @@ export class CausewayLevel {
     this.sky = createSky(this.kit.textures.noise, { cloudSteps: quality === "low" ? 3 : 6 });
     this.skyline = createSkyline(this.sky.material.uniforms);
     this.root.add(this.sky, this.skyline);
+    // The old downtown (the roof's, meltdown/cbd.js) out either side, below
+    // the glass: floodlit stone among the towers. Wrapped along the route
+    // like the skyline (_wrapDowntown), so it never runs out. Not on low.
+    if (quality !== "low") {
+      this.downtown = new CbdBuildings({ streetY: DOWNTOWN.street, sets: DOWNTOWN.sets });
+      this.downtown.root.name = "Downtown";
+      for (const g of this.downtown.root.children) g.userData.baseZ = g.position.z;
+      this.root.add(this.downtown.root);
+    }
 
     this.tower = this.kit.distantTower();
     this.tower.position.set(-240, -120, -560);
@@ -995,11 +1020,26 @@ export class CausewayLevel {
   /* Per-frame update                                                  */
   /* ================================================================ */
 
+  /** The downtown buildings, wrapped round the runner at local z (DOWNTOWN). */
+  _wrapDowntown(z) {
+    if (!this.downtown) return;
+    const span = DOWNTOWN.span;
+    for (const g of this.downtown.root.children) {
+      const base = g.userData.baseZ;
+      const at = z + ((((base - z + span * 0.5) % span) + span) % span) - span * 0.5;
+      if (Math.abs(at - g.position.z) > 1e-3) {
+        g.position.z = at;
+        this.downtown.refresh(g);
+      }
+    }
+  }
+
   /**
    * @param {{dt:number, time:number, distance:number, player?:THREE.Vector3, playing?:boolean, ammunition?:number, throwCost?:number}} args
    */
   update({ dt, time, distance, player, playing = true, ammunition = Infinity, throwCost = 1 }) {
     this.distance = distance;
+    this._wrapDowntown(-distance);
     this.time.value = time;
     this.glassShared.uTime.value = time;
     const s = this.state;
@@ -1607,6 +1647,7 @@ export class CausewayLevel {
     this.sky.material.dispose();
     this.skyline.geometry.dispose();
     this.skyline.material.dispose();
+    this.downtown?.dispose();
     this.shell.dispose();
     this.probe.dispose();
     this.sun.shadow.map?.dispose();

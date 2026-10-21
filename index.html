@@ -33,12 +33,58 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./src/ui/theme.css" />
     <link rel="stylesheet" href="./styles.css" />
-    <link rel="stylesheet" href="./src/ui/menu-fx.css" />
+    <link rel="stylesheet" href="./src/ui/nightfall.css" />
     <link rel="stylesheet" href="./src/ui/mash-prompt.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
     <link rel="stylesheet" href="./src/ui/serum-fx.css" data-serum-fx />
   </head>
   <body>
+    <!-- Loading, and coming back to where you were after a refresh: the title,
+         a tip or a feature at a time, a bar - over everything until main.js
+         lifts html.booting (the menu, or the run, is ready under it). -->
+    <div id="bootScreen" class="boot-screen" aria-live="polite">
+      <div class="boot-copy">
+        <h1 class="logo" aria-label="Fracture Run">
+          <span class="logo-word" aria-hidden="true"><span class="logo-top">FRACTURE</span><span class="logo-bottom">FRACTURE</span><svg class="logo-crack" viewBox="0 0 1000 100" preserveAspectRatio="none"><polyline points="0,50 60,53 120,47 190,58 270,49 340,55 430,57 480,46 610,44 650,52 780,52 860,45 1000,46" /></svg></span>
+          <em aria-hidden="true">Run</em>
+        </h1>
+        <p class="boot-tip"><small>Did you know</small><b id="bootTip"></b></p>
+        <div class="boot-loading"><span><em class="bl-load">Loading the tower</em><em class="bl-resume">Resuming where you were</em></span><i></i></div>
+      </div>
+      <script>
+        // While the game loads: tips and the game's features, one at a time
+        // (here, not in main.js: they have to run before the game's code is in).
+        (() => {
+          const tips = [
+            "Twenty-one trophies and a platinum to earn - see them under Trophies & Stats.",
+            "Finish the story for the Escapee kit: the Ember outfit, the Visor and a molten launcher.",
+            "Up to four players on the roof: King of the Hill, or Capture the Flag.",
+            "Race a friend head to head, split screen, through the Foundry, the Labs or the Skyline.",
+            "Your best run comes back as a ghost to race against.",
+            "Some nights it rains on the roof. Some nights it storms.",
+            "Plug in a PlayStation or Xbox controller: every menu and every level plays with it.",
+            "Cryo freezes, shock knocks back, gravity pulls. Switch spheres with Q and E.",
+            "Sprinkler bulbs are glass. Break one and the fire below goes out.",
+            "Slide feet first under the low beams - or slam down into a slide from the air.",
+            "Make Subject 07 yours: complexion, hair, outfit, headwear and the launcher's finish.",
+            "Shock shatters reinforced glass in one hit.",
+          ];
+          const el = document.getElementById("bootTip");
+          let i = Math.floor(Math.random() * tips.length);
+          const next = () => {
+            if (!document.documentElement.classList.contains("booting")) return;
+            el.classList.remove("in");
+            setTimeout(() => {
+              el.textContent = tips[i];
+              i = (i + 1) % tips.length;
+              el.classList.add("in");
+              setTimeout(next, 3800);
+            }, el.textContent ? 320 : 0);
+          };
+          next();
+        })();
+      </script>
+    </div>
     <canvas id="game" aria-label="Fracture Run game canvas"></canvas>
     <div id="countdown" class="countdown" hidden aria-live="assertive"></div>
 
@@ -85,13 +131,14 @@
       <span class="pad-only"><kbd data-pad="PadLT">LT</kbd> Focus</span>
     </div>
 
-    <section id="storyScreen" class="screen active">
+    <section id="storyScreen" class="screen active title-screen">
       <div class="screen-copy compact story-copy">
         <div id="storyPrompt">
-          <p class="eyebrow">INCOMING TRANSMISSION // ASCENSION TOWER</p>
-          <h1 class="game-title">FRACTURE<span>RUN</span></h1>
-          <p class="intro">A short film: what Project Ascension was, who ran it, and why the tower is coming down tonight. Skip it at any time.</p>
-          <div class="boot-loading" aria-live="polite"><span>LOADING THE TOWER</span><i></i></div>
+          <h1 class="logo" aria-label="Fracture Run">
+            <span class="logo-word" aria-hidden="true"><span class="logo-top">FRACTURE</span><span class="logo-bottom">FRACTURE</span><svg class="logo-crack" viewBox="0 0 1000 100" preserveAspectRatio="none"><polyline points="0,50 60,53 120,47 190,58 270,49 340,55 430,57 480,46 610,44 650,52 780,52 860,45 1000,46" /></svg></span>
+            <em aria-hidden="true">Run</em>
+          </h1>
+          <p class="intro">A short film first: what Project Ascension was, who ran it, and why the tower is coming down tonight. Skip it any time.</p>
           <div class="menu-list menu-list-row">
             <button id="storyBeginButton" class="menu-button primary" type="button">
               <i class="menu-glyph" aria-hidden="true">&#9654;</i><span><b>Watch the briefing</b><small>What happened here, and why</small></span>
@@ -110,10 +157,13 @@
       <button id="storySkipButton" class="icon-button story-skip" hidden>SKIP</button>
     </section>
 
-    <section id="startScreen" class="screen menu-screen">
+    <section id="startScreen" class="screen menu-screen title-screen">
       <div class="menu-main">
-        <p class="eyebrow">ASCENSION TOWER // LEVEL 212 // DEMOLITION ARMED</p>
-        <h1 class="glitch-title" data-text="WAKE UP.&#10;GET TO THE ROOF.">WAKE UP.<br />GET TO THE ROOF.</h1>
+        <h1 class="logo" aria-label="Fracture Run">
+          <span class="logo-word" aria-hidden="true"><span class="logo-top">FRACTURE</span><span class="logo-bottom">FRACTURE</span><svg class="logo-crack" viewBox="0 0 1000 100" preserveAspectRatio="none"><polyline points="0,50 60,53 120,47 190,58 270,49 340,55 430,57 480,46 610,44 650,52 780,52 860,45 1000,46" /></svg></span>
+          <em aria-hidden="true">Run</em>
+        </h1>
+        <p class="tagline">Wake up. Get to the roof.</p>
         <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Climb out of the basement, through the labs and across the skyline to the helicopter on the roof before the tower comes down.</p>
         <nav class="menu-list" aria-label="Main menu">
           <button id="singleButton" class="menu-button primary menu-big" type="button">
@@ -144,12 +194,6 @@
         <p id="progressLine" class="progress-line"></p>
         <div id="padMenuList" class="pad-list" aria-label="Controllers"></div>
       </div>
-      <aside class="menu-card tower-card" aria-label="The tower">
-        <p class="eyebrow">ASCENSION TOWER // STATUS</p>
-        <div class="tower-alarm"><i aria-hidden="true"></i><b>DEMOLITION ARMED</b><span>Charges on every floor</span></div>
-        <ol id="towerFloors" class="tower-floors"></ol>
-        <div id="towerMeters" class="tower-meters"></div>
-      </aside>
     </section>
 
     <section id="singleScreen" class="screen menu-screen" aria-label="Single player">
@@ -261,7 +305,7 @@
       </aside>
     </section>
 
-    <section id="chaptersScreen" class="screen" aria-label="Chapters">
+    <section id="chaptersScreen" class="screen list-screen" aria-label="Chapters">
       <div class="screen-copy chapters-copy">
         <p class="eyebrow">CHAPTERS // THE WAY UP</p>
         <h2>PLAY ANY PART OF THE STORY.</h2>
@@ -287,7 +331,7 @@
       </div>
     </section>
 
-    <section id="newGameScreen" class="screen" aria-label="New game">
+    <section id="newGameScreen" class="screen list-screen" aria-label="New game">
       <div class="screen-copy chapters-copy">
         <p class="eyebrow">NEW GAME // CHOOSE YOUR DIFFICULTY</p>
         <h2>HOW HARD DO YOU WANT IT?</h2>
@@ -539,7 +583,7 @@
       </div>
     </section>
 
-    <section id="endlessScreen" class="screen" aria-label="Endless">
+    <section id="endlessScreen" class="screen list-screen" aria-label="Endless">
       <div class="screen-copy compact">
         <p class="eyebrow">ENDLESS // SEPARATE FROM THE STORY</p>
         <h2>PICK A PLACE.<br />SEE HOW FAR YOU GET.</h2>

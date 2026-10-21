@@ -37,6 +37,29 @@ export const LAUNCHER_SKINS = {
 };
 export const LAUNCHER_SKIN_ORDER = Object.keys(LAUNCHER_SKINS);
 
+/**
+ * Each design's two colours for the charged shot's air stripes
+ * (fx/charge-trail.js): its own, brightened to read as light.
+ */
+const TRAILS = {
+  factory: ["#d4dde6", "#7f8b96"],
+  tiger: ["#ff9a2e", "#ffe2b8"],
+  camo: ["#c9d98f", "#8a9a5a"],
+  digital: ["#e1e7ec", "#9aa3aa"],
+  carbon: ["#d6dee6", "#6a737b"],
+  hazard: ["#ffd21f", "#fff6d0"],
+  galaxy: ["#c47dff", "#6f86ff"],
+  flames: ["#ffd23f", "#ff5a1a"],
+  arctic: ["#eaf7ff", "#9fd3ff"],
+  neon: ["#00f0ff", "#ff2fa0"],
+  gold: ["#fff1b8", "#e8b23a"],
+  ember: ["#ffb347", "#ff5a1a"],
+  prism: ["#7ef4f1", "#ff8ad8"],
+};
+export function trailColours(key) {
+  return TRAILS[key] ?? TRAILS.factory;
+}
+
 const KEY = "fractureRun.launcherSkin";
 export function savedLauncherSkin() {
   try {

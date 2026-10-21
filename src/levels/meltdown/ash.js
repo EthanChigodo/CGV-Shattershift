@@ -67,8 +67,12 @@ ${ASH_NOISE}`)
           float ashH = clamp((vAshPos.y - uAshBase) / uAshHeight, 0.0, 1.0);
           float ashN = ashNoise(vAshPos * 9.0) * 0.5 + ashNoise(vAshPos * 23.0) * 0.25;
           float ashCut = uAsh * 1.45 - ((1.0 - ashH) * 0.9 + ashN);
-          if (ashCut > 0.0) discard;
           float ashEdge = smoothstep(-0.14, 0.0, ashCut) * step(0.001, uAsh);`)
+        // The cut at the very end, not up front: a discard ahead of the
+        // lighting (and the patients' grime, its noise and its slopes) took
+        // Direct3D's compiler a minute for one program - the Roof froze.
+        .replace("#include <dithering_fragment>", `#include <dithering_fragment>
+          if (ashCut > 0.0) discard;`)
         .replace("#include <color_fragment>", `#include <color_fragment>
           diffuseColor.rgb *= 1.0 - 0.8 * smoothstep(0.0, 0.55, uAsh);`)
         .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>

@@ -44,6 +44,7 @@
  */
 
 import * as THREE from "../three.js";
+import { NOISE_GLSL, noiseTexture } from "./noise.js";
 
 /** Wear values for each stage of the story. */
 export const WEAR = { clean: 0, dusty: 0.33, bloodied: 0.66 };
@@ -251,6 +252,8 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   varying vec3 vRest;
   uniform float uWear;
   uniform float uGear;
+  // Shoes on (src/figure/shoes.js): the model's own clogs aren't drawn.
+  uniform float uNoFeet;
   uniform vec3 uSkin;
   uniform vec3 uTone;
   uniform float uToneOn;
@@ -285,13 +288,9 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   }
 
   // 3D value noise and a few octaves of it (fbm), for every damage pattern.
-  float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-  float n3(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
-               mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-  }
+  // (From a texture, noise.js: hashed, it took Direct3D's compiler seconds.)
+  ${NOISE_GLSL}
+  float n3(vec3 p) { return noise3(p); }
   float fbm3(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.1 + 7.3) + 0.15 * n3(p * 4.3 + 1.7); }
 
   // Claw marks: three parallel slashes. 'c' is where they start, 'dir' the
@@ -349,6 +348,7 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
     bool body = inCell(uv, uCellBody);
     bool legs = inCell(uv, uCellBottom);
     bool feet = inCell(uv, uCellShoes);
+    if (feet && uNoFeet > 0.5) discard;
     bool bare = body || (top && arm && along > 0.2);
 
     // Skin tone: re-tint the skin in the body texture. Skin pixels are the
@@ -551,6 +551,7 @@ export function applyFigureLook(mesh, body) {
   const uniforms = {
     uWear: { value: 0 },
     uGear: { value: 0 },
+    uNoFeet: { value: 0 },
     uSkin: { value: skin.clone() },
     uTone: { value: skin.clone() },
     uToneOn: { value: 0 },
@@ -571,6 +572,7 @@ export function applyFigureLook(mesh, body) {
     uHairOn: { value: 0 },
     uCellHair: { value: cell("Hair") },
     uHairLum: { value: hairLum },
+    uNoise: { value: noiseTexture() },
   };
   const rig = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
@@ -602,6 +604,11 @@ export function applyFigureLook(mesh, body) {
     setWear(value) {
       uniforms.uWear.value = THREE.MathUtils.clamp(value, 0, 1);
     },
+    /** Shoes on: the model's own clogs hidden under them. */
+    setFeetHidden(hidden) {
+      uniforms.uNoFeet.value = hidden ? 1 : 0;
+    },
+
     setGear(on) {
       uniforms.uGear.value = on ? 1 : 0;
     },

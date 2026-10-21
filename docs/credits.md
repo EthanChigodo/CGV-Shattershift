@@ -125,6 +125,25 @@ credits stay in step.
 > project, but if the game is ever published, swap these for original or
 > generic models.
 
+### Shoes (Customise; Sketchfab)
+
+Each one: a single shoe kept from the pair, decimated to about 12,000
+triangles, textures down to 1K JPEG (`tools/shoes/build.py`, Blender), then
+fitted to each figure's feet and posed by the figure's own vertex shader
+(`src/figure/shoes.js`). Files in `assets/meltdown/shoes/`.
+
+| In the game | Model | Author | Licence |
+| --- | --- | --- | --- |
+| Escape runners (Escapee kit) | [Jordan shoes](https://sketchfab.com/3d-models/jordan-shoes-fb9a1f018b5b455e99406354b29215cf) | 张鑫 (zhangxin) | CC-BY-4.0 |
+| Platinum trainers (Fracture kit) | [Adidas shoes](https://sketchfab.com/3d-models/adidas-shoes-61083ba3fdfc4dcbb8e11f04848e9adf) | thunk3d.scanner | CC-BY-4.0 |
+| Court lows | [Air Jordan 1](https://sketchfab.com/3d-models/air-jordan-1-a4b434181fbb48008ad460722fd53725) | makoto (lu87813) | CC-BY-4.0 |
+| Skate shoes | [Skate Shoes](https://sketchfab.com/3d-models/skate-shoes-a1d42c5e55984eed953b7def8fd70150) | SKMT (srkmt) | CC-BY-4.0 |
+| Suede runners | [Used New Balance 574 Classic](https://sketchfab.com/3d-models/used-new-balance-574-classic-free-f0aad4f64925479da3f607b186314eef) | Andrea Spognetta (Spogna) | CC-BY-NC-4.0 |
+
+> One is **non-commercial** (CC-BY-NC, the Suede runners): fine for this
+> university project; if the game were ever sold, it goes.
+> The brand names stay out of the game: the shoes are named by their look.
+
 ### Photo textures (the Foundry, the Labs and the Roof)
 
 Downloaded from Poly Haven (polyhaven.com) at 1K, colour + OpenGL normal +

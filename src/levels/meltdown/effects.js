@@ -56,8 +56,9 @@ export class Projectiles {
    * @param {number} [o.gravity]  m/s^2 down (the sphere type's)
    * @param {string} [o.kind]     glass | cryo | shock
    * @param {number} [o.radius]   metres
+   * @param {number} [o.charged] the launcher's charged shot: its charge, 0 none (it bursts where it lands)
    */
-  fire(origin, direction, speed = 70, { power = 1, inherit, gravity = -GRAVITY, kind = "glass", radius = 0.17 } = {}) {
+  fire(origin, direction, speed = 70, { power = 1, inherit, gravity = -GRAVITY, kind = "glass", radius = 0.17, charged = 0 } = {}) {
     const ball = this.balls.find((b) => !b.active) ?? this.balls.reduce((a, b) => (a.life > b.life ? a : b));
     ball.active = true;
     ball.life = 0;
@@ -67,6 +68,7 @@ export class Projectiles {
     ball.gravity = gravity;
     ball.kind = kind;
     ball.radius = radius;
+    ball.charged = charged;
     ball.mesh.material = sphereMaterial(kind);
     ball.mesh.children[0].material = sphereHaloMaterial(kind);
     ball.mesh.scale.setScalar(radius);

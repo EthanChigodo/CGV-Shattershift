@@ -6,7 +6,7 @@
  * shoulder for those who carry one.
  *
  *   const studio = new Studio(renderer, assets);     // assets: the two player models, the launcher
- *   studio.setFigures([{ id, character, skin, hair, outfit, headwear, launcher, launcherSkin, colour }]);
+ *   studio.setFigures([{ id, character, skin, hair, outfit, headwear, shoes, launcher, launcherSkin, colour }]);
  *   studio.frame("body" | "launcher", { offsetX });   // what the camera shows
  *   // every frame: studio.update(dt); studio.render();
  */
@@ -131,6 +131,7 @@ export class Studio {
       if (f.hair !== (spec.hair ?? "natural")) { f.hair = spec.hair ?? "natural"; f.avatar.setHairColour(f.hair); }
       if (f.outfit !== spec.outfit) { f.avatar.setOutfit(spec.outfit); f.outfit = spec.outfit; }
       if (f.headwear !== spec.headwear) { f.avatar.setHeadwear(spec.headwear); f.headwear = spec.headwear; }
+      if (f.shoes !== (spec.shoes ?? "clogs")) { f.shoes = spec.shoes ?? "clogs"; f.avatar.setShoes(f.shoes); }
       if (spec.launcher && !f.rig) {
         f.rig = buildLauncher(this.assets.get("launcher"), spec.launcherSkin);
         f.launcherSkin = spec.launcherSkin;
@@ -151,6 +152,7 @@ export class Studio {
     a.setHairColour(spec.hair ?? "natural");
     a.setOutfit(spec.outfit);
     a.setHeadwear(spec.headwear);
+    a.setShoes(spec.shoes ?? "clogs");
     const template = this.assets.get(spec.character)?.template;
     if (template) a.setModel(template);
     a.root.rotation.y = Math.PI;
@@ -158,7 +160,7 @@ export class Studio {
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.78, 48), new THREE.MeshBasicMaterial({ color: spec.colour ?? "#7ef4f1", transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     this.scene.add(ring);
-    const f = { id: spec.id, character: spec.character, avatar: a, ring, rig: null, skin: spec.skin, hair: spec.hair ?? "natural", outfit: spec.outfit, headwear: spec.headwear, yaw: Math.PI };
+    const f = { id: spec.id, character: spec.character, avatar: a, ring, rig: null, skin: spec.skin, hair: spec.hair ?? "natural", outfit: spec.outfit, headwear: spec.headwear, shoes: spec.shoes ?? "clogs", yaw: Math.PI };
     this.figures.set(spec.id, f);
     return f;
   }

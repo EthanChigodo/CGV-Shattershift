@@ -43,7 +43,8 @@ import { blastScene } from "./src/story/scenes-skyline.js";
 import { SCENES as STORY_LINES } from "./src/story/script.js";
 import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone, HAIR_COLOURS, savedHairColour, saveHairColour } from "./src/figure/look.js";
 import { OUTFITS, HEADWEAR, savedOutfit, saveOutfit, savedHeadwear, saveHeadwear } from "./src/figure/outfit.js";
-import { applyLauncherSkin, savedLauncherSkin } from "./src/figure/launcher-skins.js";
+import { SHOES, savedShoes, saveShoes } from "./src/figure/shoes.js";
+import { applyLauncherSkin, savedLauncherSkin, trailColours } from "./src/figure/launcher-skins.js";
 import { LAUNCHER_HELD } from "./src/figure/launcher-model.js";
 import { MenuBackdrop } from "./src/menu/backdrop.js";
 import { DIFFICULTIES, loadDifficulty, saveDifficulty } from "./src/systems/difficulty.js";
@@ -60,16 +61,31 @@ import { Portrait } from "./src/ui/portrait.js";
 /** Trophies and the statistics (src/systems/trophies.js) - `progress` is the missions' own. */
 import { progress as achievements } from "./src/systems/trophies.js";
 import { TrophyToast } from "./src/ui/trophy-toast.js";
+import { ChargeShot, CHARGE, chargedShot } from "./src/systems/charge.js";
+import { ChargeTrails } from "./src/fx/charge-trail.js";
+import { abilitiesAt, spheresAt } from "./src/systems/progression.js";
+import { UnlockCard } from "./src/ui/unlock-card.js";
 import { TrophyRoom } from "./src/ui/trophy-room.js";
 import { FieldManual } from "./src/ui/field-manual.js";
 import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
 import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/systems/ghosts.js";
 import { TabbedScreen } from "./src/ui/tabbed-screen.js";
 import { CreditsRoom } from "./src/ui/credits-room.js";
+import { compileReady, uploadTextures } from "./src/systems/warm-up.js";
 import { LAUNCHER_SKINS, saveLauncherSkin } from "./src/figure/launcher-skins.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// No error check after every shader link: three's check (getProgramInfoLog)
+// makes the driver finish each compile on the spot, one after another;
+// without it the browser compiles them in parallel, in the background - a
+// level's shaders come in far sooner. ?shadercheck (and the automated
+// checks, under webdriver) keep it, to catch a broken shader.
+{
+  const q = new URLSearchParams(location.search);
+  // (?fastshaders: as players get it, under webdriver too - for timing it.)
+  renderer.debug.checkShaderErrors = q.has("shadercheck") || (navigator.webdriver === true && !q.has("fastshaders"));
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -278,10 +294,8 @@ const ghostChip = document.createElement("div");
 ghostChip.className = "ghost-chip";
 ghostChip.hidden = true;
 document.body.appendChild(ghostChip);
-let ghostNoteUntil = 0;
 /** "4.2 m ahead of your ghost" (or behind), top centre. */
 function showGhostChip(lead) {
-  if (performance.now() < ghostNoteUntil) return;
   if (lead === null || !settings.ghosts) { hideGhostChip(); return; }
   ghostChip.hidden = false;
   const ahead = lead >= 0;
@@ -289,13 +303,16 @@ function showGhostChip(lead) {
   ghostChip.innerHTML = `<i></i><b>${Math.abs(lead).toFixed(1)} m</b> ${ahead ? "ahead of" : "behind"} your ghost`;
 }
 function hideGhostChip() {
-  if (performance.now() >= ghostNoteUntil) ghostChip.hidden = true;
+  ghostChip.hidden = true;
 }
-function showGhostNote(text) {
-  ghostChip.hidden = false;
-  ghostChip.classList.add("ahead");
-  ghostChip.innerHTML = `<i></i><b>${text}</b>`;
-  ghostNoteUntil = performance.now() + 3500;
+/**
+ * A new ghost saved: a notification at the top (the trophies' card), gone
+ * again after a few seconds - not the run's chip, which nothing hid once the
+ * run was over (it stayed on the menus for good).
+ */
+function showGhostNote(title, text) {
+  ghostChip.hidden = true;
+  trophyToast.note({ label: "NEW GHOST", title, text, colour: "#8fe6ff", art: '<i class="tt-ghost"></i>' });
 }
 
 /** The story's sectors, in order (a checkpoint moving on clears the one before). */
@@ -550,6 +567,7 @@ playerBody.hold = 0;
 playerBody.setSkinTone(savedSkinTone());
 playerBody.setOutfit(savedOutfit());
 playerBody.setHeadwear(savedHeadwear());
+playerBody.setShoes(savedShoes());
 playerBody.setHairColour(savedHairColour());
 let playerBodyReady = false;
 /** The chosen character's model template, for the lift ride to show the same person. */
@@ -981,6 +999,11 @@ const ammoRecovery = new AmmoRecovery();
 const ammoHint = new AmmoRecoveryHint(scene);
 // The sphere picked in the main menu (or the pause menu) is the one a run starts with.
 arsenal.prefer(savedBall());
+// The launcher's charged shot (systems/charge.js): the Skyline's here, the
+// Labs' and the Roof's through their game (it takes this one).
+const charge = new ChargeShot({ reducedMotion: settings.reducedMotion });
+/** Its air stripes in the Skyline (fx/charge-trail.js). */
+const chargeTrails = new ChargeTrails(scene);
 // Serums in front of the player: the first time each is picked up the
 // game pauses on a card explaining it (PowerupBanner); after that the
 // HUD's serum banner, chips and screen looks (serum-fx.js) carry it.
@@ -1652,7 +1675,6 @@ function refreshMenuProgress() {
   bits.push(...foundSummary());
   bits.push(`Missions ${p.completed.length}/13`);
   ui.progressLine.textContent = bits.join("   ");
-  refreshTower();
   achievements.max("files", p.files.length);
   achievements.max("missions", p.completed.length);
   refreshTrophiesNote();
@@ -1691,13 +1713,30 @@ let meltdownEntering = false;
  * holding the menus; until it is in (or if it fails) the Skyline's corridor
  * stays behind the menus as before. Updated and drawn only on the menus.
  */
+/**
+ * Software WebGL (no graphics card, or the checks' SwiftShader): the stage's
+ * burning city is far too heavy there, so the menus keep the corridor.
+ * ?menustage forces it on (its own checks), ?nomenustage off.
+ */
+function softwareGL() {
+  try {
+    const gl = renderer.getContext();
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    return /swiftshader|llvmpipe|software|basic render/i.test(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "");
+  } catch {
+    return false;
+  }
+}
+const stageParams = new URLSearchParams(location.search);
+const menuStageWanted = stageParams.has("menustage") || (!stageParams.has("nomenustage") && !softwareGL());
 const menuBackdrop = new MenuBackdrop({
   renderer,
+  enabled: menuStageWanted,
   assetBase: MELTDOWN_ASSET_BASE,
   // (Auto means medium here: the frame-rate monitor only watches the runs.)
   quality: () => (settings.quality === "auto" && !autoLow ? "medium" : resolvedQuality()),
   reducedMotion: () => settings.reducedMotion,
-  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit() }),
+  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes() }),
 });
 menuBackdrop.preload();
 
@@ -1712,6 +1751,7 @@ function getMeltdown() {
     reducedMotion: settings.reducedMotion,
     // One set of sphere types and serums for every level.
     arsenal,
+    charge,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdownQuality();
@@ -1719,6 +1759,7 @@ function getMeltdown() {
   meltdown.avatar?.setSkinTone(savedSkinTone());
   meltdown.avatar?.setOutfit(savedOutfit());
   meltdown.avatar?.setHeadwear(savedHeadwear());
+  meltdown.avatar?.setShoes(savedShoes());
   meltdown.setLauncherSkin(savedLauncherSkin());
   meltdown.avatar?.setHairColour(savedHairColour());
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
@@ -2030,14 +2071,15 @@ function leadTarget(target, point, origin, speed, out) {
   return out;
 }
 
-function fire() {
+/** A throw or a shot; `charged`: the launcher's charged shot - its charge, 0 none (systems/charge.js). */
+function fire({ charged = 0 } = {}) {
   if (state !== "playing" || paused || photoActive) return;
   const inCauseway = currentLevel === 1 && causeway;
   // Level 1's throw physics (a glass sphere on a gravity arc) in the Foundry too.
   const physical = inCauseway || (currentLevel === 2 && !!foundry);
   // The Skyline's sphere types and serums in the Foundry too.
   const ball = physical ? arsenal.current : null;
-  const cost = physical ? arsenal.cost() : 1;
+  const cost = (physical ? arsenal.cost() : 1) * (charged ? CHARGE.cost : 1);
   if (!canAffordThrow(ammo, cost)) {
     showMessage(ammo <= 0 ? "NO SPHERES // RECHARGING — USE GLASS (Q/E)" : `${ball.name.toUpperCase()} NEEDS ${cost} // SWITCH TO GLASS (Q/E)`);
     return;
@@ -2071,7 +2113,8 @@ function fire() {
     pendingThrows.push({ delay: THROW_RELEASE, target: aim.target, point: aim.point.clone(), ball, count });
     return;
   }
-  launchSpheres(_origin, aim.target, aim.point, ball, count, physical);
+  launchSpheres(_origin, aim.target, aim.point, ball, count, physical, false, charged);
+  if (charged) { triggerShake(0.3 * charged); skyLauncher.recoil = 1 + 0.6 * charged; }
 }
 
 /* ---- The launcher in the Skyline ------------------------------------------ */
@@ -2147,10 +2190,12 @@ function updatePendingThrows(dt) {
 }
 
 /** Spheres away from `origin` toward an aim point (leading a moving target). */
-function launchSpheres(origin, target, point, ball, count, physical, hand = false) {
+function launchSpheres(origin, target, point, ball, count, physical, hand = false, charged = 0) {
   // By hand: slower, and a real arc (the launcher fires them flat and fast).
-  const speed = (ball?.speed ?? 34) * (hand ? SPHERE_FLIGHT.handSpeed : 1);
-  const gravity = physical ? (ball?.gravity ?? 3.2) * (hand ? SPHERE_FLIGHT.handGravity : 1) : 0;
+  // Charged: faster, flatter and bigger still, the more the charge (systems/charge.js).
+  const boost = charged ? chargedShot(charged) : null;
+  const speed = (ball?.speed ?? 34) * (hand ? SPHERE_FLIGHT.handSpeed : 1) * (boost?.speed ?? 1);
+  const gravity = physical ? (ball?.gravity ?? 3.2) * (hand ? SPHERE_FLIGHT.handGravity : 1) * (boost?.gravity ?? 1) : 0;
   if (target) leadTarget(target, point, origin, speed, _aim);
   else _aim.copy(point);
   for (let i = 0; i < count; i += 1) {
@@ -2162,14 +2207,16 @@ function launchSpheres(origin, target, point, ball, count, physical, hand = fals
     // time, so the sphere arcs onto the reticle (spheres.js launchVelocity).
     const velocity = launchVelocity(origin, _flyTo.copy(origin).addScaledVector(dir, distance), speed, gravity);
     const mesh = new THREE.Mesh(projectileGeometry, ball ? projectileMaterials[ball.key] : legacyProjectileMaterial);
-    mesh.scale.setScalar(ball?.radius ?? 0.18);
+    mesh.scale.setScalar((ball?.radius ?? 0.18) * (boost?.radius ?? 1));
     const halo = sphereHalo(ball?.key ?? "glass");
     halo.layers.set(LAYERS.FX);
     mesh.add(halo);
     mesh.position.copy(origin);
     mesh.layers.set(LAYERS.FX);
     scene.add(mesh);
-    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
+    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", charged, scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
+    // Air stripes round it, as strong as the charge, in the launcher's colours.
+    if (charged) chargeTrails.add(mesh, velocity, charged, trailColours(savedLauncherSkin()), () => !!mesh.parent);
   }
   if (physical) level1Audio.throwBall();
 }
@@ -2181,17 +2228,21 @@ function launchSpheres(origin, target, point, ball, count, physical, hand = fals
  * (cryo only frosts the floor then).
  */
 function detonate(p, point, ground = false) {
-  if (p.ball === "glass") return;
+  if (p.ball === "glass" && !p.charged) return;
   if (currentLevel === 2 && foundry) { detonateFoundry(p, point, ground); return; }
   if (!causeway) return;
   const def = BALLS[p.ball];
-  causeway.splash(point, def.splash, p.ball);
+  // A charged one (systems/charge.js): further, and glass bursts like shock.
+  const reach = p.charged ? Math.max(def.splash ?? 0, chargedShot(p.charged).splash) : def.splash;
+  const kind = p.charged && p.ball === "glass" ? "shock" : p.ball;
+  causeway.splash(point, reach, kind);
   // (The Skyline draws shock's burst itself; cryo's ice and gravity's black hole are the shared ones.)
-  if (p.ball === "cryo" || p.ball === "gravity") sphereImpact.splash(point, p.ball, def.splash, null, { ground });
-  if (p.ball === "gravity") {
+  if (kind === "cryo" || kind === "gravity") sphereImpact.splash(point, kind, reach, null, { ground });
+  if (p.charged) { triggerShake(0.2 + 0.25 * p.charged); showMessage(p.charged >= 1 ? "OVERCHARGED" : "CHARGED"); }
+  if (kind === "gravity") {
     // It breaks nothing: it drags in every cache and serum in reach, yours.
     let pulled = 0;
-    for (const target of causeway.targetsNear(point, def.splash)) {
+    for (const target of causeway.targetsNear(point, reach)) {
       const type = target.userData.record?.entry.type;
       if (type !== "cache" && type !== "serum") continue;
       const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: "glass" });
@@ -2202,14 +2253,14 @@ function detonate(p, point, ground = false) {
     level1Audio.whoosh?.();
     return;
   }
-  for (const target of causeway.targetsNear(point, def.splash)) {
+  for (const target of causeway.targetsNear(point, reach)) {
     // Power-ups take a direct hit, never a splash.
     if (target.userData.kind === "serum" || target.userData.serum) continue;
-    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: p.ball });
+    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind });
     if (r && !r.rejected) p.scored = true;
   }
-  triggerShake(p.ball === "shock" ? 0.25 : 0.18);
-  if (p.ball === "cryo") p.scored = true;
+  triggerShake(kind === "shock" ? 0.25 : 0.18);
+  if (kind === "cryo") p.scored = true;
 }
 
 /**
@@ -2273,7 +2324,7 @@ function updateProjectiles(dt) {
         // Off a wall or the ceiling (or a solid thing) first.
         if (p.wallBounces + p.ceilingBounces + p.bounces > 0) { achievements.add("bankShots"); achievements.earn("bank"); }
       }
-      if (p.ball !== "glass") { detonate(p, hit.point); p.life = 0; }
+      if (p.ball !== "glass" || p.charged) { detonate(p, hit.point); p.life = 0; }
       else if (!result || result.cracked || result.rejected || !(currentLevel === 1 ? ["pane", "blade", "falling", "tank", "door"] : currentLevel === 2 ? ["cell"] : []).includes(result.kind)) p.life = 0;
       // (It breaks, it's gone: in the burst of what it broke.)
       else p.life = 0;
@@ -2344,7 +2395,7 @@ function startGravityLift({ boarded = false } = {}) {
     // The same character as in the Foundry (null while it is still loading),
     // as they left it: dusty.
     character: playerBodyTemplate,
-    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone(), hairColour: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear() },
+    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone(), hairColour: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear(), shoes: savedShoes() },
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
     // The story's version: Okoro drops the launcher, the clamps are reaction hits.
@@ -2593,6 +2644,7 @@ function resetRunner() {
 /** Start pressed: the story, from the basement up. */
 function startCampaign() {
   deathFx.clear();
+  unlocksShown.clear();
   storyRun = true;
   // Played at the menu's difficulty (set before resetStats builds the Foundry).
   runDifficulty = difficultyKey;
@@ -3634,6 +3686,7 @@ function recordStoryTime(seconds) {
     if (key === "normal") runTimes.story = seconds;
     else (runTimes.storyBy ??= {})[key] = seconds;
     saveRunTimes();
+    if (best) noteRecord("time", "NEW BEST TIME", hms(seconds), `The story${difficultyNote(key)} - ${hms(best)} before`);
     return seconds;
   }
   return best;
@@ -3645,7 +3698,7 @@ function recordStoryTime(seconds) {
  */
 function recordEndlessRun(env, distance, seconds) {
   if (ghostRun.rec?.key === ghostKey("endless", env)) {
-    if (saveGhostIfBetter(ghostRun.rec, { distance })) showGhostNote("NEW GHOST: YOUR FURTHEST RUN");
+    if (saveGhostIfBetter(ghostRun.rec, { distance })) showGhostNote("Your furthest run", "It runs beside you next time");
     ghostRun.rec = null;
   }
   if (env !== "roof" && distance >= 1000) achievements.earn("endless");
@@ -3656,9 +3709,70 @@ function recordEndlessRun(env, distance, seconds) {
       recordEndless(env, value);
       runTimes.endless[env] = seconds;
       saveRunTimes();
+      if (value > before && before > 0) {
+        if (env === "roof") noteRecord("time", "NEW BEST TIME", `Survived ${hms(value)}`, `Endless, the Roof - ${hms(before)} before`);
+        else noteRecord("time", "NEW RECORD", `${value} m in ${hms(seconds)}`, `Endless, ${ENDLESS_NAMES[env].replace(/^The /, "the ")} - ${before} m before`);
+      }
     }
   }
   return { distance: endlessBest[env] ?? 0, time: runTimes.endless[env] ?? (env === "roof" ? endlessBest.roof ?? 0 : 0) };
+}
+
+/* ---- Best scores, and the records' notifications ------------------------ */
+
+function loadBestScores() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("fractureRunBestScores"));
+    return { story: saved?.story ?? {}, endless: saved?.endless ?? {} };
+  } catch (error) {
+    return { story: {}, endless: {} };
+  }
+}
+/** The highest score: the story's at each difficulty (whole runs only), Endless's in each level. */
+const bestScores = loadBestScores();
+/** A run's final score against the best: saved (and noted) if it beats it. */
+function recordScore(value) {
+  value = Math.floor(value);
+  if (!runRecordable || value <= 0) return;
+  const [group, key] = runKind === "endless" ? ["endless", endlessEnv] : runFromStart ? ["story", runDifficulty] : [];
+  if (!group || !key) return;
+  const before = bestScores[group][key] ?? 0;
+  if (value <= before) return;
+  bestScores[group][key] = value;
+  try { localStorage.setItem("fractureRunBestScores", JSON.stringify(bestScores)); } catch (error) {}
+  // (Beaten, not the first: a first run's score isn't news.)
+  if (before > 0) {
+    const where = group === "story" ? `The story${difficultyNote(key)}` : `Endless, ${ENDLESS_NAMES[key].replace(/^The /, "the ")}`;
+    noteRecord("score", "NEW HIGH SCORE", value.toLocaleString("en-US"), `${where} - ${before.toLocaleString("en-US")} before`);
+  }
+}
+function difficultyNote(key) {
+  return key === "normal" ? "" : ` on ${DIFFICULTIES[key].name}`;
+}
+
+/**
+ * A record beaten: a notification at the top (the trophies' card,
+ * trophy-toast.js) - held until the end screen is up, so it lands with it,
+ * and past any loading screen (quitting to the menu brings one up: under it
+ * the card came and went unseen).
+ */
+const recordNotes = [];
+const RECORD_ART = {
+  score: '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M12 2.8l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 16.8l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>',
+  time: '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M12 13.5l2.8 1.8M9.8 2.8h4.4M12 2.8V6M18.4 6.8l1.4-1.4"/></svg>',
+};
+function noteRecord(kind, label, title, text) {
+  recordNotes.push({ label, title, text, colour: kind === "score" ? "#ffcf4a" : "#8fe6ff", art: `<span class="tt-glyph">${RECORD_ART[kind]}</span>` });
+}
+let recordNotesDue = false;
+function flushRecordNotes() {
+  recordNotesDue = recordNotes.length > 0;
+}
+/** Once a frame: the notes out, when they are due and nothing covers the screen. */
+function updateRecordNotes() {
+  if (!recordNotesDue || loadingHold || loadingScreen.visible) return;
+  recordNotesDue = false;
+  for (const note of recordNotes.splice(0)) trophyToast.note(note);
 }
 
 /** How far this endless run got, for the end screen and the records. */
@@ -3786,6 +3900,7 @@ function endRun(won, reason = null, detail = null) {
   if (!won && currentLevel !== 3) level1Audio.gameOver();
   causewayHud.warning(null);
   if (runKind === "endless" && endlessEnv && !detail && endlessEnv !== "skyline") detail = endlessResult();
+  recordScore(score);
   ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${sectorNumber()}`;
   ui.endTitle.textContent = won ? "YOU GOT OUT" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
   ui.endText.textContent = won
@@ -3826,10 +3941,13 @@ function endRun(won, reason = null, detail = null) {
     if (state !== "ended") return;
     dressEndScreen(won);
     ui.end.classList.add("active");
+    flushRecordNotes();
   };
   if (kind) {
     renderFrame();
-    deathFx.play(kind, renderer.domElement, reveal);
+    // The last moment held as a freeze frame (death-fx.js `still`), with the
+    // place's touch, and the end screen surfaces over it.
+    deathFx.play("still", renderer.domElement, reveal, { accent: kind });
   } else reveal();
 }
 
@@ -3861,6 +3979,8 @@ function deathKind(reason, detail) {
 function dressEndScreen(won) {
   ui.end.classList.toggle("is-win", !!won);
   ui.end.classList.toggle("is-death", !won);
+  // Levels write "RUN TERMINATED // SECTOR 02": shown with a quieter mark.
+  ui.endEyebrow.textContent = ui.endEyebrow.textContent.replace(/\s*\/\/\s*/g, " · ");
   // Replay the entrance.
   ui.end.classList.remove("enter");
   void ui.end.offsetWidth;
@@ -3877,9 +3997,10 @@ function dressEndScreen(won) {
   // The score, counted up.
   const target = Math.floor(score);
   const el = ui.final;
-  const start = performance.now();
+  // (After the title has surfaced: the numbers come in at 1.15 s.)
+  const start = performance.now() + 1150;
   const tick = (now) => {
-    const k = Math.min(1, (now - start) / 1100);
+    const k = Math.max(0, Math.min(1, (now - start) / 1400));
     el.textContent = String(Math.round(target * (1 - Math.pow(1 - k, 3)))).padStart(6, "0");
     if (k < 1 && ui.end.classList.contains("active")) requestAnimationFrame(tick);
     else el.textContent = String(target).padStart(6, "0");
@@ -4025,8 +4146,8 @@ function updateGame(dt, time) {
   // The briefing film has the screen while it plays.
   if (prologue?.active) { prologue.update(dt, time); return; }
   if (state === "intro") {
-    // The live 3D stage when it is in...
-    if (menuBackdrop.update(dt, { versus: false })) return;
+    // The live 3D stage when it is in (nothing at all while it streams in)...
+    if (menuBackdrop.update(dt, { versus: false }) || menuBackdrop.waiting) return;
     // ...until then, the Skyline's corridor with a drifting camera.
     if (causeway) {
       const d = causeway.menuCamera(time, camera, settings.reducedMotion);
@@ -4252,8 +4373,15 @@ function updatePerformance(rawDt) {
 
 function renderFrame() {
   if (prologue?.active) { prologue.render(); return; }
-  // The menus: the 3D stage (src/menu/backdrop.js) through the post chain.
+  // The menus: the 3D stage (src/menu/backdrop.js) through the post chain -
+  // dark while it streams in, the old corridor only if it can't be had.
   if (state === "intro" && menuBackdrop.render(postfx)) return;
+  if (state === "intro" && menuBackdrop.waiting) {
+    renderer.setRenderTarget(null);
+    renderer.setClearColor(0x000000, 1);
+    renderer.clear();
+    return;
+  }
   if (gravityLift?.visible) { gravityLift.render(); return; }
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
@@ -4282,7 +4410,7 @@ const sphereWheel = new SphereWheel();
 function updateSphereWheel() {
   const visible = state === "playing" && !paused && !gravityLift && !photoActive && [1, 2, 3].includes(currentLevel)
     && !(currentLevel === 2 && awaitingBag);
-  sphereWheel.update({ ball: arsenal.ball, spheres: ammo, cost: arsenal.cost(), visible });
+  sphereWheel.update({ ball: arsenal.ball, spheres: ammo, cost: arsenal.cost(), visible, allowed: arsenal.allowed });
 }
 const loads = { loaded: 0, total: 0 };
 THREE.DefaultLoadingManager.onStart = (url, loaded, total) => { loads.loaded = loaded; loads.total = total; };
@@ -4333,10 +4461,13 @@ function updateLoadingScreen(dt) {
  * through its first seconds. Meanwhile the game holds still.
  */
 let loadingHold = null;
+/** (releaseLoading's own early way out of its warm-up.) */
+const RELEASE_EARLY = Symbol("release early");
 let pendingTransition = null;
 function holdLoading(label) {
   if (!loadingHold || loadingHold.menu) loadingHold = { since: performance.now() };
-  loadingScreen.show(...label, { instant: true });
+  // (Booting, or resuming after a refresh: the boot screen is up - index.html.)
+  if (!document.documentElement.classList.contains("booting")) loadingScreen.show(...label, { instant: true });
   // (Nothing under it can be clicked while it is held.)
   loadingScreen.root.style.pointerEvents = "auto";
 }
@@ -4365,28 +4496,30 @@ const nextFrames = (n = 2) => new Promise((resolve) => {
  * The next level is in: compile and upload it behind the screen, then let it
  * be seen. `targets`: [scene, camera] pairs (a ride and the level after it).
  */
+/** Whether a scene is drawn through post-processing (so into a render target): what its programs are compiled for. */
+function drawnThroughTarget(target) {
+  if (target === meltdown?.scene || target === arena?.scene) return true;
+  if (target === scene || target === menuBackdrop.stage?.scene) return postfx.enabled;
+  return false;
+}
+
 async function releaseLoading(...targets) {
   const hold = loadingHold;
   if (!hold) return;
+  // ({ shadersOnly }: compile, but no textures and no frame - for a scene that
+  // isn't about to be seen, whose programs are worth having ready.)
+  const options = targets[0] && !Array.isArray(targets[0]) ? targets.shift() : {};
   if (!targets.length) targets = [[scene, camera]];
   try {
-    // (Synchronous on purpose: three's compileAsync polls programs that a
-    // swapped-out scene can dispose under it, and throws from a timer.)
+    // Linked on the driver's threads, waited on without blocking (three's
+    // own compileAsync waits forever on a program disposed under it):
+    // src/systems/warm-up.js. The loading screen keeps moving meanwhile.
     for (const [targetScene, targetCamera] of targets) {
-      renderer.compile(targetScene, targetCamera);
-      await nextFrames(1);
+      await compileReady(renderer, targetScene, targetCamera, { throughTarget: drawnThroughTarget(targetScene) });
+      if (loadingHold !== hold) return;
     }
-    const textures = new Set();
-    for (const [targetScene] of targets) targetScene.traverse((o) => {
-      for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) {
-        for (const key of ["map", "normalMap", "emissiveMap", "roughnessMap", "metalnessMap", "alphaMap"]) if (m[key]) textures.add(m[key]);
-      }
-    });
-    let n = 0;
-    for (const t of textures) {
-      renderer.initTexture(t);
-      if (++n % 6 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    if (options.shadersOnly) throw RELEASE_EARLY;
+    for (const [targetScene] of targets) await uploadTextures(renderer, targetScene, { batch: 6 });
     // One real frame of it, drawn under the loading screen: the driver only
     // finishes the shaders on their first draw, and that wait (seconds, on a
     // slow GPU) belongs here, not in the first frame you see.
@@ -4397,7 +4530,7 @@ async function releaseLoading(...targets) {
       await nextFrames(1);
     }
   } catch (error) {
-    console.warn("[loading] warm-up failed", error);
+    if (error !== RELEASE_EARLY) console.warn("[loading] warm-up failed", error);
   }
   await nextFrames(2);
   const left = 650 - (performance.now() - hold.since);
@@ -4421,6 +4554,12 @@ function animate() {
   // Controllers: read once a frame, turned into the game's own input.
   padBridge.update(Math.min(0.1, rawDt));
   updateLoadingScreen(Math.min(0.1, rawDt));
+  updateRecordNotes();
+  updateProgression();
+  updateFocusRow();
+  // (Real time, a hitch's worth: a slow frame doesn't slow the charge.)
+  updateCharge(Math.min(0.25, rawDt));
+  chargeTrails.update(paused ? 0 : Math.min(0.1, rawDt));
   // A level change behind the loading screen: the switch, then the world
   // holds still (nothing to see, the GPU busy warming the next level).
   if (runPendingTransition() || loadingHold) {
@@ -4432,12 +4571,20 @@ function animate() {
   if (mode) {
     if (mode.state === "playing" || mode.state === "racing") achievements.add("multiTime", Math.min(0.1, rawDt));
     mode.update(Math.min(0.1, rawDt));
-    mode.render();
+    // Customise on the menu's 3D stage: the stage draws the frame.
+    if (mode === locker && locker.onStage) {
+      menuBackdrop.update(Math.min(0.1, rawDt));
+      menuBackdrop.render(postfx);
+    } else mode.render();
     updatePerformance(Math.min(0.1, rawDt));
     return;
   }
-  // Trailer mode's slow motion scales the whole simulation.
-  const dt = Math.min(.033, rawDt) * (trailer.enabled ? trailer.timeScale : 1);
+  // Trailer mode's slow motion scales the whole simulation. (Below 30 fps the
+  // world would slow down with it: the Labs and the Roof take steps up to
+  // 1/20 s - their own limit - so walking the Roof on a laptop's graphics
+  // isn't wading through treacle.)
+  const step = currentLevel === 3 ? 0.05 : 0.033;
+  const dt = Math.min(step, rawDt) * (trailer.enabled ? trailer.timeScale : 1);
   renderer.info.reset();
   if (!manualStep) trailerBeforeUpdate(dt);
   // Checks that step the game themselves (__dbg.manual) stop the real clock.
@@ -4445,6 +4592,7 @@ function animate() {
   if (countdownLeft > 0) tickCountdown(rawDt);
   else if (!manualStep) { trailerTime += dt; updateGame(dt, trailer.enabled ? trailerTime : clock.elapsedTime); trackRunReport(dt); trackSector(dt); trackGhost(dt); trackCheckpoint(); }
   if (countdownPending) maybeStartCountdown();
+  maybeShowUnlocks();
   updateCursor();
   updateSphereWheel();
   if (!manualStep) trailerAfterUpdate(dt);
@@ -4683,6 +4831,86 @@ function pilotRoof(dt) {
 }
 
 /** In control of a level again after a restart? Then start counting in. */
+/* ---- What Subject 07 can do: earned sector by sector (the story) -------- */
+
+/**
+ * The story's sector being played (systems/progression.js): it decides the
+ * sphere types and abilities there are. Elsewhere (Endless, the multiplayer
+ * modes) everything is there.
+ */
+function storyStage() {
+  return runKind === "story" ? reportLevel() : null;
+}
+let progressionStage = null;
+function hasAbility(key) {
+  const stage = runKind === "story" ? reportLevel() ?? progressionStage : null;
+  return !stage || abilitiesAt(stage).has(key);
+}
+/** Each frame: the sphere types this sector has, on the wheel and in the pause menu's picker. */
+let allowedKey = "";
+function updateProgression() {
+  const stage = storyStage();
+  if (stage) progressionStage = stage;
+  else if (runKind !== "story") progressionStage = null;
+  const list = progressionStage ? spheresAt(progressionStage) : null;
+  const key = list ? list.join() : "all";
+  if (key === allowedKey) return;
+  allowedKey = key;
+  arsenal.allow(list);
+  ballPickers.lock(list);
+}
+/** (Its HUD row too: no focus meter before the story earns it.) */
+let focusShown = null;
+function updateFocusRow() {
+  const has = hasAbility("focus");
+  if (has === focusShown) return;
+  focusShown = has;
+  document.body.classList.toggle("no-focus", !has);
+}
+
+/** The charged shot's bar and picture, each frame (systems/charge.js). */
+function updateCharge(dt) {
+  const skyline = currentLevel === 1 && !!causeway;
+  const labs = currentLevel === 3 && !!meltdown && (meltdown.phase === "run" || meltdown.phase === "roof") && meltdown.runner.alive;
+  const allowed = state === "playing" && !paused && !photoActive && !loadingHold && countdownLeft <= 0 && !unlockCard.open && (skyline || labs) && hasAbility("charge");
+  const need = arsenal.cost() * CHARGE.cost;
+  const have = labs ? meltdown.runner.balls : ammo;
+  charge.update(dt, { allowed, affordable: have >= need, need, reticle: labs ? meltdown.ui.reticle : ui.reticle });
+}
+
+/**
+ * A sector's card (src/ui/unlock-card.js): the first time a story run has
+ * control there - after its cutscenes, the Foundry's once Okoro's bag is
+ * yours - the world holds, the card says what is new, and Continue counts
+ * 3, 2, 1. A death and a retry don't show it again.
+ */
+const unlockCard = new UnlockCard();
+const unlocksShown = new Set();
+function maybeShowUnlocks() {
+  if (runKind !== "story" || unlockCard.open || manualStep || trailer.enabled) return;
+  if (state !== "playing" || paused || story.player.active || storyPlaying || countdownLeft > 0 || loadingHold) return;
+  const stage = storyStage();
+  if (!stage || unlocksShown.has(stage)) return;
+  const inControl =
+    (stage === "foundry" && !awaitingBag) ||
+    stage === "skyline" ||
+    (stage === "labs" && meltdown?.phase === "run") ||
+    (stage === "roof" && meltdown?.phase === "roof");
+  if (!inControl) return;
+  unlocksShown.add(stage);
+  paused = true; run.focusing = false;
+  charge.cancel();
+  story.setPaused(true);
+  music.pauseDuck();
+  level1Audio.setPaused(true);
+  if (currentLevel === 3) meltdown?.setPaused(true);
+  unlockCard.show(stage, () => {
+    closePause();
+    countdownLeft = 3;
+    showCountdown(3);
+  });
+}
+
 function maybeStartCountdown() {
   if (state !== "playing" || paused || story.player.active || storyPlaying) return;
   const inControl =
@@ -4726,7 +4954,7 @@ function showCountdown(n) {
  * leaving a level by any path can never leave it hidden.
  */
 function updateCursor() {
-  const overlay = !!document.querySelector(".screen.active") || powerups.open || !!prologue?.active ||
+  const overlay = !!document.querySelector(".screen.active") || powerups.open || unlockCard.open || !!prologue?.active ||
     story.player.active || paused || photoActive || storyPlaying;
   const aimingNow = !overlay && (state === "playing" || (state === "lift" && !!gravityLift?.wantsAim));
   document.body.classList.toggle("aiming", aimingNow);
@@ -4760,6 +4988,7 @@ function closeSettings() {
  */
 function startChapter(name) {
   ui.chapters.classList.remove("active");
+  unlocksShown.clear();
   saveProgress = false;
   // A chapter is not a whole run: no run report.
   runReport = null;
@@ -4804,6 +5033,7 @@ function openPause() {
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
   ui.pauseAmmo.textContent = ammo;
   ui.pauseHealth.textContent = Math.max(0, Math.round(health));
+  ui.pauseHealth.style.color = CausewayHud.integrityColour(Math.max(0, Math.min(100, health)));
   ui.pauseMissions.innerHTML = currentLevel === 1 && missions.active.length
     ? missions.active.map((m) => `<li class="${m.done ? "done" : ""}">${m.def.text}${m.def.goal > 1 ? ` <b>${m.value}/${m.def.goal}</b>` : ""}</li>`).join("")
     : "";
@@ -4858,11 +5088,16 @@ function togglePhoto() {
 function quitToMenu() {
   cancelLoadingHold();
   deathFx.clear();
+  unlockCard.dismiss();
+  charge.cancel();
   // Leaving an Endless run part-way still sets the records it earned.
   if (runKind === "endless" && endlessEnv && (state === "playing" || state === "lift")) {
     if (endlessEnv === "skyline") recordEndlessRun("skyline", causeway ? Math.max(0, Math.floor(causewayDistance())) : 0, runClock);
     else endlessResult();
+    recordScore(score);
   }
+  // (Notes waiting on an end screen that won't come: now, over the menu.)
+  flushRecordNotes();
   closePause(); cancelStory();
   leaveGravityLift();
   countdownPending = false; countdownLeft = 0; if (ui.countdown) ui.countdown.hidden = true;
@@ -5290,7 +5525,7 @@ function trackSector(dt) {
 function sectorCleared(stage) {
   // The run through it, kept if it's the fastest (a ghost for next time).
   if (ghostRun.rec?.key === ghostKey("story", stage)) {
-    if (saveGhostIfBetter(ghostRun.rec, { time: ghostRun.t })) showGhostNote("NEW GHOST: YOUR FASTEST RUN THROUGH HERE");
+    if (saveGhostIfBetter(ghostRun.rec, { time: ghostRun.t })) showGhostNote("Your fastest run through here", "It runs beside you next time");
     ghostRun.rec = null;
   }
   const played = sectorRun.stage === stage && sectorRun.time > 10;
@@ -5463,7 +5698,7 @@ showEndlessDifficulty();
 
 /** The single-player look, as saved. */
 function savedLook() {
-  return { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear(), launcherSkin: savedLauncherSkin(), ball: savedBall() };
+  return { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear(), shoes: savedShoes(), launcherSkin: savedLauncherSkin(), ball: savedBall() };
 }
 /** Save one choice and put it on the game's own figure and launchers. */
 function applyLook(patch) {
@@ -5477,6 +5712,7 @@ function applyLook(patch) {
   if (patch.hair) { saveHairColour(patch.hair); playerBody.setHairColour(patch.hair); meltdown?.avatar?.setHairColour(patch.hair); }
   if (patch.outfit) { saveOutfit(patch.outfit); playerBody.setOutfit(patch.outfit); meltdown?.avatar?.setOutfit(patch.outfit); }
   if (patch.headwear) { saveHeadwear(patch.headwear); playerBody.setHeadwear(patch.headwear); meltdown?.avatar?.setHeadwear(patch.headwear); }
+  if (patch.shoes) { saveShoes(patch.shoes); playerBody.setShoes(patch.shoes); meltdown?.avatar?.setShoes(patch.shoes); }
   if (patch.launcherSkin) {
     saveLauncherSkin(patch.launcherSkin);
     if (skyLauncher.model) applyLauncherSkin(skyLauncher.model, patch.launcherSkin);
@@ -5485,12 +5721,12 @@ function applyLook(patch) {
   if (patch.ball) { saveBall(patch.ball); arsenal.prefer(patch.ball); ballPickers.show(patch.ball); }
   refreshDossier();
   // Subject 07 on the menu's roof (src/menu/backdrop.js) too.
-  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit() } }));
+  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes() } }));
 }
 let locker = null;
 async function openCustomise(tab = "character") {
   for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
-  locker ??= new Locker({ renderer, pads, assetBase: MELTDOWN_ASSET_BASE, audio: level1Audio, look: savedLook, apply: applyLook, onExit: () => closeCustomise() });
+  locker ??= new Locker({ renderer, pads, assetBase: MELTDOWN_ASSET_BASE, audio: level1Audio, look: savedLook, apply: applyLook, onExit: () => closeCustomise(), backdrop: menuBackdrop });
   holdLoading(["SUBJECT 07", "CUSTOMISE"]);
   try {
     await locker.open(tab);
@@ -5501,7 +5737,9 @@ async function openCustomise(tab = "character") {
     return;
   }
   document.body.classList.add("in-arena");
-  await releaseLoading([locker.studio.scene, locker.studio.camera, () => locker.render()]);
+  // (On the menu's stage: nothing new to compile but the figure, drawn with the stage.)
+  if (locker.onStage) await releaseLoading(...menuBackdrop.warmTargets());
+  else await releaseLoading([locker.studio.scene, locker.studio.camera, () => locker.render()]);
 }
 function closeCustomise() {
   locker?.close();
@@ -5516,7 +5754,8 @@ for (const b of document.querySelectorAll("[data-customise]")) b.addEventListene
 let portrait = null;
 function refreshDossier() {
   const figure = $("#dossierFigure");
-  if (figure) {
+  // (With the menu's 3D stage up, Subject 07 is on the roof: no second picture of them.)
+  if (figure && !menuBackdrop.live) {
     portrait ??= new Portrait(figure, { assetBase: MELTDOWN_ASSET_BASE });
     portrait.show(savedLook());
   }
@@ -5526,6 +5765,8 @@ function refreshDossier() {
   const records = [];
   if (runTimes.story) records.push(["Best run", hms(runTimes.story)]);
   for (const key of ["easy", "hard"]) if (storyBest(key)) records.push([`Best on ${DIFFICULTIES[key].name}`, hms(storyBest(key))]);
+  const topScore = Math.max(0, ...Object.values(bestScores.story), ...Object.values(bestScores.endless));
+  if (topScore) records.push(["High score", topScore.toLocaleString("en-US")]);
   for (const env of ["foundry", "labs", "skyline", "roof"]) {
     const best = endlessRecordText(env);
     if (best) records.push([ENDLESS_NAMES[env], best]);
@@ -5538,39 +5779,13 @@ function refreshDossier() {
     ${chip("Hair", HAIR_COLOURS[l.hair]?.label ?? "", HAIR_COLOURS[l.hair]?.swatch)}
     ${chip("Outfit", OUTFITS[l.outfit]?.label ?? "", OUTFITS[l.outfit]?.swatch)}
     ${chip("Headwear", HEADWEAR[l.headwear]?.label ?? "")}
+    ${chip("Shoes", SHOES[l.shoes]?.label ?? "")}
     ${chip("Launcher", LAUNCHER_SKINS[l.launcherSkin]?.label ?? "", LAUNCHER_SKINS[l.launcherSkin]?.swatch)}
     ${chip("Sphere", BALLS[l.ball]?.name ?? "", `#${(BALLS[l.ball]?.colour ?? 0xffffff).toString(16).padStart(6, "0")}`)}`;
   for (const body of document.querySelectorAll(".dossier-body")) body.innerHTML = html;
   for (const dl of document.querySelectorAll(".dossier-records")) dl.innerHTML = records.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 }
 
-/** The main menu's card: the tower, floor by floor - how far up you've got, and each floor's Endless best. */
-function refreshTower() {
-  const list = $("#towerFloors");
-  if (!list) return;
-  const TOWER_FLOORS = [
-    ["roof", "THE ROOF", "Level 212", "The helicopter"],
-    ["skyline", "THE SKYLINE", "Sector 03", "Glass bridges, 200 m up"],
-    ["labs", "THE LABS", "Sector 02", "The fire and the patients"],
-    ["foundry", "THE FOUNDRY", "Sector 01", "The basement: where you wake"],
-  ];
-  const order = ["foundry", "labs", "skyline", "roof"];
-  const save = loadSave();
-  const finished = Boolean(runTimes.story);
-  const at = save ? order.indexOf(save.stage) : finished ? order.length : 0;
-  list.innerHTML = TOWER_FLOORS.map(([key, name, sector, note]) => {
-    const i = order.indexOf(key);
-    const state = finished || i < at ? "cleared" : i === at ? "here" : "sealed";
-    const tag = { cleared: "CLEARED", here: save ? "YOU ARE HERE" : "START HERE", sealed: "SEALED" }[state];
-    const best = endlessRecordText(key);
-    return `<li class="${state}"><em>${String(4 - TOWER_FLOORS.findIndex(([k]) => k === key)).padStart(2, "0")}</em>
-      <div><b>${name}</b><small>${sector} // ${note}</small>${best ? `<span class="tower-best">Endless best ${best}</span>` : ""}</div><i>${tag}</i></li>`;
-  }).join("");
-  const p = missions.progress;
-  const meter = (label, n, of) => `<div class="tower-meter"><span>${label}</span><b>${n} / ${of}</b><i style="--f:${Math.min(1, n / of)}"></i></div>`;
-  $("#towerMeters").innerHTML = `${meter("Missions", p.completed.length, 13)}${meter("Case files", p.files.length, 5)}
-    <div class="tower-meter"><span>Best escape</span><b>${runTimes.story ? hms(runTimes.story) : "--:--"}</b></div>`;
-}
 refreshDossier();
 for (const button of document.querySelectorAll("[data-chapter]")) {
   button.addEventListener("click", () => startChapter(button.dataset.chapter));
@@ -5690,8 +5905,8 @@ addEventListener("pointerdown", (event) => {
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
-    // Focus (bullet time) is every level's, as in the Skyline.
-    if (event.button === 2 && state === "playing") run.focusing = true;
+    // Focus (bullet time): the story earns it in the Skyline (systems/progression.js).
+    if (event.button === 2 && state === "playing" && hasAbility("focus")) run.focusing = true;
     return;
   }
   // The lift ride: shoot the brake clamps.
@@ -5699,8 +5914,13 @@ addEventListener("pointerdown", (event) => {
     if (event.button === 0 && !paused) gravityLift.fire();
     return;
   }
-  if (event.button === 0) fire();
-  if (event.button === 2 && state === "playing") run.focusing = true;
+  if (event.button === 0) {
+    // The Skyline's launcher fires when the trigger comes up - held, it
+    // charges first (systems/charge.js). (The Labs and the Roof: their game.)
+    if (currentLevel === 1 && causeway && state === "playing" && !paused && hasAbility("charge")) charge.press(arsenal.current.colour);
+    else fire();
+  }
+  if (event.button === 2 && state === "playing" && hasAbility("focus")) run.focusing = true;
 });
 
 /** The sphere types are every level's now (the Skyline's rules everywhere). */
@@ -5714,6 +5934,10 @@ function cycleSphere(step) {
 }
 addEventListener("pointerup", (event) => {
   if (event.button === 2) run.focusing = false;
+  if (event.button === 0 && currentLevel === 1 && charge.holding) {
+    const level = charge.release();
+    fire(level ? { charged: level } : {});
+  }
   meltdown?.onPointerUp(event);
 });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -5727,6 +5951,11 @@ addEventListener("keydown", (event) => {
   if (arena?.active || race?.active || locker?.active) return;
   // Trailer mode keys (only with ?trailer).
   if (trailer.onKey(event)) return;
+  // A sector's unlock card: Space, Enter or Esc carries on; nothing else.
+  if (unlockCard.open) {
+    if (["Space", "Enter", "NumpadEnter", "Escape"].includes(event.code) && !event.repeat) { event.preventDefault(); unlockCard.close(); }
+    return;
+  }
   // The serum card: Space or Enter carries on (Esc too, below); nothing else.
   if (powerups.open && event.code !== "Escape") {
     if (event.code === "Space" || event.code === "Enter" || event.code === "NumpadEnter") { event.preventDefault(); closePowerupIntro(); }
@@ -5847,6 +6076,7 @@ const padBridge = new PadBridge(pads, {
   },
   // A on a serum's card: carry on (as Space does).
   confirmCard() {
+    if (unlockCard.open) { unlockCard.close(); return true; }
     if (!powerups.open) return false;
     closePowerupIntro();
     return true;
@@ -6112,7 +6342,11 @@ async function warmMenu() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (loadingHold !== hold) return;
-  await releaseLoading([scene, camera]);
+  // With the 3D stage behind the menus the levels' scene isn't seen from
+  // here, and every run rebuilds the Foundry and the Skyline (new textures):
+  // their programs compiled now (cached for later), their textures not.
+  if (menuBackdrop.live) await releaseLoading({ shadersOnly: true }, [scene, camera]);
+  else await releaseLoading([scene, camera]);
 }
 
 async function bootMenu() {
@@ -6127,6 +6361,8 @@ async function bootMenu() {
     ]);
   }
   restoreSession();
+  // The first screen is Subject 07 on the roof: wait for the stage (or give up on it).
+  if (state === "intro") await menuBackdrop.settled(30000);
   await warmMenu();
   // Loaded: the opening screen's buttons, in place of "Loading".
   document.documentElement.classList.remove("booting");
@@ -6175,6 +6411,10 @@ globalThis.__dbg = {
   get playerBody() { return playerBody; },
   /** The menus' 3D stage (src/menu/backdrop.js): .live, .shot, .stage. */
   get menuStage() { return menuBackdrop; },
+  get charge() { return charge; },
+  /** The main scene's camera (the Foundry, the Skyline): staged pictures place it. */
+  get camera() { return camera; },
+  get unlockCard() { return unlockCard; },
   THREE,
   demoGravityLift,
   demoQuietRide,

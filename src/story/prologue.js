@@ -36,6 +36,7 @@ import { createPropKit } from "./stages/props.js";
 import { createMedicalProps } from "./stages/medical-props.js";
 import { CityAtNight } from "../levels/meltdown/city.js";
 import { VOICE_LINES } from "../audio/voice-lines.js";
+import { compileReady } from "../systems/warm-up.js";
 
 /**
  * The film, chapter by chapter: which set, how long, the card and the
@@ -375,8 +376,10 @@ export class Prologue {
       this.police.root.position.y = 115;
       this.sets.city.scene.add(this.police.root);
       await this.police.load(base);
-      // Compile every set now, so a cut never stalls.
-      for (const set of Object.values(this.sets)) this.renderer.compile(set.scene, this.camera);
+      // Every set's programs linked now (and what shows later in each), so a
+      // cut never stalls - the patients' in the theatre held the film up for
+      // seconds on a laptop's own graphics. (systems/warm-up.js)
+      for (const set of Object.values(this.sets)) await compileReady(this.renderer, set.scene, this.camera, { hidden: true });
       this.loaded = true;
     })();
     await this._loading;

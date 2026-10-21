@@ -74,8 +74,14 @@ export class SphereWheel {
   }
 
   /** Each frame: the sphere in use, how many you have, what the next one costs. */
-  update({ ball = "glass", spheres = 0, cost = 1, visible = true }) {
+  update({ ball = "glass", spheres = 0, cost = 1, visible = true, allowed = null }) {
     const s = this.state;
+    // The types not earned yet in the story (progression.js): dimmed, locked.
+    const lockKey = allowed ? [...allowed].join() : "";
+    if (lockKey !== s.lockKey) {
+      s.lockKey = lockKey;
+      for (const [key, slot] of Object.entries(this.slots)) slot.classList.toggle("locked", !!allowed && !allowed.has(key));
+    }
     if (visible !== s.visible) {
       s.visible = visible;
       this.root.classList.toggle("show", visible);

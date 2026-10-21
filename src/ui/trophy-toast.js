@@ -5,6 +5,7 @@
  *
  *   const toast = new TrophyToast();
  *   toast.show(trophy);
+ *   toast.note({ label, title, text, colour, art });   // any other notice (a new ghost)
  */
 
 import { TIERS } from "../systems/trophies.js";
@@ -45,11 +46,18 @@ export class TrophyToast {
     if (!this.busy) this._next();
   }
 
+  /** Any other notice, in the same card and the same queue: `art` is the badge's markup. */
+  note({ label, title, text = "", colour = "#8fe6ff", art = "" }) {
+    this.queue.push({ note: { label, title, text, colour, art } });
+    if (!this.busy) this._next();
+  }
+
   _next() {
     const t = this.queue.shift();
     if (!t) { this.busy = false; return; }
     this.busy = true;
     if (t.kit) { this._kitCard(t.kit); return; }
+    if (t.note) { this._noteCard(t.note); return; }
     const tier = TIERS[t.tier];
     const card = document.createElement("div");
     card.className = `tt-card tier-${t.tier}`;
@@ -65,11 +73,7 @@ export class TrophyToast {
     this.root.appendChild(card);
     this._chime(t.tier);
     requestAnimationFrame(() => card.classList.add("in"));
-    setTimeout(() => {
-      card.classList.remove("in");
-      card.classList.add("out");
-      setTimeout(() => { card.remove(); this._next(); }, 500);
-    }, HOLD * 1000 + (t.tier === "platinum" ? 1500 : 0));
+    this._hold(card, HOLD + (t.tier === "platinum" ? 1.5 : 0));
   }
 
   _kitCard(kit) {
@@ -87,11 +91,43 @@ export class TrophyToast {
     this.root.appendChild(card);
     this._chime("gold");
     requestAnimationFrame(() => card.classList.add("in"));
-    setTimeout(() => {
+    this._hold(card, HOLD);
+  }
+
+  _noteCard({ label, title, text, colour, art }) {
+    const card = document.createElement("div");
+    card.className = "tt-card tt-note";
+    card.style.setProperty("--tc", colour);
+    card.innerHTML = `
+      <div class="tt-art">${art}</div>
+      <div class="tt-text">
+        <small>${label}</small>
+        <b>${title}</b>
+        ${text ? `<span>${text}</span>` : ""}
+      </div>
+      <i class="tt-shine"></i>`;
+    this.root.appendChild(card);
+    requestAnimationFrame(() => card.classList.add("in"));
+    this._hold(card, HOLD);
+  }
+
+  /**
+   * On screen for `seconds` of frames actually drawn, then away: a hitch
+   * (a level or the menu being built) doesn't use the time up - by the
+   * clock, a card shown just before one was gone before it could be read.
+   */
+  _hold(card, seconds) {
+    let last = performance.now();
+    let left = seconds;
+    const tick = (now) => {
+      left -= Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (left > 0) { requestAnimationFrame(tick); return; }
       card.classList.remove("in");
       card.classList.add("out");
       setTimeout(() => { card.remove(); this._next(); }, 500);
-    }, HOLD * 1000);
+    };
+    requestAnimationFrame(tick);
   }
 
   /** The chime: two bright notes and a shimmer (a third for the platinum). */

@@ -60,8 +60,17 @@ export function buildBallPickers(onPick) {
       button.setAttribute("aria-pressed", String(on));
     }
   }
+  /** The types there are (the story earns them: progression.js); null, all. */
+  function lock(list) {
+    for (const button of document.querySelectorAll("[data-ball-pick] [data-ball]")) {
+      const locked = !!list && !list.includes(button.dataset.ball);
+      button.classList.toggle("locked", locked);
+      button.disabled = locked;
+      button.title = locked ? "Earned later in the story" : "";
+    }
+  }
   show(savedBall());
-  return { show };
+  return { show, lock };
 }
 
 /* ------------------------------------------------------------------ */

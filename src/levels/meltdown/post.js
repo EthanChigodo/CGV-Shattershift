@@ -16,6 +16,7 @@
 
 import * as THREE from "../../three.js";
 import { ShaderPass } from "../../three-addons.js";
+import { CHARGE_GLSL, CHARGE_UNIFORMS } from "../../systems/charge.js";
 
 const GradeShader = {
   uniforms: {
@@ -27,6 +28,8 @@ const GradeShader = {
     uHit: { value: 0 },
     uGrain: { value: 0.045 },
     uResolution: { value: new THREE.Vector2(1, 1) },
+    // The charged shot's (systems/charge.js): the same objects as the Skyline's.
+    ...CHARGE_UNIFORMS,
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -45,6 +48,7 @@ const GradeShader = {
     uniform float uGrain;
     uniform vec2 uResolution;
     varying vec2 vUv;
+    ${CHARGE_GLSL}
 
     float hash(vec2 p) {
       p = fract(p * vec2(123.34, 456.21));
@@ -64,8 +68,9 @@ const GradeShader = {
       uv += vec2(noise(uv * vec2(18.0, 9.0) + vec2(0.0, -uTime * 1.7)) - 0.5,
                  noise(uv * vec2(9.0, 16.0) + vec2(uTime * 0.6, -uTime * 2.3)) - 0.5) * haze;
 
+      uv = chargeWarp(uv);
       vec2 d = uv - 0.5;
-      float split = uHit * 0.014 + uDanger * uDanger * 0.003;
+      float split = uHit * 0.014 + uDanger * uDanger * 0.003 + chargeSplit();
       vec3 col;
       col.r = texture2D(tDiffuse, uv + d * split).r;
       col.g = texture2D(tDiffuse, uv).g;
@@ -78,6 +83,7 @@ const GradeShader = {
       col *= mix(0.42 - uDark * 0.25, 1.0, vig);
       col = mix(col, col * vec3(1.14, 0.88, 0.82), uDanger * 0.55);
 
+      col = chargeColour(col, vUv, uTime);
       col += (hash(vUv * uResolution + fract(uTime * 7.31) * 311.0) - 0.5) * uGrain;
       gl_FragColor = vec4(max(col, 0.0), 1.0);
     }
@@ -87,5 +93,7 @@ const GradeShader = {
 export function createGradePass() {
   const pass = new ShaderPass(GradeShader);
   pass.name = "MeltdownGrade";
+  // (ShaderPass copies its uniforms: the charge's put back, shared.)
+  Object.assign(pass.uniforms, CHARGE_UNIFORMS);
   return pass;
 }

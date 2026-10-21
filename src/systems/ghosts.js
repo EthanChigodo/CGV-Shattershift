@@ -87,6 +87,7 @@ export class Ghost {
     this.avatar.setHairColour(look.hair ?? "natural");
     if (look.outfit) this.avatar.setOutfit(look.outfit);
     if (look.headwear) this.avatar.setHeadwear(look.headwear);
+    if (look.shoes) this.avatar.setShoes(look.shoes);
     if (template) this.avatar.setModel(template);
     this.avatar.shadow.visible = false;
     // See-through and cold: a ghost, not a rival.

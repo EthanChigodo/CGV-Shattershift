@@ -190,7 +190,7 @@ export class CityAtNight {
    * @param {THREE.Vector3} [o.centre]  the tower you're standing on
    * @param {boolean} [o.towers]  false: just the streets (a city model stands on them)
    * @param {{x:number, z:number, r:number}[]} [o.clear]  spots (from the centre) left
-   *   empty, for landmarks to stand in (landmarks.js)
+   *   empty, for the downtown buildings to stand in (cbd.js)
    * @param {{x:number, z:number, top:number, w:number, d:number, yaw?:number, finish?:number}[]} [o.condemned]
    *   towers like all the others, but placed (from the centre) where they
    *   can be seen, to be brought down (`demolitions`; demolition.js, with

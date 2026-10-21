@@ -172,3 +172,6 @@ body.hud-hidden .sphere-wheel, body.story-cutscene .sphere-wheel, body.cutscene 
 /* What used to sit bottom right moves up out of its way. */
 .cw-tools { bottom: 284px !important; }
 .fdy-toasts, .mlt-toasts { bottom: 360px !important; }
+
+/* Not earned yet in the story (systems/progression.js). */
+.sw-slot.locked { opacity: .16; filter: grayscale(1); }

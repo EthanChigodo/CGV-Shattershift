@@ -53,13 +53,12 @@ import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
-import { JoburgLandmarks, LANDMARKS } from "./landmarks.js";
 import { TowerCollapse } from "./skyline-collapse.js";
-import { CbdBuildings } from "./cbd.js";
-import { StreetLife } from "./street-life.js";
+import { CbdBuildings, CBD_SETS } from "./cbd.js";
 import { Demolition } from "./demolition.js";
 import { createPropKit } from "../../story/stages/props.js";
 import { buildHatchGuards } from "./hatch-guard.js";
+import { compileReady } from "../../systems/warm-up.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -77,9 +76,9 @@ const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
 /**
  * Before the doors open, the first time you come up (once per page load, so
  * a retry isn't held up, and not in Endless): the camera at the north
- * parapet looks out over Johannesburg - from Ponte, across the Hillbrow
- * Tower and out to the Orlando Towers, down to the Mandela Bridge on the
- * streets (landmarks.js).
+ * parapet looks out over the downtown - from the Art Deco tower's crown,
+ * across to the far buildings and down to the civic dome on the streets
+ * (cbd.js).
  * The banner shows over it.
  */
 const SKYLINE_SECONDS = 6;
@@ -94,8 +93,7 @@ const DEMOLISH_AT = [0.22, 0.58, 0.9];
  * The towers that come down: generic towers like the rest of the city, but
  * placed where they can be seen go: in the gaps above the near rooftops
  * the roof camera looks over (the brick block's, the flats'), out of the
- * way of the landmarks in the opening shot (they hide only the foot of the
- * Hillbrow Tower).
+ * way of the downtown's buildings (cbd.js CBD_SETS).
  */
 const CONDEMNED = [
   { x: -20, z: -150, top: 20, w: 26, d: 22, yaw: 0.08, finish: 0 },
@@ -107,7 +105,7 @@ let cutawayShown = false;
  * Towers across the street that come down as the fight goes on (at these
  * `chaos` levels; skyline-collapse.js). Placed where the roof camera sees
  * them: one ahead to the right, one further off to the left - clear of
- * the landmarks, and of the establishing shot's view of them.
+ * the downtown's buildings.
  */
 const COLLAPSES = [
   { x: 26, z: -56, height: 178, width: 24, depth: 20, fail: 118, lean: -0.07, seed: 1, chaos: 0.42 },
@@ -795,8 +793,11 @@ export class RoofLevel {
    *   (src/systems/difficulty.js `roof`, plus `extras` for Hard): time
    *   between waves, patients' speed, the helicopter's wait
    */
-  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null } = {}) {
+  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null, light = false } = {}) {
     this.assets = assets;
+    // Below High quality (a laptop's own graphics): fewer downtown buildings
+    // and one police helicopter, not three - the roof is the heaviest scene.
+    this.light = light;
     this.endless = endless;
     this.difficulty = { waves: 1, damage: 1, enemySpeed: 1, heli: 1, lastWave: 3, extras: false, ...difficulty };
     this.events = createEmitter();
@@ -1214,32 +1215,26 @@ export class RoofLevel {
    * lights on the masts, police helicopters circling with their searchlights.
    */
   _buildSkyline(assetBase) {
-    // Johannesburg: Hillbrow Tower, Ponte City and the Carlton Centre stand
-    // among the generic towers, which leave their spots empty.
-    this.landmarks = new JoburgLandmarks({ streetY: -160 });
-    // And right round you, the CBD itself (cbd.js): Art Deco, Hillbrow flats,
-    // red brick, and a domed civic building by the bridge.
-    this.cbd = new CbdBuildings({ streetY: -160 });
+    // Right round you, the old downtown (cbd.js): Art Deco, tower flats, red
+    // brick, a domed civic building - several sets of them, the generic
+    // towers leaving their spots empty.
+    this.cbd = new CbdBuildings({ streetY: -160, sets: this.light ? CBD_SETS.slice(0, 2) : CBD_SETS });
     this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
-    const clear = [...this.landmarks.footprints, ...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
+    const clear = [...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
     this.city = new CityAtNight({
       seed: 41, streetY: -160, neighbours: 3, condemned: CONDEMNED,
       // (None of the others in their spots, or right round them.)
       clear: [...clear, ...CONDEMNED.map((c) => ({ x: c.x, z: c.z, r: Math.hypot(c.w, c.d) * 0.6 + 16 }))],
     });
     const demolitions = this.city.demolitions.map((tower, k) => new Demolition({ city: this.city, tower, seed: 3 + k }));
-    this.root.add(this.city.root, this.landmarks.root, this.cbd.root, ...this.collapses.map((c) => c.root));
+    this.root.add(this.city.root, this.cbd.root, ...this.collapses.map((c) => c.root));
     // The first is the cutaway, if a camera can be placed to see it whole.
     const blocked = [...clear.map((c) => ({ ...c, top: Infinity })), ...this.city.footprints.filter((f) => !CONDEMNED.some((c) => c.x === f.x && c.z === f.z))];
     if (demolitions[0]) demolitions[0].shot = this._cutawayShot(demolitions[0], blocked);
     this.demolitions = demolitions.map((d, k) => Object.assign(d, { chaosAt: DEMOLISH_AT[k], cutaway: k === 0 && Boolean(d.shot) }));
     this.city.root.name = "Skyline";
     this.root.add(...this.demolitions.map((d) => d.root));
-    // On the streets below: minibus taxis and jacarandas (street-life.js),
-    // kept clear of everything that stands on them.
-    this.streets = new StreetLife({ streetY: -160, blocked: [...clear, ...this.city.footprints] });
-    this.root.add(this.streets.root);
-    if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
+    if (assetBase) this.city.loadHelicopters(assetBase, { count: this.light ? 1 : 3 }).catch(() => {});
   }
 
   _buildLights() {
@@ -1763,9 +1758,7 @@ export class RoofLevel {
     this.fire.setTime(time);
     this.weather?.update(dt, time);
     this.city?.update(dt, time, { haze: this.cityHaze });
-    this.landmarks?.update(dt, time);
     this.cbd?.update(dt, time);
-    this.streets?.update(dt, time);
     for (const c of this.collapses ?? []) {
       for (const e of c.update(dt, time)) {
         // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
@@ -1938,19 +1931,19 @@ export class RoofLevel {
     // camera; then a cut to the game camera (a swing round would turn the
     // view through 180 degrees - the doors face away from the game camera).
     if (t < 0) {
-      // The skyline: from Ponte's sign, across the Hillbrow Tower, out to
-      // the Orlando Towers on the western horizon, and down to the Mandela
-      // Bridge on the streets - a cubic curve through the four (de
+      // The skyline: from the Art Deco tower's floodlit crown, across the
+      // downtown, out to the tower flats on the far side, and down to the
+      // civic dome on the street - a cubic curve through the four (de
       // Casteljau) - drifting west along the parapet to the open west ledge,
       // where nothing of the roof is in the way of looking straight down.
-      // Held on Ponte while the level card and the fade clear, then the sweep.
+      // Held on the crown while the level card and the fade clear, then the sweep.
       const k = smooth(a.t, 1.4, a.lead - 0.2);
       out.camera.set(THREE.MathUtils.lerp(6, -14.5, k), 4.2 + k * 2.3, THREE.MathUtils.lerp(-EDGE + 1.5, -EDGE + 3, k));
-      const { bridge, ponte, hillbrow, orlando } = LANDMARKS;
-      const p0 = _w.set(ponte.x, 14, ponte.z);
-      const p1 = _skyB.set(hillbrow.x, 60, hillbrow.z);
-      const p2 = _skyC.set(orlando.x, -95, orlando.z);
-      const p3 = _skyD.set(bridge.x, -150, bridge.z);
+      const [near, far] = CBD_SETS;
+      const p0 = _w.set(near.deco.x, 14, near.deco.z);
+      const p1 = _skyB.set(far.deco.x, 40, far.deco.z);
+      const p2 = _skyC.set(far.civic.x, -95, far.civic.z);
+      const p3 = _skyD.set(near.civic.x, -150, near.civic.z);
       p0.lerp(p1, k);
       p1.lerp(p2, k);
       p2.lerp(p3, k);
@@ -1990,7 +1983,7 @@ export class RoofLevel {
     const street = this.city.streetY;
     const target = new THREE.Vector3(d.tower.x, street + d.height * 0.75, d.tower.z);
     const top = target.clone().setY(street + d.height - 4);
-    const solids = [this.city.root, this.cbd.root, this.landmarks.root, ...this.collapses.map((c) => c.tower)];
+    const solids = [this.city.root, this.cbd.root, ...this.collapses.map((c) => c.tower)];
     for (const root of solids) root.updateMatrixWorld(true);
     const ray = new THREE.Raycaster();
     ray.camera = _rayCamera; // (sprites need one to be tested at all)
@@ -2422,7 +2415,7 @@ export class RoofLevel {
   }
 
   /** Compile and upload everything before the roof is shown. */
-  prewarm(renderer, camera) {
+  async prewarm(renderer, camera) {
     const scene = this.root.parent ?? this.root;
     // The burn-to-ash shader too (a downed enemy's own copies of its
     // materials), so the first one down doesn't stall the fight compiling
@@ -2437,10 +2430,27 @@ export class RoofLevel {
       warm.add(model);
     }
     scene.add(warm);
-    renderer.compile(scene, camera);
+    // Everything hidden for now as well (renderer.compile skips what isn't
+    // visible): the demolitions' dust, the collapses, the weather, the
+    // helicopter's ladder... - or each one compiles the moment it first
+    // shows, and the fight stalls (the arrival crawled through them). Lights
+    // stay as they are: their count is part of every program.
+    const shown = [];
+    this.root.traverse((o) => {
+      if (!o.visible && !o.isLight) {
+        o.visible = true;
+        shown.push(o);
+      }
+    });
+    // Queued now (it has to see the hidden ones), then waited on without
+    // blocking (systems/warm-up.js): the pieces can go straight back.
+    // (Drawn through the game's composer: compiled for a render target.)
+    const compiled = compileReady(renderer, scene, camera, { throughTarget: true });
+    for (const o of shown) o.visible = false;
     scene.remove(warm);
     // Kept until the roof goes: a disposed material gives its program back.
     this._warmAshes = ashes;
+    await compiled;
   }
 
   dispose() {
@@ -2452,9 +2462,7 @@ export class RoofLevel {
     this.lift?.userData.dispose?.();
     for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
-    this.landmarks?.dispose();
     this.cbd?.dispose();
-    this.streets?.dispose();
     for (const d of this.demolitions ?? []) d.dispose();
     for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();

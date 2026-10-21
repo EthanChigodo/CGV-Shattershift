@@ -8,7 +8,7 @@
  *  - the vertex-shader rig (characters.js `rigPlayerMesh`) driven from the
  *    runner's real state: stride and cadence from running speed, arms swing
  *    against the legs, both hands on the launcher, knees tucked in a jump,
- *    body dropped and leaning back in a slide;
+ *    feet first on their back in a slide;
  *  - a lean into lane changes and a lurch on a stumble;
  *  - a soft contact shadow, because nothing else in this level casts one
  *    and a runner without one floats;
@@ -20,11 +20,12 @@
  */
 
 import * as THREE from "../../three.js";
-import { cloneCharacter, rigPlayerMesh } from "./characters.js";
+import { cloneCharacter, rigPlayerMesh, SLIDE_POSE } from "./characters.js";
 import { applyFigureLook, savedHairColour, savedSkinTone } from "../../figure/look.js";
 import { RiggedBody, cloneRigged } from "../../figure/rigged.js";
 import { RunGait } from "./gait.js";
 import { OUTFITS, HEADWEAR, buildHeadwear, disposeHeadwear, headwearColour } from "../../figure/outfit.js";
+import { buildShoes, disposeShoes } from "../../figure/shoes.js";
 
 /**
  * The overhand throw, keyed in seconds: [t, pitch, elbow fold, inward, twist].
@@ -168,6 +169,7 @@ export class PlayerAvatar {
     this.lean = 0;
     this.tuck = 0;
     this.crouch = 0;
+    this.slide = 0;
     this.lurch = 0;
     /** 1 = both hands on the launcher (default); 0 = arms free. */
     this.hold = 1;
@@ -210,6 +212,9 @@ export class PlayerAvatar {
     model.rotation.y = Math.PI;
     this.model = model;
     this.uniforms = uniforms;
+    this._mesh = mesh;
+    this.shoes = null;
+    this._dressFeet();
     if (this.idleStyle) this.idleStyle = model.userData.character?.profile === "playerMale" ? "male" : "female";
     this.body.add(model);
     this.standIn.visible = false;
@@ -340,7 +345,8 @@ export class PlayerAvatar {
     const landed = this._airborne && height <= 0.02;
     this._airborne = height > 0.05;
     this.tuck += ((height > 0.05 ? 1 : 0) - this.tuck) * k(height > 0.05 ? 16 : 22);
-    this.crouch += ((sliding ? 1 : 0) - this.crouch) * k(sliding ? 20 : 10);
+    // A slide: down onto your back fast, up again a touch slower.
+    this.slide += ((sliding ? 1 : 0) - this.slide) * k(sliding ? 16 : 9);
     // Secondary motion: the body is a damped spring, not a dial. A lane
     // change banks it into the turn a beat late, it overshoots a touch as the
     // feet catch up, and settles; a landing pitches it forward and back.
@@ -399,9 +405,9 @@ export class PlayerAvatar {
         else u.uThrow.value.w = 0;
       }
       u.uPhase.value = g ? this.phase - Math.PI * 0.4 : this.phase;
-      u.uStride.value = pushing ? 0.3 : running ? THREE.MathUtils.clamp(0.45 + speed * 0.028, 0.45, 0.85) * (1 - this.tuck) : 0;
+      u.uStride.value = pushing ? 0.3 : running ? THREE.MathUtils.clamp(0.45 + speed * 0.028, 0.45, 0.85) * (1 - this.tuck) * (1 - this.slide) : 0;
       // Arms out a little for balance in the air; a gentle sway at rest.
-      u.uArmSwing.value = running ? 0.55 * (1 - this.crouch * 0.6) + this.tuck * 0.15 : 0.05;
+      u.uArmSwing.value = running ? 0.55 * (1 - this.slide) + this.tuck * 0.15 : 0.05;
       // Standing still, the chest rises and falls; the landing spring rocks it.
       const breath = running ? 0 : Math.sin(this.time * 1.7) * 0.012;
       const rock = this.pitch * 0.5;
@@ -411,46 +417,55 @@ export class PlayerAvatar {
         u.uLegL.value.set(g.hipL, g.kneeL);
         // Both hands on the launcher keep the shoulders square (the mount
         // doesn't twist); a throw turns them into it.
-        u.uTwist.value = g.twist * (1 - this.crouch) * (1 - this.hold * 0.75) + (thrown ? thrown[3] * thrown[4] : 0);
-        u.uLean.value = g.lean * (1 - this.crouch) + (pushing ? 0.35 : 0) - this.crouch * 0.55 + breath + rock;
+        u.uTwist.value = g.twist * (1 - this.slide) * (1 - this.hold * 0.75) + (thrown ? thrown[3] * thrown[4] : 0);
+        u.uLean.value = g.lean * (1 - this.slide) + (pushing ? 0.35 : 0) + breath + rock;
       } else {
-        u.uLean.value = (running ? 0.12 + speed * 0.008 : 0) + (pushing ? 0.35 : 0) - this.crouch * 0.55 + breath + rock;
+        u.uLean.value = (running ? (0.12 + speed * 0.008) * (1 - this.slide) : 0) + (pushing ? 0.35 : 0) + breath + rock;
       }
       if (idle) {
         u.uTwist.value += idle.twist;
         u.uLean.value += idle.lean;
       }
       // A landing folds the knees for a moment.
-      u.uCrouch.value = this.crouch + squash * 0.22;
+      u.uCrouch.value = squash * 0.22;
+      u.uSlide.value = this.slide;
       u.uTuck.value = this.tuck;
       u.uHold.value = this.hold;
+      // Hands on the launcher: the fingers closed round it.
+      u.uGrip.value = this.hold;
       u.uReachUp.value = this.reachUp;
       // The shader leans the torso about the hips and drops the body into a
       // slide; the launcher on the shoulder has to go with it or the hands
       // slide off the tube. (Model faces +Z, the body faces -Z, so a
       // model-space lean of +a about X is -a here.)
       if (this.shoulderBase && this.bodyInfo) {
-        const angle = -(u.uLean.value + u.uCrouch.value * 0.25);
         const hip = this.bodyInfo.hipY;
-        const y = this.shoulderBase.y - hip;
-        const z = this.shoulderBase.z;
-        const c = Math.cos(angle);
-        const s = Math.sin(angle);
-        this.shoulder.position.set(this.shoulderBase.x, hip + y * c - z * s - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, y * s + z * c);
-        this.shoulder.rotation.x = angle;
-        // The worn bag leans with the back the same way.
-        const by = this.backBase.y - hip;
-        const bz = this.backBase.z;
-        this.back.position.set(0, hip + by * c - bz * s - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, by * s + bz * c);
-        this.back.rotation.x = angle;
-        // ...and the head, with whatever is on it.
-        const hy = this.headBase.y - hip;
-        const hz = this.headBase.z;
-        this.head.position.set(0, hip + hy * c - hz * s - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, hy * s + hz * c);
-        this.head.rotation.x = angle;
+        const lean = -(u.uLean.value + u.uCrouch.value * 0.25);
+        // The slide tips the whole body back about the hips (+ here).
+        const back = SLIDE_POSE.back * u.uSlide.value;
+        // (Held, the arms come up in a slide - characters.js - and the launcher with them.)
+        const aim = SLIDE_POSE.aim * u.uSlide.value * u.uHold.value;
+        const drop = u.uCrouch.value * 0.42 + u.uTuck.value * 0.15 + u.uSlide.value * SLIDE_POSE.drop;
+        const place = (group, base, x, extra = 0) => {
+          let y = base.y - hip;
+          let z = base.z;
+          for (const a of [lean, back]) {
+            const c = Math.cos(a);
+            const s = Math.sin(a);
+            [y, z] = [y * c - z * s, y * s + z * c];
+          }
+          group.position.set(x, hip + y - drop, z);
+          group.rotation.x = lean + back + extra;
+        };
+        this.shoulder.position.x = this.shoulderBase.x;
+        place(this.shoulder, this.shoulderBase, this.shoulderBase.x, -aim);
+        // The worn bag leans with the back the same way...
+        place(this.back, this.backBase, 0);
+        // ...and the head, with whatever is on it (tucked forward in a slide).
+        place(this.head, this.headBase, 0, -SLIDE_POSE.chin * u.uSlide.value);
       }
     } else {
-      this.standIn.scale.y = 1 - this.crouch * 0.45;
+      this.standIn.scale.y = 1 - this.slide * 0.45;
       this.standIn.rotation.z = running ? Math.sin(this.phase * 2) * 0.05 : 0;
     }
     // The rigged body: the same state, as clips (it places the mounts itself).
@@ -505,6 +520,7 @@ export class PlayerAvatar {
     u.uHold.value = 0;
     u.uStride.value = 0;
     u.uCrouch.value = 0;
+    if (u.uSlide) u.uSlide.value = 0;
     u.uTuck.value = 0.15 + 0.15 * s(time * 3.7);
     u.uThrow.value.w = 0;
     // Arms: up and grabbing (reach) while they windmill against each other.
@@ -557,6 +573,27 @@ export class PlayerAvatar {
     if (kind === "none" || !this.model) return;
     this.hat = buildHeadwear(kind, headwearColour(this._outfit), this._headSize);
     this.head.add(this.hat);
+  }
+
+  /** Shoes, a SHOES key (src/figure/shoes.js); "clogs" (the default) are the model's own. */
+  setShoes(kind) {
+    this._shoes = kind;
+    this._dressFeet();
+  }
+
+  _dressFeet() {
+    if (this.shoes) {
+      this.shoes.removeFromParent();
+      disposeShoes(this.shoes);
+      this.shoes = null;
+    }
+    if (!this.model || !this._mesh) return;
+    this.shoes = buildShoes(this._shoes ?? "clogs", this._mesh, this.uniforms);
+    if (this.shoes) {
+      this._mesh.parent.add(this.shoes);
+      // The clogs go once the shoes are on (they stream in).
+      this.shoes.userData.onReady = () => this.look?.setFeetHidden(true);
+    } else this.look?.setFeetHidden(false);
   }
 
   /** Hair colour, a HAIR_COLOURS key from src/figure/look.js. */

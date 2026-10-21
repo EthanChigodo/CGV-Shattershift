@@ -729,6 +729,7 @@ export class GravityFaultRide {
       if (this.figureState.skinTone) avatar.setSkinTone(this.figureState.skinTone);
       if (this.figureState.outfit) avatar.setOutfit(this.figureState.outfit);
       if (this.figureState.headwear) avatar.setHeadwear(this.figureState.headwear);
+      if (this.figureState.shoes) avatar.setShoes(this.figureState.shoes);
       if (this.figureState.hairColour) avatar.setHairColour(this.figureState.hairColour);
     }
     avatar.setModel(template);

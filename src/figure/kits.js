@@ -2,11 +2,11 @@
  * Kits: sets of looks you earn, each unlocked by a trophy (src/systems/trophies.js).
  *
  *   escapee   finish the story ("Get to the Roof"): the Ember outfit, the
- *             Visor, the Molten launcher finish
+ *             Visor, the Escape runners, the Molten launcher finish
  *   fracture  the platinum ("Fracture Proof"): the Platinum outfit, the Halo,
- *             the Prism launcher finish
+ *             the Platinum trainers, the Prism launcher finish
  *
- * An item belongs to a kit by its `kit` field (OUTFITS, HEADWEAR,
+ * An item belongs to a kit by its `kit` field (OUTFITS, HEADWEAR, SHOES,
  * LAUNCHER_SKINS); anything without one is always yours.
  *
  *   kitLocked(item)            true while its kit isn't unlocked
@@ -20,12 +20,12 @@ export const KITS = {
   escapee: {
     key: "escapee", name: "Escapee kit", trophy: "roof", colour: "#ff8a3d",
     how: "Finish the story", blurb: "For getting out of Ascension Tower.",
-    items: ["Ember outfit", "Visor", "Molten launcher finish"],
+    items: ["Ember outfit", "Visor", "Escape runners", "Molten launcher finish"],
   },
   fracture: {
     key: "fracture", name: "Fracture kit", trophy: "platinum", colour: "#bdeeff",
     how: "Earn the platinum", blurb: "For earning every trophy there is.",
-    items: ["Platinum outfit", "Halo", "Prism launcher finish"],
+    items: ["Platinum outfit", "Halo", "Platinum trainers", "Prism launcher finish"],
   },
 };
 export const KIT_ORDER = ["escapee", "fracture"];

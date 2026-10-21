@@ -1,0 +1,51 @@
+/* The charged shot's bar (src/systems/charge.js): under the crosshair, in the
+   sphere's colour; full, it glows and pulses. */
+.charge-meter {
+  --c: #9fefff;
+  position: fixed;
+  z-index: 6;
+  width: 96px;
+  margin: 26px 0 0 -48px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .15s ease, transform .2s var(--ease-out, ease-out);
+  font-family: var(--font, system-ui, sans-serif);
+}
+.charge-meter.on { opacity: 1; transform: none; }
+.cm-bar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .14);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+}
+.cm-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 55%, white), var(--c));
+  box-shadow: 0 0 10px var(--c);
+}
+.cm-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .22em;
+  color: var(--c);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7);
+  white-space: nowrap;
+}
+.charge-meter.full .cm-bar { animation: cmPulse .32s ease-in-out infinite alternate; }
+.charge-meter.full .cm-fill { background: linear-gradient(90deg, white, var(--c), white); background-size: 200% 100%; animation: cmRun .6s linear infinite; }
+.charge-meter.short .cm-fill { background: #ff5a4a; box-shadow: none; }
+.charge-meter.short .cm-label { color: #ff7a6a; }
+@keyframes cmPulse { to { box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), 0 0 16px var(--c); transform: scaleY(1.6); } }
+@keyframes cmRun { to { background-position: -200% 0; } }
+body.hud-hidden .charge-meter, body.photo-hide-hud .charge-meter, body.cutscene .charge-meter { display: none; }
