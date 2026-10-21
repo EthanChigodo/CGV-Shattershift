@@ -275,6 +275,8 @@ export class PadBridge {
     // The right stick moves the aim, faster the further it is pushed.
     const R = rec.right;
     if (p.pressed(rec, B.RS)) this.recentre();
+    // (The host may take it to turn a camera: the roof's over the shoulder.)
+    if (R.m > 0 && this.host.lookStick?.((R.x / R.m) * R.m * R.m, (R.y / R.m) * R.m * R.m, dt)) return;
     if (R.m > 0) {
       const speed = Math.min(innerWidth, innerHeight) * 1.25 * (this.host.aimSpeed?.() ?? 1);
       const curve = R.m * R.m;
