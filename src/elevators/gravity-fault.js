@@ -169,7 +169,7 @@ export class GravityFaultRide {
    * @param {object} [o.story]  the story's version (story-ride.js): Dr. Okoro
    *   drops the launcher, and the clamps are reaction hits -
    *   { layer: StoryLayer, okoroTemplate }. Without it the ride is unchanged.
-   * @param {{wear:number, gear:boolean, skinTone?:string}} [o.figure]  the character's state and skin tone (src/figure/look.js)
+   * @param {{wear:number, gear:boolean, skinTone?:string, hairColour?:string}} [o.figure]  the character's state, skin tone and hair (src/figure/look.js)
    */
   constructor({ renderer, spheres = 0, reducedMotion = false, boarded = false, character = null, assetBase = null, story = null, figure = null }) {
     this.figureState = figure;
@@ -729,6 +729,7 @@ export class GravityFaultRide {
       if (this.figureState.skinTone) avatar.setSkinTone(this.figureState.skinTone);
       if (this.figureState.outfit) avatar.setOutfit(this.figureState.outfit);
       if (this.figureState.headwear) avatar.setHeadwear(this.figureState.headwear);
+      if (this.figureState.hairColour) avatar.setHairColour(this.figureState.hairColour);
     }
     avatar.setModel(template);
     this._avatar = avatar;

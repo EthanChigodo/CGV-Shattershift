@@ -4,7 +4,7 @@
  * whatever the game's canvas is doing behind the menu).
  *
  *   const portrait = new Portrait(canvas, { assetBase });
- *   portrait.show({ character, skin, outfit, headwear, launcherSkin });
+ *   portrait.show({ character, skin, hair, outfit, headwear, launcherSkin });
  *
  * It only draws while the canvas is on screen.
  */
@@ -71,6 +71,7 @@ export class Portrait {
       a.character = look.character;
       a.hold = 0;
       a.setSkinTone(look.skin);
+      a.setHairColour(look.hair ?? "natural");
       a.setOutfit(look.outfit);
       a.setHeadwear(look.headwear);
       if (template) a.setModel(template);
@@ -85,6 +86,7 @@ export class Portrait {
       this._frame();
     } else {
       this.avatar.setSkinTone(look.skin);
+      this.avatar.setHairColour(look.hair ?? "natural");
       this.avatar.setOutfit(look.outfit);
       this.avatar.setHeadwear(look.headwear);
     }

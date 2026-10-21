@@ -84,6 +84,7 @@ export class Ghost {
     this.avatar.idleStyle = false;
     const look = data.look ?? {};
     if (look.skin) this.avatar.setSkinTone(look.skin);
+    this.avatar.setHairColour(look.hair ?? "natural");
     if (look.outfit) this.avatar.setOutfit(look.outfit);
     if (look.headwear) this.avatar.setHeadwear(look.headwear);
     if (template) this.avatar.setModel(template);

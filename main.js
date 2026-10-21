@@ -41,7 +41,7 @@ import { Prologue } from "./src/story/prologue.js";
 import { themeAt as causewayThemeAt } from "./src/levels/causeway/layout.js";
 import { blastScene } from "./src/story/scenes-skyline.js";
 import { SCENES as STORY_LINES } from "./src/story/script.js";
-import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone } from "./src/figure/look.js";
+import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone, HAIR_COLOURS, savedHairColour, saveHairColour } from "./src/figure/look.js";
 import { OUTFITS, HEADWEAR, savedOutfit, saveOutfit, savedHeadwear, saveHeadwear } from "./src/figure/outfit.js";
 import { applyLauncherSkin, savedLauncherSkin } from "./src/figure/launcher-skins.js";
 import { LAUNCHER_HELD } from "./src/figure/launcher-model.js";
@@ -545,6 +545,7 @@ playerBody.hold = 0;
 playerBody.setSkinTone(savedSkinTone());
 playerBody.setOutfit(savedOutfit());
 playerBody.setHeadwear(savedHeadwear());
+playerBody.setHairColour(savedHairColour());
 let playerBodyReady = false;
 /** The chosen character's model template, for the lift ride to show the same person. */
 let playerBodyTemplate = null;
@@ -1693,11 +1694,12 @@ function getMeltdown() {
   });
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdownQuality();
-  // Level 3's body: the chosen skin tone (its stage is set per stage, below).
+  // Level 3's body: the chosen skin tone and hair (its stage is set per stage, below).
   meltdown.avatar?.setSkinTone(savedSkinTone());
   meltdown.avatar?.setOutfit(savedOutfit());
   meltdown.avatar?.setHeadwear(savedHeadwear());
   meltdown.setLauncherSkin(savedLauncherSkin());
+  meltdown.avatar?.setHairColour(savedHairColour());
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
   // The story: through the lift at the end of the Labs, up to the Skyline.
@@ -2318,7 +2320,7 @@ function startGravityLift({ boarded = false } = {}) {
     // The same character as in the Foundry (null while it is still loading),
     // as they left it: dusty.
     character: playerBodyTemplate,
-    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone(), outfit: savedOutfit(), headwear: savedHeadwear() },
+    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone(), hairColour: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear() },
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
     // The story's version: Okoro drops the launcher, the clamps are reaction hits.
@@ -5428,7 +5430,7 @@ showEndlessDifficulty();
 
 /** The single-player look, as saved. */
 function savedLook() {
-  return { character: savedCharacter(), skin: savedSkinTone(), outfit: savedOutfit(), headwear: savedHeadwear(), launcherSkin: savedLauncherSkin(), ball: savedBall() };
+  return { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear(), launcherSkin: savedLauncherSkin(), ball: savedBall() };
 }
 /** Save one choice and put it on the game's own figure and launchers. */
 function applyLook(patch) {
@@ -5439,6 +5441,7 @@ function applyLook(patch) {
     meltdown?.setCharacter(patch.character);
   }
   if (patch.skin) { saveSkinTone(patch.skin); playerBody.setSkinTone(patch.skin); meltdown?.avatar?.setSkinTone(patch.skin); }
+  if (patch.hair) { saveHairColour(patch.hair); playerBody.setHairColour(patch.hair); meltdown?.avatar?.setHairColour(patch.hair); }
   if (patch.outfit) { saveOutfit(patch.outfit); playerBody.setOutfit(patch.outfit); meltdown?.avatar?.setOutfit(patch.outfit); }
   if (patch.headwear) { saveHeadwear(patch.headwear); playerBody.setHeadwear(patch.headwear); meltdown?.avatar?.setHeadwear(patch.headwear); }
   if (patch.launcherSkin) {
@@ -5497,6 +5500,7 @@ function refreshDossier() {
   const html = `
     <div class="dossier-id"><em>07</em><div><b>SUBJECT 07</b><small>${l.character === "playerMale" ? "Male" : "Female"} test subject</small></div></div>
     ${chip("Complexion", SKIN_TONES[l.skin]?.label ?? "", SKIN_TONES[l.skin]?.swatch)}
+    ${chip("Hair", HAIR_COLOURS[l.hair]?.label ?? "", HAIR_COLOURS[l.hair]?.swatch)}
     ${chip("Outfit", OUTFITS[l.outfit]?.label ?? "", OUTFITS[l.outfit]?.swatch)}
     ${chip("Headwear", HEADWEAR[l.headwear]?.label ?? "")}
     ${chip("Launcher", LAUNCHER_SKINS[l.launcherSkin]?.label ?? "", LAUNCHER_SKINS[l.launcherSkin]?.swatch)}

@@ -450,6 +450,7 @@ export class Arena {
     a.setOutfit(p.colour.key);
     a.setHeadwear(p.headwear);
     a.setSkinTone(p.skin);
+    a.setHairColour("natural");
     const template = this.assets.get(p.character)?.template;
     if (template) a.setModel(template);
     this.scene.add(a.root);

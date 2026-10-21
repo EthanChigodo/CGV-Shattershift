@@ -1,6 +1,6 @@
 /**
  * Customise (single player): Subject 07 in the studio, two screens -
- *   CHARACTER  who you play as, skin, the scrubs' colour, headwear
+ *   CHARACTER  who you play as, complexion, hair colour, the scrubs' colour, headwear
  *   LAUNCHER   the launcher's finish (tiger, camo, carbon...), the sphere you start with
  * Every change shows on the figure at once and is kept for every
  * single-player game (the story, the chapters, Endless).
@@ -20,7 +20,7 @@ import { Studio } from "../common/studio.js";
 import { loadMeltdownAssets } from "../../levels/meltdown/assets.js";
 import { B } from "../../systems/gamepads.js";
 import { padLabel } from "../../systems/input-glyphs.js";
-import { SKIN_TONES } from "../../figure/look.js";
+import { SKIN_TONES, HAIR_COLOURS } from "../../figure/look.js";
 import { OUTFITS, HEADWEAR } from "../../figure/outfit.js";
 import { LAUNCHER_SKINS, LAUNCHER_SKIN_ORDER } from "../../figure/launcher-skins.js";
 import { KITS, kitLocked } from "../../figure/kits.js";
@@ -46,6 +46,7 @@ function rows(tab) {
     return [
       ["character", "Play as", [{ value: "playerFemale", label: "Female" }, { value: "playerMale", label: "Male" }]],
       ["skin", "Complexion", Object.entries(SKIN_TONES).map(([value, t]) => ({ value, label: t.label, swatch: t.swatch }))],
+      ["hair", "Hair", Object.entries(HAIR_COLOURS).map(([value, h]) => ({ value, label: h.label, swatch: h.swatch }))],
       ["outfit", "Outfit", Object.entries(OUTFITS).map(([value, o]) => ({ value, label: o.label, swatch: o.swatch, kit: o.kit, locked: kitLocked(o) }))],
       ["headwear", "Headwear", Object.entries(HEADWEAR).map(([value, h]) => ({ value, label: h.label, kit: h.kit, locked: kitLocked(h) }))],
     ];
@@ -103,7 +104,7 @@ export class Locker {
   /** The figure, as the saved choices have it; the launcher on its shoulder on the Launcher screen. */
   _figure() {
     const l = this.look();
-    this.studio.setFigures([{ id: "me", character: l.character, skin: l.skin, outfit: l.outfit, headwear: l.headwear, launcher: this.tab === "launcher", launcherSkin: l.launcherSkin, colour: "#7ef4f1" }]);
+    this.studio.setFigures([{ id: "me", character: l.character, skin: l.skin, hair: l.hair, outfit: l.outfit, headwear: l.headwear, launcher: this.tab === "launcher", launcherSkin: l.launcherSkin, colour: "#7ef4f1" }]);
     this.studio.frame(this.tab === "launcher" ? "launcher" : "body", { offsetX: 1.15, spin: false });
   }
 
