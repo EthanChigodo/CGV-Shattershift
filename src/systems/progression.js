@@ -65,7 +65,9 @@ export const ABILITIES = {
     text: "The roof is open ground: walk it freely, and burst out of the way - through a charge, or off a laser's line before it locks.",
     how: [
       { kb: ["W", "A", "S", "D"], pad: ["Left stick"], does: "move" },
+      { kb: ["Mouse"], pad: ["Right stick"], does: "look all the way round" },
       { kb: ["Space"], pad: ["PadA"], does: "quick shift the way you're moving" },
+      { kb: ["C"], pad: ["PadY"], does: "top-down camera instead" },
     ],
   },
 };

@@ -1752,6 +1752,8 @@ function getMeltdown() {
     // One set of sphere types and serums for every level.
     arsenal,
     charge,
+    // The roof's shoulder camera turns at the Settings' sensitivity.
+    lookSpeed: () => (padMode ? (settings.padAimSpeed ?? 100) : (settings.sensitivity ?? 100)) / 100,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdownQuality();
@@ -4557,6 +4559,8 @@ function animate() {
   updateRecordNotes();
   updateProgression();
   updateFocusRow();
+  // The pointer lock goes with the roof's shoulder camera (a pause, the end, a menu: let go).
+  if (document.pointerLockElement && !(meltdown?.wantsPointerLock && state === "playing" && !paused && !unlockCard.open)) document.exitPointerLock?.();
   // (Real time, a hitch's worth: a slow frame doesn't slow the charge.)
   updateCharge(Math.min(0.25, rawDt));
   chargeTrails.update(paused ? 0 : Math.min(0.1, rawDt));
@@ -5884,7 +5888,7 @@ addEventListener("pointermove", (event) => {
   pointer.x = THREE.MathUtils.clamp(((event.clientX / innerWidth) * 2 - 1) * factor, -1, 1);
   pointer.y = THREE.MathUtils.clamp((-(event.clientY / innerHeight) * 2 + 1) * factor, -1, 1);
   placeReticle();
-  meltdown?.onPointerMove(event.clientX, event.clientY);
+  meltdown?.onPointerMove(event.clientX, event.clientY, event);
   gravityLift?.onPointerMove(pointer.x, pointer.y);
 });
 
@@ -5904,6 +5908,8 @@ addEventListener("pointerdown", (event) => {
   if (state === "cutscene" || story.player.active) return;
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
+    // The roof over the shoulder: the mouse is held to the game, so it turns the view freely.
+    if (meltdown?.wantsPointerLock && state === "playing" && !paused && !document.pointerLockElement) canvas.requestPointerLock?.()?.catch?.(() => {});
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
     // Focus (bullet time): the story earns it in the Skyline (systems/progression.js).
     if (event.button === 2 && state === "playing" && hasAbility("focus")) run.focusing = true;
@@ -5932,6 +5938,10 @@ function cycleSphere(step) {
   showMessage(`${ball.name.toUpperCase()} SPHERE // ${ball.cost} PER ${verb}`);
   meltdown?.hud?.toast?.(`${ball.name.toUpperCase()} SPHERE`, `${ball.cost} PER SHOT`, "", 1200);
 }
+// Esc lets go of the roof's held mouse (the browser does that itself): a pause, as anywhere.
+document.addEventListener("pointerlockchange", () => {
+  if (!document.pointerLockElement && currentLevel === 3 && state === "playing" && !paused && meltdown?.wantsPointerLock && !unlockCard.open) openPause();
+});
 addEventListener("pointerup", (event) => {
   if (event.button === 2) run.focusing = false;
   if (event.button === 0 && currentLevel === 1 && charge.holding) {
@@ -6082,6 +6092,8 @@ const padBridge = new PadBridge(pads, {
     return true;
   },
   aimSpeed: () => (settings.padAimSpeed ?? 100) / 100,
+  // The right stick turns the roof's shoulder camera (else it moves the cursor).
+  lookStick: (x, y, dt) => (currentLevel === 3 && state === "playing" && !paused && meltdown?.lookStick(x, y, dt)) || false,
   onActive(rec) {
     if (rec.family !== padFamilyNow) { padFamilyNow = rec.family; setPadFamily(rec.family); refreshPadGlyphs(); applyInputNames(); }
     setPadMode(true);

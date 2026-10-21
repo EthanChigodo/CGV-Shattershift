@@ -139,6 +139,17 @@ function stumbleFactor(slow) {
 }
 const ROOF_AIM_FAR = 80;
 const ROOF_LEAN_REACH = 14;
+/**
+ * The roof's other camera - over the shoulder, the default: the mouse (or
+ * the right stick) turns it all the way round and tilts it, the crosshair
+ * stays in the middle, WASD walks the way it looks. (C: the top-down one.)
+ * Metres from the body; pitch in radians (down is negative).
+ */
+const ROOF_SHOULDER = { back: 4.4, up: 0.6, side: 0.95, pivot: 1.6, pitch: -0.24, pitchMin: -0.62, pitchMax: 0.42 };
+/** Radians a pixel of mouse turns it (times the Settings' sensitivity); the stick's per second, full over. */
+const ROOF_LOOK_MOUSE = 0.0024;
+const ROOF_LOOK_STICK = [3.1, 1.9];
+const ROOF_VIEW_KEY = "fractureRun.roofView";
 const DODGE_SPEED = 13;
 const DODGE_SECONDS = 0.24;
 const ROOF_NAMES = [
@@ -239,7 +250,7 @@ export class MeltdownGame {
    * @param {boolean} [o.devKeys]    R restarts, P skips to the roof, F dev stats
    * @param {boolean} [o.summary]    show the level's own end-of-run card
    */
-  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null }) {
+  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null, lookSpeed = () => 1 }) {
     /**
      * The sphere types and serums (src/systems/arsenal.js) - the host's, so
      * the type you picked and the serums running carry between levels; the
@@ -252,6 +263,15 @@ export class MeltdownGame {
      * (the preview), a held trigger keeps firing as it used to.
      */
     this.charge = charge;
+    /** The roof's camera: "shoulder" (turned by the mouse) or "top" (the old top-down); C switches. */
+    this.lookSpeed = lookSpeed;
+    this.roofView = "shoulder";
+    try {
+      if (localStorage.getItem(ROOF_VIEW_KEY) === "top") this.roofView = "top";
+    } catch {
+      /* storage unavailable */
+    }
+    this.look = { yaw: 0, pitch: ROOF_SHOULDER.pitch, lastX: null, lastY: null };
     /** Sharing the game's arsenal means the game's HUD shows the serums. */
     this.arsenalShared = !!arsenal;
     this._ownArsenal = !arsenal;
@@ -954,9 +974,51 @@ export class MeltdownGame {
   /* Input                                                             */
   /* ================================================================ */
 
-  onPointerMove(clientX, clientY) {
+  /** On the roof over the shoulder: the mouse turns the view (the host locks the pointer to the game). */
+  get wantsPointerLock() {
+    return this.phase === "roof" && this.roofView === "shoulder";
+  }
+
+  /** Turn the shoulder camera by (yaw, pitch) radians. */
+  turnView(yaw, pitch) {
+    const L = this.look;
+    L.yaw -= yaw;
+    L.pitch = THREE.MathUtils.clamp(L.pitch - pitch, ROOF_SHOULDER.pitchMin, ROOF_SHOULDER.pitchMax);
+  }
+
+  /** The controller's right stick (the pad bridge asks first): true if it turned the view. */
+  lookStick(x, y, dt) {
+    if (!this.wantsPointerLock || this.paused) return false;
+    const k = this.lookSpeed();
+    this.turnView(x * ROOF_LOOK_STICK[0] * k * dt, y * ROOF_LOOK_STICK[1] * k * dt);
+    return true;
+  }
+
+  /** The crosshair in the middle (the shoulder camera aims where it looks). */
+  _centreReticle() {
+    const size = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(0, 0);
+    this.ui.reticle.style.left = `${size.left + size.width / 2}px`;
+    this.ui.reticle.style.top = `${size.top + size.height / 2}px`;
+  }
+
+  onPointerMove(clientX, clientY, event = null) {
     const size = this.renderer.domElement.getBoundingClientRect();
     if (!size.width || !size.height) return; // not laid out yet: no aim from a 0-size canvas
+    if (this.wantsPointerLock) {
+      // Locked, the mouse reports how far it moved; otherwise, the difference.
+      const L = this.look;
+      let dx = event?.movementX ?? 0;
+      let dy = event?.movementY ?? 0;
+      if (!dx && !dy && L.lastX !== null) { dx = clientX - L.lastX; dy = clientY - L.lastY; }
+      L.lastX = clientX;
+      L.lastY = clientY;
+      const k = ROOF_LOOK_MOUSE * this.lookSpeed();
+      if (!this.paused) this.turnView(dx * k, dy * k);
+      this._centreReticle();
+      return;
+    }
+    this.look.lastX = null;
     // Held inside the window: dragging off it (fire held) keeps reporting
     // positions beyond the edge.
     clientX = THREE.MathUtils.clamp(clientX, size.left, size.right);
@@ -1017,6 +1079,23 @@ export class MeltdownGame {
     }
     if (this.options.devKeys && code === "KeyP" && (this.phase === "run" || this.phase === "arrive")) {
       this.startRoof();
+      return true;
+    }
+    if (code === "KeyC" && this.phase === "roof") {
+      this.roofView = this.roofView === "shoulder" ? "top" : "shoulder";
+      try {
+        localStorage.setItem(ROOF_VIEW_KEY, this.roofView);
+      } catch {
+        /* storage unavailable */
+      }
+      if (this.roofView === "shoulder") {
+        // Looking the way the top-down view did (north), level.
+        this.look.yaw = 0;
+        this.look.pitch = ROOF_SHOULDER.pitch;
+        this._centreReticle();
+      } else if (document.pointerLockElement) document.exitPointerLock?.();
+      this.snapCamera = true;
+      this.hud.toast("CAMERA", this.roofView === "shoulder" ? "OVER THE SHOULDER - THE MOUSE TURNS" : "TOP-DOWN - AIM WITH THE CURSOR", "", 1600);
       return true;
     }
     if (this.phase === "roof" || this.phase === "roofArrive" || this.phase === "ending") {
@@ -2305,6 +2384,8 @@ export class MeltdownGame {
     hero.vy = 0;
     hero.yaw = 0;
     hero.aim.copy(ROOF_SPAWN).add(new THREE.Vector3(0, 1.15, -10));
+    this.look.yaw = 0;
+    this.look.pitch = ROOF_SHOULDER.pitch;
     this.roofClock = 0;
     avatar.setVisible(true);
     avatar.shadow.visible = true;
@@ -2628,6 +2709,10 @@ export class MeltdownGame {
   }
 
   _updateRoofCamera(dt) {
+    if (this.phase === "roof" && this.roofView === "shoulder") {
+      this._updateShoulderCamera(dt);
+      return;
+    }
     // High and behind (south of) the player, looking north over their head,
     // leaning a little toward where they aim.
     const { hero, camera } = this;
@@ -2654,6 +2739,38 @@ export class MeltdownGame {
     this._shake(dt, 0.4, 0.3, 0);
     this.snapCamera = false;
     this.roof?.updateOcclusion(camera.position, dt, this.phase === "roof");
+  }
+
+  /**
+   * Over the shoulder (ROOF_SHOULDER): behind and to the right of the body,
+   * looking the way the mouse has turned it. The view turns exactly with the
+   * mouse; only the following of the body is smoothed.
+   */
+  _updateShoulderCamera(dt) {
+    const { hero, camera } = this;
+    const V = this._v;
+    const L = this.look;
+    const S = ROOF_SHOULDER;
+    const cp = Math.cos(L.pitch);
+    _lookFwd.set(-Math.sin(L.yaw) * cp, Math.sin(L.pitch), -Math.cos(L.yaw) * cp);
+    _lookRight.set(Math.cos(L.yaw), 0, -Math.sin(L.yaw));
+    V.desired.copy(hero.position);
+    V.desired.y += S.pivot + S.up;
+    V.desired.addScaledVector(_lookFwd, -S.back).addScaledVector(_lookRight, S.side);
+    if (this.snapCamera) camera.position.copy(V.desired);
+    else camera.position.lerp(V.desired, 1 - Math.exp(-dt * 22));
+    V.look.copy(camera.position).add(_lookFwd);
+    V.smoothedLook.copy(V.look);
+    camera.up.copy(UP);
+    camera.lookAt(V.look);
+    const fov = BASE_FOV + this.arsenal.level("overdrive") * (this.reducedMotion ? 3 : 9);
+    if (Math.abs(camera.fov - fov) > 0.01) {
+      camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
+      camera.updateProjectionMatrix();
+    }
+    this._shake(dt, 0.4, 0.3, 0);
+    this.snapCamera = false;
+    this.roof?.updateOcclusion(camera.position, dt, true);
   }
 
   _roofHit(hit) {
@@ -2794,6 +2911,12 @@ export class MeltdownGame {
       const ix = (held.has("KeyD") || held.has("ArrowRight") ? 1 : 0) - (held.has("KeyA") || held.has("ArrowLeft") ? 1 : 0);
       const iz = (held.has("KeyS") || held.has("ArrowDown") ? 1 : 0) - (held.has("KeyW") || held.has("ArrowUp") ? 1 : 0);
       const input = _input.set(ix, 0, iz);
+      // Over the shoulder: the way the camera looks is forward.
+      if (this.roofView === "shoulder") {
+        const c = Math.cos(this.look.yaw);
+        const s = Math.sin(this.look.yaw);
+        input.set(ix * c + iz * s, 0, -ix * s + iz * c);
+      }
       if (input.lengthSq() > 1) input.normalize();
       hero.velocity.lerp(input.multiplyScalar(ROOF_SPEED * (this.arsenal.isActive("overdrive") ? 1.25 : 1)), 1 - Math.exp(-dt * 12));
       hero.dodge = Math.max(0, hero.dodge - dt);
@@ -2829,6 +2952,12 @@ export class MeltdownGame {
       // lean toward it is held in - _updateRoofCamera).
       _face.subVectors(hero.aim, hero.position).setY(0);
       if (!hit && _face.length() > ROOF_AIM_FAR) hero.aim.copy(hero.position).addScaledVector(_face.normalize(), ROOF_AIM_FAR).setY(hero.position.y + 1.15);
+      // Over the shoulder, looking down past the body: aim out in front of it, not behind.
+      if (this.roofView === "shoulder" && !hit) {
+        const fx = -Math.sin(this.look.yaw);
+        const fz = -Math.cos(this.look.yaw);
+        if (_face.x * fx + _face.z * fz < 3) hero.aim.set(hero.position.x + fx * 3, hero.position.y + 1.15, hero.position.z + fz * 3);
+      }
       this.ui.reticle.classList.toggle("hot", Boolean(hit));
 
       // Always facing the cursor, launcher on it, as in any top-down shooter
@@ -3008,6 +3137,8 @@ export class MeltdownGame {
 }
 
 const _roofCam = new THREE.Vector3(0, 9.9, 7.3);
+const _lookFwd = new THREE.Vector3();
+const _lookRight = new THREE.Vector3();
 const _roofLook = new THREE.Vector3(0, 0.6, -3.4);
 const _ahead = new THREE.Vector3(0, 1.15, -10);
 const _input = new THREE.Vector3();
