@@ -89,7 +89,7 @@ export class SerumFx {
     this.banner.querySelector("p").textContent = def.text;
     const seconds = Math.ceil(state?.remaining ?? def.duration);
     this.banner.querySelector(".sx-duration").textContent = def.instant
-      ? `+${def.spheres} spheres${def.heal ? " // full integrity" : ""}`
+      ? `+${def.spheres} spheres${def.heal ? " · full integrity" : ""}`
       : def.charges ? `${def.charges} hits or ${seconds} seconds` : `${seconds} seconds`;
     this.banner.classList.remove("show");
     void this.banner.offsetWidth; // restart the entrance

@@ -3,7 +3,12 @@ Thumbs.db
 *.log
 node_modules/
 tests/story/shots/
+tests/menu-stage/shots/
 .vendor/
 __pycache__/
 dist/
 .audio-work/
+
+# Character builds being checked before they ship (?characters=dev, tools/characters/README.md)
+assets/characters/dev
+characters-source/

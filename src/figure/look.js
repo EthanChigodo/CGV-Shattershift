@@ -44,6 +44,7 @@
  */
 
 import * as THREE from "../three.js";
+import { NOISE_GLSL, noiseTexture } from "./noise.js";
 
 /** Wear values for each stage of the story. */
 export const WEAR = { clean: 0, dusty: 0.33, bloodied: 0.66 };
@@ -76,6 +77,47 @@ export function saveSkinTone(name) {
   if (!SKIN_TONES[name]) return;
   try {
     localStorage.setItem(SKIN_KEY, name);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Hair colours the player can choose on the start screen, next to the skin
+ * tones (beta feedback: "more character customisation, for example hair
+ * colour"). `natural` is the models' own - auburn-brown on the female
+ * figure, dark brown on the male; the others re-dye the hair in the shader
+ * (see uHair), keeping every strand's light and shade. `color` is the dye
+ * (sRGB), `swatch` the menu's button.
+ */
+export const HAIR_COLOURS = {
+  natural: { label: "Natural", color: null, swatch: "#4b2a1c" },
+  black: { label: "Black", color: "#1e1916", swatch: "#17120f" },
+  brown: { label: "Dark brown", color: "#4a2f1f", swatch: "#4a2f1f" },
+  auburn: { label: "Auburn", color: "#8e3c1c", swatch: "#9a4220" },
+  blonde: { label: "Blonde", color: "#c2a26c", swatch: "#d8b06c" },
+  platinum: { label: "Platinum", color: "#aaa69e", swatch: "#d9d6cf" },
+  red: { label: "Deep red", color: "#86141e", swatch: "#a3121f" },
+  blue: { label: "Electric blue", color: "#1a52e0", swatch: "#1f62ff" },
+  violet: { label: "Violet", color: "#6630b0", swatch: "#7a35d0" },
+};
+const HAIR_KEY = "fractureRun.hairColour";
+
+/** The saved hair colour (start screen). */
+export function savedHairColour() {
+  try {
+    const saved = localStorage.getItem(HAIR_KEY);
+    if (saved && HAIR_COLOURS[saved]) return saved;
+  } catch {
+    /* storage unavailable */
+  }
+  return "natural";
+}
+
+export function saveHairColour(name) {
+  if (!HAIR_COLOURS[name]) return;
+  try {
+    localStorage.setItem(HAIR_KEY, name);
   } catch {
     /* ignore */
   }
@@ -133,6 +175,75 @@ function skinTone(atlas, cell) {
   return color;
 }
 
+/** A cloth cell's average colour (the scrubs' own), cached per atlas and cell. */
+const clothCache = new WeakMap();
+function clothTone(atlas, cell) {
+  const fallback = new THREE.Color(0.25, 0.55, 0.52);
+  const image = atlas?.image;
+  if (!image || !cell || !image.getContext) return fallback;
+  let byCell = clothCache.get(atlas);
+  if (!byCell) clothCache.set(atlas, (byCell = new Map()));
+  const id = cell.join(",");
+  if (byCell.has(id)) return byCell.get(id);
+  const [u0, v0, u1, v1] = cell;
+  const ctx = image.getContext("2d", { willReadFrequently: true });
+  let data;
+  try {
+    data = ctx.getImageData(Math.floor(u0 * image.width), Math.floor(v0 * image.height), Math.max(1, Math.floor((u1 - u0) * image.width)), Math.max(1, Math.floor((v1 - v0) * image.height))).data;
+  } catch {
+    return fallback;
+  }
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (let i = 0; i < data.length; i += 16) {
+    if (data[i + 3] < 128) continue;
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    n += 1;
+  }
+  const color = n ? new THREE.Color().setRGB(r / n / 255, g / n / 255, b / n / 255, THREE.SRGBColorSpace) : fallback;
+  byCell.set(id, color);
+  return color;
+}
+
+/**
+ * Average brightness of a model's hair (linear luminance, the shader's
+ * units), measured once from its atlas cell: the dye keeps each texel's
+ * brightness relative to this, so the strands' shading carries across.
+ */
+const hairCache = new WeakMap();
+function hairLuminance(atlas, cell) {
+  if (hairCache.has(atlas)) return hairCache.get(atlas);
+  const fallback = 0.035;
+  const image = atlas?.image;
+  if (!image || !cell || !image.getContext) return fallback;
+  const [u0, v0, u1, v1] = cell;
+  const ctx = image.getContext("2d", { willReadFrequently: true });
+  let data;
+  try {
+    data = ctx.getImageData(Math.floor(u0 * image.width), Math.floor(v0 * image.height), Math.floor((u1 - u0) * image.width), Math.floor((v1 - v0) * image.height)).data;
+  } catch {
+    return fallback;
+  }
+  // sRGB byte -> linear (the shader works on decoded, linear colour).
+  const linear = (c) => {
+    const s = c / 255;
+    return s < 0.04045 ? s * 0.0773993808 : Math.pow(s * 0.9478672986 + 0.0521327014, 2.4);
+  };
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < data.length; i += 16) {
+    sum += 0.2126 * linear(data[i]) + 0.7152 * linear(data[i + 1]) + 0.0722 * linear(data[i + 2]);
+    n += 1;
+  }
+  const lum = n ? Math.max(0.004, sum / n) : fallback;
+  hairCache.set(atlas, lum);
+  return lum;
+}
+
 const LOOK_VERTEX_HEAD = /* glsl */ `
   varying vec3 vRest;
 `;
@@ -141,9 +252,15 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   varying vec3 vRest;
   uniform float uWear;
   uniform float uGear;
+  // Shoes on (src/figure/shoes.js): the model's own clogs aren't drawn.
+  uniform float uNoFeet;
   uniform vec3 uSkin;
   uniform vec3 uTone;
   uniform float uToneOn;
+  uniform vec3 uOutfit;
+  uniform float uOutfitOn;
+  uniform vec3 uTopRef;
+  uniform vec3 uLegRef;
   uniform vec4 uCellTop;
   uniform vec4 uCellBody;
   uniform vec4 uCellBottom;
@@ -153,17 +270,27 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   uniform float uArmLength;
   uniform float uHipY;
   uniform float uNeckY;
+  // Hair colour: the dye, whether it replaces the model's own, the hair's
+  // atlas cell and its average brightness (linear luminance).
+  uniform vec3 uHair;
+  uniform float uHairOn;
+  uniform vec4 uCellHair;
+  uniform float uHairLum;
 
   bool inCell(vec2 uv, vec4 c) { return uv.x >= c.x && uv.x <= c.z && uv.y >= c.y && uv.y <= c.w; }
 
-  // 3D value noise and a few octaves of it (fbm), for every damage pattern.
-  float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-  float n3(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
-               mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  // Kajiya-Kay strand highlight: a hair is a thin cylinder, so it shines
+  // where its direction T is perpendicular to the half vector H - a band
+  // across the strands, not a spot. sin(T, H) to a power sets its width.
+  float strandSheen(vec3 T, vec3 H, float power) {
+    float th = dot(T, H);
+    return pow(sqrt(max(0.0, 1.0 - th * th)), power);
   }
+
+  // 3D value noise and a few octaves of it (fbm), for every damage pattern.
+  // (From a texture, noise.js: hashed, it took Direct3D's compiler seconds.)
+  ${NOISE_GLSL}
+  float n3(vec3 p) { return noise3(p); }
   float fbm3(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.1 + 7.3) + 0.15 * n3(p * 4.3 + 1.7); }
 
   // Claw marks: three parallel slashes. 'c' is where they start, 'dir' the
@@ -221,6 +348,7 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
     bool body = inCell(uv, uCellBody);
     bool legs = inCell(uv, uCellBottom);
     bool feet = inCell(uv, uCellShoes);
+    if (feet && uNoFeet > 0.5) discard;
     bool bare = body || (top && arm && along > 0.2);
 
     // Skin tone: re-tint the skin in the body texture. Skin pixels are the
@@ -240,8 +368,63 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
       vec3 tinted = col * (uTone / max(uSkin, vec3(0.02)));
       col = mix(col, clamp(tinted, 0.0, 1.0), warm);
     }
+    // The outfit's colour (multiplayer: the controller's): the scrubs
+    // re-dyed, each pixel keeping its own light and dark - the folds, the
+    // seams - relative to the cloth's average; the trousers a shade darker.
+    if (uOutfitOn > 0.5) {
+      const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+      if (top && !(arm && along > 0.2)) col = uOutfit * clamp(dot(col, LUMA) / max(dot(uTopRef, LUMA), 0.03), 0.0, 1.7);
+      if (legs) col = uOutfit * 0.72 * clamp(dot(col, LUMA) / max(dot(uLegRef, LUMA), 0.03), 0.0, 1.7);
+    }
     // Short-sleeved scrubs: past the sleeve's end the arm is bare skin.
     if (top && arm && along > 0.2) col = skin * (0.92 + 0.08 * grain);
+
+    // ---- Hair colour ------------------------------------------------------------
+    // The hair has its own atlas cell (its own source material), so nothing
+    // else is touched. Each texel keeps its brightness RELATIVE to the hair's
+    // average - the dark gaps between strands, the lighter strands - and
+    // takes the dye's colour: luminance from the model, chroma from the
+    // choice. A light dye lowers that contrast (fair hair scatters more light
+    // into its shadows than dark hair does), or blonde would come out as
+    // black stripes on white. Then the sheen: two Kajiya-Kay highlights
+    // along the strands - a narrow white one and a broader one in the hair's
+    // own colour, shifted apart along the normal as on real hair - lit from
+    // above and broken up by the strands themselves.
+    if (uHairOn > 0.5 && inCell(uv, uCellHair)) {
+      vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+      float rel = dot(col, luma) / max(uHairLum, 0.002);
+      float dyeLum = dot(uHair, luma);
+      float contrast = mix(0.95, 0.62, smoothstep(0.02, 0.5, dyeLum));
+      vec3 dyed = uHair * pow(max(rel, 0.0), contrast);
+      // Real hair is richer in its shadows and paler where it catches the
+      // light: saturation rises in the darker strands and falls in the
+      // lighter ones, so one dye still reads as many shades.
+      float grey = dot(dyed, luma);
+      dyed = max(vec3(0.0), mix(vec3(grey), dyed, mix(1.15, 0.75, smoothstep(0.45, 1.8, rel))));
+      // The strands' direction on screen: the hair texture's streaks run
+      // down v, so it is how the surface moves as v grows - solved from the
+      // screen-space derivatives of the view position and the UV.
+      vec3 dpx = dFdx(-vViewPosition);
+      vec3 dpy = dFdy(-vViewPosition);
+      vec2 dux = dFdx(uv);
+      vec2 duy = dFdy(uv);
+      vec3 n = normalize(vNormal);
+      vec3 strand = dpy * dux.x - dpx * duy.x;
+      strand -= n * dot(n, strand);
+      vec3 T = normalize(strand + vec3(0.0, 1e-6, 0.0));
+      vec3 V = normalize(vViewPosition);
+      vec3 L = normalize((viewMatrix * vec4(0.3, 1.0, 0.45, 0.0)).xyz);
+      vec3 H = normalize(L + V);
+      // Brighter strands catch the light: the texture shifts the band.
+      float jitter = (rel - 1.0) * 0.12;
+      float primary = strandSheen(normalize(T + n * (0.1 + jitter)), H, 90.0);
+      float secondary = strandSheen(normalize(T - n * (0.12 - jitter)), H, 22.0);
+      float lit = smoothstep(-0.15, 0.45, dot(n, L)) * smoothstep(0.35, 1.3, rel);
+      // Dark hair shows the sheen most: scale it to read on every dye.
+      float shine = mix(0.32, 0.16, smoothstep(0.02, 0.5, dyeLum));
+      dyed += (vec3(0.85) * primary * 0.6 + mix(uHair, vec3(1.0), 0.3) * secondary) * lit * shine;
+      col = clamp(dyed, 0.0, 1.0);
+    }
 
     // ---- The scrub top ------------------------------------------------------
     if (top && !(arm && along > 0.2)) {
@@ -362,14 +545,20 @@ export function applyFigureLook(mesh, body) {
   const cells = mesh.userData.cells ?? {};
   const cell = (name) => new THREE.Vector4(...(cells[name] ?? [2, 2, 2, 2]));
   const skin = skinTone(mesh.userData.atlas ?? material.map, cells.Body);
+  const hairLum = hairLuminance(mesh.userData.atlas ?? material.map, cells.Hair);
   // The top of the scrub top (its neckline), from the geometry.
   const neckY = topOf(mesh.geometry, cells.material) ?? body.shoulderY + 0.05;
   const uniforms = {
     uWear: { value: 0 },
     uGear: { value: 0 },
+    uNoFeet: { value: 0 },
     uSkin: { value: skin.clone() },
     uTone: { value: skin.clone() },
     uToneOn: { value: 0 },
+    uOutfit: { value: new THREE.Color(1, 1, 1) },
+    uOutfitOn: { value: 0 },
+    uTopRef: { value: clothTone(mesh.userData.atlas ?? material.map, cells.material) },
+    uLegRef: { value: clothTone(mesh.userData.atlas ?? material.map, cells.Bottom) },
     uCellTop: { value: cell("material") },
     uCellBody: { value: cell("Body") },
     uCellBottom: { value: cell("Bottom") },
@@ -379,6 +568,11 @@ export function applyFigureLook(mesh, body) {
     uArmLength: { value: body.armLength },
     uHipY: { value: body.hipY },
     uNeckY: { value: neckY },
+    uHair: { value: new THREE.Color(0.1, 0.06, 0.04) },
+    uHairOn: { value: 0 },
+    uCellHair: { value: cell("Hair") },
+    uHairLum: { value: hairLum },
+    uNoise: { value: noiseTexture() },
   };
   const rig = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
@@ -410,14 +604,30 @@ export function applyFigureLook(mesh, body) {
     setWear(value) {
       uniforms.uWear.value = THREE.MathUtils.clamp(value, 0, 1);
     },
+    /** Shoes on: the model's own clogs hidden under them. */
+    setFeetHidden(hidden) {
+      uniforms.uNoFeet.value = hidden ? 1 : 0;
+    },
+
     setGear(on) {
       uniforms.uGear.value = on ? 1 : 0;
+    },
+    /** The scrubs' colour, a CSS colour (null: the model's own). */
+    setOutfit(color) {
+      uniforms.uOutfitOn.value = color ? 1 : 0;
+      if (color) uniforms.uOutfit.value.set(color);
     },
     /** A SKIN_TONES key ("light" = the model's own). */
     setSkinTone(name) {
       const tone = SKIN_TONES[name]?.color;
       uniforms.uToneOn.value = tone ? 1 : 0;
       if (tone) uniforms.uTone.value.set(tone);
+    },
+    /** A HAIR_COLOURS key ("natural" = the model's own). */
+    setHairColour(name) {
+      const dye = HAIR_COLOURS[name]?.color;
+      uniforms.uHairOn.value = dye ? 1 : 0;
+      if (dye) uniforms.uHair.value.set(dye);
     },
   };
 }

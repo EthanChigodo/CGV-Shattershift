@@ -1,10 +1,21 @@
 /*
  * The story layer (src/story/story-ui.js): letterbox, eyelids, blur, fade,
- * subtitles, the hold-to-skip ring, reaction prompts and the title card.
+ * subtitles, the hold-to-skip ring, reaction prompts and the title card,
+ * in the NIGHTFALL look (src/ui/theme.css) - a film's titles over the
+ * picture: subtitles in warm white with a soft shadow and the speaker small
+ * above them; prompts as clean keys inside a thin ring that runs down; the
+ * title card wide, thin and tracked, fading slowly.
  * Below the menu screens (z-index 8), above every level HUD (6-7).
  */
 
-.story-layer { position: fixed; inset: 0; z-index: 7; pointer-events: none; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+.story-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  font-family: var(--font);
+  color: var(--text);
+}
 .story-layer[hidden] { display: none; }
 
 /* While a cutscene runs, the level HUDs step aside. */
@@ -26,7 +37,7 @@ body.finale-film .topbar { opacity: 0 !important; transition: none !important; }
 
 /* Blur and darkness over the whole frame (the anaesthetic, a hit). */
 .story-blur { position: absolute; inset: 0; backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
-.story-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,.92) 100%); }
+.story-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 35%, rgba(0, 0, 0, 0.92) 100%); }
 .story-tint { position: absolute; inset: 0; opacity: 0; background: #7a0d08; mix-blend-mode: multiply; }
 
 /* Eyelids: two soft black shapes that meet in the middle. */
@@ -35,79 +46,247 @@ body.finale-film .topbar { opacity: 0 !important; transition: none !important; }
 .story-lid.bottom { bottom: 0; border-radius: 50% 50% 0 0 / 30% 30% 0 0; box-shadow: 0 -18px 40px 20px #000; }
 
 /* Letterbox bars. */
-.story-bar { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height .7s cubic-bezier(.2,.7,.2,1); }
+.story-bar { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height 0.9s var(--ease-in-out); }
 .story-bar.top { top: 0; }
 .story-bar.bottom { bottom: 0; }
 .story-layer.letterbox .story-bar { height: 11vh; }
 
 .story-fade { position: absolute; inset: 0; background: #000; opacity: 0; }
 
-/* Subtitles: speaker name in their colour, line in white, on the lower bar. */
-.story-sub { position: absolute; left: 50%; bottom: 4.2vh; transform: translateX(-50%); width: min(88vw, 900px); text-align: center; opacity: 0; transition: opacity .18s; }
+/* ---- Subtitles ---------------------------------------------------------- */
+
+/* In a cutscene they sit in the lower bar: warm white on black. Feedback:
+   with no voiceovers they must be big and easy to read - --sub-scale is the
+   Settings choice (Large by default). */
+.story-sub {
+  position: absolute;
+  left: 50%;
+  bottom: 3.6vh;
+  width: min(88vw, 940px);
+  transform: translateX(-50%);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
 .story-sub.show { opacity: 1; }
-/* During play (Okoro talking while you run): bottom left, like a radio,
-   clear of the centred combo/prompts and above every level's bottom bar. */
-.story-layer.gameplay .story-sub { left: 3vw; bottom: calc(15vh + 34px); transform: none; width: min(46vw, 640px); text-align: left; }
-/* Feedback: with no voiceovers the subtitles must be big and easy to read.
-   --sub-scale is the Settings choice (Large by default). */
-.story-sub .who { display: block; margin-bottom: 6px; font-size: calc(13px * var(--sub-scale, 1.25)); font-weight: 900; letter-spacing: .2em; text-shadow: 0 1px 3px #000; }
-.story-sub .line { display: inline; padding: 5px 14px; font-size: calc(clamp(18px, 2.1vw, 24px) * var(--sub-scale, 1.25)); line-height: 1.5; font-weight: 700; color: #fff; background: rgba(0,0,0,.74); border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; text-shadow: 0 1px 2px #000; }
-.story-sub.direction .line { font-style: italic; font-weight: 500; color: #b9c4c9; background: rgba(0,0,0,.35); }
+/* During play (Okoro talking while you run): low and centred, above the
+   score and the prompt lane, between the vitals and the sphere wheel. */
+.story-layer.gameplay .story-sub { bottom: 150px; width: min(52vw, 700px); }
+.story-sub .who {
+  display: block;
+  margin-bottom: 8px;
+  font-size: calc(9.5px * var(--sub-scale, 1.25));
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  /* (The cast colour is set inline; the name stays quiet.) */
+  color: var(--text-3) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.story-sub .who:empty { display: none; }
+.story-sub .line {
+  display: inline;
+  font-size: calc(clamp(17px, 1.75vw, 22px) * var(--sub-scale, 1.25));
+  font-weight: 420;
+  line-height: 1.42;
+  letter-spacing: 0.005em;
+  color: var(--text);
+  text-wrap: balance;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 14px rgba(0, 0, 0, 0.7), 0 0 34px rgba(0, 0, 0, 0.45);
+}
+.story-sub.direction .line { font-style: italic; font-weight: 340; color: var(--text-2); }
+/* Over play the picture can be bright: a soft shade behind the words, no edge. */
+.story-layer.gameplay .story-sub::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -30px -60px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.5), rgba(4, 6, 9, 0.2) 60%, rgba(4, 6, 9, 0));
+}
+.story-layer.gameplay .story-sub { isolation: isolate; }
+/* The intercom steps up while a story line is on. */
+body:has(.story-layer.gameplay .story-sub.show) .cw-radio { bottom: 270px; }
 
-/* Hold-to-skip ring, bottom right. */
-.story-layer .story-skip { position: absolute; right: 26px; bottom: calc(11vh + 14px); display: flex; align-items: center; gap: 10px; opacity: 0; transition: opacity .3s; color: #cfd8dc; font-size: 10px; font-weight: 800; letter-spacing: .2em; }
-.story-layer .story-skip.show { opacity: .85; }
-.story-layer .story-skip svg { width: 28px; height: 28px; transform: rotate(-90deg); }
-.story-layer .story-skip circle { fill: none; stroke-width: 3; }
-.story-layer .story-skip .track { stroke: rgba(255,255,255,.18); }
-.story-layer .story-skip .fill { stroke: #fff; stroke-dasharray: 69.1; stroke-dashoffset: 69.1; }
-.story-layer .story-skip kbd { padding: 2px 6px; border: 1px solid rgba(255,255,255,.4); border-radius: 3px; font: inherit; }
+/* ---- Hold to skip: a thin ring filling, bottom right -------------------- */
 
-/* Reaction prompts, centre screen. */
-.story-react { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 14px; opacity: 0; transition: opacity .12s; }
+.story-layer .story-skip {
+  position: absolute;
+  right: 32px;
+  bottom: calc(11vh + 18px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  font-size: 12px;
+  font-weight: 450;
+  color: var(--text-2);
+  text-shadow: var(--shadow-text);
+}
+.story-layer .story-skip.show { opacity: 1; }
+.story-layer .story-skip span { text-transform: lowercase; }
+.story-layer .story-skip span::first-letter { text-transform: uppercase; }
+.story-layer .story-skip svg { width: 26px; height: 26px; transform: rotate(-90deg); overflow: visible; }
+.story-layer .story-skip circle { fill: none; stroke-width: 1.5; }
+.story-layer .story-skip .track { stroke: var(--line-2); }
+.story-layer .story-skip .fill { stroke: var(--text); stroke-linecap: round; stroke-dasharray: 69.1; stroke-dashoffset: 69.1; }
+.story-layer .story-skip kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.75em;
+  height: 1.75em;
+  margin: 0 2px;
+  padding: 0 0.45em;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  font: 600 0.84em var(--font);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  text-shadow: none;
+}
+
+/* ---- Reaction prompts, centre screen ------------------------------------ */
+
+.story-react {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  isolation: isolate;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  text-shadow: var(--shadow-text);
+}
+.story-react::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -50px -110px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(4, 6, 9, 0.46), rgba(4, 6, 9, 0.18) 60%, rgba(4, 6, 9, 0));
+}
 .story-react.show { opacity: 1; }
-.story-react .label { color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .3em; text-shadow: 0 0 12px rgba(0,0,0,.9); }
-.story-react .keys { display: flex; gap: 14px; align-items: center; }
-.story-react .plus { color: #fff; font-size: 22px; font-weight: 800; text-shadow: 0 0 10px #000; }
-.story-key { position: relative; width: 74px; height: 74px; display: grid; place-items: center; }
-.story-key svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-.story-key circle { fill: rgba(8,12,14,.72); stroke-width: 5; }
-.story-key .track { stroke: rgba(255,255,255,.18); }
-.story-key .timer { fill: none; stroke: #fff; stroke-dasharray: 201; stroke-dashoffset: 0; stroke-linecap: round; }
-.story-key b { position: relative; color: #fff; font-size: 26px; font-weight: 800; }
-.story-key.wide b { font-size: 13px; letter-spacing: .12em; }
-.story-key.done circle.track { stroke: #6fe3d6; }
-.story-key.done b { color: #6fe3d6; }
+/* The verb and how: a small tracked line (upper case, as reaction.js writes
+   it - it names keys, "ALTERNATE A D FAST", that must stay capitals). */
+.story-react .label {
+  padding-left: 0.22em;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: 0.22em;
+  color: var(--text);
+}
+.story-react .keys { display: flex; gap: 18px; align-items: center; }
+.story-react .plus { font-weight: 200; font-size: 24px; color: var(--text-3); }
+
+/* A key: its name inside a thin ring; a brighter arc runs down with the time. */
+.story-key { position: relative; width: 70px; height: 70px; display: grid; place-items: center; transition: opacity 0.3s, transform 0.4s var(--ease-out); }
+.story-key svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.story-key circle { fill: rgba(4, 6, 9, 0.32); stroke-width: 1.5; }
+.story-key .track { stroke: var(--line-2); transition: stroke 0.3s; }
+.story-key .timer { fill: none; stroke: var(--text); stroke-width: 2; stroke-dasharray: 201; stroke-dashoffset: 0; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(244, 240, 232, 0.35)); }
+.story-key b {
+  position: relative;
+  font-weight: 450;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text);
+}
+.story-key.wide b { font-weight: 500; font-size: 11px; letter-spacing: 0.16em; padding-left: 0.16em; }
+.story-key.done circle.track { stroke: var(--ok); }
+.story-key.done b { color: var(--ok); }
 .story-key.done .timer { opacity: 0; }
-.story-key.next { animation: story-pulse .5s ease-in-out infinite alternate; }
-.story-key.later { opacity: .45; transform: scale(.82); }
+.story-key.next { animation: story-pulse 1.1s var(--ease-in-out) infinite alternate; }
+.story-key.later { opacity: 0.4; transform: scale(0.84); }
 .story-key.later .timer { opacity: 0; }
-.story-key.held circle.track { stroke: #ffe14d; }
-@keyframes story-pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
-.story-react .bar { width: 260px; height: 10px; border: 1px solid rgba(255,255,255,.5); background: rgba(0,0,0,.6); }
-.story-react .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6fe3d6, #fff); }
+.story-key.held circle.track { stroke: var(--ember); }
+.story-key.held b { color: var(--ember-2); }
+@keyframes story-pulse { from { transform: scale(1); } to { transform: scale(1.05); } }
+
+/* Hold / mash: a hairline that fills. */
+.story-react .bar { position: relative; width: 260px; height: 2px; background: var(--line); }
+.story-react .bar i { display: block; height: 100%; width: 0; background: var(--text); box-shadow: 0 0 8px rgba(244, 240, 232, 0.4); }
 .story-react .bar[hidden] { display: none; }
-.story-react.success .label { color: #6fe3d6; }
-.story-react.fail .label { color: #ff5a4e; }
-.story-react.fail .keys { animation: story-shake .3s; }
-@keyframes story-shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+.story-react.success .label { color: var(--ok); }
+.story-react.fail .label { color: var(--blood); }
+.story-react.fail .keys { animation: story-shake 0.35s var(--ease-out); }
+@keyframes story-shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 
-/* Title card (the end), and chapter cards. */
-.story-layer .story-title { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; opacity: 0; transition: opacity 1.2s; }
+/* ---- The title card (the end), and chapter cards ------------------------ */
+
+.story-layer .story-title {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 1.6s var(--ease-in-out);
+}
 .story-layer .story-title.show { opacity: 1; }
-.story-layer .story-title h1 { margin: 0; color: #fff; font-size: clamp(42px, 8vw, 104px); font-weight: 900; letter-spacing: .14em; }
-.story-layer .story-title p { margin: 14px 0 0; color: #b9c4c9; font-size: 13px; font-weight: 700; letter-spacing: .4em; }
+.story-layer .story-title h1 {
+  margin: 0;
+  padding-left: 0.32em;
+  font-stretch: var(--wide);
+  font-weight: 200;
+  font-size: clamp(36px, 5.6vw, 84px);
+  line-height: 1.05;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text);
+  max-width: 94vw;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 0, 0, 0.6);
+}
+.story-layer .story-title h1::after { content: ""; display: block; width: 56px; height: 1px; margin: 26px auto 0; background: var(--line-2); }
+.story-layer .story-title p {
+  margin: 18px 0 0;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  color: var(--text-2);
+  text-shadow: var(--shadow-text);
+}
+.story-layer .story-title p:empty { display: none; }
 
-/* End credits: a centred column scrolling up over black. */
-.story-credits { position: absolute; inset: 0; overflow: hidden; opacity: 0; transition: opacity .8s; }
+/* ---- End credits: a centred column scrolling up over black -------------- */
+
+.story-credits { position: absolute; inset: 0; overflow: hidden; opacity: 0; transition: opacity 1.2s var(--ease-in-out); }
 .story-credits.show { opacity: 1; }
-.story-credits .roll { position: absolute; left: 50%; top: 0; width: min(86vw, 760px); margin-left: calc(min(86vw, 760px) / -2); text-align: center; color: #e8eef2; text-shadow: 0 1px 3px #000, 0 0 18px rgba(0,0,0,.9); will-change: transform; }
-.story-credits h2 { margin: 2.4em 0 .4em; color: #ffb547; font-size: 13px; font-weight: 800; letter-spacing: .32em; }
-.story-credits h1 { margin: 0 0 .2em; font-size: clamp(32px, 5vw, 60px); font-weight: 900; letter-spacing: .14em; }
-.story-credits p { margin: .25em 0; font-size: 15px; line-height: 1.5; }
-.story-credits p small { display: block; color: #9aa7ad; font-size: 11px; letter-spacing: .04em; }
+.story-credits .roll {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: min(86vw, 760px);
+  margin-left: calc(min(86vw, 760px) / -2);
+  text-align: center;
+  color: var(--text);
+  text-shadow: 0 1px 3px #000, 0 0 18px rgba(0, 0, 0, 0.9);
+  will-change: transform;
+}
+.story-credits h2 { margin: 2.6em 0 0.6em; font-size: 12px; font-weight: 500; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text-3); }
+.story-credits h1 {
+  margin: 0 0 0.3em;
+  padding-left: 0.3em;
+  font-stretch: var(--wide);
+  font-weight: 200;
+  font-size: clamp(30px, 4.4vw, 56px);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+.story-credits p { margin: 0.3em 0; font-size: 16px; font-weight: 400; line-height: 1.5; }
+.story-credits p small { display: block; font-size: 12px; letter-spacing: 0.02em; color: var(--text-3); }
 .story-credits .gap { height: 40vh; }
 
+@media (max-width: 650px) {
+  .story-layer.gameplay .story-sub { width: calc(100vw - 32px); bottom: 190px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .story-key.next, .story-react.fail .keys { animation: none; }
 }

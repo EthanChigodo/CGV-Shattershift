@@ -59,6 +59,7 @@ import { CalibrationLift, LIFT_RADIUS } from "../common/calibration-lift.js";
 import { routeSurfaceHit, locateOnRoute } from "../../systems/spheres.js";
 import { cloneCharacter } from "./characters.js";
 import { ashify } from "./ash.js";
+import { compileReady } from "../../systems/warm-up.js";
 
 const _liftCam = new THREE.Vector3();
 const _liftFwd = new THREE.Vector3();
@@ -1357,7 +1358,7 @@ export class MeltdownLevel {
     // pieces for that) and then waits for them; the pieces can go straight
     // back.
     const warm = this._warmAsh(scene);
-    const compiled = renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera));
+    const compiled = compileReady(renderer, scene, camera, { throughTarget: true });
     for (const piece of hidden) piece.visible = false;
     scene.remove(warm);
     await compiled;

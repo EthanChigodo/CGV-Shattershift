@@ -191,13 +191,19 @@ export function buildHelicopterTemplate(scene) {
   root.updateMatrixWorld(true);
   const finalBox = new THREE.Box3().setFromObject(root);
 
-  root.userData.helicopter = {
-    mainRotor: mainPivot.pivot,
-    mainAxis: mainPivot.axis,
-    tailRotor: tailPivot.pivot,
-    tailAxis: tailPivot.axis,
-    size: finalBox.getSize(new THREE.Vector3()),
-  };
+  // (Out of sight of JSON: three copies userData through JSON on every
+  // clone, and these rotor parts would be serialised whole - geometry,
+  // materials, textures encoded to PNGs - seconds per helicopter.)
+  Object.defineProperty(root.userData, "helicopter", {
+    enumerable: false,
+    value: {
+      mainRotor: mainPivot.pivot,
+      mainAxis: mainPivot.axis,
+      tailRotor: tailPivot.pivot,
+      tailAxis: tailPivot.axis,
+      size: finalBox.getSize(new THREE.Vector3()),
+    },
+  });
   for (const m of [...airframe.children, ...mainRotor.children, ...tailRotor.children]) {
     if (m.material?.isMeshStandardMaterial) m.material.envMapIntensity = 0.5;
   }

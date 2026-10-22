@@ -14,6 +14,8 @@
  *   hud.dispose();
  */
 
+import { padText } from "./key-names.js";
+
 function ensureStylesheet() {
   const href = new URL("./meltdown-hud.css", import.meta.url).href;
   if (document.querySelector(`link[data-meltdown-hud]`)) return;
@@ -147,8 +149,10 @@ export class MeltdownHud {
   }
 
   showBanner(label, name, hold = 2600) {
-    this.bannerLabel.textContent = label;
-    this.bannerName.textContent = name;
+    // (Some of the level's titles still carry the old "A // B" separators.)
+    const tidy = (text) => String(text ?? "").replace(/\s*\/\/\s*/g, " · ");
+    this.bannerLabel.textContent = tidy(label);
+    this.bannerName.textContent = tidy(name);
     this.banner.classList.add("show");
     clearTimeout(this._bannerTimer);
     this._bannerTimer = setTimeout(() => this.banner.classList.remove("show"), hold);
@@ -182,6 +186,7 @@ export class MeltdownHud {
 
   /** Context prompt above the vitals, e.g. "MASH SPACE". Pass null to hide. */
   setPrompt(text) {
+    text = padText(text);
     if (text === this._promptText) return;
     this._promptText = text;
     this.prompt.textContent = text ?? "";
@@ -226,6 +231,8 @@ export class MeltdownHud {
   }
 
   toast(text, value = "", kind = "", life = 2200) {
+    text = padText(text);
+    value = padText(value);
     const node = element("div", `mlt-toast ${kind}`.trim(), `${text}${value ? `<b>${value}</b>` : ""}`);
     // The same line twice is one line: the older copy goes.
     for (const old of [...this.toasts.children]) if (old.innerHTML === node.innerHTML) old.remove();
