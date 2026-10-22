@@ -502,6 +502,7 @@ export class MeltdownGame {
   }
 
   async load({ balls = START_BALLS, vitality = START_VITALITY, seed = 0, carry = false } = {}) {
+    this._clearRoofFall();
     document.body.classList.remove("finale-film");
     this.shatter.clear();
     this.sphereImpact.clear();
@@ -621,6 +622,7 @@ export class MeltdownGame {
   }
 
   hide() {
+    this._clearRoofFall();
     this.ammoHint.hide();
     this.visible = false;
     document.body.classList.remove("mlt-active");
@@ -796,6 +798,11 @@ export class MeltdownGame {
 
   get cameraModeName() {
     return CAMERA_MODES[this.cameraMode];
+  }
+
+  /** Only a completed exterior fall retains its shot behind the host's results. */
+  get roofFallBackground() {
+    return this.phase === "over" && !!this.roof && !!this._roofFall?.done;
   }
 
   /** Where the player is, for a status line. */
@@ -1030,6 +1037,7 @@ export class MeltdownGame {
   }
 
   onPointerDown(event) {
+    if (this._roofFall) return;
     this.audio.start();
     if (event.button === 0) {
       this.runner.firing = true;
@@ -1061,6 +1069,7 @@ export class MeltdownGame {
   /** Returns true when the key was Level 3's (the host should not act on it too). */
   onKeyDown(event) {
     const code = event.code;
+    if (this._roofFall && this.phase === "roofFall") return this._isGameKey(code);
     this.held.add(code);
     this.audio.start();
     if (event.repeat && code !== "Space") return this._isGameKey(code);
@@ -1165,6 +1174,16 @@ export class MeltdownGame {
   update(dt, time) {
     dt = Math.min(dt, 0.05);
     if (!this.level && !this.roof) return;
+    // Keep rendering the actual locked camera/scene, not a captured frame.
+    // Only decorative window motion continues behind results; timers, enemies,
+    // player/weapon, statistics and camera controllers must remain frozen.
+    if (this.roofFallBackground) {
+      this.roof.updateFacade(dt);
+      // The shared host sets its own exposure before forwarding each frame.
+      // Keep the Roof's existing presentation without running its simulation.
+      this.renderer.toneMappingExposure = 1.0;
+      return;
+    }
     if (this.phase !== "idle" && this.phase !== "over") this.clock += dt;
     for (let i = this._timers.length - 1; i >= 0; i -= 1) {
       if (this.clock >= this._timers[i].at) this._timers.splice(i, 1)[0].fn();
@@ -2190,6 +2209,7 @@ export class MeltdownGame {
   }
 
   async enterRoof({ balls = START_BALLS, vitality = START_VITALITY } = {}) {
+    this._clearRoofFall();
     document.body.classList.remove("finale-film");
     if (this.level) {
       this.hud.unbind();
@@ -2285,6 +2305,7 @@ export class MeltdownGame {
    * the fire well behind, a moment of grace. The host counts you back in.
    */
   resumeAt(distance, balls = 0) {
+    this._clearRoofFall();
     this._dying = null;
     this.ammoRecovery.reset();
     this.ammoHint.hide();
@@ -2808,6 +2829,11 @@ export class MeltdownGame {
    */
   _roofFell() {
     const r = this.runner;
+    if (!r.alive || this.phase !== "roof") return;
+    if (exteriorFallEstablished(this.roof, this.hero.position, this.hero.vy, this._roofFallOrigin)) {
+      this._startRoofFall();
+      return;
+    }
     // Down an open hatch, or off an open ledge.
     const hatch = this.roof?.overHatch(this.hero.position);
     r.alive = false;
@@ -2873,7 +2899,101 @@ export class MeltdownGame {
     ], escaped ? "YOU GOT OUT" : "THE ROOF", extra);
   }
 
+  _startRoofFall() {
+    if (this._roofFall || this.phase !== "roof" || !this.runner.alive) return;
+    if (!exteriorFallEstablished(this.roof, this.hero.position, this.hero.vy, this._roofFallOrigin)) return;
+    const boundary = this.roof.exteriorAt(this.hero.position);
+    if (!boundary) return;
+    const velocity = this.hero.velocity.clone().add(this.hero.knock);
+    if (this.hero.dodge > 0) velocity.addScaledVector(this.hero.dodgeDir, DODGE_SPEED);
+    // Release the SAME held launcher, preserving its world pose. Its geometry,
+    // materials and gameplay ownership stay intact for reattachment on reset.
+    this.avatar.root.position.copy(this.hero.position);
+    const rig = this.launcher.rig;
+    const launcherRestore = { parent: rig.parent, position: rig.position.clone(),
+      quaternion: rig.quaternion.clone(), scale: rig.scale.clone(), visible: rig.visible };
+    const weapon = { position: rig.getWorldPosition(new THREE.Vector3()), quaternion: rig.getWorldQuaternion(new THREE.Quaternion()) };
+    this.scene.attach(rig);
+    this._roofFall = new RoofFall({ position: this.hero.position, velocity,
+      vy: this.hero.vy, yaw: this.hero.yaw, camera: this.camera, weapon, ...boundary });
+    this._roofFall.savedFog = this.scene.fog.density;
+    this._roofFall.launcherRestore = launcherRestore;
+    this.phase = "roofFall";
+    this.fade.override = 0;
+    this.fade.value = this.fade.target = 0;
+    this.ui.fade.style.opacity = "0";
+    this.cut = null;
+    this.runner.alive = false;
+    this.runner.vitality = 0;
+    this.runner.firing = false;
+    this.held.clear();
+    this.projectiles.clear();
+    this.ammoHint.hide();
+    this.ui.reticle.hidden = true;
+    this.ui.letterbox.classList.add("on");
+    this.hud.vitals.style.visibility = "hidden";
+    this.hud.hideBanner();
+    this.hud.toasts.replaceChildren();
+    this.hud.setPrompt(null);
+    rig.visible = true;
+    this.avatar.shadow.visible = false;
+    this.sfx?.setCharacter?.(this.character);
+    this.sfx?.beginRoofFall();
+    this.events.emit("phase", { phase: "roof-fall" });
+  }
+
+  _updateRoofFall(dt) {
+    const shot = this._roofFall;
+    if (!shot || this.phase !== "roofFall" || this.paused) return;
+    shot.update(dt, this.camera.aspect);
+    this.roof.updateFacade(dt);
+    this.hero.position.copy(shot.position);
+    this.avatar.root.position.copy(shot.position);
+    this.avatar.root.rotation.set(0, shot.yaw, 0);
+    this.avatar.updateFall(shot.time, { reducedMotion: this.reducedMotion });
+    this.avatar.setVisible(!shot.hidden);
+    this.launcher.rig.position.copy(shot.weaponPosition);
+    this.launcher.rig.quaternion.copy(shot.weaponQuaternion);
+    shot.applyCamera(this.camera);
+    this.sfx?.updateRoofFall(shot.audio);
+    // Hold the world during the shot: no enemy, extraction, delayed explosion
+    // or collision can steal the camera or finish this death a second time.
+    if (shot.done) {
+      this.sfx?.stopRoofFall();
+      this.sfx?.updateWind(0);
+      this._roofSummary(false, "YOU FELL");
+    }
+  }
+
+  _clearRoofFall() {
+    this._roofFallOrigin = null;
+    const shot = this._roofFall;
+    if (!shot) return;
+    this._roofFall = null;
+    this.sfx?.stopRoofFall();
+    this.sfx?.updateWind(0);
+    this.avatar.resetFall();
+    this.avatar.setVisible(true);
+    const saved = shot.launcherRestore;
+    const rig = this.launcher.rig;
+    if (saved.parent) saved.parent.add(rig);
+    else rig.removeFromParent();
+    rig.position.copy(saved.position);
+    rig.quaternion.copy(saved.quaternion);
+    rig.scale.copy(saved.scale);
+    rig.visible = saved.visible;
+    this.camera.fov = shot.fov;
+    this.camera.updateProjectionMatrix();
+    this.scene.fog.density = shot.savedFog;
+    this.snapCamera = true;
+    this.fade.override = null;
+    this.fade.value = this.fade.target = 0;
+    this.ui.letterbox.classList.remove("on");
+    this.hud.vitals.style.visibility = "";
+  }
+
   _updateRoofFrame(dt, time) {
+    if (this._roofFall) { this._updateRoofFall(dt); return; }
     const { roof, hero, avatar, runner: r } = this;
     const cut = roof.cutscene;
     const slow = this.phase === "ending" && cut ? cut.timeScale : 1;
@@ -2927,6 +3047,8 @@ export class MeltdownGame {
       roof.clampPlayer(hero.position);
       // Underfoot: the roof - or, past an open ledge, nothing: you fall.
       const ground = roof.groundAt(hero.position);
+      if (ground !== null && hero.position.y >= ground - 0.3) this._roofFallOrigin = null;
+      else this._roofFallOrigin ??= roof.exteriorAt(hero.position) ? "exterior" : "internal";
       hero.vy = hero.vy ?? 0;
       if (ground !== null && hero.position.y >= ground - 0.3 && hero.vy <= 0) {
         hero.position.y = ground;
@@ -2935,7 +3057,10 @@ export class MeltdownGame {
         hero.vy -= ROOF_GRAVITY * dt;
         hero.position.y += hero.vy * dt;
       }
-      if (hero.position.y < ROOF_FALL_LIMIT && r.alive) this._roofFell();
+      if (r.alive && (exteriorFallEstablished(roof, hero.position, hero.vy, this._roofFallOrigin) || hero.position.y < ROOF_FALL_LIMIT)) {
+        this._roofFell();
+        if (this._roofFall || this.phase === "over") return;
+      }
       this.aimPlane.constant = -(hero.position.y + 1.15);
 
       // Aim: an enemy or sack under the cursor, else a point at chest height.
@@ -3073,7 +3198,7 @@ export class MeltdownGame {
   _updateRoofPresentation(dt, time, playing) {
     this.roofMap?.update(time, this.hero, this.phase === "roof" && !this.paused);
     const { runner: r, roof } = this;
-    const danger = THREE.MathUtils.clamp(1 - r.vitality / START_VITALITY, 0, 1);
+    const danger = this._roofFall ? 0.18 : THREE.MathUtils.clamp(1 - r.vitality / START_VITALITY, 0, 1);
     this.hud.setDanger(danger);
     // The roof coming apart: thicker smoke, heat haze, louder everything.
     const chaos = roof?.state.chaos ?? 0;
@@ -3112,7 +3237,7 @@ export class MeltdownGame {
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
     const hint = this.phase === "roof" ? roof?.extractionHint(this.hero.position) : null;
-    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
+    this.hud.setPrompt(this._roofFall ? null : hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 

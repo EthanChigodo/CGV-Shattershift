@@ -93,6 +93,23 @@ button { font: inherit; }
 body.pregame .hud, body.pregame .reticle,
 body.paused .hud, body.paused .reticle { display: none; }
 
+/* Keep the exterior fall unobstructed, including late gameplay toasts. This
+   never targets the pause screen or the final Game Over statistics panel. */
+body.roof-fall-cinematic .cw-ui,
+body.roof-fall-cinematic .hud,
+body.roof-fall-cinematic .sphere-wheel,
+body.roof-fall-cinematic .mlt-vitals,
+body.roof-fall-cinematic .mlt-banner,
+body.roof-fall-cinematic .mlt-toasts,
+body.roof-fall-cinematic .mlt-prompt,
+body.roof-fall-cinematic .roof-map,
+body.roof-fall-cinematic .topbar,
+body.roof-fall-cinematic .reticle,
+body.roof-fall-cinematic .message,
+body.roof-fall-cinematic .sx,
+body.roof-fall-cinematic .pu-badges,
+body.roof-fall-cinematic .pu-edge { display: none !important; }
+
 .screen {
   position: fixed; inset: 0; z-index: 8; display: none; overflow-y: auto; padding: 84px 24px 92px;
   background: radial-gradient(circle at 75% 35%, rgba(200, 70, 25, .16), transparent 35%), rgba(10, 5, 4, .68);

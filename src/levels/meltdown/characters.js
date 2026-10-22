@@ -742,6 +742,10 @@ export const PLAYER_RIG_VERTEX = /* glsl */ `
   uniform float uTwist;
   // The right arm's throw: (pitch, elbow fold, inward, weight).
   uniform vec4 uThrow;
+  // Exterior roof fall only. Zero leaves every normal gait/performer unchanged.
+  uniform float uFalling;
+  uniform vec3 uFallArmR;
+  uniform vec3 uFallArmL;
   // Each arm on the launcher (uHold 1): (pitch, elbow fold, inward) - HOLD_POSE.
   uniform vec3 uHoldR;
   uniform vec3 uHoldL;
@@ -810,13 +814,18 @@ export const PLAYER_RIG_MAIN = /* glsl */ `
       fold = mix(fold, uThrow.y, uThrow.w);
       inward = mix(inward, uThrow.z, uThrow.w);
     }
+    vec3 fallArm = right ? uFallArmR : uFallArmL;
+    pitch = mix(pitch, fallArm.x, uFalling);
+    fold = mix(fold, fallArm.y, uFalling);
+    swing *= 1.0 - uFalling;
+    inward *= 1.0 - uFalling;
     float elbowW = smoothstep(uElbowX - 0.05, uElbowX + 0.05, ax);
     vec3 elbow = vec3(side * uElbowX, uShoulderY, 0.0);
     // Forearm folds forward (about Y in the T-pose frame).
     turn(rigP, rigN, elbow, rotY(-side * fold * elbowW));
     vec3 shoulder = vec3(side * uShoulderX, uShoulderY, 0.0);
     // Drop the arm to the side (about Z), weighted so the shoulder seam blends.
-    turn(rigP, rigN, shoulder, rotZ(-side * (uArmDrop + uRest * 0.18) * armW));
+    turn(rigP, rigN, shoulder, rotZ(-side * mix(uArmDrop + uRest * 0.18, fallArm.z, uFalling) * armW));
     // Swing / raise (about X), then bring the arm in across the body (about Y).
     turn(rigP, rigN, shoulder, rotX((-swing - pitch) * armW));
     turn(rigP, rigN, shoulder, rotY(-side * inward * armW));
@@ -922,6 +931,9 @@ export function rigPlayerMesh(mesh) {
     uLegL: { value: new THREE.Vector2() },
     uTwist: { value: 0 },
     uThrow: { value: new THREE.Vector4() },
+    uFalling: { value: 0 },
+    uFallArmR: { value: new THREE.Vector3() },
+    uFallArmL: { value: new THREE.Vector3() },
     uHoldR: { value: HOLD_POSE.right.clone() },
     uHoldL: { value: HOLD_POSE.left.clone() },
   };

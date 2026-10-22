@@ -1780,7 +1780,12 @@ function getMeltdown() {
   meltdown.events.on("collectible", collectibleFound);
   meltdown.events.on("collectible-near", collectibleNear);
   // The ending (the helicopter, then the credits) plays over the main theme.
-  meltdown.events.on("phase", ({ phase }) => { if (phase === "finale") music.playTheme(); });
+  meltdown.events.on("phase", ({ phase }) => {
+    // Synchronous with entry: do not draw a frame of gameplay stats over the fall.
+    document.body.classList.toggle("roof-fall-cinematic", phase === "roof-fall");
+    if (phase === "finale") music.playTheme();
+    if (phase === "roof-fall") music.gameOverDuck();
+  });
   return meltdown;
 }
 
@@ -1895,6 +1900,8 @@ async function enterMeltdown() {
 function leaveMeltdown(nextLevel) {
   pendingSkyline = false;
   meltdownPrepared = null;
+  ui.end.classList.remove("roof-fall-background");
+  document.body.classList.remove("roof-fall-cinematic");
   meltdown?.unload();
   meltdownEntering = false;
   currentLevel = nextLevel;
@@ -3957,6 +3964,9 @@ function endRun(won, reason = null, detail = null) {
 function deathKind(reason, detail) {
   const title = detail?.title ?? "";
   if (currentLevel === 3) {
+    // The exterior fall already played its death cinematic. Do not capture
+    // and animate another frame over the retained live Rooftop view.
+    if (meltdown?.roofFallBackground) return null;
     // Already played out in the level (the roof's fall: fall-scene.js).
     if (detail?.scene) return null;
     if (title === "LEFT BEHIND") return null;
@@ -3979,6 +3989,7 @@ function deathKind(reason, detail) {
  * stats line as cards; the score counting up.
  */
 function dressEndScreen(won) {
+  ui.end.classList.toggle("roof-fall-background", !won && currentLevel === 3 && !!meltdown?.roofFallBackground);
   ui.end.classList.toggle("is-win", !!won);
   ui.end.classList.toggle("is-death", !won);
   // Levels write "RUN TERMINATED // SECTOR 02": shown with a quieter mark.
@@ -5068,7 +5079,10 @@ function closePause() {
   ui.pause.classList.remove("active");
   paused = false;
   story.setPaused(false);
-  if (wasPaused) music.restore();
+  if (wasPaused) {
+    if (currentLevel === 3 && meltdown?.phase === "roofFall") music.gameOverDuck();
+    else music.restore();
+  }
   if (wasPaused) level1Audio.setPaused(false);
   if (wasPaused) foundryAmbience.setPaused(false);
   if (currentLevel === 3) meltdown?.setPaused(false);
