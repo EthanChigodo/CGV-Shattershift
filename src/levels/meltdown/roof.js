@@ -918,12 +918,11 @@ export class RoofLevel {
 
     // The slab, and the building falling away beneath it.
     this._box(EDGE * 2 + 0.6, 0.6, EDGE * 2 + 0.6, roofing, 0, -0.6, 0);
-    const facade = this.facadeMaterial = this._track(createRoofFacade());
+    const facade = this._track(new THREE.MeshStandardMaterial({ color: 0x3a3a3c, emissive: 0xffffff, emissiveMap: windowsTexture(19, 0.12), emissiveIntensity: 0.9, roughness: 0.9 }));
     // All the way down, into the haze (the city's streets are 160 m below).
-    this.facadeMesh = this._box(EDGE * 2 - 0.2, 300, EDGE * 2 - 0.2, facade, 0, -300.6, 0);
-    this.facadeFrames = createRoofFacadeFrames(mat.trim);
-    this.owned.geometries.push(this.facadeFrames.geometry);
-    this.groups.set.add(this.facadeFrames);
+    facade.emissiveMap.repeat.set(3, 26);
+    this.owned.textures.push(facade.emissiveMap);
+    this._box(EDGE * 2 - 0.2, 300, EDGE * 2 - 0.2, facade, 0, -300.6, 0);
 
     // Parapets north and south; the east and west ones have collapsed.
     for (const z of [-EDGE, EDGE]) {
@@ -1536,14 +1535,6 @@ export class RoofLevel {
     return Math.abs(p.x) <= EDGE && Math.abs(p.z) <= EDGE ? 0 : null;
   }
 
-  /** Actual outer footprint, not a hatch, proximity radius or fall height. */
-  exteriorAt(p) {
-    if (Math.abs(p.x) <= EDGE && Math.abs(p.z) <= EDGE) return null;
-    return Math.abs(p.x) - EDGE >= Math.abs(p.z) - EDGE
-      ? { normal: new THREE.Vector3(Math.sign(p.x), 0, 0), edge: EDGE }
-      : { normal: new THREE.Vector3(0, 0, Math.sign(p.z)), edge: EDGE };
-  }
-
   /**
    * Over one of the open hatches the patients climb out of? Those are holes
    * (1.2 m square) down into the building: step in and you fall.
@@ -1747,12 +1738,6 @@ export class RoofLevel {
 
   /* ---------------- Runtime ---------------- */
 
-  /** Visual clock only; the fall holds enemy AI but not these distant rooms. */
-  updateFacade(dt) {
-    const uniform = this.facadeMaterial?.userData.facadeTime;
-    if (uniform && Number.isFinite(dt)) uniform.value += Math.max(0,dt);
-  }
-
   /**
    * @param {object} p
    * @param {number} p.dt
@@ -1770,7 +1755,6 @@ export class RoofLevel {
 
   update({ dt, time, player, playerVelocity }) {
     const s = this.state;
-    this.updateFacade(dt);
     this.fire.setTime(time);
     this.weather?.update(dt, time);
     this.city?.update(dt, time, { haze: this.cityHaze });
