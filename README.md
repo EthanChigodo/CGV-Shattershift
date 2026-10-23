@@ -176,13 +176,23 @@ Deployment is a zip uploaded to the Moodle submission (no SSH); the server only 
 python tools/build-deploy.py
 ```
 
-This writes `dist/fracture-run/` (only `index.html`, `main.js`, `styles.css`, `src/`, `lib/`, `assets/` - no tests, docs or node_modules) and `dist/fracture-run.zip` with `index.html` at the top level, after checking for absolute paths (`/...`), spaces in filenames and filenames whose case does not match the code. Play the build before uploading, from a subfolder and case-sensitive like the real server:
+This writes `dist/fracture-run/` (only `index.html`, `main.js`, `styles.css`, `src/`, `lib/`, `assets/`, `api/` - no tests, docs or node_modules) and `dist/fracture-run.zip` with `index.html` at the top level, after checking for absolute paths (`/...`), spaces in filenames and filenames whose case does not match the code. Play the build before uploading, from a subfolder and case-sensitive like the real server:
 
 ```text
 python tools/serve.py 4173 dist
 ```
 
 then open `http://localhost:4173/fracture-run/` and play it through (check the console for 404s). Upload `dist/fracture-run.zip` following Moodle's naming convention, then open the published URL in Chrome and play it again.
+
+#### The global leaderboards (`api/leaderboard.php`)
+
+The leaderboards are one PHP file shipped in the build's `api/` folder, on the same server as the game - so they need **PHP on the LAMP server** (with PDO SQLite, or MySQL). On the first call it makes `api/data/` (closed to the web by its own `.htaccess`, the database under a random name) - so that folder must be writable by the web server. For MySQL instead, put an `api/config.php` beside it (never committed, never in the zip):
+
+```php
+<?php return ['dsn' => 'mysql:host=localhost;dbname=fracture;charset=utf8mb4', 'user' => '...', 'pass' => '...'];
+```
+
+Names are unique (ignoring case, spaces and punctuation); a player proves who they are with a token kept in their browser (only its hash is stored). Without PHP the game plays as before: the boards say they're offline, names and bests wait in the browser and go up when the server answers. To try it locally: `php -S localhost:4199` in the repository, then `http://localhost:4199/index.html` (`?askname` shows the name card even under the test harness).
 
 Three.js r160 is kept in the repository (`lib/three/`) rather than loaded from a CDN, so the game runs offline and on networks that block jsDelivr (the lab machines do).
 

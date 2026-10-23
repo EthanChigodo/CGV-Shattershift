@@ -1,0 +1,113 @@
+/**
+ * The Leaderboards screen (index.html #leaderboardsScreen): the boards down
+ * the left in the main menu's own style (one lit, an ember line beside it),
+ * the chosen one's top 50 from the server on the right - your own row lit,
+ * and your place on it if you're further down. Your name at the top, with
+ * Change.
+ *
+ *   const view = new LeaderboardView(screen, { leaderboard, onChangeName });
+ *   view.open();                 // when the screen shows
+ *   view.open("endless_roof");   // on a given board
+ */
+
+import { BOARDS, BOARD, formatValue } from "../systems/leaderboard.js";
+import { DIFFICULTIES } from "../systems/difficulty.js";
+
+function ensureStyles() {
+  if (document.querySelector("link[data-leaderboard]")) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = new URL("./leaderboard.css", import.meta.url).href;
+  link.dataset.leaderboard = "true";
+  document.head.appendChild(link);
+}
+
+const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/** Each board's mark in the list (as the main menu's glyphs). */
+const GLYPHS = { time: "&#9201;", points: "&#9733;", m: "&#8734;", count: "&#9650;" };
+
+export class LeaderboardView {
+  constructor(root, { leaderboard, onChangeName }) {
+    ensureStyles();
+    this.root = root;
+    this.lb = leaderboard;
+    this.onChangeName = onChangeName;
+    this.board = BOARDS[0].key;
+    this.nav = root.querySelector(".lb-boards");
+    this.body = root.querySelector(".lb-body");
+    this.me = root.querySelector(".lb-me");
+    this.nav.innerHTML = BOARDS.map((b) => `
+      <button type="button" class="menu-button" data-board="${b.key}">
+        <i class="menu-glyph" aria-hidden="true">${GLYPHS[b.unit]}</i><span><b>${b.label}</b></span>
+      </button>`).join("");
+    for (const b of this.nav.querySelectorAll("[data-board]")) {
+      // Moving over a board (mouse or controller) shows it; no click needed.
+      const pick = () => this._pick(b.dataset.board);
+      b.addEventListener("click", pick);
+      b.addEventListener("focus", pick);
+    }
+  }
+
+  open(board = this.board) {
+    this._me();
+    this._pick(board, true);
+  }
+
+  _me() {
+    const name = this.lb.name;
+    this.me.innerHTML = `<span>Playing as</span><b>${name ? escape(name) : "No name yet"}</b><button type="button" class="text-button lb-rename">${name ? "Change name" : "Choose a name"}</button>`;
+    this.me.querySelector(".lb-rename").addEventListener("click", () => this.onChangeName?.(() => { this._me(); this._load(); }));
+  }
+
+  _pick(board, force = false) {
+    if (board === this.board && !force) return;
+    this.board = board;
+    for (const b of this.nav.querySelectorAll("[data-board]")) b.setAttribute("aria-current", String(b.dataset.board === board));
+    this._load();
+  }
+
+  async _load() {
+    const board = this.board;
+    const def = BOARD[board];
+    const head = (count) => `
+      <header class="lb-title">
+        <p class="eyebrow">${count}</p>
+        <h3>${def.label}</h3>
+        <p class="lb-note">${def.note}</p>
+      </header>`;
+    this.body.innerHTML = `${head("GLOBAL")}<p class="lb-empty">Loading...</p>`;
+    // (Anything waiting to go up goes first, so your newest best is on it.)
+    await this.lb.flush();
+    const r = await this.lb.top(board);
+    if (this.board !== board) return;
+    if (!r.ok) {
+      this.body.innerHTML = `${head("OFFLINE")}<p class="lb-empty">${escape(r.message ?? "The leaderboard can't be reached.")} Your bests are kept here and go up when it answers.</p>`;
+      return;
+    }
+    const me = this.lb.name?.toLowerCase();
+    const metaOf = (e) => {
+      const d = e.meta?.difficulty;
+      return d && d !== "normal" ? DIFFICULTIES[d]?.name ?? d : "";
+    };
+    const rows = r.entries.map((e) => `
+      <li class="lb-row${e.name.toLowerCase() === me ? " you" : ""}${e.rank <= 3 ? ` top-${e.rank}` : ""}">
+        <span class="lb-rank">${e.rank}</span>
+        <span class="lb-name">${escape(e.name)}</span>
+        <span class="lb-meta">${metaOf(e)}</span>
+        <span class="lb-val">${formatValue(board, e.value)}</span>
+      </li>`).join("");
+    const you = r.you;
+    const listed = you?.rank && r.entries.some((e) => e.rank === you.rank);
+    const how = board === "story_time" || board === "story_score" ? "Finish a whole story run" : board === "trophies" ? "Earn a trophy" : "Play this Endless";
+    const youLine = !you
+      ? `<p class="lb-you">Choose a name to get on the boards.</p>`
+      : you.value === null
+        ? `<p class="lb-you">You're not on this board yet. ${how} to get on it.</p>`
+        : !listed ? `<p class="lb-you">You: <b>#${you.rank}</b> of ${r.total} · ${formatValue(board, you.value)}</p>` : "";
+    this.body.innerHTML = `
+      ${head(`GLOBAL · ${r.total} ${r.total === 1 ? "PLAYER" : "PLAYERS"}`)}
+      ${r.entries.length ? `<ol class="lb-list">${rows}</ol>` : `<p class="lb-empty">Nobody yet. Be the first.</p>`}
+      ${youLine}`;
+  }
+}

@@ -71,7 +71,9 @@ function rows(tab) {
 }
 
 export class Locker {
-  constructor({ renderer, pads, assetBase, audio = null, look, apply, onExit, backdrop = null }) {
+  constructor({ renderer, pads, assetBase, audio = null, look, apply, onExit, backdrop = null, name = null }) {
+    /** Your leaderboard name: { get(), change(done) } (the host's name card). */
+    this.name = name;
     this.backdrop = backdrop;
     ensureStylesheets();
     this.renderer = renderer;
@@ -208,6 +210,7 @@ export class Locker {
       <aside class="lk-panel">
         <p class="ar-eyebrow">SINGLE PLAYER // SUBJECT 07</p>
         <h2>CUSTOMISE</h2>
+        ${this.name ? `<div class="lk-name"><span>Name</span><b>${(this.name.get() ?? "No name yet").replace(/[&<>"']/g, "")}</b><button type="button" class="lk-rename">${this.name.get() ? "Change" : "Choose"}</button></div>` : ""}
         <nav class="lk-tabs">
           <kbd>${padLabel("PadLB")}</kbd>
           <button type="button" data-tab="character" class="${this.tab === "character" ? "on" : ""}">Character</button>
@@ -232,6 +235,8 @@ export class Locker {
     };
     for (const s of this.root.querySelectorAll(".lk-row")) s.onmouseenter = () => { this.row = Number(s.dataset.row); this._mark(); };
     this.root.querySelector(".lk-done").onclick = () => this.onExit?.();
+    const rename = this.root.querySelector(".lk-rename");
+    if (rename) rename.onclick = () => this.name.change(() => this._draw());
     void A;
   }
 

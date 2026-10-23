@@ -567,6 +567,21 @@ export class CausewayLevel {
     return THREE.MathUtils.clamp(s, 0, 1);
   }
 
+  /**
+   * The nearest vent ahead with its cover still on (the smoke warning points
+   * to it): { gap (m along the route), side (-1 left, 1 right) }, or null.
+   */
+  nextVent(distance, ahead = 140) {
+    let best = null;
+    for (const rec of this.live) {
+      if (rec.kind !== "vent" || rec.parts?.cover?.visible === false) continue;
+      const gap = rec.entry.d - distance;
+      if (gap < -3 || gap > ahead) continue;
+      if (!best || gap < best.gap) best = { gap, side: rec.entry.side ?? -1 };
+    }
+    return best;
+  }
+
   /** How much fire the player box is standing in, 0..1. */
   fireExposure(playerBox) {
     let exposure = 0;
