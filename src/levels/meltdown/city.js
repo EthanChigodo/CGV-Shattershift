@@ -24,6 +24,7 @@
 import * as THREE from "../../three.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
 import { GRID_GLSL } from "./load-shedding.js";
+import { ROOMS_GLSL } from "./rooms.js";
 
 /** The grid when there's no load-shedding: always on (load-shedding.js). */
 const NO_GRID = { uGrid: { value: new THREE.Vector4(0, 0, -1, -1) }, uGridTime: { value: 0 } };
@@ -126,13 +127,29 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160, grid = N
         vCityTop = (cityM * vec4(0.0, 1.0, 0.0, 1.0)).y;   // the unit box's top
         vCityNormal = normalize(mat3(cityM) * normal);`);
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;\n${GRID_GLSL}`)
+      .replace("#include <common>", `#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;\n${GRID_GLSL}\n${ROOMS_GLSL}`)
       .replace("#include <emissivemap_fragment>", `
         vec2 cuv = abs(vCityNormal.x) > 0.5 ? vec2(vCityPos.z, vCityPos.y) : vec2(vCityPos.x, vCityPos.y);
         cuv = cuv / vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)}) + vec2(vCityHash * 7.0, vCityHash * 3.0);
         vec4 cityWindows = texture2D(emissiveMap, cuv);
         // Roofs have no windows; the lowest floors fade into the haze.
         cityWindows.rgb *= step(abs(vCityNormal.y), 0.5);
+        // Rooms behind the glass (rooms.js): the eye's ray carried on into a
+        // box 3 m deep behind each window - ceiling, floor, walls, a desk, now
+        // and then someone standing there - fading out where a window is only
+        // a few pixels across.
+        vec3 cityAxis = normalize(vec3(vCityNormal.x, 0.0, vCityNormal.z) + 1e-5);   // depth along the wall's own normal (towers can be turned)
+        vec2 cityOff = vec2(vCityHash * 7.0 * ${tileW.toFixed(1)}, vCityHash * 3.0 * ${tileH.toFixed(1)});
+        vec3 cityEye = abs(vCityNormal.x) > 0.5 ? cameraPosition.zyx : cameraPosition;
+        vec2 cityCell = vec2(${(tileW / 8).toFixed(3)}, ${(tileH / 16).toFixed(3)});
+        vec2 cityAB = cuv * vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)});
+        vec2 cityF = fract(cityAB / cityCell);
+        float cityPane = step(0.1875, cityF.x) * step(cityF.x, 0.8125) * step(0.25, cityF.y) * step(cityF.y, 0.75);
+        vec2 cityLo = floor(cityAB / cityCell) * cityCell;
+        float cityRoomId = fract(sin(dot(cityLo, vec2(7.13, 3.71)) + vCityHash * 91.0) * 43758.5453);
+        float cityRoom = roomShade(vec3(cityAB, dot(vCityPos, cityAxis)), vec3(cityEye.xy + cityOff, dot(cameraPosition, cityAxis)), cityLo, cityCell, 3.0, cityRoomId);
+        float cityNear = clamp(1.6 - length(fwidth(cityAB / cityCell)) * 3.0, 0.0, 1.0);
+        cityWindows.rgb *= mix(1.0, cityRoom, cityNear * cityPane);
         totalEmissiveRadiance *= cityWindows.rgb;
         // Floodlit crowns: most towers have lamps along the parapet washing
         // the top floors - warm sodium or cool white - in pools between the
@@ -145,14 +162,17 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160, grid = N
         vec3 cityStone = mix(diffuseColor.rgb * 3.0, vec3(0.42, 0.37, 0.31), 0.55);
         totalEmissiveRadiance += cityStone * cityFlood * exp(-cityBelow / 20.0) * cityPools * cityFloodOn * cityWall * 1.7;
         // Load-shedding: windows and crown floods out where the grid is down.
-        totalEmissiveRadiance *= mix(0.02, 1.0, gridPower(vCityPos.xz));
+        float cityPower = gridPower(vCityPos.xz);
+        totalEmissiveRadiance *= mix(0.02, 1.0, cityPower);
+        // ... but for a candle or a phone torch in a room here and there.
+        totalEmissiveRadiance += vec3(1.0, 0.6, 0.28) * (1.0 - cityPower) * cityPane * step(0.95, cityRoomId) * mix(0.25, cityRoom * 0.3, cityNear) * cityWall;
         // Coming down: the lights go out (but for a glow off the fires), the
         // falling block greys with its own dust, and the heap is broken concrete.
         totalEmissiveRadiance *= 1.0 - vCityFall * 0.85;
         totalEmissiveRadiance += vec3(0.03, 0.022, 0.016) * vCityFall;
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.18, 0.16), max(vCityRubble, vCityDusty * 0.5));`);
   };
-  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}+flood+fall+grid`;
+  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}+flood+fall+grid+rooms`;
 }
 
 const STREETS_VERTEX = /* glsl */ `

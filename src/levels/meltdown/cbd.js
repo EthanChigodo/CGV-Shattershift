@@ -31,6 +31,7 @@
 
 import * as THREE from "../../three.js";
 import { BufferGeometryUtils } from "../../three-addons.js";
+import { ROOMS_GLSL } from "./rooms.js";
 
 /** Where they stand, from the tower you're on (x east, -z north), metres; yaw in radians. */
 export const CBD = {
@@ -118,6 +119,7 @@ const FRAGMENT = /* glsl */ `
   uniform vec3 uTiers;       // setbacks with floodlights on them (metres up)
   uniform float uFlood;      // the street floodlights' strength
   uniform float uPower;      // the grid (load-shedding.js): 0 off .. 1 on
+  uniform mat4 uToBuilding;
   uniform float uSeed;
   uniform float uHour;
   uniform float uMinute;
@@ -129,6 +131,7 @@ const FRAGMENT = /* glsl */ `
   varying float vDepth;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  ${ROOMS_GLSL}
   float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
@@ -247,6 +250,15 @@ const FRAGMENT = /* glsl */ `
     // Load-shedding: the windows go out, but for a candle or an inverter here and there.
     glow *= mix(0.02, 1.0, uPower);
     glow += vec3(1.0, 0.62, 0.3) * win * (1.0 - uPower) * step(0.94, hash(id + 31.0)) * (0.12 + 0.08 * hash(id + 5.0));
+    // Rooms behind the glass (rooms.js), 3.5 m deep, close up.
+    if (wall && uMode != ${MODE.copper}) {
+      vec3 axis = abs(n.x) > 0.5 ? vec3(sign(n.x), 0.0, 0.0) : vec3(0.0, 0.0, sign(n.z));
+      vec3 eye = (uToBuilding * vec4(cameraPosition, 1.0)).xyz;
+      vec2 size = vec2(uBayW, uFloorH);
+      float room = roomShade(vec3(along, h, dot(vB, axis)), vec3(abs(n.x) > 0.5 ? eye.z : eye.x, eye.y, dot(eye, axis)), floor(cell) * size, size, 3.5, hash(id + 17.0));
+      float near = clamp(1.6 - length(fwidth(cell)) * 3.0, 0.0, 1.0);
+      glow *= mix(1.0, room, near * step(0.5, win));
+    }
     float haze = clamp(1.0 - exp(-fogDensity * fogDensity * vDepth * vDepth * 0.7), 0.0, 1.0);
     gl_FragColor = vec4(mix(col, fogColor, haze) + glow * (1.0 - haze * 0.6), 1.0);
     #include <tonemapping_fragment>
