@@ -186,7 +186,7 @@ then open `http://localhost:4173/fracture-run/` and play it through (check the c
 
 #### The global leaderboards (`api/leaderboard.php`)
 
-The leaderboards are one PHP file shipped in the build's `api/` folder, on the same server as the game - so they need **PHP on the LAMP server** (with PDO SQLite, or MySQL). On the first call it makes `api/data/` (closed to the web by its own `.htaccess`, the database under a random name) - so that folder must be writable by the web server. For MySQL instead, put an `api/config.php` beside it (never committed, never in the zip):
+The leaderboards are one PHP file shipped in the build's `api/` folder, on the same server as the game - so they need **PHP on the LAMP server**. It keeps its data in whatever the server allows: SQLite if PHP has it, else a single JSON file (locked while written), in `api/data/` (made on the first call, closed to the web by its own `.htaccess`, the file under a random name) or - if the game's folder is read-only - the server's temp folder. If it still says it can't open its storage, open `.../api/leaderboard.php?action=diag`: it lists the PHP version, the database drivers and which folders it can write to (no secrets). For MySQL instead, put an `api/config.php` beside it (never committed, never in the zip):
 
 ```php
 <?php return ['dsn' => 'mysql:host=localhost;dbname=fracture;charset=utf8mb4', 'user' => '...', 'pass' => '...'];
