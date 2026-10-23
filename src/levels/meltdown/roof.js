@@ -57,6 +57,7 @@ import { TowerCollapse } from "./skyline-collapse.js";
 import { CbdBuildings, CBD_SETS } from "./cbd.js";
 import { Demolition } from "./demolition.js";
 import { LoadShedding } from "./load-shedding.js";
+import { CityWar } from "./war.js";
 import { createPropKit } from "../../story/stages/props.js";
 import { buildHatchGuards } from "./hatch-guard.js";
 import { compileReady } from "../../systems/warm-up.js";
@@ -118,12 +119,13 @@ const LURE_FROM = 8;
  * The towers that come down: generic towers like the rest of the city, but
  * placed where they can be seen go: in the gaps above the near rooftops
  * the roof camera looks over (the brick block's, the flats'), out of the
- * way of the downtown's buildings (cbd.js CBD_SETS).
+ * way of the downtown's buildings (cbd.js CBD_SETS). The Labs' annexes
+ * (demolition.js); `topple`: the later two go over sideways as they fall.
  */
 const CONDEMNED = [
   { x: -20, z: -150, top: 20, w: 26, d: 22, yaw: 0.08, finish: 0 },
-  { x: -35, z: -95, top: 4, w: 22, d: 19, yaw: -0.1, finish: 2 },
-  { x: -75, z: -150, top: 10, w: 24, d: 20, yaw: 0.2, finish: 1 },
+  { x: -35, z: -95, top: 4, w: 22, d: 19, yaw: -0.1, finish: 2, topple: 0.34 },
+  { x: -75, z: -150, top: 10, w: 24, d: 20, yaw: 0.2, finish: 1, topple: -0.38 },
 ];
 let cutawayShown = false;
 /**
@@ -346,6 +348,7 @@ const SKY_VERTEX = /* glsl */ `
 `;
 const SKY_FRAGMENT = /* glsl */ `
   uniform float uTime;
+  uniform float uWar;
   varying vec3 vDir;
   float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
   float noise(vec2 p) {
@@ -362,6 +365,8 @@ const SKY_FRAGMENT = /* glsl */ `
     vec2 p = vDir.xz / max(0.15, h + 0.3) * 1.6 + vec2(uTime * 0.02, uTime * 0.01);
     float smoke = noise(p) * 0.6 + noise(p * 2.7) * 0.4;
     col = mix(col, vec3(0.07, 0.05, 0.045), smoothstep(0.45, 0.85, smoke) * 0.7 * smoothstep(-0.1, 0.3, h));
+    // The war (war.js): the horizon burning orange, the smoke lit from under.
+    col += vec3(0.34, 0.1, 0.03) * uWar * (1.0 - smoothstep(-0.05, 0.4, h)) * (0.6 + 0.6 * smoke);
     // A few stars through the gaps.
     vec2 sp = floor(vDir.xz / (h + 1.0) * 380.0);
     float star = step(0.9975, hash(sp)) * smoothstep(0.25, 0.6, h) * (1.0 - smoothstep(0.4, 0.7, smoke));
@@ -1122,7 +1127,7 @@ export class RoofLevel {
 
     // Sky dome.
     this.skyMaterial = new THREE.ShaderMaterial({
-      uniforms: { uTime: this.fire.time },
+      uniforms: { uTime: this.fire.time, uWar: { value: 0 } },
       vertexShader: SKY_VERTEX,
       fragmentShader: SKY_FRAGMENT,
       side: THREE.BackSide,
@@ -1274,7 +1279,7 @@ export class RoofLevel {
       // (None of the others in their spots, or right round them.)
       clear: [...clear, ...CONDEMNED.map((c) => ({ x: c.x, z: c.z, r: Math.hypot(c.w, c.d) * 0.6 + 16 }))],
     });
-    const demolitions = this.city.demolitions.map((tower, k) => new Demolition({ city: this.city, tower, seed: 3 + k }));
+    const demolitions = this.city.demolitions.map((tower, k) => new Demolition({ city: this.city, tower, seed: 3 + k, topple: CONDEMNED[k].topple ?? 0 }));
     this.root.add(this.city.root, this.cbd.root, ...this.collapses.map((c) => c.root));
     // The first is the cutaway, if a camera can be placed to see it whole.
     const blocked = [...clear.map((c) => ({ ...c, top: Infinity })), ...this.city.footprints.filter((f) => !CONDEMNED.some((c) => c.x === f.x && c.z === f.z))];
@@ -1282,6 +1287,9 @@ export class RoofLevel {
     this.demolitions = demolitions.map((d, k) => Object.assign(d, { chaosAt: DEMOLISH_AT[k], cutaway: k === 0 && Boolean(d.shot) }));
     this.city.root.name = "Skyline";
     this.root.add(...this.demolitions.map((d) => d.root));
+    // And the city at war round them, worse and worse with the chaos.
+    this.war = new CityWar({ streetY: -160 });
+    this.root.add(this.war.root);
     if (assetBase) this.city.loadHelicopters(assetBase, { count: this.light ? 1 : 3 }).catch(() => {});
   }
 
@@ -1914,10 +1922,17 @@ export class RoofLevel {
         this.events.emit(e.kind === "seen" ? "tower-seen" : "tower-down", { kind: e.kind, strength: e.strength, position: c.root.position });
       }
     }
+    if (this.war) {
+      const live = !this.state.ending || this.state.ending === "extraction";
+      for (const b of this.war.update(dt, time, live ? this.state.chaos : 0)) this.events.emit("war-blast", b);
+      const glow = this.war.glow;
+      this.city.war.uWar.value = THREE.MathUtils.clamp((this.state.chaos - 0.15) / 0.85, 0, 1);
+      if (this.skyMaterial) this.skyMaterial.uniforms.uWar.value = glow;
+    }
     for (const d of this.demolitions ?? []) {
       for (const e of d.update(dt, time)) {
         if (e.kind === "seen") this.events.emit("tower-seen", { position: d.root.position });
-        else this.events.emit("tower-down", { kind: e.kind === "charges" ? "blast" : "fall", strength: e.strength, position: d.root.position });
+        else this.events.emit("tower-down", { kind: e.kind === "charges" || e.kind === "chem" || e.kind === "pop" ? "blast" : "fall", strength: e.strength, position: d.root.position });
       }
     }
     if (this.cutscene?.kind === "cutaway") {
@@ -2124,6 +2139,11 @@ export class RoofLevel {
   /* ---------------- Load-shedding ---------------- */
 
   /** 0 (lit) .. 1 (the grid down on the roof): for the host's torch, fog and HUD. */
+  /** How orange the sky is with the city burning (war.js): 0..1. */
+  get warGlow() {
+    return this.war?.glow ?? 0;
+  }
+
   /** The roof's: 0 lit .. 1 dark (the generator, running, brings most of it back). */
   get darkness() {
     return (this.shed?.darkness ?? 0) * (1 - 0.75 * (this.generator?.power ?? 0));
@@ -2705,6 +2725,7 @@ export class RoofLevel {
     this.city?.dispose();
     this.cbd?.dispose();
     for (const d of this.demolitions ?? []) d.dispose();
+    this.war?.dispose();
     for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();

@@ -199,6 +199,8 @@ const FOG_DANGER = new THREE.Color(0x2a0804);
 // In the dark beat the fog is smoke with nothing lighting it.
 const FOG_DARK = new THREE.Color(0x050404);
 const FOG_ROOF = new THREE.Color(0x151a24);
+/** The roof's night with the city burning (war.js). */
+const FOG_WAR = new THREE.Color(0x2c160f);
 const BASE_FOV = 72;
 const BASE_EXPOSURE = 0.95;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -2608,6 +2610,12 @@ export class MeltdownGame {
       hud.toast("GENERATOR ON", "THE NOISE - THEY'RE ALL COMING", "warn", 2400);
     });
     on("generator-off", () => audio.powerDown());
+    on("war-blast", ({ position, strength }) => {
+      // Somewhere across the city: a thump, felt more than heard.
+      if (this.phase !== "roof") return;
+      this.sfx?.explosion?.(0.12 + strength * 0.25, this._placeOf(position).pan);
+      this.trauma = Math.min(1, this.trauma + strength * 0.04);
+    });
     on("tower-seen", () => {
       if (this.phase === "roof") hud.toast("THE TOWER ACROSS THE STREET IS GOING", "", "warn", 1800);
     });
@@ -3140,10 +3148,12 @@ export class MeltdownGame {
     this.scene.fog.density = (0.0058 + chaos * 0.007) * (this.phase === "roofCut" ? 0.55 : 1) + (this._fall?.fogBoost ?? 0);
     // Load-shedding: the night closes in with the city's lights gone, and the
     // warning counts down.
+    // And it goes orange as the city burns.
     const dark = roof?.darkness ?? 0;
-    if (roof && (dark > 0 || this._shedSky)) {
-      this._shedSky = dark > 0;
-      this.scene.fog.color.copy(FOG_ROOF).multiplyScalar(1 - 0.5 * dark);
+    const war = roof?.warGlow ?? 0;
+    if (roof && (dark > 0 || war > 0.005 || this._shedSky)) {
+      this._shedSky = dark > 0 || war > 0.005;
+      this.scene.fog.color.copy(FOG_ROOF).lerp(FOG_WAR, war * 0.6).multiplyScalar(1 - 0.5 * dark);
       this.scene.background.copy(this.scene.fog.color);
     }
     if (this._shed && !this.ui.shed.hidden) {
