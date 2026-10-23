@@ -1,0 +1,129 @@
+/* Phones and small screens (src/ui/phone.js): the game in landscape on a
+   phone - everything fits a screen ~390 px tall, out of the notch and the
+   home bar, with targets a thumb can hit. Loaded last, so it only adjusts.
+
+   html.touch          a touch screen (the pointer is a finger)
+   html.portrait-phone a touch screen held upright: "turn it sideways"
+   (max-height: 540px) a short screen - a phone on its side, or a small window
+
+   (Most rules start with `html`: the panels' own sheets load after this one.) */
+
+:root {
+  /* How much the in-run panels shrink on a short screen. */
+  --hud-zoom: 1;
+  /* The notch and the rounded corners (0 off a phone). */
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* ---- A finger, not a mouse ------------------------------------------------- */
+
+html.touch, html.touch body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* No pull-to-refresh, no bounce, no double-tap zoom. */
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+/* The game itself takes every touch (the touch controls read them). */
+html.touch #game { touch-action: none; }
+html.touch .screen, html.touch .unlock-card { touch-action: pan-y; }
+
+/* Targets a thumb can hit: 40 px at least. */
+html.touch .menu-button, html.touch .menu-list-row .menu-button,
+html.touch #startScreen .menu-list > .menu-button:nth-child(n+3) { height: auto; min-height: 40px; }
+html.touch .menu-button small { display: none; }
+html.touch :is(.link-button, .primary-button, .text-button) { min-height: 40px; }
+html.touch .icon-button { min-height: 40px; min-width: 64px; }
+html.touch .difficulty-button,
+html.touch .screen [role="tab"] { min-height: 40px; min-width: 44px; }
+html.touch .setting-row, html.touch .toggle-row { min-height: 44px; }
+html.touch input[type="range"] { min-height: 32px; }
+html.touch select { min-height: 40px; }
+
+/* ---- Held upright: turn it sideways --------------------------------------- */
+
+.turn-phone { display: none; }
+html.portrait-phone .turn-phone {
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; place-items: center; padding: 32px;
+  background: radial-gradient(ellipse at 50% 40%, #10151c, #05070a 70%);
+  color: var(--text, #f4f0e8); font-family: var(--font, sans-serif); text-align: center;
+}
+.turn-phone > div { display: grid; justify-items: center; gap: 14px; }
+.turn-phone i {
+  width: 46px; height: 80px; margin-bottom: 18px;
+  border: 2px solid var(--text-2, #cfc8bc); border-radius: 9px;
+  box-shadow: inset 0 -6px 0 -4px var(--ember, #ff7a3d);
+  animation: turnPhone 2.4s var(--ease-in-out, ease-in-out) infinite;
+}
+.turn-phone b { font-stretch: var(--wide); font-weight: 300; font-size: 18px; letter-spacing: .2em; text-transform: uppercase; }
+.turn-phone span { max-width: 260px; font-size: 14px; line-height: 1.5; color: var(--text-3, #9a948b); }
+@keyframes turnPhone { 0%, 25% { transform: rotate(0); } 55%, 100% { transform: rotate(-90deg); } }
+@media (prefers-reduced-motion: reduce) { .turn-phone i { animation: none; transform: rotate(-90deg); } }
+/* Nothing else shows meanwhile (and nothing takes a stray touch). */
+html.portrait-phone body > :not(.turn-phone) { visibility: hidden; }
+
+/* ---- A short screen: a phone on its side ----------------------------------- */
+
+@media (max-height: 540px) {
+  :root { --hud-zoom: .68; }
+
+  /* The in-run panels, smaller, clear of the notch: each one's own layout,
+     just scaled (zoom keeps them in their corners). */
+  html :is(.foundry-ui, .cw-ui, .meltdown-ui, .elevator-ui, .sphere-wheel, .charge-meter, .pu-badges, .pu-card, .tt-root) {
+    zoom: var(--hud-zoom);
+  }
+  html :is(.foundry-ui, .cw-ui, .meltdown-ui, .elevator-ui) {
+    left: calc(var(--safe-l) / var(--hud-zoom));
+    right: calc(var(--safe-r) / var(--hud-zoom));
+    bottom: calc(var(--safe-b) / var(--hud-zoom));
+  }
+  html .sphere-wheel { margin-right: calc(var(--safe-r) / var(--hud-zoom)); }
+
+  /* The bar along the top: the name, PAUSE and VIEW - smaller, but still big
+     enough to tap. */
+  html .topbar { height: 46px; padding: 8px calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
+  html .topbar .icon-button { height: 34px; }
+
+  /* Menus: less air above and below, clear of the notch. */
+  html .screen {
+    padding: 22px calc(var(--gutter) + var(--safe-r)) calc(26px + var(--safe-b)) calc(var(--gutter) + var(--safe-l));
+  }
+  html .screen h1, html .screen h2, html .menu-heading { font-size: clamp(24px, 7.4vh, 34px); }
+  html .intro { margin-top: 10px; font-size: 13px; line-height: 1.5; }
+  html .menu-list, html .menu-main .menu-list { margin-top: 12px; }
+  html .menu-button b { font-size: 17px; }
+  html .menu-button.menu-big b { font-size: 20px; }
+  /* The name, smaller, so the main menu fits under it. */
+  html .logo-word { font-size: clamp(34px, 11vh, 52px); }
+  html .logo em { margin-top: .7em; font-size: 10px; }
+  /* Tabs (settings, the manual, trophies): a row you can slide sideways. */
+  html :is(.tr-tabs, .fm-tabs) { gap: 18px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
+
+  /* What a sector gives you: from the top (centred, its top would be out of
+     reach), the pictures smaller, the cards in a row, and Continue always
+     there at the bottom. */
+  html .unlock-card { place-items: start center; padding: 16px calc(20px + var(--safe-r)) 0 calc(20px + var(--safe-l)); }
+  html .uc-title { margin: 4px 0 14px; font-size: 24px; }
+  html .uc-title::after { margin-top: 10px; }
+  html .uc-items, html .unlock-card.few .uc-items, html .unlock-card.many .uc-items {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px;
+  }
+  html .uc-pic { max-height: 22vh; aspect-ratio: auto; height: 22vh; margin-bottom: 2px; }
+  html .uc-name, html .unlock-card.many .uc-name { font-size: 16px; }
+  html .uc-text, html .unlock-card.many .uc-text { font-size: 12.5px; line-height: 1.45; }
+  html .uc-how dd { font-size: 12px; }
+  html .uc-foot {
+    position: sticky; bottom: 0; margin-top: 14px; padding: 12px 0 calc(14px + var(--safe-b));
+    background: linear-gradient(0deg, rgba(4, 6, 9, .96) 60%, rgba(4, 6, 9, 0));
+  }
+  html .uc-button { min-height: 40px; padding-bottom: 6px; }
+}
+
+/* A touch screen: the keyboard's keys mean nothing - not on the cards. */
+html.touch .uc-keys { display: none; }

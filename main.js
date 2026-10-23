@@ -73,6 +73,7 @@ import { FieldManual } from "./src/ui/field-manual.js";
 import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
 import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/systems/ghosts.js";
 import { TabbedScreen } from "./src/ui/tabbed-screen.js";
+import { setUpPhone } from "./src/ui/phone.js";
 import { CreditsRoom } from "./src/ui/credits-room.js";
 import { compileReady, uploadTextures } from "./src/systems/warm-up.js";
 import { LAUNCHER_SKINS, saveLauncherSkin } from "./src/figure/launcher-skins.js";
@@ -6136,6 +6137,8 @@ addEventListener("keyup", (event) => {
   if (event.code === "KeyS" || event.code === "ArrowDown") keysDown.delete("down");
 });
 addEventListener("blur", () => { keysDown.clear(); run.focusing = false; meltdown?.onBlur(); });
+// A phone turned upright mid-run: it pauses under the "turn it sideways" screen.
+setUpPhone({ onPortrait: () => { if (!paused) openPause(); } });
 
 /* ---- Controllers (src/systems/gamepads.js) --------------------------------- */
 

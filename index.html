@@ -2,7 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- On a phone (src/ui/phone.js): added to the home screen it opens full
+         screen and sideways; the browser's bars take the game's colour. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#05070a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Fracture Run" />
     <meta name="description" content="Fracture Run - a playable CGV project concept demo." />
     <title>Fracture Run - CGV Demo</title>
     <!-- A refresh that is about to put you back in a run (or on another menu
@@ -37,6 +45,7 @@
     <link rel="stylesheet" href="./src/ui/mash-prompt.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
     <link rel="stylesheet" href="./src/ui/serum-fx.css" data-serum-fx />
+    <link rel="stylesheet" href="./src/ui/phone.css" />
   </head>
   <body>
     <!-- Loading, and coming back to where you were after a refresh: the title,
