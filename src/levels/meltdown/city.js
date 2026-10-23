@@ -66,10 +66,11 @@ function windowTile(seed, { lit = 0.3, warm = 0.8, cool = "160,200,255" } = {}) 
 function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\n#ifdef USE_INSTANCING\nattribute vec2 aFall;\n#endif")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;\n#ifdef USE_INSTANCING\nattribute vec2 aFall;\n#endif")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         vCityFall = 0.0;
         vCityRubble = 0.0;
+        vCityDusty = 0.0;
         #ifdef USE_INSTANCING
           if (aFall.x > 0.0) {
             float citySy = length(instanceMatrix[1].xyz);
@@ -86,6 +87,7 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
               transformed.y = (max(fell, heap) - cityBaseY) / citySy;
             }
             vCityFall = aFall.y;
+            vCityDusty = step(1.0, aFall.x) * aFall.y;   // greyed only once it's moving
           }
         #endif`)
       .replace("#include <fog_vertex>", `#include <fog_vertex>
@@ -100,7 +102,7 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
         vCityTop = (cityM * vec4(0.0, 1.0, 0.0, 1.0)).y;   // the unit box's top
         vCityNormal = normalize(mat3(cityM) * normal);`);
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;")
       .replace("#include <emissivemap_fragment>", `
         vec2 cuv = abs(vCityNormal.x) > 0.5 ? vec2(vCityPos.z, vCityPos.y) : vec2(vCityPos.x, vCityPos.y);
         cuv = cuv / vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)}) + vec2(vCityHash * 7.0, vCityHash * 3.0);
@@ -121,8 +123,8 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
         // Coming down: the lights go out (but for a glow off the fires), the
         // falling block greys with its own dust, and the heap is broken concrete.
         totalEmissiveRadiance *= 1.0 - vCityFall * 0.85;
-        totalEmissiveRadiance += vec3(0.11, 0.09, 0.075) * vCityFall;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.18, 0.16), max(vCityRubble, vCityFall * 0.5));`);
+        totalEmissiveRadiance += vec3(0.03, 0.022, 0.016) * vCityFall;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.18, 0.16), max(vCityRubble, vCityDusty * 0.5));`);
   };
   material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}+flood+fall`;
 }
