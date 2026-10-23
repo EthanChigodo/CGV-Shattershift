@@ -76,6 +76,7 @@ const TOWER_FRAGMENT = /* glsl */ `
   uniform float uDark;    // the falling block's lights going out, 0..1
   uniform float uBlast;   // the failing floor's flash, 0..1
   uniform float uHeight;  // its top, metres above the base
+  uniform float uPower;   // the grid (load-shedding.js): 0 off .. 1 on
   uniform float uSeed;
   uniform float uTime;
   uniform vec3 fogColor;
@@ -115,6 +116,7 @@ const TOWER_FRAGMENT = /* glsl */ `
     // The heap: broken concrete, dust-grey.
     col = mix(col, vec3(0.13, 0.11, 0.1) * (city * 0.5 + 0.1), vRubble);
     glow *= 1.0 - vRubble;
+    glow *= mix(0.03, 1.0, uPower);
     float haze = 1.0 - exp(-fogDensity * fogDensity * vDepth * vDepth * 0.6);
     gl_FragColor = vec4(mix(col, fogColor, clamp(haze, 0.0, 1.0)) + glow * (1.0 - haze * 0.7), 1.0);
     #include <tonemapping_fragment>
@@ -204,7 +206,7 @@ export class TowerCollapse {
     box.translate(0, (height + below) / 2 - below, 0);
     this.uniforms = {
       uDrop: { value: 0 }, uCrush: { value: fail }, uTilt: { value: 0 },
-      uDark: { value: 0 }, uBlast: { value: 0 }, uSeed: { value: seed }, uTime: { value: 0 }, uHeight: { value: height },
+      uDark: { value: 0 }, uBlast: { value: 0 }, uSeed: { value: seed }, uTime: { value: 0 }, uHeight: { value: height }, uPower: { value: 1 },
       ...fogUniforms(),
     };
     this.tower = new THREE.Mesh(box, own(new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: TOWER_VERTEX, fragmentShader: TOWER_FRAGMENT, fog: true })));

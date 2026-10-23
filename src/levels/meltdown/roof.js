@@ -56,6 +56,7 @@ import { CityAtNight } from "./city.js";
 import { TowerCollapse } from "./skyline-collapse.js";
 import { CbdBuildings, CBD_SETS } from "./cbd.js";
 import { Demolition } from "./demolition.js";
+import { LoadShedding } from "./load-shedding.js";
 import { createPropKit } from "../../story/stages/props.js";
 import { buildHatchGuards } from "./hatch-guard.js";
 import { compileReady } from "../../systems/warm-up.js";
@@ -89,6 +90,15 @@ const SKYLINE_SECONDS = 6;
  * while a helicopter's-eye camera watches it fall.
  */
 const DEMOLISH_AT = [0.22, 0.58, 0.9];
+/**
+ * Load-shedding (load-shedding.js): in the story, once, part way into the
+ * fight (after the first demolition's cutaway); in Endless, again and again,
+ * the stage climbing 2, 4, 6, 8 and the dark lasting longer each time.
+ */
+const SHED_STORY = { at: 0.3, stage: 6, seconds: 15 };
+const SHED_ENDLESS = { first: 40, every: 75 };
+/** The emergency strobe, on its battery: on the lift housing. */
+const STROBE = new THREE.Vector3(2.6, 3.7, EDGE - 1.6);
 /**
  * The towers that come down: generic towers like the rest of the city, but
  * placed where they can be seen go: in the gaps above the near rooftops
@@ -354,6 +364,8 @@ const _w = new THREE.Vector3();
 const _skyB = new THREE.Vector3();
 const _skyC = new THREE.Vector3();
 const _skyD = new THREE.Vector3();
+/** Where the transformer goes as the power comes back: on the parapet by the lift housing. */
+const _SHED_SPARKS = new THREE.Vector3(-6, 1.4, EDGE - 0.4);
 const _rayCamera = new THREE.PerspectiveCamera();
 
 /** Seconds a downed body takes to burn away to ash. */
@@ -397,6 +409,17 @@ class Enemy {
     }
 
     // The hurtbox is what balls hit; it follows the body.
+    // Eyes that catch the light in the dark (load-shedding): two glints,
+    // invisible until the grid goes down.
+    if (kind === "patient" && level.eyes) {
+      for (const x of [-0.035, 0.035]) {
+        const eye = new THREE.Sprite(level.eyes);
+        eye.position.set(x, 1.63, 0.13);
+        eye.scale.setScalar(0.07);
+        this.body.add(eye);
+      }
+    }
+
     this.hurt = new THREE.Mesh(level.kit.geometries.unitBox, level.kit.materials.collider);
     this.hurt.scale.set(0.9, 1.9, 0.8);
     this.hurt.position.y = 0.95;
@@ -840,6 +863,10 @@ export class RoofLevel {
       extractT: 0,
     };
 
+    // The grid, before the city that goes dark with it.
+    this.shed = new LoadShedding({ stage: endless ? 2 : SHED_STORY.stage, seconds: SHED_STORY.seconds * (this.difficulty.shed ?? 1) });
+    // The patients' eyes in the dark (load-shedding): one material for all.
+    this.eyes = this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0xd8ff6a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, fog: false }));
     this._buildSet();
     this._dressRoof();
     this._buildSkyline(assetBase);
@@ -1222,7 +1249,7 @@ export class RoofLevel {
     this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
     const clear = [...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
     this.city = new CityAtNight({
-      seed: 41, streetY: -160, neighbours: 3, condemned: CONDEMNED,
+      seed: 41, streetY: -160, neighbours: 3, condemned: CONDEMNED, grid: this.shed.uniforms,
       // (None of the others in their spots, or right round them.)
       clear: [...clear, ...CONDEMNED.map((c) => ({ x: c.x, z: c.z, r: Math.hypot(c.w, c.d) * 0.6 + 16 }))],
     });
@@ -1243,6 +1270,14 @@ export class RoofLevel {
     this.moon = new THREE.DirectionalLight(0x9fb2d6, 0.9);
     this.moon.position.set(-30, 60, -20);
     g.add(this.hemisphere, this.moon);
+    // The emergency strobe for load-shedding: always there, dark until then
+    // (a light added mid-fight would recompile every shader).
+    this.strobe = new THREE.PointLight(0xff2412, 0, 28, 1.4);
+    this.strobe.position.copy(STROBE);
+    this.strobeGlow = new THREE.Sprite(this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0xff3020, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 })));
+    this.strobeGlow.position.copy(STROBE);
+    this.strobeGlow.scale.setScalar(2.2);
+    g.add(this.strobe, this.strobeGlow);
     // Two floods and two dim glows up from the city past the ledges: a fixed four.
     this.points = [];
     for (const f of this.floods) {
@@ -1758,7 +1793,7 @@ export class RoofLevel {
     this.fire.setTime(time);
     this.weather?.update(dt, time);
     this.city?.update(dt, time, { haze: this.cityHaze });
-    this.cbd?.update(dt, time);
+    this.cbd?.update(dt, time, this.shed ? (x, z) => this.shed.power(x, z) : null);
     for (const c of this.collapses ?? []) {
       for (const e of c.update(dt, time)) {
         // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
@@ -1845,11 +1880,17 @@ export class RoofLevel {
     this._updateChaos(dt, time, ctx);
     for (const piece of this._ticking) piece.userData.tick?.(dt, time);
 
+    this._updateShedding(dt, time, ctx);
+    const dark = this.shed?.darkness ?? 0;
     for (const p of this.points) {
       if (p.flicker) {
         p.flash = Math.max(0, (p.flash ?? 0) - dt * 3);
-        // Steady (no fire to flicker), flaring with each blast in the facade.
-        p.light.intensity = p.base * (1 + s.chaos * 0.4 + p.flash * 12);
+        // Steady (no fire to flicker), flaring with each blast in the facade;
+        // dimmer with the city's lights out below.
+        p.light.intensity = p.base * (1 + s.chaos * 0.4 + p.flash * 12) * (1 - 0.6 * dark);
+      } else {
+        // The floods: out in load-shedding.
+        p.light.intensity = p.base * (1 - dark);
       }
     }
 
@@ -1963,6 +2004,70 @@ export class RoofLevel {
       this._arrival = null;
       this.events.emit("arrived", {});
     }
+  }
+
+  /* ---------------- Load-shedding ---------------- */
+
+  /** 0 (lit) .. 1 (the grid down on the roof): for the host's torch, fog and HUD. */
+  get darkness() {
+    return this.shed?.darkness ?? 0;
+  }
+
+  _updateShedding(dt, time, ctx) {
+    const s = this.state;
+    const shed = this.shed;
+    if (!shed) return;
+    const live = !s.ending && !s.heliArrived;
+    // When it comes: once in the story, again and again in Endless.
+    if (live && !shed.active && !this.cutscene) {
+      if (this.endless) {
+        const due = SHED_ENDLESS.first + (shed.count) * SHED_ENDLESS.every;
+        if (s.time >= due) {
+          const stage = Math.min(8, 2 + shed.count * 2);
+          shed.start({ stage, seconds: 10 + stage * 1.5 });
+        }
+      } else if (!shed.count && s.time >= Math.max(18, s.heliAt * SHED_STORY.at)) {
+        shed.start();
+      }
+    }
+    for (const e of shed.update(dt)) {
+      if (e.kind === "warning") this.events.emit("shed-warning", { stage: e.stage, seconds: e.seconds });
+      else if (e.kind === "off") this.events.emit("shed-off", { stage: shed.stage, seconds: shed.seconds });
+      else if (e.kind === "transformer") this.events.emit("shed-transformer", { position: _SHED_SPARKS.clone() });
+      else if (e.kind === "on") this.events.emit("shed-on", {});
+    }
+    const dark = shed.darkness;
+    // The roof's own lights: the floods (in the light loop), the tubes, the sky fill.
+    const tube = this.kit.materials.lightTube;
+    tube.emissiveIntensity = 1.05 * (1 - dark);
+    this.hemisphere.intensity = 0.55 * (1 - 0.45 * dark);
+    // The strobe on its battery: a short red flash once a second (slow,
+    // for photosensitive players), and a glow round the lamp.
+    const on = dark > 0.5 ? Math.max(0, 1 - ((time * 1.0) % 1) * 5) : 0;
+    this.strobe.intensity = 45 * on;
+    this.strobeGlow.material.opacity = Math.max(on, dark * 0.25);
+    // Their eyes, in the dark.
+    this.eyes.opacity = dark * 0.95;
+    // The towers across the street (their own shader) are on the grid too.
+    for (const c of this.collapses ?? []) c.uniforms.uPower.value = shed.power(c.root.position.x, c.root.position.z);
+  }
+
+  /** A soft round glow for sprites. */
+  _glowDot() {
+    if (this._dot) return this._dot;
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.3, "rgba(255,255,255,0.45)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    this._dot = new THREE.CanvasTexture(c);
+    this._dot.colorSpace = THREE.SRGBColorSpace;
+    this.owned.textures.push(this._dot);
+    return this._dot;
   }
 
   /* ---------------- Cutaway (a tower coming down) ---------------- */
