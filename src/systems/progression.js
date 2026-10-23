@@ -28,7 +28,7 @@ export const STAGE_NAMES = {
 export const GAINS = {
   foundry: { sphere: "glass", abilities: ["throw"] },
   labs: { sphere: "cryo", abilities: ["launcher", "charge"] },
-  skyline: { sphere: "shock", abilities: ["focus"] },
+  skyline: { sphere: "shock", abilities: ["focus"], tips: ["vent", "sprinkler"] },
   roof: { sphere: "gravity", abilities: ["dodge"] },
 };
 
@@ -69,6 +69,23 @@ export const ABILITIES = {
       { kb: ["Space"], pad: ["PadA"], does: "quick shift the way you're moving" },
       { kb: ["C"], pad: ["PadY"], does: "top-down camera instead" },
     ],
+  },
+};
+
+/**
+ * What to know about a sector before it starts (its card, after the new
+ * things; Endless shows them once): the Skyline's smoke and fire.
+ */
+export const TIPS = {
+  vent: {
+    name: "Air vents",
+    text: "Smoke fills the causeway, and thick smoke eats your integrity. Shoot the cover off a vent on the walls and it pulls the smoke out of that stretch. The HUD warns you when the air turns, and says where the next vent is.",
+    how: [{ kb: ["Click"], pad: ["PadRT"], does: "shoot the vent's cover" }],
+  },
+  sprinkler: {
+    name: "Sprinklers",
+    text: "Fire burns integrity too. Shoot the red glass bulb on a sprinkler and it floods the fire under it - a cryo sphere puts fires out as well.",
+    how: [{ kb: ["Click"], pad: ["PadRT"], does: "shoot the red bulb" }],
   },
 };
 

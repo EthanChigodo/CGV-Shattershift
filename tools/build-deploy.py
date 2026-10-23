@@ -4,7 +4,7 @@ Build the upload for the department's LAMP server (CGV brief, sections 5-6).
 The game needs no bundler - it is plain ES modules with an import map - so a
 "build" is a clean copy of only what the browser loads:
 
-    index.html, main.js, styles.css, src/, lib/, assets/
+    index.html, main.js, styles.css, src/, lib/, assets/, api/
 
 (no tests, docs, tools, node_modules, .git), checked for the things the brief
 says break a hosted game: absolute paths, filenames that only work on a
@@ -29,7 +29,10 @@ OUT = os.path.join(DIST, "fracture-run")
 ZIP = os.path.join(DIST, "fracture-run.zip")
 
 FILES = ["index.html", "main.js", "styles.css"]
-FOLDERS = ["src", "lib", "assets"]
+FOLDERS = ["src", "lib", "assets", "api"]
+# The leaderboard's own data (made on the server by api/leaderboard.php) and
+# any MySQL credentials stay out of the upload.
+SKIP_PATHS = ("api/data/", "api/config.php")
 # In the repository for reference (see docs/credits.md), never loaded by the game.
 UNUSED = {
     "assets/meltdown/dead_end_weapons.glb",
@@ -82,7 +85,7 @@ def copy():
             for name in files:
                 src = os.path.join(base, name)
                 rel = os.path.relpath(src, ROOT).replace(os.sep, "/")
-                if name in SKIP_NAMES or rel in UNUSED:
+                if name in SKIP_NAMES or rel in UNUSED or rel.startswith(SKIP_PATHS):
                     continue
                 dst = os.path.join(OUT, rel)
                 os.makedirs(os.path.dirname(dst), exist_ok=True)

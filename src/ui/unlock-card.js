@@ -11,7 +11,7 @@
  */
 
 import { BALLS } from "../systems/arsenal.js";
-import { ABILITIES, GAINS, SPHERE_HOW, STAGE_NAMES } from "../systems/progression.js";
+import { ABILITIES, GAINS, SPHERE_HOW, STAGE_NAMES, TIPS } from "../systems/progression.js";
 import { isPadCode, padLabel } from "../systems/input-glyphs.js";
 
 /**
@@ -21,6 +21,7 @@ import { isPadCode, padLabel } from "../systems/input-glyphs.js";
 const PICTURES = new URL("../../assets/ui/unlocks/", import.meta.url).href;
 const PICTURES_VERSION = 2;
 
+const TIP_COLOURS = { vent: "#9fe8d8", sprinkler: "#ff6a4a" };
 const ABILITY_COLOURS = { throw: "#ffd9a0", launcher: "#9fefff", charge: "#7fe3ff", focus: "#a9c8ff", dodge: "#ff8a5c" };
 
 const hex = (n) => `#${n.toString(16).padStart(6, "0")}`;
@@ -73,14 +74,18 @@ export class UnlockCard {
     this.done = null;
   }
 
-  /** The card for a sector; `done` once Continue is pressed. */
-  show(stage, done) {
+  /**
+   * The card for a sector; `done` once Continue is pressed. `tipsOnly`: just
+   * what to know about it (Endless, where nothing is earned).
+   */
+  show(stage, done, { tipsOnly = false } = {}) {
     const gains = GAINS[stage];
     if (!gains) { done?.(); return; }
     this.done = done;
-    this.where.textContent = STAGE_NAMES[stage];
+    this.where.textContent = tipsOnly ? `Endless · ${STAGE_NAMES[stage].replace(/^Sector \d+ · /, "")}` : STAGE_NAMES[stage];
+    this.root.querySelector(".uc-title").textContent = tipsOnly ? "Know this first" : "New abilities";
     const items = [];
-    const ball = BALLS[gains.sphere];
+    const ball = tipsOnly ? null : BALLS[gains.sphere];
     if (ball) {
       items.push({
         key: gains.sphere,
@@ -91,10 +96,15 @@ export class UnlockCard {
         colour: hex(ball.colour),
       });
     }
-    for (const key of gains.abilities) {
+    for (const key of tipsOnly ? [] : gains.abilities) {
       const a = ABILITIES[key];
       const kind = a.kind ?? "Ability";
       items.push({ key, tag: stage === "foundry" ? kind : `${kind} unlocked`, name: a.name, text: a.text, how: a.how, colour: ABILITY_COLOURS[key] });
+    }
+    // What to know about the place (its hazards): after what's new.
+    for (const key of gains.tips ?? []) {
+      const t = TIPS[key];
+      items.push({ key, tag: "Know this", name: t.name, text: t.text, how: t.how, colour: TIP_COLOURS[key] });
     }
     this.items.innerHTML = items.map((it, i) => `
       <article class="uc-item" style="--c:${it.colour}; --i:${i}">
@@ -113,6 +123,7 @@ export class UnlockCard {
     }
     this.root.querySelector(".uc-pad-a").textContent = padLabel("PadA");
     this.root.classList.toggle("few", items.length <= 2);
+    this.root.classList.toggle("many", items.length >= 4);
     this.root.classList.remove("show");
     void this.root.offsetWidth;
     this.root.classList.add("show");

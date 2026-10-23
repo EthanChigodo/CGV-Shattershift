@@ -65,6 +65,9 @@ import { ChargeShot, CHARGE, chargedShot } from "./src/systems/charge.js";
 import { ChargeTrails } from "./src/fx/charge-trail.js";
 import { abilitiesAt, spheresAt } from "./src/systems/progression.js";
 import { UnlockCard } from "./src/ui/unlock-card.js";
+import { Leaderboard, BOARD, formatValue } from "./src/systems/leaderboard.js";
+import { NameCard } from "./src/ui/name-card.js";
+import { LeaderboardView } from "./src/ui/leaderboard-view.js";
 import { TrophyRoom } from "./src/ui/trophy-room.js";
 import { FieldManual } from "./src/ui/field-manual.js";
 import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
@@ -1002,8 +1005,15 @@ arsenal.prefer(savedBall());
 // The launcher's charged shot (systems/charge.js): the Skyline's here, the
 // Labs' and the Roof's through their game (it takes this one).
 const charge = new ChargeShot({ reducedMotion: settings.reducedMotion });
+/** The Skyline's smoke warning is up (it comes at 0.4 and goes below 0.34, so it doesn't flicker). */
+let smokeWarn = false;
 /** Its air stripes in the Skyline (fx/charge-trail.js). */
 const chargeTrails = new ChargeTrails(scene);
+/**
+ * The global leaderboards (systems/leaderboard.js, api/leaderboard.php on
+ * the same server): your unique name, and your bests on every board.
+ */
+const leaderboard = new Leaderboard();
 // Serums in front of the player: the first time each is picked up the
 // game pauses on a card explaining it (PowerupBanner); after that the
 // HUD's serum banner, chips and screen looks (serum-fx.js) carry it.
@@ -1571,9 +1581,20 @@ function updateCausewayPresentation(dt) {
   });
   causewayHud.setVitals({ integrity: health, smoke, heat: run.heat, sedation: run.sedation });
   causewayHud.setSerums(arsenal.list());
-  if (smoke > 0.55 && !causeway.state.chase.active && !causeway.state.finale.sealed) {
-    causewayHud.warning("Toxic smoke", "Break a vent cover to clear the air", "amber");
-  } else if (!causeway.state.chase.active && !causeway.state.finale.sealed) causewayHud.warning(null);
+  // The smoke: a warning as it builds (amber), and - once it is eating your
+  // integrity (above 0.55, updateCauseway) - a red one; both say what to do
+  // and where: the next vent with its cover on, or the fire to put out.
+  if (!causeway.state.chase.active && !causeway.state.finale.sealed) {
+    smokeWarn = smoke > (smokeWarn ? 0.34 : 0.4);
+    if (smokeWarn) {
+      const draining = smoke > 0.55;
+      const vent = causeway.nextVent(causewayDistance());
+      const what = vent
+        ? `shoot the vent cover ${vent.gap < 3 ? "beside you" : `${Math.round(vent.gap)} m ahead`}, on the ${vent.side < 0 ? "left" : "right"}`
+        : "put the fires out - a sprinkler bulb or a cryo sphere";
+      causewayHud.warning(draining ? "Toxic smoke" : "Smoke building", `${draining ? "Integrity falling" : "Clear the air"} - ${what}`, draining ? "red" : "amber");
+    } else causewayHud.warning(null);
+  }
   document.documentElement.style.setProperty("--ball", `#${ball.colour.toString(16).padStart(6, "0")}`);
 }
 
@@ -3684,6 +3705,7 @@ function recordStoryTime(seconds) {
   const key = runDifficulty;
   const best = storyBest(key);
   if (!runRecordable || !runFromStart) return best;
+  submitBoard("story_time", seconds, { difficulty: key });
   if (!best || seconds < best) {
     if (key === "normal") runTimes.story = seconds;
     else (runTimes.storyBy ??= {})[key] = seconds;
@@ -3707,6 +3729,7 @@ function recordEndlessRun(env, distance, seconds) {
   if (runRecordable) {
     const before = endlessBest[env] ?? 0;
     const value = env === "roof" ? seconds : distance;
+    submitBoard(`endless_${env}`, value);
     if (value > before || (value === before && !runTimes.endless[env])) {
       recordEndless(env, value);
       runTimes.endless[env] = seconds;
@@ -3738,6 +3761,7 @@ function recordScore(value) {
   if (!runRecordable || value <= 0) return;
   const [group, key] = runKind === "endless" ? ["endless", endlessEnv] : runFromStart ? ["story", runDifficulty] : [];
   if (!group || !key) return;
+  if (group === "story") submitBoard("story_score", value, { difficulty: key });
   const before = bestScores[group][key] ?? 0;
   if (value <= before) return;
   bestScores[group][key] = value;
@@ -4891,7 +4915,9 @@ function updateCharge(dt) {
 const unlockCard = new UnlockCard();
 const unlocksShown = new Set();
 function maybeShowUnlocks() {
-  if (runKind !== "story" || unlockCard.open || manualStep || trailer.enabled) return;
+  if (unlockCard.open || manualStep || trailer.enabled) return;
+  if (runKind === "endless") { maybeShowTips(); return; }
+  if (runKind !== "story") return;
   if (state !== "playing" || paused || story.player.active || storyPlaying || countdownLeft > 0 || loadingHold) return;
   const stage = storyStage();
   if (!stage || unlocksShown.has(stage)) return;
@@ -4913,6 +4939,28 @@ function maybeShowUnlocks() {
     countdownLeft = 3;
     showCountdown(3);
   });
+}
+
+/**
+ * Endless earns nothing, but the Skyline's hazards (its vents and sprinklers)
+ * are worth knowing: their card, the first time in this browser, then 3, 2, 1.
+ */
+const TIPS_SEEN_KEY = "fractureRun.tipsSeen";
+function maybeShowTips() {
+  if (endlessEnv !== "skyline" || state !== "playing" || paused || countdownLeft > 0 || loadingHold || !causeway) return;
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem(TIPS_SEEN_KEY)) ?? []; } catch {}
+  if (seen.includes("skyline")) return;
+  try { localStorage.setItem(TIPS_SEEN_KEY, JSON.stringify([...seen, "skyline"])); } catch {}
+  paused = true; run.focusing = false;
+  charge.cancel();
+  music.pauseDuck();
+  level1Audio.setPaused(true);
+  unlockCard.show("skyline", () => {
+    closePause();
+    countdownLeft = 3;
+    showCountdown(3);
+  }, { tipsOnly: true });
 }
 
 function maybeStartCountdown() {
@@ -5483,8 +5531,57 @@ $("#singleBackButton").addEventListener("click", () => showScreen(ui.start));
 ui.trophies = $("#trophiesScreen");
 const trophyToast = new TrophyToast();
 const trophyRoom = new TrophyRoom(ui.trophies, { stats: () => statsModel() });
+
+/* ---- The global leaderboards: your name, and your bests going up ---------- */
+
+const nameCard = new NameCard({ leaderboard });
+ui.leaderboards = $("#leaderboardsScreen");
+const leaderboardView = new LeaderboardView(ui.leaderboards, { leaderboard, onChangeName: (done) => askName(done) });
+/** Choose (or change) your name; `done` after, whatever came of it. */
+function askName(done = null) {
+  nameCard.show({
+    mode: leaderboard.name ? "change" : "new",
+    done: (result) => {
+      if (result?.name) {
+        uploadLocalBests();
+        trophyToast.note({ label: "NAME SAVED", title: result.name, text: result.offline ? "Taken as soon as the leaderboards answer" : "Your name on every leaderboard", colour: "#7fe3ff", art: '<span class="tt-glyph">' + RECORD_ART.score + "</span>" });
+      }
+      refreshDossier();
+      done?.(result);
+    },
+  });
+}
+/** Boards whose new result is worth a notification (this run's, not the boot's upload). */
+const announceBoards = new Set();
+function submitBoard(board, value, meta = null) {
+  if (!runRecordable && board !== "trophies") return;
+  announceBoards.add(board);
+  leaderboard.submit(board, value, meta);
+}
+/** What this browser already holds, up to the boards (the server keeps only bests). */
+function uploadLocalBests() {
+  if (runTimes.story) leaderboard.submit("story_time", runTimes.story, { difficulty: "normal" });
+  for (const key of ["easy", "hard"]) if (runTimes.storyBy?.[key]) leaderboard.submit("story_time", runTimes.storyBy[key], { difficulty: key });
+  for (const [key, value] of Object.entries(bestScores.story)) leaderboard.submit("story_score", value, { difficulty: key });
+  for (const env of ["foundry", "labs", "skyline", "roof"]) if (endlessBest[env]) leaderboard.submit(`endless_${env}`, endlessBest[env]);
+  const earned = achievements.summary().earned;
+  if (earned) leaderboard.submit("trophies", earned);
+}
+leaderboard.onResults = (results) => {
+  for (const [board, r] of Object.entries(results)) {
+    if (!announceBoards.delete(board) || !r.improved || !BOARD[board]) continue;
+    // Which board, and where on it.
+    trophyToast.note({ label: `LEADERBOARD · ${BOARD[board].label.toUpperCase()}`, title: `#${r.rank} on ${BOARD[board].label}`, text: `${formatValue(board, r.best)} - your best there`, colour: "#7fe3ff", art: '<span class="tt-glyph">' + RECORD_ART.score + "</span>" });
+  }
+};
+leaderboard.onNameTaken = (name, message) => {
+  trophyToast.note({ label: "NAME TAKEN", title: name, text: `${message} Choose another in Customise.`, colour: "#ff8a7a", art: '<span class="tt-glyph">' + RECORD_ART.score + "</span>" });
+};
+$("#leaderboardsButton").addEventListener("click", () => { leaderboardView.open(); showScreen(ui.leaderboards); });
+$("#leaderboardsBackButton").addEventListener("click", () => showScreen(ui.start));
 achievements.onEarn((t) => {
   trophyToast.show(t);
+  submitBoard("trophies", achievements.summary().earned);
   // A kit comes with it (src/figure/kits.js): its token, right after.
   if (KIT_FOR_TROPHY[t.id]) { trophyToast.showKit(KIT_FOR_TROPHY[t.id]); refreshDossier(); }
   refreshTrophiesNote();
@@ -5730,7 +5827,9 @@ function applyLook(patch) {
 let locker = null;
 async function openCustomise(tab = "character") {
   for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
-  locker ??= new Locker({ renderer, pads, assetBase: MELTDOWN_ASSET_BASE, audio: level1Audio, look: savedLook, apply: applyLook, onExit: () => closeCustomise(), backdrop: menuBackdrop });
+  locker ??= new Locker({ renderer, pads, assetBase: MELTDOWN_ASSET_BASE, audio: level1Audio, look: savedLook, apply: applyLook, onExit: () => closeCustomise(), backdrop: menuBackdrop,
+    // Your leaderboard name, changed from the top of the panel.
+    name: { get: () => leaderboard.name, change: (done) => askName(done) } });
   holdLoading(["SUBJECT 07", "CUSTOMISE"]);
   try {
     await locker.open(tab);
@@ -5767,6 +5866,7 @@ function refreshDossier() {
   const chip = (label, value, swatch = null) => `<div class="dossier-row"><span>${label}</span><b>${swatch ? `<i style="--sw:${swatch}"></i>` : ""}${value}</b></div>`;
   const p = missions.progress;
   const records = [];
+  if (leaderboard.name) records.push(["Name", leaderboard.name.replace(/[&<>"']/g, "")]);
   if (runTimes.story) records.push(["Best run", hms(runTimes.story)]);
   for (const key of ["easy", "hard"]) if (storyBest(key)) records.push([`Best on ${DIFFICULTIES[key].name}`, hms(storyBest(key))]);
   const topScore = Math.max(0, ...Object.values(bestScores.story), ...Object.values(bestScores.endless));
@@ -5977,7 +6077,7 @@ addEventListener("keydown", (event) => {
     if (photoActive) togglePhoto();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
     else if (ui.arenaMode?.classList.contains("active")) showScreen(ui.multi);
-    else if (ui.single.classList.contains("active") || ui.multi.classList.contains("active") || ui.trophies.classList.contains("active")) showScreen(ui.start);
+    else if (ui.single.classList.contains("active") || ui.multi.classList.contains("active") || ui.trophies.classList.contains("active") || ui.leaderboards.classList.contains("active")) showScreen(ui.start);
     else if (ui.chapters.classList.contains("active") || ui.newGame.classList.contains("active") || ui.endless.classList.contains("active")) showScreen(ui.single);
     else if (ui.settings.classList.contains("active")) closeSettings();
     else if ($("#creditsScreen").classList.contains("active")) $("#creditsBackButton").click();
@@ -6149,6 +6249,7 @@ const SESSION_SCREENS = {
   singleScreen: "#singleButton",
   multiScreen: "#multiButton",
   trophiesScreen: "#trophiesButton",
+  leaderboardsScreen: "#leaderboardsButton",
   arenaModeScreen: "#arenaButton",
   chaptersScreen: "#chaptersButton",
   newGameScreen: "#startButton",
@@ -6378,6 +6479,10 @@ async function bootMenu() {
   await warmMenu();
   // Loaded: the opening screen's buttons, in place of "Loading".
   document.documentElement.classList.remove("booting");
+  // The leaderboards: what's waiting goes up; the first time, your name is asked.
+  // (Not over the checks, which drive the menus themselves: ?askname shows it there.)
+  if (leaderboard.name) { uploadLocalBests(); leaderboard.flush(); }
+  else if (!leaderboard.asked && (!navigator.webdriver || /[?&]askname/.test(location.search))) askName();
 }
 
 applyQuality();

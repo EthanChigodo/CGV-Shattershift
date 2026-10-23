@@ -35,6 +35,7 @@ export const SCREEN_SHOTS = {
   multiScreen: "versus",
   arenaModeScreen: "versus",
   trophiesScreen: "dim",
+  leaderboardsScreen: "dim",
   settingsScreen: "dim",
   manualScreen: "dim",
   creditsScreen: "dim",

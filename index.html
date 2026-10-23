@@ -172,6 +172,9 @@
           <button id="multiButton" class="menu-button menu-big" type="button">
             <i class="menu-glyph" aria-hidden="true">&#9783;</i><span><b>Multiplayer</b><small>Arena and Race: 2 - 4 players, on controllers</small></span>
           </button>
+          <button id="leaderboardsButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9650;</i><span><b>Leaderboards</b><small>The fastest, the highest, the furthest - everyone's</small></span>
+          </button>
           <button id="trophiesButton" class="menu-button" type="button">
             <i class="menu-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:17px;height:17px"><path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 5H3.5c0 3 1.5 4.5 3.8 4.8M17 5h3.5c0 3-1.5 4.5-3.8 4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 13v4M8 21h8l-1-4H9z" fill="currentColor"/></svg></i><span><b>Trophies &amp; stats</b><small id="trophiesNote">Your trophies, records and numbers</small></span>
           </button>
@@ -247,6 +250,19 @@
         <div class="tr-scroll">
           <div class="tr-panel" data-tr-panel="trophies"></div>
           <div class="tr-panel" data-tr-panel="stats" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="leaderboardsScreen" class="screen trophies-screen lb-screen" aria-label="Leaderboards">
+      <div class="tr-wrap">
+        <header class="tr-head">
+          <div><p class="eyebrow">GLOBAL // EVERYONE WHO PLAYED</p><h2>LEADERBOARDS</h2><p class="lb-me"></p></div>
+          <button id="leaderboardsBackButton" type="button" class="primary-button">BACK</button>
+        </header>
+        <div class="lb-layout">
+          <nav class="menu-list lb-boards" aria-label="Boards"></nav>
+          <div class="lb-body" aria-live="polite"></div>
         </div>
       </div>
     </section>

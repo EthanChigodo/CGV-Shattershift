@@ -12,3 +12,5 @@ dist/
 # Character builds being checked before they ship (?characters=dev, tools/characters/README.md)
 assets/characters/dev
 characters-source/
+api/data/
+api/config.php

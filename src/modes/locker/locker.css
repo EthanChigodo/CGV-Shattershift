@@ -111,3 +111,9 @@
 /* (Over the arena's crosshair rule, which Customise shares the body class with.) */
 body.in-arena:has(.lk-root:not([hidden])) #game { cursor: grab !important; }
 body.in-arena.lk-turning, body.in-arena.lk-turning * { cursor: grabbing !important; }
+
+/* Your leaderboard name (the name card changes it). */
+.lk-name { display: flex; align-items: baseline; gap: 12px; margin: -6px 0 18px; font-size: 13px; color: var(--text-3); }
+.lk-name b { font-stretch: var(--wide); font-weight: 300; font-size: 17px; letter-spacing: .05em; color: var(--text); }
+.lk-rename { padding: 0; border: 0; border-bottom: 1px solid var(--ember); background: none; color: var(--text-2); font: 500 12px var(--font); letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
+.lk-rename:hover, .lk-rename:focus-visible { color: var(--ember-2); outline: none; }

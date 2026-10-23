@@ -1,0 +1,78 @@
+/* Your name for the leaderboards (src/ui/name-card.js), in the NIGHTFALL look:
+   the picture dimmed, the words on it, an underlined field - no boxes. */
+.name-card {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 32px 24px;
+  background:
+    radial-gradient(ellipse 80% 70% at 40% 50%, rgba(4, 6, 9, .55), rgba(4, 6, 9, .9)),
+    rgba(4, 6, 9, .2);
+  backdrop-filter: blur(8px);
+  font-family: var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow-text);
+}
+.name-card[hidden] { display: none; }
+.nc-box { width: min(560px, 100%); }
+.name-card.show .nc-box { animation: ncIn .8s var(--ease-out) both; }
+@keyframes ncIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.nc-eyebrow { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 500; letter-spacing: .03em; color: var(--ember-2); }
+.nc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 10px var(--ember); }
+.nc-title {
+  margin: 12px 0 16px;
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: clamp(30px, 3.6vw, 46px);
+  line-height: 1.08;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+.nc-title::after { content: ""; display: block; width: 44px; height: 1px; margin-top: 18px; background: var(--ember); }
+.nc-text { margin: 0 0 26px; font-size: 16px; line-height: 1.5; color: var(--text-2); }
+.nc-field { display: grid; gap: 8px; }
+.nc-input {
+  width: 100%;
+  padding: 6px 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  background: none;
+  color: var(--text);
+  font: 300 30px var(--font);
+  font-stretch: var(--wide);
+  letter-spacing: .06em;
+  outline: none;
+  transition: border-color .25s;
+}
+.nc-input::placeholder { color: var(--text-3); }
+.nc-input:focus { border-bottom-color: var(--ember); }
+.nc-rule { font-size: 12px; color: var(--text-3); }
+.nc-status { min-height: 1.4em; margin: 14px 0 24px; font-size: 14px; color: var(--text-3); }
+.nc-status[data-kind="good"] { color: var(--ok, #7fe3a0); }
+.nc-status[data-kind="bad"] { color: #ff8a7a; }
+.nc-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 30px; }
+.nc-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--ember);
+  background: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-stretch: var(--wide);
+  font-weight: 300;
+  font-size: 15px;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color .25s, gap .35s var(--ease-out);
+}
+.nc-button i { font-style: normal; font-size: 9px; color: var(--ember); }
+.nc-button:hover, .nc-button:focus-visible { color: var(--ember-2); gap: 20px; outline: none; }
+.nc-button:disabled { opacity: .5; cursor: wait; }
+.nc-skip { padding: 0; border: 0; background: none; color: var(--text-3); font: 400 14px var(--font); cursor: pointer; }
+.nc-skip:hover, .nc-skip:focus-visible { color: var(--text); outline: none; }
