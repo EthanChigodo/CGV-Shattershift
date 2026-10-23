@@ -31,6 +31,7 @@
 
 import * as THREE from "../../three.js";
 import { BufferGeometryUtils } from "../../three-addons.js";
+import { ROOMS_GLSL } from "./rooms.js";
 
 /** Where they stand, from the tower you're on (x east, -z north), metres; yaw in radians. */
 export const CBD = {
@@ -117,6 +118,8 @@ const FRAGMENT = /* glsl */ `
   uniform float uLit;
   uniform vec3 uTiers;       // setbacks with floodlights on them (metres up)
   uniform float uFlood;      // the street floodlights' strength
+  uniform float uPower;      // the grid (load-shedding.js): 0 off .. 1 on
+  uniform mat4 uToBuilding;
   uniform float uSeed;
   uniform float uHour;
   uniform float uMinute;
@@ -128,6 +131,7 @@ const FRAGMENT = /* glsl */ `
   varying float vDepth;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  ${ROOMS_GLSL}
   float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
@@ -239,10 +243,22 @@ const FRAGMENT = /* glsl */ `
     }
 
     vec3 col = albedo * ambient(n);
-    if (wall) col += albedo * SODIUM * flood(h);
+    if (wall) col += albedo * SODIUM * flood(h) * uPower;
     // Glass: dark when off, lit by whoever is home.
     col = mix(col, col * 0.25, win);
     if (uMode != ${MODE.flats}) glow += mix(uGlass, uGlass * vec3(0.75, 0.88, 1.2), step(0.7, hash(id + 2.0))) * win * lit * (0.5 + 0.5 * r);
+    // Load-shedding: the windows go out, but for a candle or an inverter here and there.
+    glow *= mix(0.02, 1.0, uPower);
+    glow += vec3(1.0, 0.62, 0.3) * win * (1.0 - uPower) * step(0.94, hash(id + 31.0)) * (0.12 + 0.08 * hash(id + 5.0));
+    // Rooms behind the glass (rooms.js), 3.5 m deep, close up.
+    if (wall && uMode != ${MODE.copper}) {
+      vec3 axis = abs(n.x) > 0.5 ? vec3(sign(n.x), 0.0, 0.0) : vec3(0.0, 0.0, sign(n.z));
+      vec3 eye = (uToBuilding * vec4(cameraPosition, 1.0)).xyz;
+      vec2 size = vec2(uBayW, uFloorH);
+      float room = roomShade(vec3(along, h, dot(vB, axis)), vec3(abs(n.x) > 0.5 ? eye.z : eye.x, eye.y, dot(eye, axis)), floor(cell) * size, size, 3.5, hash(id + 17.0));
+      float near = clamp(1.6 - length(fwidth(cell)) * 3.0, 0.0, 1.0);
+      glow *= mix(1.0, room, near * step(0.5, win));
+    }
     float haze = clamp(1.0 - exp(-fogDensity * fogDensity * vDepth * vDepth * 0.7), 0.0, 1.0);
     gl_FragColor = vec4(mix(col, fogColor, haze) + glow * (1.0 - haze * 0.6), 1.0);
     #include <tonemapping_fragment>
@@ -305,6 +321,8 @@ export class CbdBuildings {
   constructor({ streetY = -160, centre = new THREE.Vector3(), sets = [CBD] } = {}) {
     this.sets = sets;
     this.frames = [];
+    /** The billboards and their lamps: dark in load-shedding. */
+    this.boards = [];
     this.root = new THREE.Group();
     this.root.name = "CbdBuildings";
     this.owned = [];
@@ -332,6 +350,7 @@ export class CbdBuildings {
         uLit: { value: o.lit ?? 0.35 },
         uTiers: { value: new THREE.Vector3(...(o.tiers ?? [0, 0, 0])) },
         uFlood: { value: o.flood ?? 0.9 },
+        uPower: { value: 1 },
         uSeed: { value: o.seed ?? 1 },
         uHour: { value: 0 },
         uMinute: { value: 0 },
@@ -459,6 +478,7 @@ export class CbdBuildings {
           s.scale.setScalar(1.4);
           g.add(s);
         }
+        this.boards.push({ group: g, board: board.material, lamp, colour: board.material.color.clone() });
       }
 
       // ---- Civic building (sandstone, clock tower, copper dome) ----
@@ -540,7 +560,24 @@ export class CbdBuildings {
     return this.sets.flatMap((at) => Object.keys(r).filter((k) => at[k]).map((k) => ({ ...at[k], r: r[k] })));
   }
 
-  update() {
+  /**
+   * @param {number} [dt]
+   * @param {number} [time]
+   * @param {(x:number, z:number) => number} [power]  the grid (LoadShedding.power)
+   */
+  update(dt, time, power = null) {
+    // The grid: each building on or off as a whole. The civic building has
+    // its own generator.
+    if (power) {
+      for (const { uniforms, group } of this.frames) {
+        uniforms.uPower.value = group.name === "CivicBuilding" ? 1 : power(group.position.x, group.position.z);
+      }
+      for (const b of this.boards) {
+        const on = power(b.group.position.x, b.group.position.z);
+        b.board.color.copy(b.colour).multiplyScalar(0.08 + 0.92 * on);
+        b.lamp.opacity = 0.8 * on;
+      }
+    }
     // The clock tells the real time (checked once a second is plenty).
     const now = new Date();
     if (now.getMinutes() !== this._clockMinute) {

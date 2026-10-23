@@ -199,6 +199,8 @@ const FOG_DANGER = new THREE.Color(0x2a0804);
 // In the dark beat the fog is smoke with nothing lighting it.
 const FOG_DARK = new THREE.Color(0x050404);
 const FOG_ROOF = new THREE.Color(0x151a24);
+/** The roof's night with the city burning (war.js). */
+const FOG_WAR = new THREE.Color(0x2c160f);
 const BASE_FOV = 72;
 const BASE_EXPOSURE = 0.95;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -376,7 +378,15 @@ export class MeltdownGame {
       return node;
     };
     // The crosshair: the same one as the Foundry's and the Skyline's.
-    this.ui = { reticle: el("reticle mlt-reticle"), fade: el("mlt-fade"), letterbox: el("mlt-letterbox") };
+    this.ui = { reticle: el("reticle mlt-reticle"), fade: el("mlt-fade"), letterbox: el("mlt-letterbox"), shed: el("mlt-shed") };
+    // Load-shedding's warning (roof.js, load-shedding.js): a phone-style card.
+    // The grid's name is made up; the stages are the real public terms.
+    Object.assign(this.ui.shed.style, {
+      position: "fixed", top: "72px", left: "50%", transform: "translateX(-50%)", width: "min(440px, calc(100vw - 32px))",
+      padding: "14px 16px", background: "rgba(12,14,18,0.92)", border: "1px solid #ffcf3f", borderRadius: "12px",
+      boxShadow: "0 0 28px rgba(255,190,60,0.3)", zIndex: 40, pointerEvents: "none", font: "500 13px/1.3 system-ui, sans-serif", color: "#cfd6e0",
+    });
+    this.ui.shed.innerHTML = `<div style="display:flex;gap:12px;align-items:center"><div style="font-size:30px;line-height:1">&#9889;</div><div style="flex:1"><div style="font-weight:700;font-size:12px;letter-spacing:2px;color:#ffcf3f">JOZI GRID &middot; LOAD-SHEDDING</div><div data-shed-title style="font-weight:800;font-size:24px;color:#fff">STAGE 6 IN 0:20</div><div data-shed-text>Your block goes dark. The floods go. Use your torch, and the spheres as flares.</div></div></div><div style="margin-top:9px;height:5px;border-radius:3px;background:#333"><div data-shed-bar style="width:100%;height:100%;border-radius:3px;background:linear-gradient(90deg,#ffcf3f,#ff5a2a)"></div></div>`;
     this.ui.reticle.innerHTML = "<i></i><b></b>";
     this.ui.fade.hidden = false;
     this.ui.letterbox.hidden = false;
@@ -526,6 +536,8 @@ export class MeltdownGame {
     this.fade.value = this.fade.target = 0;
     this.fade.override = null;
     this.ui.letterbox.classList.remove("on");
+    this.ui.shed.hidden = true;
+    this._shed = null;
     this.hud.vitals.style.visibility = "";
     this.avatar.hold = 1;
     this.avatar.reachUp = 0;
@@ -627,6 +639,8 @@ export class MeltdownGame {
     this.hud.hide();
     this.ui.reticle.hidden = true;
     this.ui.letterbox.classList.remove("on");
+    this.ui.shed.hidden = true;
+    this._shed = null;
     this.ui.fade.style.opacity = "0";
     this.credits.toggle(false);
     this.runner.firing = false;
@@ -1110,6 +1124,8 @@ export class MeltdownGame {
           return true;
         }
         if (this.roof?.grab(hero.position)) return true;
+        // In the dark by the generator, Space is a pull on its cord.
+        if (this.roof?.pullGenerator?.(hero.position)) return true;
         if (hero.dodgeCooldown <= 0) {
           const dir = hero.velocity.lengthSq() > 0.5 ? hero.velocity.clone() : hero.aim.clone().sub(hero.position).setY(0);
           hero.dodgeDir.copy(dir.normalize());
@@ -2207,6 +2223,8 @@ export class MeltdownGame {
     this._timers.length = 0;
     this.cut = null;
     this.ui.letterbox.classList.remove("on");
+    this.ui.shed.hidden = true;
+    this._shed = null;
     this.hud.vitals.style.visibility = "";
     this.hud.hideSummary();
     this.avatar.hold = 1;
@@ -2312,6 +2330,8 @@ export class MeltdownGame {
     this.sfx?.updateElevator(0, false);
     this.runner.firing = false;
     this.ui.letterbox.classList.remove("on");
+    this.ui.shed.hidden = true;
+    this._shed = null;
     this.hud.vitals.style.visibility = "";
     this.hud.setPrompt(null);
     const result = { escaped, title, rows, eyebrow, stats: this.stats, ...extra };
@@ -2552,6 +2572,50 @@ export class MeltdownGame {
     });
     // A tower across the street coming down (skyline-collapse.js): seen at
     // once, heard - and felt - when the sound gets here.
+    // Load-shedding (roof.js): the warning, the grid going, the power back.
+    on("shed-warning", ({ stage, seconds }) => {
+      this._shed = { stage, until: this.clock + seconds, seconds };
+      this.ui.shed.hidden = false;
+      this.audio.pickup();
+      this._after(1.2, () => hud.toast("PILOT", "Grid's going down. I'll lose the pad lights.", "warn", 3200));
+    });
+    on("shed-off", () => {
+      this.ui.shed.hidden = true;
+      this._shed = null;
+      // The clunk of a whole block going at once.
+      audio.thud();
+      audio.crash(0.35);
+      this.trauma = Math.min(1, this.trauma + 0.15);
+      hud.toast("LIGHTS OUT", "TORCH ON · SPHERES ARE FLARES", "warn", 2600);
+    });
+    on("shed-transformer", ({ position }) => {
+      // The power back: a transformer goes, in a fountain of sparks.
+      debris.sparks(position, { count: 60, speed: 9 });
+      audio.crash(0.6);
+      this.sfx?.explosion?.(0.4, this._placeOf(position).pan);
+      this.trauma = Math.min(1, this.trauma + 0.2);
+    });
+    on("shed-on", () => hud.toast("POWER BACK", "", "", 1600));
+    on("generator-pull", ({ n, of }) => {
+      // A cough, and nothing.
+      audio.stumble();
+      audio.whoosh();
+      hud.toast("PULL", `${n} / ${of}`, "", 700);
+    });
+    on("generator-on", ({ position }) => {
+      audio.powerUp();
+      audio.growl(1);
+      debris.sparks(position, { count: 14, speed: 3 });
+      this.trauma = Math.min(1, this.trauma + 0.1);
+      hud.toast("GENERATOR ON", "THE NOISE - THEY'RE ALL COMING", "warn", 2400);
+    });
+    on("generator-off", () => audio.powerDown());
+    on("war-blast", ({ position, strength }) => {
+      // Somewhere across the city: a thump, felt more than heard.
+      if (this.phase !== "roof") return;
+      this.sfx?.explosion?.(0.12 + strength * 0.25, this._placeOf(position).pan);
+      this.trauma = Math.min(1, this.trauma + strength * 0.04);
+    });
     on("tower-seen", () => {
       if (this.phase === "roof") hud.toast("THE TOWER ACROSS THE STREET IS GOING", "", "warn", 1800);
     });
@@ -2640,6 +2704,8 @@ export class MeltdownGame {
     this.phase = "finale";
     this.runner.firing = false;
     this.ui.letterbox.classList.remove("on");
+    this.ui.shed.hidden = true;
+    this._shed = null;
     // The ending is a film: nothing of the fight stays on screen - no
     // section title, no toasts, no prompt, no HUD panels (story.css hides
     // every level's HUD under body.story-cutscene).
@@ -3066,7 +3132,8 @@ export class MeltdownGame {
       }
     }
     this.launcher.muzzle.getWorldPosition(this._v.muzzle);
-    this.beam.update(dt, { origin: this._v.muzzle, target: hero.aim, darkness: 0, time, projectiles: this.projectiles });
+    // In load-shedding the launcher's torch comes on (and the spheres are flares).
+    this.beam.update(dt, { origin: this._v.muzzle, target: hero.aim, darkness: roof.darkness ?? 0, time, projectiles: this.projectiles });
     this.audio.setRotor(roof.rotorLevel);
   }
 
@@ -3079,6 +3146,23 @@ export class MeltdownGame {
     const chaos = roof?.state.chaos ?? 0;
     // (Thinner in a cutaway, so the tower coming down reads through it; thicker in a fall.)
     this.scene.fog.density = (0.0058 + chaos * 0.007) * (this.phase === "roofCut" ? 0.55 : 1) + (this._fall?.fogBoost ?? 0);
+    // Load-shedding: the night closes in with the city's lights gone, and the
+    // warning counts down.
+    // And it goes orange as the city burns.
+    const dark = roof?.darkness ?? 0;
+    const war = roof?.warGlow ?? 0;
+    if (roof && (dark > 0 || war > 0.005 || this._shedSky)) {
+      this._shedSky = dark > 0 || war > 0.005;
+      this.scene.fog.color.copy(FOG_ROOF).lerp(FOG_WAR, war * 0.6).multiplyScalar(1 - 0.5 * dark);
+      this.scene.background.copy(this.scene.fog.color);
+    }
+    if (this._shed && !this.ui.shed.hidden) {
+      const left = Math.max(0, this._shed.until - this.clock);
+      this.ui.shed.querySelector("[data-shed-title]").textContent = `STAGE ${this._shed.stage} IN 0:${String(Math.ceil(left)).padStart(2, "0")}`;
+      this.ui.shed.querySelector("[data-shed-bar]").style.width = `${(left / this._shed.seconds) * 100}%`;
+      // (Not over a pause, a card or a cutaway.)
+      this.ui.shed.style.opacity = this.paused || this.phase !== "roof" ? "0" : "1";
+    }
     // The wind across the top of the tallest tower in the city, gusting.
     // (Falling: the rush of it.)
     this.sfx?.updateWind(this._fall?.active ? 1 : playing ? 0.7 + Math.sin(time * 0.31) * 0.2 + Math.sin(time * 1.13) * 0.1 : 0.3);
@@ -3112,7 +3196,8 @@ export class MeltdownGame {
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
     const hint = this.phase === "roof" ? roof?.extractionHint(this.hero.position) : null;
-    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
+    const gen = this.phase === "roof" && !hint ? roof?.generatorHint?.(this.hero.position) : null;
+    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : gen === "pull" ? "SPACE x3 - PULL-START THE GENERATOR" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : gen === "go" ? "THE GENERATOR - BY THE LIFT" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 

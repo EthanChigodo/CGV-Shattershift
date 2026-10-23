@@ -23,6 +23,29 @@
 
 import * as THREE from "../../three.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
+import { GRID_GLSL } from "./load-shedding.js";
+import { ROOMS_GLSL } from "./rooms.js";
+
+/** The grid when there's no load-shedding: always on (load-shedding.js). */
+const NO_GRID = { uGrid: { value: new THREE.Vector4(0, 0, -1, -1) }, uGridTime: { value: 0 } };
+
+/**
+ * Instanced unlit lights (crown bands, billboards) that go dark with the
+ * grid where their instance stands.
+ */
+function gridInstanced(material, grid, key) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uGrid = grid.uGrid;
+    shader.uniforms.uGridTime = grid.uGridTime;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vGridXZ;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\n#ifdef USE_INSTANCING\n  vGridXZ = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;\n#else\n  vGridXZ = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;\n#endif");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", `#include <common>\nvarying vec2 vGridXZ;\n${GRID_GLSL}`)
+      .replace("#include <color_fragment>", "#include <color_fragment>\n  diffuseColor.rgb *= mix(0.03, 1.0, gridPower(vGridXZ));");
+  };
+  material.customProgramCacheKey = () => `gridInstanced-${key}`;
+}
 
 function rng(seed) {
   let s = seed * 9301 + 49297;
@@ -58,18 +81,24 @@ function windowTile(seed, { lit = 0.3, warm = 0.8, cool = "160,200,255" } = {}) 
 
 /**
  * World-space window mapping (and dark roofs) for an instanced tower material.
- * And demolition: per instance, aFall = (metres fallen, lights out 0..1).
- * Everything above the street drops by aFall.x; a point that reaches the
- * heap stops at a tenth of its old height above the street - the building
- * crushed into a pile, its lowest floors at the bottom - and spreads out.
+ * And demolition: per instance, aFall = (metres fallen, lights out 0..1,
+ * lean, heading). Everything above the street drops by aFall.x; a point that
+ * reaches the heap stops at a tenth of its old height above the street - the
+ * building crushed into a pile, its lowest floors at the bottom - and spreads
+ * out. A toppling one also turns aFall.z radians toward aFall.w about the foot
+ * of that wall. `war` (0..1): how many of the towers are burning (war.js).
  */
-function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
+function worldWindows(material, tileW = 18, tileH = 52, streetY = -160, grid = NO_GRID, war = { value: 0 }) {
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.uGrid = grid.uGrid;
+    shader.uniforms.uGridTime = grid.uGridTime;
+    shader.uniforms.uWar = war;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\n#ifdef USE_INSTANCING\nattribute vec2 aFall;\n#endif")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;\n#ifdef USE_INSTANCING\nattribute vec4 aFall;\n#endif")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         vCityFall = 0.0;
         vCityRubble = 0.0;
+        vCityDusty = 0.0;
         #ifdef USE_INSTANCING
           if (aFall.x > 0.0) {
             float citySy = length(instanceMatrix[1].xyz);
@@ -86,8 +115,26 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
               transformed.y = (max(fell, heap) - cityBaseY) / citySy;
             }
             vCityFall = aFall.y;
+            vCityDusty = step(1.0, aFall.x) * aFall.y;   // greyed only once it's moving
           }
         #endif`)
+      .replace("#include <project_vertex>", `
+        vec4 mvPosition = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          mvPosition = instanceMatrix * mvPosition;
+          // Toppling (aFall.z radians, toward the heading aFall.w): the whole
+          // tower turned about the foot of its wall on that side.
+          if (aFall.z != 0.0) {
+            vec3 cityDir = vec3(cos(aFall.w), 0.0, sin(aFall.w));
+            vec3 cityPivot = vec3(instanceMatrix[3].x, ${streetY.toFixed(1)}, instanceMatrix[3].z) + cityDir * length(instanceMatrix[0].xyz) * 0.5;
+            vec3 cityK = vec3(cityDir.z, 0.0, -cityDir.x);
+            vec3 cityV = mvPosition.xyz - cityPivot;
+            float cityC = cos(aFall.z), cityS = sin(aFall.z);
+            mvPosition.xyz = cityPivot + cityV * cityC + cross(cityK, cityV) * cityS + cityK * dot(cityK, cityV) * (1.0 - cityC);
+          }
+        #endif
+        mvPosition = modelViewMatrix * mvPosition;
+        gl_Position = projectionMatrix * mvPosition;`)
       .replace("#include <fog_vertex>", `#include <fog_vertex>
         mat4 cityM = modelMatrix;
         #ifdef USE_INSTANCING
@@ -100,13 +147,29 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
         vCityTop = (cityM * vec4(0.0, 1.0, 0.0, 1.0)).y;   // the unit box's top
         vCityNormal = normalize(mat3(cityM) * normal);`);
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;")
+      .replace("#include <common>", `#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;\nuniform float uWar;\n${GRID_GLSL}\n${ROOMS_GLSL}`)
       .replace("#include <emissivemap_fragment>", `
         vec2 cuv = abs(vCityNormal.x) > 0.5 ? vec2(vCityPos.z, vCityPos.y) : vec2(vCityPos.x, vCityPos.y);
         cuv = cuv / vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)}) + vec2(vCityHash * 7.0, vCityHash * 3.0);
         vec4 cityWindows = texture2D(emissiveMap, cuv);
         // Roofs have no windows; the lowest floors fade into the haze.
         cityWindows.rgb *= step(abs(vCityNormal.y), 0.5);
+        // Rooms behind the glass (rooms.js): the eye's ray carried on into a
+        // box 3 m deep behind each window - ceiling, floor, walls, a desk, now
+        // and then someone standing there - fading out where a window is only
+        // a few pixels across.
+        vec3 cityAxis = normalize(vec3(vCityNormal.x, 0.0, vCityNormal.z) + 1e-5);   // depth along the wall's own normal (towers can be turned)
+        vec2 cityOff = vec2(vCityHash * 7.0 * ${tileW.toFixed(1)}, vCityHash * 3.0 * ${tileH.toFixed(1)});
+        vec3 cityEye = abs(vCityNormal.x) > 0.5 ? cameraPosition.zyx : cameraPosition;
+        vec2 cityCell = vec2(${(tileW / 8).toFixed(3)}, ${(tileH / 16).toFixed(3)});
+        vec2 cityAB = cuv * vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)});
+        vec2 cityF = fract(cityAB / cityCell);
+        float cityPane = step(0.1875, cityF.x) * step(cityF.x, 0.8125) * step(0.25, cityF.y) * step(cityF.y, 0.75);
+        vec2 cityLo = floor(cityAB / cityCell) * cityCell;
+        float cityRoomId = fract(sin(dot(cityLo, vec2(7.13, 3.71)) + vCityHash * 91.0) * 43758.5453);
+        float cityRoom = roomShade(vec3(cityAB, dot(vCityPos, cityAxis)), vec3(cityEye.xy + cityOff, dot(cameraPosition, cityAxis)), cityLo, cityCell, 3.0, cityRoomId);
+        float cityNear = clamp(1.6 - length(fwidth(cityAB / cityCell)) * 3.0, 0.0, 1.0);
+        cityWindows.rgb *= mix(1.0, cityRoom, cityNear * cityPane);
         totalEmissiveRadiance *= cityWindows.rgb;
         // Floodlit crowns: most towers have lamps along the parapet washing
         // the top floors - warm sodium or cool white - in pools between the
@@ -118,13 +181,29 @@ function worldWindows(material, tileW = 18, tileH = 52, streetY = -160) {
         float cityPools = 0.55 + 0.45 * cos(cuv.x * 6.2831853 * 2.0);
         vec3 cityStone = mix(diffuseColor.rgb * 3.0, vec3(0.42, 0.37, 0.31), 0.55);
         totalEmissiveRadiance += cityStone * cityFlood * exp(-cityBelow / 20.0) * cityPools * cityFloodOn * cityWall * 1.7;
+        // Load-shedding: windows and crown floods out where the grid is down.
+        float cityPower = gridPower(vCityPos.xz);
+        totalEmissiveRadiance *= mix(0.02, 1.0, cityPower);
+        // ... but for a candle or a phone torch in a room here and there.
+        totalEmissiveRadiance += vec3(1.0, 0.6, 0.28) * (1.0 - cityPower) * cityPane * step(0.95, cityRoomId) * mix(0.25, cityRoom * 0.3, cityNear) * cityWall;
+        // The war (war.js): more and more towers burning, a few floors each -
+        // fire behind every window of them, the wall lit, soot above.
+        float cityBurn = step(fract(vCityHash * 5.31), uWar * 0.4) * cityWall * (1.0 - vCityFall);
+        float cityBurnAt = ${streetY.toFixed(1)} + 30.0 + fract(vCityHash * 11.7) * 130.0;
+        float cityBurnSpan = 5.0 + fract(vCityHash * 2.9) * 12.0;
+        float cityAbove = vCityPos.y - cityBurnAt;
+        float cityBand = 1.0 - smoothstep(cityBurnSpan * 0.6, cityBurnSpan, abs(cityAbove));
+        float cityFlicker = 0.65 + 0.35 * sin(uGridTime * 9.0 + cityAB.x * 1.7) * sin(uGridTime * 5.3 + cityAB.y * 0.9 + vCityHash * 20.0);
+        vec3 cityFire = vec3(1.0, 0.4, 0.09) * cityFlicker;
+        totalEmissiveRadiance = mix(totalEmissiveRadiance, cityFire * (0.35 + 1.4 * cityPane), cityBand * cityBurn);
+        diffuseColor.rgb *= 1.0 - 0.75 * cityBurn * step(0.0, cityAbove - cityBurnSpan) * exp(-max(cityAbove - cityBurnSpan, 0.0) / 35.0);
         // Coming down: the lights go out (but for a glow off the fires), the
         // falling block greys with its own dust, and the heap is broken concrete.
         totalEmissiveRadiance *= 1.0 - vCityFall * 0.85;
-        totalEmissiveRadiance += vec3(0.11, 0.09, 0.075) * vCityFall;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.18, 0.16), max(vCityRubble, vCityFall * 0.5));`);
+        totalEmissiveRadiance += vec3(0.03, 0.022, 0.016) * vCityFall;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.18, 0.16), max(vCityRubble, vCityDusty * 0.5));`);
   };
-  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}+flood+fall`;
+  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}+flood+fall+grid+rooms+war`;
 }
 
 const STREETS_VERTEX = /* glsl */ `
@@ -137,17 +216,19 @@ const STREETS_VERTEX = /* glsl */ `
 `;
 
 const STREETS_FRAGMENT = /* glsl */ `
+  ${GRID_GLSL}
   uniform float uTime;
   uniform vec3 uHaze;
   uniform vec3 uCentre;
   varying vec3 vWorld;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
   // A street of width w along one axis: its lamps, and traffic both ways.
-  vec3 street(float across, float along, float w, float period, float speed, float lane) {
+  vec3 street(float across, float along, float w, float period, float speed, float lane, float power) {
     float road = 1.0 - smoothstep(w * 0.5, w * 0.5 + 1.5, abs(across));
     vec3 c = vec3(1.0, 0.55, 0.18) * road * 0.22;                        // sodium on the tarmac
     float lamps = (1.0 - smoothstep(0.0, 1.2, abs(mod(along, 24.0) - 12.0))) * (1.0 - smoothstep(w * 0.5, w * 0.5 + 2.5, abs(abs(across) - w * 0.5)));
     c += vec3(1.0, 0.7, 0.35) * lamps * 0.9;
+    c *= power;                                                         // (no lamps in load-shedding; the cars still have theirs)
     // Cars: white heading one way on one side, red going away on the other.
     float cellA = floor((along + uTime * speed) / period);
     float carA = step(0.55, hash(vec2(cellA, lane))) * (1.0 - smoothstep(0.0, 2.0, abs(mod(along + uTime * speed, period) - period * 0.5)));
@@ -167,11 +248,12 @@ const STREETS_FRAGMENT = /* glsl */ `
     vec2 id = floor(cell);
     bool avenueX = mod(id.y, 3.0) < 0.5;
     bool avenueZ = mod(id.x, 3.0) < 0.5;
-    col += street(local.y, p.x, avenueX ? 18.0 : 10.0, avenueX ? 26.0 : 40.0, avenueX ? 14.0 : 8.0, id.y);
-    col += street(local.x, p.y, avenueZ ? 18.0 : 10.0, avenueZ ? 26.0 : 40.0, avenueZ ? 14.0 : 8.0, id.x + 50.0);
+    float power = gridPower(p);
+    col += street(local.y, p.x, avenueX ? 18.0 : 10.0, avenueX ? 26.0 : 40.0, avenueX ? 14.0 : 8.0, id.y, power);
+    col += street(local.x, p.y, avenueZ ? 18.0 : 10.0, avenueZ ? 26.0 : 40.0, avenueZ ? 14.0 : 8.0, id.x + 50.0, power);
     // The blocks between: dark, a few lit windows and courtyards.
     vec2 b = floor(p / 6.0);
-    col += vec3(1.0, 0.8, 0.5) * step(0.985, hash(b)) * 0.5;
+    col += vec3(1.0, 0.8, 0.5) * step(0.985, hash(b)) * 0.5 * power;
     // Haze: the further, the more it melts into the night's glow.
     float d = length(vWorld - cameraPosition);
     float haze = 1.0 - exp(-d * 0.0042);
@@ -196,7 +278,10 @@ export class CityAtNight {
    *   can be seen, to be brought down (`demolitions`; demolition.js, with
    *   setFall()). Clear their spots of the others with `clear`.
    */
-  constructor({ seed = 41, streetY = -160, centre = new THREE.Vector3(), towers: withTowers = true, neighbours = 0, clear = [], condemned = [] } = {}) {
+  constructor({ seed = 41, streetY = -160, centre = new THREE.Vector3(), towers: withTowers = true, neighbours = 0, clear = [], condemned = [], grid = NO_GRID } = {}) {
+    this.grid = grid;
+    /** The war's escalation (war.js), 0..1: how many of the towers are burning. */
+    this.war = { uWar: { value: 0 } };
     this.root = new THREE.Group();
     this.root.name = "CityAtNight";
     this.owned = [];
@@ -234,7 +319,7 @@ export class CityAtNight {
       // lit windows), and the physically-based shading of every one of the
       // scene's lights on every distant pixel was most of the roof's frame.
       const material = own(new THREE.MeshLambertMaterial({ color: f.colour, emissive: 0xffffff, emissiveMap: f.tile, emissiveIntensity: f.glow }));
-      worldWindows(material, 18, 52, streetY);
+      worldWindows(material, 18, 52, streetY, grid, this.war.uWar);
       const pieces = [];
       for (let i = 0; i < f.count; i += 1) {
         const a = r() * Math.PI * 2;
@@ -318,7 +403,7 @@ export class CityAtNight {
       }
       // Its own box: the per-instance aFall lives on the geometry.
       const box = own(unit.clone());
-      box.setAttribute("aFall", new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, pieces.length) * 2), 2).setUsage(THREE.DynamicDrawUsage));
+      box.setAttribute("aFall", new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, pieces.length) * 4), 4).setUsage(THREE.DynamicDrawUsage));
       const mesh = new THREE.InstancedMesh(box, material, pieces.length);
       pieces.forEach(([x, y, z, sx, sy, sz, yaw], i) => {
         q.setFromAxisAngle(up, yaw);
@@ -337,6 +422,7 @@ export class CityAtNight {
     // Lit crowns: a glowing band round some of the tops.
     if (crowns.length) {
       const crownMat = own(new THREE.MeshBasicMaterial({ color: 0xffffff, fog: true }));
+      gridInstanced(crownMat, grid, "crowns");
       const crownMesh = new THREE.InstancedMesh(unit, crownMat, crowns.length);
       const colour = new THREE.Color();
       crowns.forEach(([x, y, z, sx, sy, sz, yaw, c], i) => {
@@ -386,7 +472,7 @@ export class CityAtNight {
     }
 
     // The streets far below.
-    this.streetUniforms = { uTime: { value: 0 }, uHaze: { value: new THREE.Color(0.11, 0.06, 0.035) }, uCentre: { value: centre.clone() } };
+    this.streetUniforms = { uTime: { value: 0 }, uHaze: { value: new THREE.Color(0.11, 0.06, 0.035) }, uCentre: { value: centre.clone() }, uGrid: grid.uGrid, uGridTime: grid.uGridTime };
     const streets = new THREE.Mesh(own(new THREE.PlaneGeometry(900, 900, 1, 1)), own(new THREE.ShaderMaterial({
       uniforms: this.streetUniforms, vertexShader: STREETS_VERTEX, fragmentShader: STREETS_FRAGMENT, fog: false, depthWrite: true,
     })));
@@ -493,6 +579,7 @@ export class CityAtNight {
       t.colorSpace = THREE.SRGBColorSpace;
       // Lit by its own lamps: a little brighter than the night round it.
       const mat = own(new THREE.MeshBasicMaterial({ map: t, color: 0xb8aa96, fog: true }));
+      gridInstanced(mat, this.grid, `board${k}`);
       const mesh = new THREE.InstancedMesh(board, mat, list.length);
       list.forEach(([x, y, z, face], i) => {
         q.setFromAxisAngle(up, face);
@@ -508,10 +595,10 @@ export class CityAtNight {
    * its lights going out (0..1). Its crown band and mast ride down with it
    * until they reach the heap.
    */
-  setFall(tower, drop, dark) {
+  setFall(tower, drop, dark, lean = 0, heading = 0) {
     for (const [fi, index] of tower.pieces) {
       const attribute = this.towers[fi].geometry.attributes.aFall;
-      attribute.setXY(index, drop, dark);
+      attribute.setXYZW(index, drop, dark, lean, heading);
       attribute.needsUpdate = true;
     }
     const heap = this.streetY + 1.5 + (tower.top - this.streetY) * 0.1;
@@ -519,14 +606,14 @@ export class CityAtNight {
     const q = new THREE.Quaternion();
     if (tower.crown >= 0 && this._crownMesh) {
       const [x, y, z, sx, sy, sz, yaw] = this._crowns[tower.crown];
-      const gone = y - drop < heap;
+      const gone = y - drop < heap || lean !== 0;   // (a toppling tower's crown: lost in the dust)
       m.compose(new THREE.Vector3(x, y - drop, z), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, yaw), new THREE.Vector3(sx, sy, sz).multiplyScalar(gone ? 0 : 1));
       this._crownMesh.setMatrixAt(tower.crown, m);
       this._crownMesh.instanceMatrix.needsUpdate = true;
     }
     if (tower.mast >= 0 && this._mastMesh) {
       const [x, y, z, h] = this._masts[tower.mast];
-      const gone = y - drop < heap;
+      const gone = y - drop < heap || lean !== 0;
       m.compose(new THREE.Vector3(x, y - drop, z), q.identity(), new THREE.Vector3(0.6, h, 0.6).multiplyScalar(gone ? 0 : 1));
       this._mastMesh.setMatrixAt(tower.mast, m);
       this._mastMesh.instanceMatrix.needsUpdate = true;
