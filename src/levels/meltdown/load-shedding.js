@@ -63,6 +63,11 @@ export class LoadShedding {
     return this.phase !== "idle";
   }
 
+  /** The roof's outage itself: from the lights going to the power coming back. */
+  get outage() {
+    return this.active && this.t >= WARNING && this.t < WARNING + this.seconds;
+  }
+
   /** Seconds until the roof goes dark (during the warning). */
   get countdown() {
     return this.phase === "warning" ? Math.max(0, WARNING - this.t) : 0;

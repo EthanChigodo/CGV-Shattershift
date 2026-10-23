@@ -100,6 +100,21 @@ const SHED_ENDLESS = { first: 40, every: 75 };
 /** The emergency strobe, on its battery: on the lift housing. */
 const STROBE = new THREE.Vector3(2.6, 3.7, EDGE - 1.6);
 /**
+ * The generator beside the lift housing. In the dark, three pulls on its
+ * cord (Space, in reach) and it catches: the floods back at a flicker - and
+ * the noise sets every patient on the roof off.
+ */
+const GENERATOR = new THREE.Vector3(-4.4, 0, EDGE - 1.7);
+const GENERATOR_REACH = 2.3;
+const GENERATOR_PULLS = 3;
+/**
+ * The inverter corner: solar panels on a frame, the battery, and one LED
+ * lamp that stays on when the grid goes. In the dark the patients that
+ * aren't on to you drift to it, like moths.
+ */
+const INVERTER_LAMP = new THREE.Vector3(12.2, 2.75, EDGE - 2.3);
+const LURE_FROM = 8;
+/**
  * The towers that come down: generic towers like the rest of the city, but
  * placed where they can be seen go: in the gaps above the near rooftops
  * the roof camera looks over (the brick block's, the flats'), out of the
@@ -361,6 +376,7 @@ const SKY_FRAGMENT = /* glsl */ `
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _lure = new THREE.Vector3();
 const _skyB = new THREE.Vector3();
 const _skyC = new THREE.Vector3();
 const _skyD = new THREE.Vector3();
@@ -568,17 +584,21 @@ class Patient extends Enemy {
             break;
           }
         }
-        this.face(player, dt, 5);
-        _v.subVectors(player, this.position).setY(0);
+        // In the dark, one that isn't on to you drifts to the inverter's lamp;
+        // the generator's racket sets them all off, faster.
+        const goal = this.level.lure(this.position, player);
+        const rage = 1 + 0.35 * this.level.rage;
+        this.face(goal, dt, 5);
+        _v.subVectors(goal, this.position).setY(0);
         const d = _v.length();
-        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * stride(this.persona, time) * dt);
+        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * rage * stride(this.persona, time) * dt);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
         // Each their own shamble: pace, limp or drag or lurch, arms, twitches.
-        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2, speed: d > 1.2 ? this.stats.stalk * stride(this.persona, time) : 0 });
-        if (d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
+        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2 * rage, speed: d > 1.2 ? this.stats.stalk * rage * stride(this.persona, time) : 0 });
+        if (goal === player && d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
           this.setState("windup");
           this.level.events.emit("patient-windup", { position: this.position.clone() });
         }
@@ -603,7 +623,7 @@ class Patient extends Enemy {
         break;
       }
       case "charge": {
-        const step = this.stats.charge * dt;
+        const step = this.stats.charge * (1 + 0.2 * this.level.rage) * dt;
         this.position.addScaledVector(this.dir, step);
         this.travelled += step;
         rig?.pose({ clip: ["run", "walk"], speed: this.stats.charge, dt, phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
@@ -868,6 +888,7 @@ export class RoofLevel {
     // The patients' eyes in the dark (load-shedding): one material for all.
     this.eyes = this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0xd8ff6a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, fog: false }));
     this._buildSet();
+    this._buildPower();
     this._dressRoof();
     this._buildSkyline(assetBase);
     this._buildLights();
@@ -1264,6 +1285,95 @@ export class RoofLevel {
     if (assetBase) this.city.loadHelicopters(assetBase, { count: this.light ? 1 : 3 }).catch(() => {});
   }
 
+  /** The generator and the inverter corner (load-shedding). */
+  _buildPower() {
+    const k = this.kit;
+    const mat = {
+      yellow: this._track(new THREE.MeshStandardMaterial({ color: 0xd89a18, roughness: 0.55, metalness: 0.2 })),
+      engine: this._track(new THREE.MeshStandardMaterial({ color: 0x23262a, roughness: 0.6, metalness: 0.6 })),
+      grey: this._track(new THREE.MeshStandardMaterial({ color: 0x8a8f94, roughness: 0.7, metalness: 0.3 })),
+      cell: this._track(new THREE.MeshStandardMaterial({ color: 0x10223f, roughness: 0.12, metalness: 0.5, emissive: 0x050a14 })),
+      frame: this._track(new THREE.MeshStandardMaterial({ color: 0xb7bcc2, roughness: 0.4, metalness: 0.8 })),
+    };
+    // The generator: an open yellow frame, the engine inside, a fuel tank on top.
+    const G = GENERATOR;
+    this._box(1.3, 0.95, 0.85, k.materials.collider, G.x, 0, G.z, { solid: true, cover: true });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) this._box(0.06, 0.9, 0.06, mat.yellow, G.x + sx * 0.62, 0, G.z + sz * 0.39);
+    for (const y of [0.04, 0.88]) for (const sz of [-1, 1]) this._box(1.3, 0.06, 0.06, mat.yellow, G.x, y, G.z + sz * 0.39);
+    this._box(0.8, 0.5, 0.6, mat.engine, G.x - 0.1, 0.08, G.z);
+    this._box(0.9, 0.22, 0.7, mat.yellow, G.x, 0.92, G.z);
+    this._box(0.08, 0.12, 0.08, mat.engine, G.x + 0.3, 1.14, G.z);                       // the filler cap
+    this._box(0.06, 0.06, 0.08, k.materials.lightTube, G.x + 0.5, 0.5, G.z - 0.43);       // the pull-start handle
+    const exhaust = k.smokeJet({ count: 10 });
+    exhaust.scale.set(0.5, 1.2, 0.5);
+    exhaust.visible = false;
+    this._put(exhaust, G.x - 0.55, 0.7, G.z + 0.2);
+    // The inverter corner: two panels tilted to the north sky, the battery
+    // cabinet, an LED lamp on a pole.
+    const L = INVERTER_LAMP;
+    for (const dx of [-1.1, 1.1]) {
+      // (Facing north: the sun's side, down here.)
+      const panel = this._box(2.0, 0.05, 1.1, mat.cell, L.x - 0.6 + dx, 0.55, L.z + 0.5);
+      panel.rotation.x = -0.4;
+      this._box(0.05, 0.72, 0.05, mat.frame, L.x - 0.6 + dx, 0, L.z + 0.85);
+      this._box(0.05, 0.42, 0.05, mat.frame, L.x - 0.6 + dx, 0, L.z + 0.15);
+    }
+    this._box(0.7, 1.1, 0.45, mat.grey, L.x + 1.6, 0, L.z + 0.6, { solid: true, cover: true });
+    this._box(0.06, L.y, 0.06, mat.frame, L.x, 0, L.z);
+    this._box(0.36, 0.08, 0.2, mat.frame, L.x, L.y, L.z);
+    this.lampGlow = new THREE.Sprite(this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0xfff0d0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 })));
+    this.lampGlow.position.set(L.x, L.y - 0.05, L.z);
+    this.lampGlow.scale.setScalar(1.6);
+    // The battery's charge light.
+    this.chargeLed = new THREE.Sprite(this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0x46ff6a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false })));
+    this.chargeLed.position.set(L.x + 1.6, 0.95, L.z + 0.36);
+    this.chargeLed.scale.setScalar(0.18);
+    this.groups.set.add(this.lampGlow, this.chargeLed);
+    this.generator = { pulls: 0, running: false, rpm: 0, last: -9, exhaust };
+    this.rage = 0;
+  }
+
+  /**
+   * Space in reach of the generator in the dark: a pull on its cord (the
+   * third starts it). True if it took the key (no dodge then).
+   */
+  pullGenerator(player) {
+    const gen = this.generator;
+    if (!gen || gen.running || !this.shed?.outage) return false;
+    if (Math.hypot(player.x - GENERATOR.x, player.z - GENERATOR.z) > GENERATOR_REACH) return false;
+    // Too slow between pulls and it floods: start again.
+    if (this.state.time - gen.last > 2.5) gen.pulls = 0;
+    gen.last = this.state.time;
+    gen.pulls += 1;
+    gen.rpm = 1;
+    const position = GENERATOR.clone().setY(0.6);
+    if (gen.pulls < GENERATOR_PULLS) this.events.emit("generator-pull", { n: gen.pulls, of: GENERATOR_PULLS, position });
+    else {
+      gen.running = true;
+      gen.exhaust.visible = true;
+      this.rage = 1;
+      this.events.emit("generator-on", { position });
+    }
+    return true;
+  }
+
+  /** "pull" (in reach, in the dark), "go" (it's there to start), else null. */
+  generatorHint(player) {
+    const gen = this.generator;
+    if (!gen || gen.running || !this.shed?.outage || this.shed.darkness < 0.5) return null;
+    return Math.hypot(player.x - GENERATOR.x, player.z - GENERATOR.z) <= GENERATOR_REACH ? "pull" : "go";
+  }
+
+  /**
+   * Where a stalking patient heads: you - or, in the dark with the
+   * generator quiet, the inverter's lamp if you're far off.
+   */
+  lure(from, player) {
+    if ((this.shed?.darkness ?? 0) < 0.5 || this.generator?.running) return player;
+    if (Math.hypot(from.x - player.x, from.z - player.z) < LURE_FROM) return player;
+    return _lure.set(INVERTER_LAMP.x - 0.8, 0, INVERTER_LAMP.z - 1.4);
+  }
+
   _buildLights() {
     const g = this.groups.lights;
     this.hemisphere = new THREE.HemisphereLight(0x33405e, 0x3a1a0c, 0.55);
@@ -1278,6 +1388,10 @@ export class RoofLevel {
     this.strobeGlow.position.copy(STROBE);
     this.strobeGlow.scale.setScalar(2.2);
     g.add(this.strobe, this.strobeGlow);
+    // The inverter's lamp: one warm-white LED, on whenever the grid is off.
+    this.lamp = new THREE.PointLight(0xfff0d6, 0, 15, 1.5);
+    this.lamp.position.copy(INVERTER_LAMP).setY(INVERTER_LAMP.y - 0.15);
+    g.add(this.lamp);
     // Two floods and two dim glows up from the city past the ledges: a fixed four.
     this.points = [];
     for (const f of this.floods) {
@@ -1882,6 +1996,7 @@ export class RoofLevel {
 
     this._updateShedding(dt, time, ctx);
     const dark = this.shed?.darkness ?? 0;
+    const roofDark = this.darkness;
     for (const p of this.points) {
       if (p.flicker) {
         p.flash = Math.max(0, (p.flash ?? 0) - dt * 3);
@@ -1889,8 +2004,8 @@ export class RoofLevel {
         // dimmer with the city's lights out below.
         p.light.intensity = p.base * (1 + s.chaos * 0.4 + p.flash * 12) * (1 - 0.6 * dark);
       } else {
-        // The floods: out in load-shedding.
-        p.light.intensity = p.base * (1 - dark);
+        // The floods: out in load-shedding (but for the generator).
+        p.light.intensity = p.base * (1 - roofDark);
       }
     }
 
@@ -2009,8 +2124,9 @@ export class RoofLevel {
   /* ---------------- Load-shedding ---------------- */
 
   /** 0 (lit) .. 1 (the grid down on the roof): for the host's torch, fog and HUD. */
+  /** The roof's: 0 lit .. 1 dark (the generator, running, brings most of it back). */
   get darkness() {
-    return this.shed?.darkness ?? 0;
+    return (this.shed?.darkness ?? 0) * (1 - 0.75 * (this.generator?.power ?? 0));
   }
 
   _updateShedding(dt, time, ctx) {
@@ -2036,16 +2152,36 @@ export class RoofLevel {
       else if (e.kind === "transformer") this.events.emit("shed-transformer", { position: _SHED_SPARKS.clone() });
       else if (e.kind === "on") this.events.emit("shed-on", {});
     }
-    const dark = shed.darkness;
+    // The generator: coughs on each pull, runs till the grid's back.
+    const gen = this.generator;
+    if (gen) {
+      gen.rpm = Math.max(0, gen.rpm - dt * 1.5);
+      if (gen.running && !shed.outage) {
+        gen.running = false;
+        gen.pulls = 0;
+        gen.exhaust.visible = false;
+        this.events.emit("generator-off", { position: GENERATOR.clone() });
+      }
+      // Up to speed over a second, a ragged flicker on the floods.
+      const target = gen.running ? 0.88 + 0.12 * Math.sin(time * 23) * Math.sin(time * 7.3) : 0;
+      gen.power = THREE.MathUtils.damp(gen.power ?? 0, target, gen.running ? 2.5 : 12, dt);
+      this.rage = gen.running ? 1 : Math.max(0, this.rage - dt * 0.5);
+    }
+    const dark = this.darkness;
+    // The inverter's LED: on whenever the grid's off, the charge light blinking.
+    const lamp = shed.darkness > 0.5 ? 1 : 0;
+    this.lamp.intensity = 22 * lamp;
+    this.lampGlow.material.opacity = 0.9 * lamp;
+    this.chargeLed.material.opacity = lamp ? 0.4 + 0.6 * (Math.sin(time * 3) > 0 ? 1 : 0) : 0.9;
     // The roof's own lights: the floods (in the light loop), the tubes, the sky fill.
     const tube = this.kit.materials.lightTube;
     tube.emissiveIntensity = 1.05 * (1 - dark);
     this.hemisphere.intensity = 0.55 * (1 - 0.45 * dark);
     // The strobe on its battery: a short red flash once a second (slow,
     // for photosensitive players), and a glow round the lamp.
-    const on = dark > 0.5 ? Math.max(0, 1 - ((time * 1.0) % 1) * 5) : 0;
+    const on = shed.darkness > 0.5 ? Math.max(0, 1 - ((time * 1.0) % 1) * 5) : 0;
     this.strobe.intensity = 45 * on;
-    this.strobeGlow.material.opacity = Math.max(on, dark * 0.25);
+    this.strobeGlow.material.opacity = Math.max(on, shed.darkness * 0.25);
     // Their eyes, in the dark.
     this.eyes.opacity = dark * 0.95;
     // The towers across the street (their own shader) are on the grid too.

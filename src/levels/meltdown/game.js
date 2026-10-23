@@ -1122,6 +1122,8 @@ export class MeltdownGame {
           return true;
         }
         if (this.roof?.grab(hero.position)) return true;
+        // In the dark by the generator, Space is a pull on its cord.
+        if (this.roof?.pullGenerator?.(hero.position)) return true;
         if (hero.dodgeCooldown <= 0) {
           const dir = hero.velocity.lengthSq() > 0.5 ? hero.velocity.clone() : hero.aim.clone().sub(hero.position).setY(0);
           hero.dodgeDir.copy(dir.normalize());
@@ -2592,6 +2594,20 @@ export class MeltdownGame {
       this.trauma = Math.min(1, this.trauma + 0.2);
     });
     on("shed-on", () => hud.toast("POWER BACK", "", "", 1600));
+    on("generator-pull", ({ n, of }) => {
+      // A cough, and nothing.
+      audio.stumble();
+      audio.whoosh();
+      hud.toast("PULL", `${n} / ${of}`, "", 700);
+    });
+    on("generator-on", ({ position }) => {
+      audio.powerUp();
+      audio.growl(1);
+      debris.sparks(position, { count: 14, speed: 3 });
+      this.trauma = Math.min(1, this.trauma + 0.1);
+      hud.toast("GENERATOR ON", "THE NOISE - THEY'RE ALL COMING", "warn", 2400);
+    });
+    on("generator-off", () => audio.powerDown());
     on("tower-seen", () => {
       if (this.phase === "roof") hud.toast("THE TOWER ACROSS THE STREET IS GOING", "", "warn", 1800);
     });
@@ -3170,7 +3186,8 @@ export class MeltdownGame {
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
     const hint = this.phase === "roof" ? roof?.extractionHint(this.hero.position) : null;
-    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
+    const gen = this.phase === "roof" && !hint ? roof?.generatorHint?.(this.hero.position) : null;
+    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : gen === "pull" ? "SPACE x3 - PULL-START THE GENERATOR" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : gen === "go" ? "THE GENERATOR - BY THE LIFT" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 
