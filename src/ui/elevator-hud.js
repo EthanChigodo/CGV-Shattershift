@@ -29,6 +29,25 @@ function element(tag, className, text) {
   return node;
 }
 
+let grain = null;
+
+/** A small tile of grey noise for the feed's grain (made once). */
+function grainImage() {
+  if (grain) return grain;
+  const c = document.createElement("canvas");
+  c.width = c.height = 96;
+  const g = c.getContext("2d");
+  const img = g.createImageData(96, 96);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  grain = c.toDataURL();
+  return grain;
+}
+
 export class ElevatorHud {
   /**
    * @param {object} [o]
@@ -66,7 +85,14 @@ export class ElevatorHud {
     this.captionWho = element("span", "elv-caption-who");
     this.captionText = element("span", "elv-caption-text");
     this.captionEl.append(this.captionWho, this.captionText);
-    this.root.append(...this.bars, panel, this.alertEl, this.clampsEl, this.monitorEl, this.fullLabel, this.captionEl);
+    // A security camera's feed: scanlines, grain, its name, REC and a clock.
+    this.feedEl = element("div", "elv-feed");
+    this.feedEl.hidden = true;
+    this.feedName = element("span", "elv-feed-name", "ASCENSION TOWER · LIFT 03 · CAM 2");
+    this.feedRec = element("span", "elv-feed-rec", "● REC");
+    this.feedTime = element("span", "elv-feed-time");
+    this.feedEl.append(element("div", "elv-feed-grain"), this.feedName, this.feedRec, this.feedTime);
+    this.root.append(...this.bars, this.feedEl, panel, this.alertEl, this.clampsEl, this.monitorEl, this.fullLabel, this.captionEl);
     container.appendChild(this.root);
     this._floor = null;
   }
@@ -140,6 +166,31 @@ export class ElevatorHud {
     m.style.bottom = `${rect.y}px`;
     m.style.width = `${rect.w}px`;
     m.style.height = `${rect.h}px`;
+  }
+
+  /**
+   * The security camera's feed over the picture, or null to hide it.
+   * @param {{floor:number, seconds:number, glitch?:boolean}|null} f
+   *   the floor, seconds into the ride (the clock), the feed breaking up
+   */
+  feed(f) {
+    if (!f) {
+      if (!this.feedEl.hidden) {
+        this.feedEl.hidden = true;
+        this.root.classList.remove("feed-on");
+      }
+      return;
+    }
+    if (this.feedEl.hidden) {
+      this.feedEl.hidden = false;
+      this.root.classList.add("feed-on");
+      if (!this.feedEl.style.getPropertyValue("--grain")) this.feedEl.style.setProperty("--grain", `url(${grainImage()})`);
+    }
+    // Late at night, the clock running from when the ride began.
+    const t = Math.floor(23 * 3600 + 41 * 60 + 7 + f.seconds);
+    const two = (n) => String(n).padStart(2, "0");
+    this.feedTime.textContent = `${two(Math.floor(t / 3600) % 24)}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)} · FL ${String(Math.max(0, Math.floor(f.floor))).padStart(3, "0")}`;
+    this.feedEl.classList.toggle("glitch", !!f.glitch);
   }
 
   dispose() {
