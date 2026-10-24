@@ -51,8 +51,9 @@ import { DIFFICULTIES, loadDifficulty, saveDifficulty } from "./src/systems/diff
 import { loadSave, writeSave, clearSave, SAVE_STAGE_NAMES } from "./src/systems/story-save.js";
 import { TrailerDirector } from "./src/trailer/director.js";
 import { Gamepads, PadBridge } from "./src/systems/gamepads.js";
-import { setPadFamily, padLabel, setPadActive } from "./src/systems/input-glyphs.js";
-import { applyInputNames, watchInputNames, padText } from "./src/ui/key-names.js";
+import { setPadFamily, padLabel, setPadActive, setTouchActive } from "./src/systems/input-glyphs.js";
+import { applyInputNames, watchInputNames, padText, setTouchPlace } from "./src/ui/key-names.js";
+import { TouchControls } from "./src/systems/touch-controls.js";
 import { PadUI, padControlsHTML } from "./src/ui/pad-ui.js";
 import { Arena } from "./src/modes/arena/arena.js";
 import { Race } from "./src/modes/race/race.js";
@@ -764,7 +765,8 @@ function buildFoundry(variant = 0) {
     shadows: false,
     // Fewer pooled lights below High (the Foundry was the slowest level).
     // (Measured: the light pool is most of a Foundry frame - every wall pixel is lit by each.)
-    lightBudget: resolvedQuality() === "high" ? { points: 6, spots: 2 } : { points: 4, spots: 2 },
+    // (A phone or tablet: fewer again - each light is paid for on every wall pixel.)
+    lightBudget: PHONE ? { points: 2, spots: 1 } : resolvedQuality() === "high" ? { points: 6, spots: 2 } : { points: 4, spots: 2 },
     brightness: 1.6,
     // The escape clock is as tight at every difficulty's pace.
     runSpeed: FOUNDRY_SPEED_ZONES[2].speed * diff().speed,
@@ -1089,6 +1091,8 @@ function applyQuality() {
   renderer.setSize(innerWidth, innerHeight);
   postfx.setQuality(q);
   postfx.setScale(q === "medium" && !PHONE ? 0.85 : 1);
+  // A phone or tablet: the cheaper refraction snapshot and bloom buffer from the start.
+  if (PHONE) postfx.setLite(true);
   // Visual effects off: no post-processing at all, whatever the preset.
   if (!settings.effects) postfx.enabled = false;
   // Shadows off: the Skyline's sun stops casting (the Foundry has none; the Labs only on High).
@@ -1106,7 +1110,7 @@ function applyQuality() {
  */
 function meltdownQuality() {
   const high = settings.quality === "high";
-  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects });
+  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects, lite: PHONE });
 }
 
 function causewayDistance() {
@@ -1786,6 +1790,8 @@ function getMeltdown() {
     charge,
     // The roof's shoulder camera turns at the Settings' sensitivity.
     lookSpeed: () => (padMode ? (settings.padAimSpeed ?? 100) : (settings.sensitivity ?? 100)) / 100,
+    // A touch screen can't hold the pointer: the roof from above, aimed with a finger.
+    topView: PHONE,
   });
   meltdown.setBloom(resolvedQuality() !== "low");
   meltdownQuality();
@@ -4609,6 +4615,7 @@ function animate() {
   const rawDt = clock.getDelta();
   // Controllers: read once a frame, turned into the game's own input.
   padBridge.update(Math.min(0.1, rawDt));
+  if (PHONE) updateTouch(Math.min(0.1, rawDt));
   updateLoadingScreen(Math.min(0.1, rawDt));
   updateRecordNotes();
   updateProgression();
@@ -6182,8 +6189,9 @@ function setPadMode(on) {
   // Every key named on screen: the controller's names (L1 / R1, OPTIONS...) or the keyboard's.
   setPadActive(on);
   applyInputNames();
-  // The next quick-time hit is asked for in stick flicks and triggers.
-  story.reactions.options.pad = on;
+  // The next quick-time hit is asked for in stick flicks and triggers (on a
+  // touch screen always: swipes and taps on the two halves of the screen).
+  story.reactions.options.pad = on || PHONE;
 }
 /** The control names in the hints follow the controller in use. */
 function refreshPadGlyphs() {
@@ -6232,6 +6240,42 @@ const padBridge = new PadBridge(pads, {
   },
 });
 let padFamilyNow = null;
+
+/* ---- Touch screens (src/systems/touch-controls.js) ------------------------- */
+
+/** A phone or tablet: swipes, taps and holds played as the keys and clicks the game hears. */
+const touchControls = new TouchControls({
+  canvas: renderer.domElement,
+  enabled: () => PHONE && !padMode,
+  mode() {
+    if (loadingHold || pendingTransition) return "off";
+    if (arena?.active || race?.active || locker?.active) return "off";
+    if (story.reactions?.state === "running" && !paused) return "reaction";
+    if (unlockCard.open || powerups.open || paused || photoActive || document.querySelector(".screen.active")) return "off";
+    if (state === "cutscene" || story.player.active) return "cutscene";
+    // The lift ride: a tap aims at the clamp there and fires (as in a run).
+    if (gravityLift) return "run";
+    if (state !== "playing") return "off";
+    if (currentLevel === 3) return meltdown?.phase === "roof" ? "roof" : meltdown?.phase === "run" ? "run" : "off";
+    return "run";
+  },
+  wants: () => story.reactions?.wants ?? null,
+  canFocus: () => hasAbility("focus"),
+  skyline: () => currentLevel === 1,
+});
+let touchPlace = null;
+function updateTouch(dt) {
+  touchControls.update(dt);
+  touchControls.attachWheel(document.querySelector(".sphere-wheel"), () => cycleSphere(1));
+  // The roof's names ("DODGE", "THE STICK") or the run's ("SWIPE UP").
+  const place = currentLevel === 3 && /^roof/.test(meltdown?.phase ?? "") ? "roof" : "run";
+  if (place !== touchPlace) { touchPlace = place; setTouchPlace(place); applyInputNames(); }
+}
+if (PHONE) {
+  setTouchActive(true);
+  story.reactions.options.pad = true;
+  applyInputNames();
+}
 pads.on("connect", (rec) => {
   padUI.connected(rec);
   level1Audio.uiClick?.();
@@ -6547,6 +6591,10 @@ globalThis.__dbg = {
     return { phone: PHONE, quality: resolvedQuality(), pixelRatio: renderer.getPixelRatio(), antialias: gl.getContextAttributes().antialias, postfxScale: postfx.scale, labsScale, steady30: pacer.steady, fps: perf.fps, level: perf.level, autoLow };
   },
   get currentLevel() { return currentLevel; },
+  get lane() { return lane; },
+  get moves() { return { jumpHeight, sliding, focusing: !!run.focusing }; },
+  /** The touch controls (src/systems/touch-controls.js): mode, keys held. */
+  get touch() { return { phone: PHONE, mode: touchControls.mode, keys: [...touchControls.keys.keys()], mouse: touchControls.mouse }; },
   get runZ() { return runZ; },
   get health() { return health; },
   get ammo() { return ammo; },

@@ -47,6 +47,22 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | The Labs and the Roof | Hold left mouse to fire; jump onto fallen ducts (running into one hurts); on the roof `WASD` moves (the open ledges are a long drop) and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available there |
 | Cutscenes | Hold `Esc` to skip the talking; reaction prompts show the keys to press |
 
+### On a phone or tablet (held sideways)
+
+| Touch | Action |
+| --- | --- |
+| Swipe left / right | Change lane |
+| Swipe up / down | Jump / slide (the Skyline: keep the finger down after it to sprint / brake) |
+| Tap | Throw at that spot |
+| Hold | Charge (the Labs' launcher too), aiming where the finger is; let go to throw |
+| Tap the sphere wheel | Change sphere |
+| FOCUS (held) | Slow time, once it is earned |
+| The roof | A stick comes up under your left thumb (walk); the right side aims and fires; DODGE dodges, pulls the generator's cord and jumps for the ladder |
+| Cutscenes | HOLD TO SKIP; a quick-time hit says what to do on each half of the screen (swipe there, or tap that side) |
+| PAUSE | At the top of the screen |
+
+A touch screen is found by itself; `?touch` on the address forces the touch controls on (`?touch=0` off). `?fps` shows the frame rate at the top.
+
 A run that uses a demo key (`1`-`6`) still plays on, but it no longer counts for the records: the fastest story run (from Sector 01 to the helicopter, in h:mm:ss) and each Endless level's best (distance and the time it took).
 
 ## Spheres and power-ups (every level)

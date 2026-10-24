@@ -84,6 +84,9 @@ html.portrait-phone body > :not(.turn-phone) { visibility: hidden; }
     bottom: calc(var(--safe-b) / var(--hud-zoom));
   }
   html .sphere-wheel { margin-right: calc(var(--safe-r) / var(--hud-zoom)); }
+  /* The roof's map: smaller, up under the top bar, without its key. */
+  html .roof-map { zoom: .62; top: 78px; right: calc(28px + var(--safe-r) / .62); }
+  html .roof-map footer { display: none; }
 
   /* The bar along the top: the name, PAUSE and VIEW - smaller, but still big
      enough to tap. */

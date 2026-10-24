@@ -252,7 +252,7 @@ export class MeltdownGame {
    * @param {boolean} [o.devKeys]    R restarts, P skips to the roof, F dev stats
    * @param {boolean} [o.summary]    show the level's own end-of-run card
    */
-  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null, lookSpeed = () => 1 }) {
+  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null, lookSpeed = () => 1, topView = false }) {
     /**
      * The sphere types and serums (src/systems/arsenal.js) - the host's, so
      * the type you picked and the serums running carry between levels; the
@@ -273,6 +273,8 @@ export class MeltdownGame {
     } catch {
       /* storage unavailable */
     }
+    // A touch screen (main.js): always from above - there is no mouse to hold.
+    if (topView) this.roofView = "top";
     this.look = { yaw: 0, pitch: ROOF_SHOULDER.pitch, lastX: null, lastY: null };
     /** Sharing the game's arsenal means the game's HUD shows the serums. */
     this.arsenalShared = !!arsenal;
@@ -553,7 +555,8 @@ export class MeltdownGame {
     // High keeps the full pool; otherwise six lights (measured: the light pool
     // is most of the corridor's cost).
     const level = new MeltdownLevel({
-      origin: new THREE.Vector3(0, 0, 0), seed, lightPoints: this.quality?.shadows ? 9 : 6,
+      // (`lite`: a phone or tablet - four.)
+      origin: new THREE.Vector3(0, 0, 0), seed, lightPoints: this.quality?.shadows ? 9 : this.quality?.lite ? 4 : 6,
       // The story's difficulty: obstacle spacing; Hard's fire waves and stalkers.
       density: this.difficulty.density, extras: this.difficulty.extras,
       // Harder is longer (and its hidden countdown with it); endless laps keep the base length.
@@ -762,8 +765,8 @@ export class MeltdownGame {
    * key light's shadow map; `ao` - screen-space ambient occlusion. Both only
    * at High: they are the most expensive things on screen.
    */
-  setQuality({ shadows = false, ao = false } = {}) {
-    this.quality = { shadows, ao };
+  setQuality({ shadows = false, ao = false, lite = false } = {}) {
+    this.quality = { shadows, ao, lite };
     this.ao.enabled = ao;
     this.keyLight.visible = shadows;
     this.keyLight.castShadow = shadows;
