@@ -73,13 +73,22 @@ import { FieldManual } from "./src/ui/field-manual.js";
 import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
 import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/systems/ghosts.js";
 import { TabbedScreen } from "./src/ui/tabbed-screen.js";
-import { setUpPhone } from "./src/ui/phone.js";
+import { setUpPhone, isTouch } from "./src/ui/phone.js";
+import { FramePacer } from "./src/systems/frame-pacer.js";
 import { CreditsRoom } from "./src/ui/credits-room.js";
 import { compileReady, uploadTextures } from "./src/systems/warm-up.js";
 import { LAUNCHER_SKINS, saveLauncherSkin } from "./src/figure/launcher-skins.js";
 
 const canvas = document.querySelector("#game");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+/**
+ * A phone or tablet (src/ui/phone.js): lighter settings of its own - no
+ * multisampling (the costliest thing on a phone's GPU, and invisible at its
+ * pixel density), no more than one pixel per screen point, Medium under Auto,
+ * resolution that can step further down, at most 60 fps and a steady 30 if
+ * it can't keep that (frame-pacer.js). A computer is untouched.
+ */
+const PHONE = isTouch();
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !PHONE });
 // No error check after every shader link: three's check (getProgramInfoLog)
 // makes the driver finish each compile on the spot, one after another;
 // without it the browser compiles them in parallel, in the background - a
@@ -1065,20 +1074,21 @@ function resetRun() {
 resetRun();
 
 function resolvedQuality() {
-  if (settings.quality === "auto") return autoLow ? "low" : "high";
+  if (settings.quality === "auto") return autoLow ? "low" : PHONE ? "medium" : "high";
   return settings.quality;
 }
 
 function applyQuality() {
   const q = resolvedQuality();
   // Level 3 is fill-rate bound (measured): it always renders at ratio 1.
-  const cap = currentLevel === 3 ? 1 : q === "high" ? 1.5 : q === "medium" ? 1.25 : 1;
+  const cap = PHONE || currentLevel === 3 ? 1 : q === "high" ? 1.5 : q === "medium" ? 1.25 : 1;
   // The Resolution setting scales on top of the preset.
-  const res = (Number(settings.resolution) || 1) * (currentLevel === 3 ? labsScale : 1);
+  // (A phone on Low - the slowest ones - draws a little under one pixel per point.)
+  const res = (Number(settings.resolution) || 1) * (currentLevel === 3 ? labsScale : 1) * (PHONE && q === "low" ? 0.8 : 1);
   renderer.setPixelRatio(Math.min(devicePixelRatio, cap) * res);
   renderer.setSize(innerWidth, innerHeight);
   postfx.setQuality(q);
-  postfx.setScale(q === "medium" ? 0.85 : 1);
+  postfx.setScale(q === "medium" && !PHONE ? 0.85 : 1);
   // Visual effects off: no post-processing at all, whatever the preset.
   if (!settings.effects) postfx.enabled = false;
   // Shadows off: the Skyline's sun stops casting (the Foundry has none; the Labs only on High).
@@ -4350,9 +4360,12 @@ function updateGame(dt, time) {
 /* ---- Rendering and performance ---------------------------------------- */
 
 const perf = { ema: 16, slowFor: 0, fastFor: 0, frames: 0, acc: 0, fps: 60, level: 0, settle: 0, seen: "" };
+/** On a phone or tablet: at most 60 fps, a steady 30 when it can't keep that. */
+const pacer = new FramePacer({ enabled: PHONE });
 
 function updatePerformance(rawDt) {
-  const ms = rawDt * 1000;
+  // (At a steady 30, judged as if at 60: the same "too slow" either way.)
+  const ms = pacer.budgetMs(rawDt);
   perf.ema = perf.ema * 0.94 + ms * 0.06;
   perf.frames += 1;
   perf.acc += rawDt;
@@ -4375,7 +4388,7 @@ function updatePerformance(rawDt) {
       perf.slowFor = 0;
       if (perf.level === 0) { perf.level = 1; if (causeway) causeway.probe.interval = 2; }
       else if (perf.level === 1) { perf.level = 2; postfx.setLite(true); }
-      else if (postfx.scale > 0.86) postfx.setScale(postfx.scale - 0.075);
+      else if (postfx.scale > (PHONE ? 0.61 : 0.86)) postfx.setScale(postfx.scale - 0.075);
       // Said in the settings, not across the middle of a run.
       else if (!autoLow && perf.ema > 34) { autoLow = true; applyQuality(); ui.qualityNote.textContent = "Auto lowered detail to keep the frame rate up."; }
     }
@@ -4392,10 +4405,15 @@ function updatePerformance(rawDt) {
     perf.slowFor = perf.ema > 21 ? perf.slowFor + rawDt : 0;
     perf.fastFor = perf.ema < 14 ? perf.fastFor + rawDt : 0;
     const before = labsScale;
-    if (perf.slowFor > 1.5 && labsScale > 0.76) { perf.slowFor = 0; labsScale = Math.max(0.75, labsScale - 0.125); }
+    if (perf.slowFor > 1.5 && labsScale > (PHONE ? 0.61 : 0.76)) { perf.slowFor = 0; labsScale = Math.max(PHONE ? 0.6 : 0.75, labsScale - 0.125); }
     if (perf.fastFor > 5 && labsScale < 1) { perf.fastFor = 0; labsScale = Math.min(1, labsScale + 0.125); }
     if (labsScale !== before) applyQuality();
   }
+  // A phone: down to a steady 30 if it can't keep 60, back up when it can.
+  pacer.update(rawDt, {
+    judging: state === "playing" && !paused && document.visibilityState === "visible" && perf.settle > 6,
+    easy: currentLevel === 3 ? labsScale >= 1 : postfx.scale >= 1 && perf.level === 0,
+  });
 }
 
 function renderFrame() {
@@ -4577,6 +4595,7 @@ function cancelLoadingHold() {
 
 function animate() {
   requestAnimationFrame(animate);
+  if (pacer.skip(performance.now())) return;
   const rawDt = clock.getDelta();
   // Controllers: read once a frame, turned into the game's own input.
   padBridge.update(Math.min(0.1, rawDt));
@@ -6512,6 +6531,11 @@ globalThis.__dbg = {
   openPause,
   closePause,
   get state() { return state; },
+  /** How hard it's working (the phone checks): quality, pixels, rate. */
+  get speed() {
+    const gl = renderer.getContext();
+    return { phone: PHONE, quality: resolvedQuality(), pixelRatio: renderer.getPixelRatio(), antialias: gl.getContextAttributes().antialias, postfxScale: postfx.scale, labsScale, steady30: pacer.steady, fps: perf.fps, level: perf.level, autoLow };
+  },
   get currentLevel() { return currentLevel; },
   get runZ() { return runZ; },
   get health() { return health; },
