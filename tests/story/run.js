@@ -25,10 +25,11 @@ import * as restart from "./checks/restart.js";
 import * as briefing from "./checks/briefing.js";
 import * as voices from "./checks/voices.js";
 import * as fall from "./checks/fall.js";
+import * as abduction from "./checks/abduction.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
-const ALL = [reactions, cutscene, companion, voices, briefing, opening, lift, labs, skyline, ending, restart, fall];
+const ALL = [reactions, cutscene, companion, voices, briefing, opening, lift, labs, skyline, ending, restart, fall, abduction];
 
 const PAGES = {
   preview: {

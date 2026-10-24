@@ -1826,6 +1826,7 @@ function getMeltdown() {
     lookSpeed: () => (padMode ? (settings.padAimSpeed ?? 100) : (settings.sensitivity ?? 100)) / 100,
     // A touch screen can't hold the pointer: the roof from above, aimed with a finger.
     topView: PHONE,
+    reactionLayer: story,
   });
   meltdown.setBloom(resolvedQuality() !== "low" && gpuReport().halfFloat !== false);
   meltdownQuality();
@@ -2010,6 +2011,7 @@ const MELTDOWN_ENDINGS = {
   "LEFT BEHIND": "The helicopter could not wait. When it hangs off the east ledge, get to the edge and jump (SPACE) for the ladder.",
   "YOU FELL": "Off the edge. The east side and the middle of the west are open, and so is the deck's - watch your footing when they knock you back.",
   "DOWN A HATCH": "Down an open hatch. The railed, striped openings on the deck go straight down into the building - mind their open side when they knock you back.",
+  "YOU WERE CAPTURED!": "Carried away by a winged patient. Move out of the red circle, or tap SPACE rapidly to break free and recover your bazooka.",
 };
 
 /** Level 3 finished: its numbers into the game's score, and the end screen. */
@@ -2020,7 +2022,12 @@ function finishMeltdown(escaped, result) {
   health = s.vitality;
   ammo = s.balls;
   updateUI();
-  if (runKind === "endless") { endRun(false, null, endlessResult()); return; }
+  if (runKind === "endless") {
+    const detail = endlessResult();
+    if (result.deathScene === "capture") Object.assign(detail, { title: result.title, scene: "capture", text: MELTDOWN_ENDINGS[result.title] });
+    endRun(false, null, detail);
+    return;
+  }
   if (escaped && runKind === "story") storyEscaped();
   // The whole run, timed: from the Foundry to the helicopter.
   const timed = escaped && runKind === "story" && runFromStart;
