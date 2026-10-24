@@ -25,12 +25,13 @@
  */
 
 import * as THREE from "../../three.js";
+import { drawableType } from "../../systems/gpu.js";
 import { LAYERS } from "./layers.js";
 
 export class ReflectionProbe {
   constructor({ size = 128, interval = 1 } = {}) {
     this.target = new THREE.WebGLCubeRenderTarget(size, {
-      type: THREE.HalfFloatType,
+      type: drawableType(),
       generateMipmaps: false,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,

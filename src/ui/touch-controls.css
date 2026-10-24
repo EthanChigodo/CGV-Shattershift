@@ -20,7 +20,12 @@
 .tc-skip {
   right: calc(18px + var(--safe-r, 0px)); bottom: calc(18px + var(--safe-b, 0px));
   height: 46px; border-radius: 23px; padding: 0 20px; font-size: 11px;
+  /* Fills from the left as it is held. */
+  background: linear-gradient(90deg, rgba(255, 122, 61, .55) calc(var(--p, 0) * 100%), rgba(8, 10, 14, .42) 0);
 }
+.tc-skip.down { background: linear-gradient(90deg, rgba(255, 122, 61, .55) calc(var(--p, 0) * 100%), rgba(8, 10, 14, .55) 0); transform: none; }
+/* The cutscene's own "Hold Esc to skip" ring: on a touch screen the button is the skip. */
+html.touch .story-skip { display: none !important; }
 
 /* The roof's stick: it comes up where the thumb lands. */
 .tc-stick {

@@ -29,6 +29,10 @@ html.touch, html.touch body {
   overscroll-behavior: none;
   touch-action: manipulation;
 }
+/* Nothing in the game is text to select on a long press (text boxes are). */
+html.touch *:not(input):not(textarea):not(select):not([contenteditable="true"]) {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
 /* The game itself takes every touch (the touch controls read them). */
 html.touch #game { touch-action: none; }
 html.touch .screen, html.touch .unlock-card { touch-action: pan-y; }
@@ -130,3 +134,16 @@ html.portrait-phone body > :not(.turn-phone) { visibility: hidden; }
 
 /* A touch screen: the keyboard's keys mean nothing - not on the cards. */
 html.touch .uc-keys { display: none; }
+
+/* The graphics taken away by the browser (main.js): a note while they come back. */
+.gpu-note {
+  position: fixed; left: 50%; top: 50%; z-index: 300; transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 14px; padding: 18px 24px; border-radius: 8px;
+  background: rgba(5, 7, 10, .86); color: var(--text, #f4f0e8); font: 500 15px/1.4 var(--font, sans-serif); text-align: center;
+}
+.gpu-note[hidden] { display: none; }
+.gpu-note button {
+  min-height: 44px; padding: 0 18px; border: 1px solid var(--ember, #ff7a3d); border-radius: 6px;
+  background: transparent; color: inherit; font: inherit; letter-spacing: .08em; text-transform: uppercase;
+}
+.gpu-note button[hidden] { display: none; }
