@@ -70,6 +70,40 @@ export async function run(page, { shots }) {
   check("story ride built with the director", start.ride && start.director, JSON.stringify(start));
   check("Okoro is in the cabin, holding the launcher", start.holding, JSON.stringify(start));
 
+  // ---- The security camera, before the tremor -----------------------------
+  const feed = await page.evaluate(() => {
+    const seen = [];
+    const look = () => {
+      const s = __t.ride.currentShot();
+      if (seen.at(-1) !== s) seen.push(s);
+      return s;
+    };
+    __t.until(() => look() === "cctv");
+    __t.step(15);
+    const ui = document.querySelector(".elv-feed");
+    const on = { shown: !!ui && !ui.hidden, filter: document.querySelector("#game").style.filter, text: ui?.textContent };
+    return { seen, on };
+  });
+  check("the climb cuts to the lift's security camera", feed.seen.includes("cctv"), feed.seen.join());
+  check("...with its feed over the picture (name, REC, clock)", feed.on.shown && /CAM 2/.test(feed.on.text) && /REC/.test(feed.on.text), JSON.stringify(feed.on));
+  check("...and its washed-out colour", /grayscale/.test(feed.on.filter), feed.on.filter);
+  await shot("00a-security-camera");
+  const glitch = await page.evaluate(() => {
+    __t.until(() => __t.ride._feedGlitch());
+    __t.step(3);
+    return document.querySelector(".elv-feed").classList.contains("glitch");
+  });
+  check("the feed breaks up before the tremor", glitch);
+  await shot("00b-feed-breaks-up");
+  const out = await page.evaluate(() => {
+    __t.until(() => __t.ride.phase === "tremor");
+    __t.step(2);
+    const ui = document.querySelector(".elv-feed");
+    return { shot: __t.ride.currentShot(), hidden: !ui || ui.hidden, filter: document.querySelector("#game").style.filter };
+  });
+  check("the tremor opens outside, the feed gone", out.shot === "exterior" && out.hidden && !out.filter, JSON.stringify(out));
+  await shot("00c-tremor-outside");
+
   await page.evaluate(() => __t.until(() => __t.ride.phase === "tremor" && __t.ride.state.pt > 0.6));
   await page.evaluate(() => { __t.ride.forceShot = "close"; });
   await shot("01-okoro-holding-the-launcher");
