@@ -31,7 +31,7 @@
  * meters - see MASH.
  */
 
-import { PAD_FLICKS, padLabel } from "../systems/input-glyphs.js";
+import { PAD_FLICKS, padLabel, touchActive, padActive } from "../systems/input-glyphs.js";
 
 /**
  * Keys reactions draw from - clear of WASD/Space movement, Esc, and the
@@ -151,7 +151,10 @@ const LABELS = { press: "PRESS", combo: "PRESS BOTH", sequence: "IN ORDER", mash
  * FAST", or (with "Hold instead of mash") "HOLD SPACE".
  */
 function howTo(kind, spec, keys) {
-  const names = keys.map((k) => padLabel(k) ?? (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
+  // On a touch screen the triggers are taps on a side: "TAP RIGHT FAST", "ALTERNATE LEFT RIGHT FAST".
+  const side = { PadLT: "LEFT", PadRT: "RIGHT" };
+  const touch = touchActive() && !padActive();
+  const names = keys.map((k) => (touch && side[k]) || padLabel(k) || (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
   if (kind === "hold") return `HOLD ${names}`;
   if (kind === "mash") return spec.alternate ? `ALTERNATE ${names} FAST` : `TAP ${names} FAST`;
   return null;
@@ -205,6 +208,13 @@ export class ReactionHits {
 
   get running() {
     return this.state === "running";
+  }
+
+  /** The keys the reaction on screen wants, and how ({ kind, keys, alternate }); null when none. */
+  get wants() {
+    const s = this._s;
+    if (this.state !== "running" || !s) return null;
+    return { kind: s.kind, keys: s.keys, alternate: !!s.spec.alternate, index: s.index };
   }
 
   /** Begin a reaction (see the header for specs). */

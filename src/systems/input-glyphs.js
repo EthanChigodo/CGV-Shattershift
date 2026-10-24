@@ -12,6 +12,11 @@
  *
  * and this names them for the family that is plugged in: Xbox "A" / "RT",
  * PlayStation "✕" / "R2", Nintendo "B" / "ZR".
+ *
+ * On a touch screen (systems/touch-controls.js) the same codes are played on
+ * the glass: the left half of the screen is the left stick and trigger, the
+ * right half the right - a flick is a swipe on that half, a trigger a tap.
+ * So "PadLUp" reads "◀ ↑" (swipe up, left side), "PadRT" "TAP ▶".
  */
 
 const FACES = {
@@ -31,8 +36,23 @@ export const PAD_LEFT_FLICKS = ["PadLUp", "PadLDown", "PadLLeft", "PadLRight"];
 export const PAD_RIGHT_FLICKS = ["PadRUp", "PadRDown", "PadRLeft", "PadRRight"];
 export const PAD_FLICKS = [...PAD_LEFT_FLICKS, ...PAD_RIGHT_FLICKS];
 
+const TOUCH = {
+  PadLUp: "◀ ↑", PadLDown: "◀ ↓", PadLLeft: "◀ ←", PadLRight: "◀ →",
+  PadRUp: "↑ ▶", PadRDown: "↓ ▶", PadRLeft: "← ▶", PadRRight: "→ ▶",
+  PadLT: "◀ TAP", PadRT: "TAP ▶",
+};
+
 let family = "generic";
 let active = false;
+let touch = false;
+
+/** A touch screen is what is being played with (its names on screen). */
+export function setTouchActive(on) {
+  touch = !!on;
+}
+export function touchActive() {
+  return touch;
+}
 
 /** A controller is what is being played with (the names on screen follow it). */
 export function setPadActive(on) {
@@ -75,5 +95,6 @@ export function isPadCode(code) {
 /** "PadRT" -> "RT" (or "R2", "ZR"); "PadLUp" -> "L↑"; null for a keyboard code. */
 export function padLabel(code) {
   if (!isPadCode(code)) return null;
+  if (touch && !active && TOUCH[code]) return TOUCH[code];
   return STICKS[code] ?? FACES[family][code] ?? code.slice(3).toUpperCase();
 }
