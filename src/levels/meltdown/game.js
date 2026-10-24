@@ -55,6 +55,7 @@ import { createGradePass } from "./post.js";
 import { createEnvironmentDimmer } from "./lighting.js";
 import { RoofLevel, ROOF_SPAWN, CANISTER_RADIUS, EDGE } from "./roof.js";
 import { FallScene } from "./fall-scene.js";
+import { FlyingZombieEncounter } from "./flying-zombies.js";
 import { RoofMinimap } from "./roof-map.js";
 import { createCreditsPanel } from "./credits.js";
 import { MeltdownHud } from "../../ui/meltdown-hud.js";
@@ -252,7 +253,8 @@ export class MeltdownGame {
    * @param {boolean} [o.devKeys]    R restarts, P skips to the roof, F dev stats
    * @param {boolean} [o.summary]    show the level's own end-of-run card
    */
-  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null, lookSpeed = () => 1, topView = false }) {
+  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null, lookSpeed = () => 1, topView = false, reactionLayer = null }) {
+    this.reactionLayer = reactionLayer;
     /**
      * The sphere types and serums (src/systems/arsenal.js) - the host's, so
      * the type you picked and the serums running carry between levels; the
@@ -514,6 +516,7 @@ export class MeltdownGame {
   }
 
   async load({ balls = START_BALLS, vitality = START_VITALITY, seed = 0, carry = false } = {}) {
+    this._clearFlyingZombies();
     document.body.classList.remove("finale-film");
     this.shatter.clear();
     this.sphereImpact.clear();
@@ -636,6 +639,7 @@ export class MeltdownGame {
   }
 
   hide() {
+    this._clearFlyingZombies();
     this.ammoHint.hide();
     this.visible = false;
     document.body.classList.remove("mlt-active");
@@ -673,6 +677,10 @@ export class MeltdownGame {
   /** Pause or resume: freezes nothing by itself (the host stops calling update), but silences the level. */
   setPaused(paused) {
     this.paused = paused;
+    if (this._flying?.ownsQTE) {
+      this._flying.reactions.paused = paused;
+      this._flying.reactions._s?.held.clear();
+    }
     if (paused) this.ammoHint.hide();
     this.runner.firing = false;
     this.held.clear();
@@ -1047,6 +1055,7 @@ export class MeltdownGame {
   }
 
   onPointerDown(event) {
+    if (this._flying?.weapon || this._flying?.controlsPlayer) return;
     this.audio.start();
     if (event.button === 0) {
       this.runner.firing = true;
@@ -1057,6 +1066,7 @@ export class MeltdownGame {
   }
 
   onPointerUp(event) {
+    if (this._flying?.weapon || this._flying?.controlsPlayer) { this.charge?.cancel(); return; }
     if (event.button !== 0) return;
     this.runner.firing = false;
     if (!this.charge?.holding) return;
@@ -1078,6 +1088,14 @@ export class MeltdownGame {
   /** Returns true when the key was Level 3's (the host should not act on it too). */
   onKeyDown(event) {
     const code = event.code;
+    if (this._flying?.controlsPlayer) {
+      if (code === "Space") event.preventDefault?.();
+      return this._isGameKey(code) || /^(Key[A-Z]|Digit\d)$/.test(code);
+    }
+    if (code === "KeyE" && this.phase === "roof" && this._flying?.pickupPrompt) {
+      if (!event.repeat) this._flying.pickup();
+      return true;
+    }
     this.held.add(code);
     this.audio.start();
     if (event.repeat && code !== "Space") return this._isGameKey(code);
@@ -1190,7 +1208,7 @@ export class MeltdownGame {
     }
     this._updateFade(dt);
     const phase = this.phase;
-    const onRoof = phase === "roof" || phase === "roofCut" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "roofFall" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
+    const onRoof = phase === "roof" || phase === "roofCut" || phase === "roofArrive" || phase === "ending" || phase === "latch" || phase === "roofFall" || phase === "roofAbduct" || phase === "finale" || (phase === "over" && this.roof) || (phase === "fade" && this.roof);
     const playing = onRoof ? phase === "roof" && this.runner.alive : phase === "run" && this.runner.alive && !this.runner.finished;
     const previousBalls = this.runner.balls;
     this.runner.balls = this.ammoRecovery.update(dt, previousBalls, playing && !this.paused, this.difficulty?.recharge);
@@ -1679,6 +1697,7 @@ export class MeltdownGame {
   }
 
   _placeLauncher(firstPerson) {
+    if (this._flying?.weapon) return;
     // An exterior fall owns the actual rig until retry, including under the summary.
     if (this._fall?.weapon) return;
     const { launcher, avatar, camera, runner: r } = this;
@@ -1725,6 +1744,7 @@ export class MeltdownGame {
    */
   /** `charged`: the charge it went out with (0 none; systems/charge.js). */
   _shoot({ charged = 0 } = {}) {
+    if (this._flying?.weapon || this._flying?.controlsPlayer) return;
     const { runner: r, level, audio } = this;
     const V = this._v;
     if (!r.alive || (!level && !this.roof)) return;
@@ -2211,6 +2231,7 @@ export class MeltdownGame {
   }
 
   async enterRoof({ balls = START_BALLS, vitality = START_VITALITY } = {}) {
+    this._clearFlyingZombies();
     document.body.classList.remove("finale-film");
     if (this.level) {
       this.hud.unbind();
@@ -2356,6 +2377,7 @@ export class MeltdownGame {
    */
   async startRoof({ fromBlack = false } = {}) {
     if (!["run", "arrive", "depart", "idle", "corridorDone"].includes(this.phase)) return;
+    this._clearFlyingZombies();
     this.ammoRecovery.reset();
     this.ammoHint.hide();
     this.phase = "fade";
@@ -2382,6 +2404,7 @@ export class MeltdownGame {
     });
     this.roof = roof;
     roof.addTo(this.scene);
+    this._flying = new FlyingZombieEncounter(this, { layer: this.reactionLayer ?? this.story?.layer });
     // A storm over the last stand (Endless on the roof: rain).
     roof.setWeather(this.mode === "endless-roof" ? "rain" : "storm", this.sfx);
     // The tactical map, top right (an orthographic camera of its own).
@@ -2871,6 +2894,11 @@ export class MeltdownGame {
     }
   }
 
+  _clearFlyingZombies() {
+    this._flying?.dispose();
+    this._flying = null;
+  }
+
   /**
    * Off the edge of the roof (or down a hatch): you fall, in 3D - the camera
    * dives after you, stops dead, you fall on into the dark (fall-scene.js) -
@@ -2918,7 +2946,7 @@ export class MeltdownGame {
     this._fall.start({
       from: p, velocity: v, kind, face, wallAt: ROOF_WALL, onFreeze,
       exterior: kind === "ledge" && this.phase === "roofFall",
-      weapon: this.launcher.rig,
+      weapon: this._flying?.weapon ? null : this.launcher.rig,
       onDone: () => {
         document.body.classList.remove("story-cutscene");
         onDone();
@@ -3048,6 +3076,7 @@ export class MeltdownGame {
       avatar.root.position.copy(hero.position);
       avatar.root.rotation.y = hero.yaw;
       const speed = hero.velocity.length() + (hero.dodge > 0 ? DODGE_SPEED : 0);
+      if (this._flying?.weapon) avatar.hold = 0;
       avatar.update(dt, { speed, lateralVel: 0, height: hero.vy < -1 ? 1 : 0, sliding: hero.dodge > 0, aiming: r.firing });
 
       const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
@@ -3077,6 +3106,12 @@ export class MeltdownGame {
       // The story's ending: the roof burns on under the departing cabin.
       roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
       this.finale?.update(dt, time);
+    } else if (this.phase === "roofAbduct" || (this.phase === "over" && this._flying?.holdsCamera)) {
+      // Keep the live weather/fire, but let no ground threat or later cutaway
+      // take over the capture camera (including behind its final statistics).
+      if (this.phase === "roofAbduct") this.roofClock += dt;
+      roof.fire.setTime(time);
+      roof.weather?.update(dt, time);
     } else if (this.phase === "roofFall") {
       // Off the roof: the fall has the camera and the body (fall-scene.js);
       // the roof goes on above without you.
@@ -3111,12 +3146,13 @@ export class MeltdownGame {
           if (this.story) this._startFinale(title);
           else this._roofSummary(true, title);
         }
-      } else if (!this._fall?.holdsCamera) {
+      } else if (!this._fall?.holdsCamera && !this._flying?.holdsCamera) {
         // (After a fall the camera stays where it stopped, under the end screen.)
         this._updateRoofCamera(dt);
       }
     }
 
+    this._flying?.update(dt, time);
     this._placeLauncher(false);
     this._placeKeyLight(hero.position);
     this.police?.update(dt, time, { worldZ: (d) => 70 - d, distance: 0, deckY: 0, overDeck: true, cityY: -60, spotZ: 0, spotSpread: 14 });
@@ -3204,7 +3240,7 @@ export class MeltdownGame {
     this.hud.setBalls(r.balls);
     const hint = this.phase === "roof" ? roof?.extractionHint(this.hero.position) : null;
     const gen = this.phase === "roof" && !hint ? roof?.generatorHint?.(this.hero.position) : null;
-    this.hud.setPrompt(hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : gen === "pull" ? "SPACE x3 - PULL-START THE GENERATOR" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : gen === "go" ? "THE GENERATOR - BY THE LIFT" : null);
+    this.hud.setPrompt(this._flying?.pickupPrompt ?? (hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : gen === "pull" ? "SPACE x3 - PULL-START THE GENERATOR" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : gen === "go" ? "THE GENERATOR - BY THE LIFT" : null));
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 
