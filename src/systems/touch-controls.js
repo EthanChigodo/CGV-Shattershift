@@ -18,6 +18,8 @@
  *     right side            aim and fire where the finger is (held: keeps firing)
  *     DODGE button          dodge (Space) - also the generator's cord and the
  *                           jump for the ladder
+ *     PICK UP button        when the bazooka a flying patient made you drop is
+ *                           at your feet (E)
  *   anywhere in a run
  *     the sphere wheel      tap it to change sphere (E)
  *     PAUSE                 the button at the top (already there)
@@ -56,6 +58,7 @@ export class TouchControls {
    * @param {() => boolean} [host.skyline]        the Skyline (W / S held: sprint / brake)
    * @param {() => boolean} [host.enabled]        touch controls on
    * @param {() => number} [host.skipProgress]    how far a held skip has got (0..1)
+   * @param {() => boolean} [host.pickup]         something to pick up at your feet (E)
    */
   constructor(host) {
     this.host = host;
@@ -88,7 +91,8 @@ export class TouchControls {
       <div class="tc-stick" aria-hidden="true"><i></i></div>
       <button type="button" class="tc-button tc-focus" aria-label="Focus: slow time while held">FOCUS</button>
       <button type="button" class="tc-button tc-dodge" aria-label="Dodge">DODGE</button>
-      <button type="button" class="tc-button tc-skip" aria-label="Hold to skip">HOLD TO SKIP</button>`;
+      <button type="button" class="tc-button tc-skip" aria-label="Hold to skip">HOLD TO SKIP</button>
+      <button type="button" class="tc-button tc-pickup" aria-label="Pick up">PICK UP</button>`;
     document.body.append(root);
     this.root = root;
     this.react = root.querySelector(".tc-react");
@@ -114,6 +118,7 @@ export class TouchControls {
     this.focusButton = button(".tc-focus", () => this._click("pointerdown", 2), () => this._click("pointerup", 2));
     this.dodgeButton = button(".tc-dodge", () => this.press("Space"), () => this.release("Space"));
     this.skipButton = button(".tc-skip", () => this.press("Escape"), () => this.release("Escape"));
+    this.pickupButton = button(".tc-pickup", () => this.press("KeyE"), () => this.release("KeyE"));
   }
 
   /** The sphere wheel (sphere-wheel.js): a tap on it turns it. */
@@ -369,6 +374,7 @@ export class TouchControls {
     show(this.root, mode !== "off");
     show(this.focusButton, (mode === "run" || mode === "roof") && !!this.host.canFocus?.());
     show(this.dodgeButton, mode === "roof");
+    show(this.pickupButton, mode === "roof" && !!this.host.pickup?.());
     show(this.skipButton, mode === "cutscene");
     // The skip fills the button as it is held (the cutscene's own ring says "hold Esc").
     if (mode === "cutscene") this.skipButton.style.setProperty("--p", String(Math.max(0, Math.min(1, this.host.skipProgress?.() ?? 0))));

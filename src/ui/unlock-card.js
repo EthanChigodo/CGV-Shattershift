@@ -40,11 +40,28 @@ function keys(list) {
   return list.map((k) => `<kbd>${isPadCode(k) ? padLabel(k) : k}</kbd>`).join("");
 }
 
+/**
+ * The same line on a touch screen (touch-controls.js): what you do on the
+ * glass - or null where it has no touch version (the mouse look, the camera
+ * switch: a touch screen's roof is always seen from above).
+ */
+const TOUCH = {
+  Click: ["Tap"], "Hold+Click": ["Hold"], "Hold+Right click": ["Hold", "FOCUS"],
+  "W+A+S+D": ["Left thumb"], Space: ["DODGE"], "Q+E": ["Tap the wheel"], Mouse: null, C: null,
+};
+function touchKeys(kb) {
+  const t = TOUCH[kb.join("+")];
+  return t === undefined ? kb : t;
+}
+
 function how(lines) {
-  return lines.map((l) => `<div class="uc-how-line">
-      <dt><span class="kb-only">${keys(l.kb)}</span><span class="pad-only">${keys(l.pad)}</span></dt>
+  return lines.map((l) => {
+    const touch = touchKeys(l.kb);
+    return `<div class="uc-how-line${touch ? "" : " no-touch"}">
+      <dt><span class="kb-only">${keys(l.kb)}</span><span class="pad-only">${keys(l.pad)}</span>${touch ? `<span class="touch-only" data-keep-keys>${keys(touch)}</span>` : ""}</dt>
       <dd>${l.does}</dd>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 export class UnlockCard {
@@ -62,7 +79,7 @@ export class UnlockCard {
         <div class="uc-items"></div>
         <div class="uc-foot">
           <button type="button" class="uc-button"><span>Continue</span><i>&#9654;</i></button>
-          <p class="uc-keys"><span class="kb-only"><kbd>Space</kbd> or <kbd>Enter</kbd></span><span class="pad-only"><kbd class="uc-pad-a"></kbd></span> - then 3, 2, 1</p>
+          <p class="uc-keys"><span class="kb-only"><kbd>Space</kbd> or <kbd>Enter</kbd></span><span class="pad-only"><kbd class="uc-pad-a"></kbd></span><span class="touch-only">Tap Continue</span> - then 3, 2, 1</p>
         </div>
       </div>`;
     document.body.appendChild(this.root);

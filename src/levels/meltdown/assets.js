@@ -17,6 +17,16 @@ import { GLTFLoader, BufferGeometryUtils } from "../../three-addons.js";
 import { buildCharacterTemplate, cloneCharacter } from "./characters.js";
 import { buildHelicopterTemplate } from "./helicopter.js";
 import { loadRiggedFor, riggedSlots } from "../../figure/rigged.js";
+import { isTouch } from "../../ui/phone.js";
+
+/**
+ * How many models a phone or tablet loads at once. Every one unpacks its
+ * pictures as it comes in; all of them at once is a spike of memory that a
+ * phone can answer by taking the graphics away. Two at a time is barely
+ * slower: the files still download in parallel with the unpacking. A
+ * computer loads them all at once, as before.
+ */
+const PHONE_AT_ONCE = 2;
 
 /**
  * Models that arrive as many small meshes sharing a few materials. Every mesh
@@ -151,21 +161,25 @@ export async function loadMeltdownAssets(baseUrl, { onProgress, names } = {}) {
   const assets = new Map();
   let done = 0;
 
-  await Promise.all(
-    entries.map(async ([name, file]) => {
-      try {
-        if (!cache.has(name)) cache.set(name, loadOne(loader, baseUrl, name, file));
-        const asset = await cache.get(name);
-        if (asset) assets.set(name, asset);
-      } catch (error) {
-        cache.delete(name);
-        console.warn(`[meltdown] asset "${name}" failed to load, keeping stand-in`, error);
-      } finally {
-        done += 1;
-        onProgress?.(done / entries.length, name);
-      }
-    })
-  );
+  const queue = entries.slice();
+  const worker = async () => {
+    for (let entry = queue.shift(); entry; entry = queue.shift()) await loadEntry(entry);
+  };
+  const loadEntry = async ([name, file]) => {
+    try {
+      if (!cache.has(name)) cache.set(name, loadOne(loader, baseUrl, name, file));
+      const asset = await cache.get(name);
+      if (asset) assets.set(name, asset);
+    } catch (error) {
+      cache.delete(name);
+      console.warn(`[meltdown] asset "${name}" failed to load, keeping stand-in`, error);
+    } finally {
+      done += 1;
+      onProgress?.(done / entries.length, name);
+    }
+  };
+  const atOnce = isTouch() ? PHONE_AT_ONCE : queue.length;
+  await Promise.all(Array.from({ length: Math.min(atOnce, queue.length) }, worker));
 
   return assets;
 }

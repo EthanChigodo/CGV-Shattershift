@@ -94,6 +94,18 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: !PHONE });
 useRenderer(renderer);
 drawableType(renderer);
 /**
+ * A phone or tablet: pictures no bigger than 512 px a side on the GPU
+ * (three.js scales larger ones down as it uploads them). The roof held
+ * ~175 MB of textures, most of it 29 at 1024 px; capped, ~58 MB - far less
+ * for a phone's graphics memory to run out of (and the browser to take the
+ * graphics away). On a screen that size they look the same.
+ */
+const PHONE_TEXTURE_MAX = 512;
+function capTextures() {
+  if (PHONE) renderer.capabilities.maxTextureSize = Math.min(renderer.capabilities.maxTextureSize, PHONE_TEXTURE_MAX);
+}
+capTextures();
+/**
  * The browser can take the graphics away (a phone short of graphics memory,
  * a driver reset): the picture would stop while the HUD runs on. Three.js
  * asks for them back; meanwhile a note says so, and when they're back the
@@ -120,6 +132,8 @@ canvas.addEventListener("webglcontextlost", () => {
 });
 canvas.addEventListener("webglcontextrestored", () => {
   clearTimeout(gpuNoteTimer);
+  // (Three.js reads the GPU's limits afresh: the cap again.)
+  queueMicrotask(capTextures);
   gpuNote.hidden = true;
   gpuNote.querySelector("b").textContent = "Restoring graphics…";
   applyQuality();
@@ -6303,6 +6317,8 @@ const touchControls = new TouchControls({
   },
   wants: () => story.reactions?.wants ?? null,
   skipProgress: () => story.player.skipProgress ?? 0,
+  // The bazooka a flying patient made you drop, at your feet (flying-zombies.js).
+  pickup: () => !!meltdown?._flying?.pickupPrompt,
   canFocus: () => hasAbility("focus"),
   skyline: () => currentLevel === 1,
 });

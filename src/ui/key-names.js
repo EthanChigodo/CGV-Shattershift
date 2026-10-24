@@ -53,6 +53,9 @@ function touchNameFor(label) {
 function touchText(str) {
   const roof = touchPlace === "roof";
   return str
+    // (Said as what you do on the glass, before the single keys are renamed.)
+    .replace(/\bE - PICK UP ([A-Z]+)\b/g, "PICK UP THE $1 - TAP THE BUTTON")
+    .replace(/\btap SPACE rapidly\b/gi, "tap the right side of the screen fast")
     .replace(/\bQ ?\/ ?E\b/g, "THE WHEEL")
     .replace(/\bA \/ D\b/g, roof ? "THE STICK" : "SWIPE")
     .replace(/\bWASD\b/g, "THE STICK")
