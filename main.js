@@ -4362,6 +4362,10 @@ function updateGame(dt, time) {
 const perf = { ema: 16, slowFor: 0, fastFor: 0, frames: 0, acc: 0, fps: 60, level: 0, settle: 0, seen: "" };
 /** On a phone or tablet: at most 60 fps, a steady 30 when it can't keep that. */
 const pacer = new FramePacer({ enabled: PHONE });
+/** ?fps on the address: a frame-rate readout (updatePerformance). */
+const SHOW_FPS = new URLSearchParams(location.search).has("fps");
+// (Up in the top bar's middle, clear of the titles and the subtitles.)
+if (SHOW_FPS) Object.assign(causewayHud.perfEl.style, { top: "8px", zIndex: "40", padding: "4px 10px", borderRadius: "4px", background: "rgba(0, 0, 0, .62)", fontSize: "12px" });
 
 function updatePerformance(rawDt) {
   // (At a steady 30, judged as if at 60: the same "too slow" either way.)
@@ -4414,6 +4418,12 @@ function updatePerformance(rawDt) {
     judging: state === "playing" && !paused && document.visibilityState === "visible" && perf.settle > 6,
     easy: currentLevel === 3 ? labsScale >= 1 : postfx.scale >= 1 && perf.level === 0,
   });
+  // ?fps on the address: the frame rate and what the automatic quality has
+  // chosen, top centre - for testing on a phone (no keyboard, no console).
+  if (SHOW_FPS && perf.frames === 0) {
+    const res = Math.round((currentLevel === 3 ? labsScale : postfx.enabled ? postfx.scale : 1) * renderer.getPixelRatio() * 100);
+    causewayHud.perf(`${perf.fps} fps${pacer.steady ? " (steady 30)" : ""} · ${resolvedQuality()} · ${res}% · ${PHONE ? "phone" : "computer"}`);
+  }
 }
 
 function renderFrame() {
