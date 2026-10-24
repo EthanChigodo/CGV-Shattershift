@@ -44,6 +44,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { drawableType } from "../../systems/gpu.js";
 import { EffectComposer, RenderPass, UnrealBloomPass, OutputPass, RoomEnvironment } from "../../three-addons.js";
 import { MeltdownLevel, BEATS, LANES } from "./index.js";
 import { THERMAL_HEAT } from "./kit.js";
@@ -319,7 +320,7 @@ export class MeltdownGame {
     // grading pass (heat haze, hit split, vignette, grain) runs last.
     // The first target carries a depth texture, for the ambient occlusion
     // pass at High quality (ao.js); otherwise it costs nothing extra.
-    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(size.x, size.y) });
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: drawableType(renderer), depthTexture: new THREE.DepthTexture(size.x, size.y) });
     this.composer = new EffectComposer(renderer, target);
     // The composer's second target is a clone, and a cloned depth texture
     // shares the first one's GPU texture - sampling it while drawing into the

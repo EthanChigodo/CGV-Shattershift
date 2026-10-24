@@ -38,6 +38,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { drawableType } from "../../systems/gpu.js";
 import { EffectComposer, RenderPass, UnrealBloomPass, OutputPass, RoomEnvironment } from "../../three-addons.js";
 import { RoofLevel, CANISTER_RADIUS, EDGE } from "../../levels/meltdown/roof.js";
 import { loadMeltdownAssets } from "../../levels/meltdown/assets.js";
@@ -235,7 +236,7 @@ export class Arena {
     this.camPos = new THREE.Vector3(0, 26, 22);
     this.camLook = new THREE.Vector3(0, 0, -2);
 
-    this.composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType }));
+    this.composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(size.x, size.y, { type: drawableType(renderer) }));
     this.composer.addPass(new RenderPass(scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 3, size.y / 3), 0.55, 0.45, 0.92);
     this.composer.addPass(this.bloom);

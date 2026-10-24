@@ -31,6 +31,7 @@
  */
 
 import * as THREE from "../three.js";
+import { drawableType } from "../systems/gpu.js";
 import { LAYERS } from "../levels/causeway/layers.js";
 import { CHARGE_GLSL, CHARGE_UNIFORMS } from "../systems/charge.js";
 
@@ -281,8 +282,10 @@ export class PostFX {
     this.lite = false;
     this.enabled = quality !== "low";
 
-    const half = { type: THREE.HalfFloatType, depthBuffer: false };
-    this.sceneTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: true });
+    // (Half-float where this GPU can draw into it - gpu.js - else 8-bit.)
+    const type = drawableType(renderer);
+    const half = { type, depthBuffer: false };
+    this.sceneTarget = new THREE.WebGLRenderTarget(1, 1, { type, depthBuffer: true });
     this.refractTarget = new THREE.WebGLRenderTarget(1, 1, half);
     this.bloomA = new THREE.WebGLRenderTarget(1, 1, half);
     this.bloomB = new THREE.WebGLRenderTarget(1, 1, half);

@@ -29,6 +29,7 @@
  */
 
 import * as THREE from "../three.js";
+import { drawableType } from "../systems/gpu.js";
 import { GLTFLoader } from "../three-addons.js";
 import { noiseTexture, createHazeUniforms, createSky } from "./atmosphere.js";
 import { AscensionTower } from "./tower.js";
@@ -223,7 +224,7 @@ export class MenuStage {
   /** The burning tower and the sky in the puddles: a cube capture of the stage, prefiltered. */
   _captureEnvironment() {
     const size = QUALITY[this.quality].env;
-    const target = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType });
+    const target = new THREE.WebGLCubeRenderTarget(size, { type: drawableType() });
     const cube = new THREE.CubeCamera(0.5, 6000, target);
     cube.position.copy(SUBJECT).add(new THREE.Vector3(-1, 0.6, 2));
     // Only what the puddles need to show - the sky, the burning tower and

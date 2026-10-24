@@ -55,6 +55,7 @@ export class TouchControls {
    * @param {() => boolean} [host.canFocus]       focus (slow time) is earned
    * @param {() => boolean} [host.skyline]        the Skyline (W / S held: sprint / brake)
    * @param {() => boolean} [host.enabled]        touch controls on
+   * @param {() => number} [host.skipProgress]    how far a held skip has got (0..1)
    */
   constructor(host) {
     this.host = host;
@@ -96,6 +97,8 @@ export class TouchControls {
     this.knob = this.stick.querySelector("i");
     const button = (sel, press, release) => {
       const el = root.querySelector(sel);
+      // (A long press on a button is a hold here, not "select this text" or the browser's menu.)
+      el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
       el.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         el.setPointerCapture?.(e.pointerId);
@@ -367,6 +370,8 @@ export class TouchControls {
     show(this.focusButton, (mode === "run" || mode === "roof") && !!this.host.canFocus?.());
     show(this.dodgeButton, mode === "roof");
     show(this.skipButton, mode === "cutscene");
+    // The skip fills the button as it is held (the cutscene's own ring says "hold Esc").
+    if (mode === "cutscene") this.skipButton.style.setProperty("--p", String(Math.max(0, Math.min(1, this.host.skipProgress?.() ?? 0))));
     show(this.react, mode === "reaction");
     if (mode === "reaction") {
       const labels = this._reactionLabels();

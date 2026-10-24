@@ -74,6 +74,19 @@ export function setUpPhone({ onPortrait = null } = {}) {
   upright.addEventListener?.("change", sync);
   matchMedia("(orientation: portrait)").addEventListener?.("change", sync);
 
+  // A finger held still on a phone means "select this text" (Huawei's
+  // browser even inside buttons, whatever the CSS says): never in the game -
+  // no selection, no copy menu, no picture-saving menu. Text boxes still can.
+  const editable = (t) => t instanceof Element && !!t.closest("input, textarea, select, [contenteditable='true']");
+  for (const type of ["selectstart", "contextmenu", "dragstart"]) {
+    addEventListener(type, (e) => { if (isTouch() && !editable(e.target)) e.preventDefault(); }, true);
+  }
+  document.addEventListener("selectionchange", () => {
+    if (!isTouch() || editable(document.activeElement)) return;
+    const sel = document.getSelection();
+    if (sel && !sel.isCollapsed) sel.removeAllRanges();
+  });
+
   // Full screen (and landscape, where it can be locked) from a tap on a
   // button: browsers only allow it from a tap. Not again once you've left it.
   let asked = false;

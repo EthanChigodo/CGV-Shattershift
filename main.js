@@ -76,6 +76,7 @@ import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/syste
 import { TabbedScreen } from "./src/ui/tabbed-screen.js";
 import { setUpPhone, isTouch } from "./src/ui/phone.js";
 import { FramePacer } from "./src/systems/frame-pacer.js";
+import { useRenderer, drawableType, gpuReport } from "./src/systems/gpu.js";
 import { CreditsRoom } from "./src/ui/credits-room.js";
 import { compileReady, uploadTextures } from "./src/systems/warm-up.js";
 import { LAUNCHER_SKINS, saveLauncherSkin } from "./src/figure/launcher-skins.js";
@@ -90,6 +91,40 @@ const canvas = document.querySelector("#game");
  */
 const PHONE = isTouch();
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !PHONE });
+useRenderer(renderer);
+drawableType(renderer);
+/**
+ * The browser can take the graphics away (a phone short of graphics memory,
+ * a driver reset): the picture would stop while the HUD runs on. Three.js
+ * asks for them back; meanwhile a note says so, and when they're back the
+ * sizes and quality are set again (Three.js re-uploads everything itself).
+ * If they don't come back, the note offers a reload.
+ */
+let graphicsResets = 0;
+const gpuNote = document.createElement("div");
+gpuNote.className = "gpu-note";
+gpuNote.hidden = true;
+gpuNote.innerHTML = "<b>Restoring graphics…</b><button type=\"button\" hidden>Reload the game</button>";
+document.body.append(gpuNote);
+gpuNote.querySelector("button").addEventListener("click", () => location.reload());
+let gpuNoteTimer = 0;
+canvas.addEventListener("webglcontextlost", () => {
+  graphicsResets += 1;
+  gpuNote.hidden = false;
+  gpuNote.querySelector("button").hidden = true;
+  clearTimeout(gpuNoteTimer);
+  gpuNoteTimer = setTimeout(() => {
+    gpuNote.querySelector("b").textContent = "The graphics stopped.";
+    gpuNote.querySelector("button").hidden = false;
+  }, 5000);
+});
+canvas.addEventListener("webglcontextrestored", () => {
+  clearTimeout(gpuNoteTimer);
+  gpuNote.hidden = true;
+  gpuNote.querySelector("b").textContent = "Restoring graphics…";
+  applyQuality();
+  meltdown?.resize?.(innerWidth, innerHeight);
+});
 // No error check after every shader link: three's check (getProgramInfoLog)
 // makes the driver finish each compile on the spot, one after another;
 // without it the browser compiles them in parallel, in the background - a
@@ -765,9 +800,9 @@ function buildFoundry(variant = 0) {
     shadows: false,
     // Fewer pooled lights below High (the Foundry was the slowest level).
     // (Measured: the light pool is most of a Foundry frame - every wall pixel is lit by each.)
-    // (A phone or tablet: fewer again - each light is paid for on every wall pixel.)
-    lightBudget: PHONE ? { points: 2, spots: 1 } : resolvedQuality() === "high" ? { points: 6, spots: 2 } : { points: 4, spots: 2 },
-    brightness: 1.6,
+    // (A phone or tablet: one fewer, a little brighter each - measured as bright as a computer's Medium.)
+    lightBudget: PHONE ? { points: 3, spots: 2 } : resolvedQuality() === "high" ? { points: 6, spots: 2 } : { points: 4, spots: 2 },
+    brightness: PHONE ? 1.9 : 1.6,
     // The escape clock is as tight at every difficulty's pace.
     runSpeed: FOUNDRY_SPEED_ZONES[2].speed * diff().speed,
     // Harder is longer too (src/systems/difficulty.js).
@@ -1091,14 +1126,13 @@ function applyQuality() {
   renderer.setSize(innerWidth, innerHeight);
   postfx.setQuality(q);
   postfx.setScale(q === "medium" && !PHONE ? 0.85 : 1);
-  // A phone or tablet: the cheaper refraction snapshot and bloom buffer from the start.
-  if (PHONE) postfx.setLite(true);
   // Visual effects off: no post-processing at all, whatever the preset.
   if (!settings.effects) postfx.enabled = false;
   // Shadows off: the Skyline's sun stops casting (the Foundry has none; the Labs only on High).
   if (causeway?.sun) causeway.sun.castShadow = q !== "low" && settings.shadows;
   if (meltdown) {
-    meltdown.setBloom(q !== "low" && settings.effects);
+    // (No bloom where the GPU can't draw half-float images - gpu.js.)
+    meltdown.setBloom(q !== "low" && settings.effects && gpuReport().halfFloat !== false);
     meltdownQuality();
     if (meltdown.visible) meltdown.syncRenderer();
   }
@@ -1793,7 +1827,7 @@ function getMeltdown() {
     // A touch screen can't hold the pointer: the roof from above, aimed with a finger.
     topView: PHONE,
   });
-  meltdown.setBloom(resolvedQuality() !== "low");
+  meltdown.setBloom(resolvedQuality() !== "low" && gpuReport().halfFloat !== false);
   meltdownQuality();
   // Level 3's body: the chosen skin tone and hair (its stage is set per stage, below).
   meltdown.avatar?.setSkinTone(savedSkinTone());
@@ -4428,7 +4462,8 @@ function updatePerformance(rawDt) {
   // chosen, top centre - for testing on a phone (no keyboard, no console).
   if (SHOW_FPS && perf.frames === 0) {
     const res = Math.round((currentLevel === 3 ? labsScale : postfx.enabled ? postfx.scale : 1) * renderer.getPixelRatio() * 100);
-    causewayHud.perf(`${perf.fps} fps${pacer.steady ? " (steady 30)" : ""} · ${resolvedQuality()} · ${res}% · ${PHONE ? "phone" : "computer"}`);
+    const gpu = `${gpuReport().halfFloat === false ? " · 8-bit fx" : ""}${graphicsResets ? ` · graphics reset ×${graphicsResets}` : ""}`;
+    causewayHud.perf(`${perf.fps} fps${pacer.steady ? " (steady 30)" : ""} · ${resolvedQuality()} · ${res}% · ${PHONE ? "phone" : "computer"}${gpu}`);
   }
 }
 
@@ -6260,6 +6295,7 @@ const touchControls = new TouchControls({
     return "run";
   },
   wants: () => story.reactions?.wants ?? null,
+  skipProgress: () => story.player.skipProgress ?? 0,
   canFocus: () => hasAbility("focus"),
   skyline: () => currentLevel === 1,
 });
