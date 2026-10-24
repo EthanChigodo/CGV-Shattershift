@@ -19,7 +19,12 @@
  * and the walls streaming past are a service shaft's (concrete, conduit,
  * caged lamps) instead of the facade.
  *
- * Any key, click or gamepad button skips to the end after SKIP_AFTER seconds
+ * Exterior rooftop deaths instead face the facade, brake to a fixed view,
+ * then hold for two seconds after the whole body passes below the frame.
+ * The actual launcher detaches and falls independently, ahead of the body.
+ * Hatch and ladder-miss falls retain the original chase and fade below.
+ *
+ * For those original falls, any key, click or gamepad button skips after SKIP_AFTER seconds
  * (not Esc: that is the pause menu; and nothing while the host is paused).
  * While it plays it owns the camera and the player's body; restore() hands
  * them back (a retry). Everything here is built once, on the first fall, and
@@ -49,6 +54,9 @@ const CHASE = { out: 2.7, up: 3.3, side: 1.4, lookIn: 0.9, lookDown: 1.4 };
 const SHAFT_CHASE = { up: 2.7, side: 0.22 };
 /** How fast the camera catches the chase (it dives in from the roof camera). */
 const CATCH = { from: 2.2, to: 10, over: 0.55 };
+/** Exterior-only shot: face the wall, track, brake, then hold the empty frame. */
+const EXTERIOR = { transition: 0.4, brake: 1.15, stop: 1.65, out: 9, up: 0.8, side: 1.4, hold: 2, exitFallback: 8 };
+const WEAPON = { extraSpeed: 3, gravity: 16, terminal: 48 };
 /**
  * The tumble: over onto your back in the first `tip` seconds, face up to the
  * camera (as in every falling-away shot: the whole body and its flailing
@@ -350,10 +358,22 @@ export class FallScene {
    * @param {number} o.wallAt           off a ledge: how far the wall is from the tower's axis
    * @param {() => void} [o.onFreeze]   the camera has stopped (a line, a sound)
    * @param {() => void} o.onDone       it is over (or skipped): the end screen
+   * @param {boolean} [o.exterior]      rooftop edge death: fixed facade shot and exit-based hold
+   * @param {THREE.Object3D} [o.weapon]  actual held rig, detached only for exterior deaths
    */
-  start({ from, velocity, kind = "ledge", face, wallAt = 15.9, onFreeze = null, onDone }) {
+  start({ from, velocity, kind = "ledge", face, wallAt = 15.9, onFreeze = null, onDone, exterior = false, weapon = null }) {
+    this._restoreWeapon();
     if (!this.group) this._build();
     this.kind = kind;
+    this.exterior = exterior && kind === "ledge";
+    this.exitedAt = null;
+    this._brakePosition = null;
+    this._brakeVelocity = null;
+    this._wallAt = wallAt;
+    this._cameraStart = this.camera.position.clone();
+    this._rotationStart = this.camera.quaternion.clone();
+    this._trackVelocity = new THREE.Vector3();
+    this._bounds = new THREE.Box3();
     this.onDone = onDone;
     this.onFreeze = onFreeze;
     this.active = true;
@@ -397,6 +417,16 @@ export class FallScene {
       this._look.copy(b.p);
     }
     this._fov = this.camera.fov;
+    // Detach before _place() changes the avatar transform: preserve the held
+    // rig's exact world transform rather than cloning or spawning a second gun.
+    if (this.exterior && weapon) {
+      this._weaponHome = { parent: weapon.parent, p: weapon.position.clone(), q: weapon.quaternion.clone(), s: weapon.scale.clone() };
+      this.parent.updateMatrixWorld(true);
+      this.parent.attach(weapon);
+      this.weapon = weapon;
+      this._weaponVelocity = b.v.clone();
+      this._weaponVelocity.y -= WEAPON.extraSpeed;
+    }
     this._camVel = 0;
     this.group.visible = true;
     avatar.shadow.visible = false;
@@ -404,9 +434,11 @@ export class FallScene {
     for (let i = 0; i < EMBERS; i += 1) this._spawnEmber(this.emberState[i], true);
     for (let i = 0; i < SMOKE; i += 1) this._spawnSmoke(this.smokeState[i], true);
     this._updateParticles(0, 0);
-    // Any key, click or button skips it (after SKIP_AFTER): pads are polled.
-    window.addEventListener("keydown", this._onInput, true);
-    window.addEventListener("pointerdown", this._onInput, true);
+    // Exterior deaths play through the visible exit and the empty-frame hold.
+    if (!this.exterior) {
+      window.addEventListener("keydown", this._onInput, true);
+      window.addEventListener("pointerdown", this._onInput, true);
+    }
     this._padsHeld = this._pressedPads();
     this._tumble(0);
     this._place();
@@ -414,7 +446,7 @@ export class FallScene {
 
   /** Skip to the end (as any key does after SKIP_AFTER seconds). */
   skip() {
-    if (this.active && this.t >= SKIP_AFTER) this._skip = true;
+    if (!this.exterior && this.active && this.t >= SKIP_AFTER) this._skip = true;
   }
 
   update(dt, time) {
@@ -439,6 +471,24 @@ export class FallScene {
     this._tumble(t);
     avatar.flail(time, THREE.MathUtils.lerp(1, 0.75, Math.min(1, t / 3)));
     avatar.body.position.set(0, -HIP, 0);
+
+    if (this.exterior) {
+      this._updateExteriorCamera(dt);
+      if (this.weapon) {
+        const v = this._weaponVelocity;
+        v.y = Math.max(-WEAPON.terminal, v.y - WEAPON.gravity * dt);
+        this.weapon.position.addScaledVector(v, dt);
+        this.weapon.rotateX(dt * 2.4);
+        this.weapon.rotateZ(dt * 1.3);
+      }
+      this._camVel = this._trackVelocity.y;
+      this.facadeMaterial.emissiveIntensity = FACADE.glow * (0.92 + 0.08 * Math.sin(time * 11) * Math.sin(time * 3.3));
+      this._updateParticles(dt, time);
+      this._place();
+      if (this.frozen && this.exitedAt === null && (this._belowFrame() || t >= EXTERIOR.exitFallback)) this.exitedAt = t;
+      if (this.exitedAt !== null && t - this.exitedAt >= EXTERIOR.hold) this._finish();
+      return;
+    }
 
     // The camera: the chase, then it stops dead and only turns to watch.
     const cam = this.camera;
@@ -489,6 +539,72 @@ export class FallScene {
     if (t >= end + TIMING.black) this._finish();
   }
 
+  _updateExteriorCamera(dt) {
+    const cam = this.camera;
+    const t = this.t;
+    if (this.frozen) return; // Neither position, orientation nor FOV changes again.
+    const before = cam.position.clone();
+    if (t < EXTERIOR.brake) {
+      _p.copy(this.body.p).addScaledVector(this.face, EXTERIOR.out).addScaledVector(this.side, EXTERIOR.side);
+      _p.y += EXTERIOR.up;
+      // Move outside the selected wall immediately, then blend down from the
+      // gameplay rig. The wall-normal constraint keeps the lens out of the slab.
+      const blend = THREE.MathUtils.smoothstep(t, 0, EXTERIOR.transition);
+      cam.position.lerpVectors(this._cameraStart, _p, blend);
+      const distance = cam.position.dot(this.face);
+      cam.position.addScaledVector(this.face, Math.max(0, this._wallAt + 1 - distance));
+      _look.copy(this.body.p);
+      cam.up.copy(UP);
+      cam.lookAt(_look);
+      _q.copy(cam.quaternion);
+      cam.quaternion.slerpQuaternions(this._rotationStart, _q, blend);
+      this._trackVelocity.subVectors(cam.position, before).divideScalar(Math.max(dt, 1e-4));
+    } else {
+      if (!this._brakePosition) {
+        this._brakePosition = before.clone();
+        this._brakeVelocity = this._trackVelocity.clone();
+        this._brakeAt = t - dt;
+      }
+      const duration = EXTERIOR.stop - this._brakeAt;
+      const elapsed = THREE.MathUtils.clamp(t - this._brakeAt, 0, duration);
+      // Integrate a linearly decreasing velocity, ending at exactly zero.
+      cam.position.copy(this._brakePosition).addScaledVector(this._brakeVelocity, elapsed - elapsed * elapsed / (2 * duration));
+      this._trackVelocity.copy(this._brakeVelocity).multiplyScalar(1 - elapsed / duration);
+      if (t >= EXTERIOR.stop) {
+        this.frozen = true;
+        this.onFreeze?.();
+      }
+    }
+    cam.updateMatrixWorld(true);
+  }
+
+  /** All corners of the whole body's conservative bounds must pass the bottom. */
+  _belowFrame() {
+    this.camera.updateMatrixWorld(true);
+    this._bounds.setFromObject(this.avatar.root).expandByScalar(0.5);
+    if (this._bounds.isEmpty()) return false;
+    const { min, max } = this._bounds;
+    for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
+      _p.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse);
+      if (_p.z >= -this.camera.near) return false;
+      _p.applyMatrix4(this.camera.projectionMatrix);
+      if (!Number.isFinite(_p.y) || _p.y >= -1.05) return false;
+    }
+    return true;
+  }
+
+  _restoreWeapon() {
+    if (!this.weapon) return;
+    const { parent, p, q, s } = this._weaponHome;
+    parent?.add(this.weapon);
+    this.weapon.position.copy(p);
+    this.weapon.quaternion.copy(q);
+    this.weapon.scale.copy(s);
+    this.weapon = null;
+    this._weaponHome = null;
+    this._weaponVelocity = null;
+  }
+
   /** Over onto the back, then wobbling and turning (TUMBLE); gentler with reduced motion. */
   _tumble(t) {
     const calm = this.reducedMotion ? 0.4 : 1;
@@ -524,6 +640,9 @@ export class FallScene {
 
   /** A retry (or a new roof): the body upright, the camera the host's again. */
   restore() {
+    this._restoreWeapon();
+    this._brakePosition = null;
+    this._brakeVelocity = null;
     if (this.active) {
       this.active = false;
       window.removeEventListener("keydown", this._onInput, true);

@@ -1680,6 +1680,8 @@ export class MeltdownGame {
   }
 
   _placeLauncher(firstPerson) {
+    // An exterior fall owns the actual rig until retry, including under the summary.
+    if (this._fall?.weapon) return;
     const { launcher, avatar, camera, runner: r } = this;
     if (firstPerson) {
       if (launcher.rig.parent !== camera) camera.add(launcher.rig);
@@ -2916,6 +2918,8 @@ export class MeltdownGame {
     document.body.classList.add("story-cutscene");
     this._fall.start({
       from: p, velocity: v, kind, face, wallAt: ROOF_WALL, onFreeze,
+      exterior: kind === "ledge" && this.phase === "roofFall",
+      weapon: this.launcher.rig,
       onDone: () => {
         document.body.classList.remove("story-cutscene");
         onDone();
