@@ -10,9 +10,10 @@ export const ABDUCTION = {
   normal: { maximum: 2, warning: 3, qte: 4, presses: 8, dive: 0.75 },
   hard: { maximum: 2, warning: 2, qte: 2.5, presses: 10, dive: 0.5 },
 };
-export const FLIGHT = { radius: 1.5, tracking: 0.7, firstSpawn: [6, 10], spawn: [8, 14], cooldown: [12, 19], circle: [2.5, 5], lift: 4, pickup: 2, skyTransition: 1.1, skyHold: 2, skyFallback: 12, skySpeed: 12 };
+export const FLIGHT = { radius: 1.5, tracking: 0.7, firstSpawn: [6, 10], spawn: [8, 14], cooldown: [12, 19], circle: [2.5, 5], lift: 4, pickup: 2, skyTransition: 1.1, gameOverDelay: 3.5, skySpeed: 12, obstacleClearance: 2.6, obstacleHeight: 2.2 };
 const UP = new THREE.Vector3(0, 1, 0);
-const RIGHT = new THREE.Vector3(1, 0, 0);
+const AVOID_ANGLES = [0, 18, 32, 48, 66, 88, 112, 138];
+const AVOID_VERTICAL_SCALES = [1, 0.55, 0.15, 0];
 const smooth = (t) => THREE.MathUtils.smoothstep(t, 0, 1);
 
 /** Use the existing mash UI/input, with exactly N taps and no decay between taps. */
@@ -67,10 +68,23 @@ export class FlyingZombieEncounter {
     this._look = new THREE.Vector3();
     this._heading = new THREE.Vector3();
     this._previous = new THREE.Vector3();
+    this._flightTarget = new THREE.Vector3();
+    this._moveDestination = new THREE.Vector3();
+    this._flightDelta = new THREE.Vector3();
+    this._obstacleHit = new THREE.Vector3();
+    this._normal = new THREE.Vector3();
+    this._side = new THREE.Vector3();
+    this._slide = new THREE.Vector3();
+    this._handLeft = new THREE.Vector3();
+    this._handRight = new THREE.Vector3();
+    this._gripTarget = new THREE.Vector3();
+    this._ray = new THREE.Ray();
+    this._obstacles = [];
+    this._obstacleCount = -1;
+    this._obstacleClearance = new THREE.Vector3(FLIGHT.obstacleClearance, FLIGHT.obstacleHeight, FLIGHT.obstacleClearance);
     this.skyDirection = new THREE.Vector3();
     this.skyVelocity = new THREE.Vector3();
     this.skyPosition = new THREE.Vector3();
-    this._box = new THREE.Box3();
     this._cameraRig = new THREE.PerspectiveCamera();
     this.marker = this._marker();
     this.root.add(this.marker);
@@ -79,8 +93,8 @@ export class FlyingZombieEncounter {
   _own(x) { this.owned.push(x); return x; }
   _range([a, b]) { return a + this.random() * (b - a); }
   get activeCount() { return this.actors.filter((a) => a.active).length; }
-  get controlsPlayer() { return ["grab", "carried", "release", "landing", "sky", "hold"].includes(this.state); }
-  get holdsCamera() { return this.controlsPlayer || this.state === "done"; }
+  get controlsPlayer() { return ["grab", "carried", "release", "landing", "sky"].includes(this.state); }
+  get holdsCamera() { return this.controlsPlayer; }
   get pickupPrompt() {
     return this.game.phase === "roof" && this.drop?.landed && this.weapon && this.game.hero.position.distanceTo(this.drop.to) <= FLIGHT.pickup
       ? "E - PICK UP BAZOOKA" : null;
@@ -158,7 +172,7 @@ export class FlyingZombieEncounter {
     root.add(carry);
     root.visible = false;
     this.root.add(root);
-    const actor = { root, body, model, rig, wings, carry, active: false, state: "circle", age: 0, angle: this.random() * Math.PI * 2, wait: 0 };
+    const actor = { root, body, model, rig, wings, carry, active: false, state: "circle", age: 0, angle: this.random() * Math.PI * 2, wait: 0, avoidSign: this.random() < 0.5 ? -1 : 1 };
     this.actors.push(actor);
     // Deliberately no hurtbox and no registration in enemies/breakables/solids.
     return actor;
@@ -168,11 +182,17 @@ export class FlyingZombieEncounter {
     if (this.activeCount >= this.tune.maximum) return null;
     const a = this.actors.find((x) => !x.active) ?? this._createActor();
     const player = this.game.hero.position;
+    this._refreshObstacles();
     let angle = this.random() * Math.PI * 2;
+    let clearSpawn = false;
     for (let i = 0; i < 8; i++, angle += Math.PI / 4) {
       a.root.position.set(Math.cos(angle) * 21, 10 + this.random() * 3, Math.sin(angle) * 21);
-      if (a.root.position.distanceTo(player) > 10) break;
+      if (a.root.position.distanceTo(player) > 10 && !this._obstacles.some((box) => box.containsPoint(a.root.position))) {
+        clearSpawn = true;
+        break;
+      }
     }
+    if (!clearSpawn) { this.spawnIn = this._range(FLIGHT.spawn); return null; }
     a.angle = angle; a.age = 0; a.wait = this._range(FLIGHT.circle);
     a.state = "circle"; a.active = true; a.root.visible = true;
     this.spawnIn = this._range(FLIGHT.spawn);
@@ -212,8 +232,108 @@ export class FlyingZombieEncounter {
     actor.root.rotation.y += delta * Math.min(1, dt * speed);
   }
 
+  _refreshObstacles() {
+    const cover = this.roof.cover ?? [];
+    if (cover.length === this._obstacleCount) return;
+    this._obstacles = cover.map((box) => box.clone().expandByVector(this._obstacleClearance));
+    this._obstacleCount = cover.length;
+  }
+
+  _contactNormal(box, point, direction, out = this._normal) {
+    const faces = [
+      [Math.abs(point.x - box.min.x), -1, 0, 0, Math.abs(direction.x)],
+      [Math.abs(point.x - box.max.x), 1, 0, 0, Math.abs(direction.x)],
+      [Math.abs(point.y - box.min.y), 0, -1, 0, Math.abs(direction.y)],
+      [Math.abs(point.y - box.max.y), 0, 1, 0, Math.abs(direction.y)],
+      [Math.abs(point.z - box.min.z), 0, 0, -1, Math.abs(direction.z)],
+      [Math.abs(point.z - box.max.z), 0, 0, 1, Math.abs(direction.z)],
+    ];
+    faces.sort((a, b) => (a[0] - a[4] * 1e-4) - (b[0] - b[4] * 1e-4));
+    return out.set(faces[0][1], faces[0][2], faces[0][3]);
+  }
+
+  /** Sweep the body and attached player through the roof's existing cover boxes. */
+  _moveAvoiding(actor, destination, blend = 1) {
+    const start = actor.root.position;
+    // Snapshot because callers may use _flightTarget itself as their destination.
+    this._moveDestination.copy(destination);
+    this._flightTarget.lerpVectors(start, this._moveDestination, THREE.MathUtils.clamp(blend, 0, 1));
+    this._flightDelta.subVectors(this._flightTarget, start);
+    const distance = this._flightDelta.length();
+    if (distance < 1e-5) return false;
+    this._heading.copy(this._flightDelta).divideScalar(distance);
+    this._refreshObstacles();
+    if (!this._obstacles.length) { start.copy(this._flightTarget); return false; }
+
+    this._ray.set(start, this._heading);
+    let nearest = distance;
+    let blockedBy = null;
+    for (const box of this._obstacles) {
+      if (box.containsPoint(start)) {
+        this._contactNormal(box, start, this._heading);
+        if (this._normal.x) start.x = this._normal.x < 0 ? box.min.x - 0.08 : box.max.x + 0.08;
+        else if (this._normal.y) start.y = this._normal.y < 0 ? box.min.y - 0.08 : box.max.y + 0.08;
+        else start.z = this._normal.z < 0 ? box.min.z - 0.08 : box.max.z + 0.08;
+        return true;
+      }
+      const hit = this._ray.intersectBox(box, this._obstacleHit);
+      const hitDistance = hit ? hit.distanceTo(start) : Infinity;
+      if (hit && hitDistance <= nearest) {
+        nearest = hitDistance;
+        blockedBy = box;
+      }
+    }
+    if (!blockedBy) { start.copy(this._flightTarget); return false; }
+
+    // Prefer preserving the climb angle, then temporarily flatten the path if
+    // a high obstacle blocks every horizontal bearing. The ascent resumes as
+    // soon as the route clears the cover volume.
+    for (const verticalScale of AVOID_VERTICAL_SCALES) {
+      this._side.set(this._heading.x, this._heading.y * verticalScale, this._heading.z).normalize();
+      for (const degrees of AVOID_ANGLES) {
+        for (let sideIndex = 0; sideIndex < 2; sideIndex++) {
+          if (degrees === 0 && sideIndex === 1) continue;
+          const sign = actor.avoidSign * (sideIndex === 0 ? 1 : -1);
+          this._slide.copy(this._side).applyAxisAngle(UP, sign * degrees * Math.PI / 180);
+          this._ray.set(start, this._slide);
+          let clear = true;
+          for (const box of this._obstacles) {
+            const hit = this._ray.intersectBox(box, this._obstacleHit);
+            if (hit && hit.distanceTo(start) <= distance) { clear = false; break; }
+          }
+          if (clear) {
+            start.addScaledVector(this._slide, distance);
+            return true;
+          }
+        }
+      }
+    }
+
+    // If all steering probes are blocked, stop just short of the first solid.
+    start.addScaledVector(this._heading, Math.max(0, nearest - 0.08));
+    return true;
+  }
+
+  _handGripLocal(actor, out = this._gripTarget) {
+    const left = actor.rig?.bones?.handL, right = actor.rig?.bones?.handR;
+    if (!left || !right) return out.set(0, -1.55, 0.15);
+    actor.root.updateMatrixWorld(true);
+    left.getWorldPosition(this._handLeft);
+    right.getWorldPosition(this._handRight);
+    this._handLeft.add(this._handRight).multiplyScalar(0.5);
+    return out.copy(actor.root.worldToLocal(this._handLeft));
+  }
+
+  _updateCarryGrip(dt) {
+    const actor = this.attacker;
+    if (!actor) return;
+    this._handGripLocal(actor, this._gripTarget);
+    if (this.state === "grab") actor.carry.position.lerpVectors(this.gripFrom, this._gripTarget, smooth(this.elapsed / 0.35));
+    else actor.carry.position.lerp(this._gripTarget, 1 - Math.exp(-dt * 9));
+  }
+
   _poseActor(actor, dt, time) {
-    const carrying = actor === this.attacker && ["grab", "carried", "release", "sky", "hold", "done"].includes(this.state);
+    const carrying = actor === this.attacker && ["grab", "carried", "release", "sky"].includes(this.state);
     const reaching = carrying || actor.state === "attack";
     actor.body.rotation.x = Math.PI / 2 + 0.14 + Math.sin(time * 2.1 + actor.angle) * 0.04;
     actor.body.position.y = Math.sin(time * 3 + actor.angle) * 0.06;
@@ -221,36 +341,10 @@ export class FlyingZombieEncounter {
     actor.rig?.pose({ dt, phase: time * 2, stride: 0.1, knee: 0.2, armSwing: carrying ? 0.22 : 0.1, reach: reaching ? 0.82 : 0.25, elbow: carrying ? 0.55 : 0.2, lean: 0.1 });
   }
 
-  _updateBackgroundActors(dt, time) {
-    for (const actor of this.actors) {
-      if (!actor.active) continue;
-      actor.age += dt;
-      if (actor.state === "circle") {
-        actor.angle += dt * 0.28;
-        this._desired.set(Math.cos(actor.angle) * 12, 8.5 + Math.sin(time * 0.8 + actor.angle) * 0.6, Math.sin(actor.angle) * 12);
-        this._previous.copy(actor.root.position);
-        actor.root.position.lerp(this._desired, 1 - Math.exp(-dt * 1.4));
-        this._heading.subVectors(actor.root.position, this._previous);
-        this._faceDirection(actor, this._heading, dt);
-      } else if (actor.state === "depart") {
-        this._heading.set(Math.sin(actor.angle), 0.8, Math.cos(actor.angle));
-        actor.root.position.addScaledVector(this._heading, dt * 6);
-        this._faceDirection(actor, this._heading, dt, 3);
-        if (actor.age > 4) { actor.active = false; actor.root.visible = false; }
-      }
-      this._poseActor(actor, dt, time);
-    }
-  }
-
   update(dt, time) {
     const g = this.game;
     if (g.paused || this.disposed) return;
     this.time += dt;
-    if (this.state === "done") {
-      // Keep non-interacting flyers and their wings alive behind the summary.
-      this._updateBackgroundActors(dt, time);
-      return;
-    }
     this._updateWeapon(dt);
     const playing = g.phase === "roof" && g.runner.alive;
     if (!playing && !this.controlsPlayer) {
@@ -274,12 +368,13 @@ export class FlyingZombieEncounter {
         a.angle += dt * 0.28;
         this._desired.set(Math.cos(a.angle) * 12, 8.5 + Math.sin(time * 0.8 + a.angle) * 0.6, Math.sin(a.angle) * 12);
         this._previous.copy(a.root.position);
-        a.root.position.lerp(this._desired, 1 - Math.exp(-dt * 1.4));
+        this._moveAvoiding(a, this._desired, 1 - Math.exp(-dt * 1.4));
         this._heading.subVectors(a.root.position, this._previous);
         this._faceDirection(a, this._heading, dt);
       } else if (a.state === "depart") {
         this._heading.set(Math.sin(a.angle), 0.8, Math.cos(a.angle));
-        a.root.position.addScaledVector(this._heading, dt * 6);
+        this._flightTarget.copy(a.root.position).addScaledVector(this._heading, dt * 6);
+        this._moveAvoiding(a, this._flightTarget);
         this._faceDirection(a, this._heading, dt, 3);
         if (a.age > 4) { a.active = false; a.root.visible = false; }
       }
@@ -296,7 +391,7 @@ export class FlyingZombieEncounter {
       this.marker.scale.setScalar(1 + 0.025 * Math.sin(time * 15));
       this._desired.copy(this.target).add(new THREE.Vector3(3, 9, 3));
       this._previous.copy(this.attacker.root.position);
-      this.attacker.root.position.lerp(this._desired, 1 - Math.exp(-dt * 3));
+      this._moveAvoiding(this.attacker, this._desired, 1 - Math.exp(-dt * 3));
       this._heading.subVectors(this.attacker.root.position, this._previous);
       this._faceDirection(this.attacker, this._heading, dt);
       if (this.elapsed >= this.tune.warning) {
@@ -307,25 +402,30 @@ export class FlyingZombieEncounter {
       const u = Math.min(1, this.elapsed / this.tune.dive);
       this._desired.copy(this.target).add(new THREE.Vector3(0, 1.55, -0.15));
       this._previous.copy(this.attacker.root.position);
-      this.attacker.root.position.lerpVectors(this.diveFrom, this._desired, smooth(u));
+      this._flightTarget.lerpVectors(this.diveFrom, this._desired, smooth(u));
+      this._moveAvoiding(this.attacker, this._flightTarget);
       this._heading.subVectors(this.attacker.root.position, this._previous);
       this._faceDirection(this.attacker, this._heading, dt, 6);
       if (u === 1) {
         const p = g.hero.position;
         this.landingSpot = safeAbductionSpot(this.roof, p);
-        if (Math.hypot(p.x - this.target.x, p.z - this.target.z) <= FLIGHT.radius && p.y < 0.9 && this.roof.groundAt(p) === 0 && this.landingSpot && this._canAttack()) this._grab();
-        else { this._depart(); this.state = "idle"; }
+        const grabPoint = this._desired.copy(this.target).add(new THREE.Vector3(0, 1.55, -0.15));
+        const reached = this.attacker.root.position.distanceTo(grabPoint) <= 1.65;
+        if (reached && Math.hypot(p.x - this.target.x, p.z - this.target.z) <= FLIGHT.radius && p.y < 0.9 && this.roof.groundAt(p) === 0 && this.landingSpot && this._canAttack()) this._grab();
+        else if (this.elapsed >= this.tune.dive + 1.2) { this._depart(); this.state = "idle"; }
       }
     } else if (this.state === "grab" || this.state === "carried" || this.state === "release") {
       const a = this.attacker;
       // Small lateral correction toward a clear landing area, visibly flown.
-      a.root.position.x += (this.landingSpot.x - this.carryOffset.x - a.root.position.x) * (1 - Math.exp(-dt * 1.2));
-      a.root.position.z += (this.landingSpot.z - this.carryOffset.z - a.root.position.z) * (1 - Math.exp(-dt * 1.2));
+      this._flightTarget.copy(a.root.position);
+      this._flightTarget.x += (this.landingSpot.x - this.carryOffset.x - a.root.position.x) * (1 - Math.exp(-dt * 1.2));
+      this._flightTarget.z += (this.landingSpot.z - this.carryOffset.z - a.root.position.z) * (1 - Math.exp(-dt * 1.2));
       const height = Math.min(FLIGHT.lift, Math.max(0, this.time - this.grabAt) * 1.1);
-      a.root.position.y = this.grabHeight + height;
+      this._flightTarget.y = this.grabHeight + height;
+      this._moveAvoiding(a, this._flightTarget);
       this._heading.set(this.landingSpot.x - this.carryOffset.x - a.root.position.x, 0, this.landingSpot.z - this.carryOffset.z - a.root.position.z);
       this._faceDirection(a, this._heading, dt, 2.5);
-      if (this.state === "grab") a.carry.position.lerpVectors(this.gripFrom, this.gripTo, smooth(this.elapsed / 0.35));
+      this._updateCarryGrip(dt);
       this._syncPlayer(dt);
       this._carryCamera(dt);
       if (this.state === "grab" && this.elapsed >= 0.35) { this.state = "carried"; this.elapsed = 0; this._startQTE(); }
@@ -350,7 +450,7 @@ export class FlyingZombieEncounter {
       cam.position.lerpVectors(this.returnPosition, position, blend);
       cam.quaternion.slerpQuaternions(this.returnRotation, q, blend);
       if (blend === 1) this.state = "idle";
-    } else if (this.state === "sky" || this.state === "hold") this._sky(dt);
+    } else if (this.state === "sky") this._sky(dt);
   }
 
   _grab() {
@@ -367,7 +467,7 @@ export class FlyingZombieEncounter {
     g.avatar.root.getWorldPosition(this._world);
     a.carry.position.copy(a.root.worldToLocal(this._world.clone()));
     this.gripFrom = a.carry.position.clone();
-    this.gripTo = new THREE.Vector3(0, -1.55, 0.15);
+    this.gripTo = this._handGripLocal(a, new THREE.Vector3());
     this.carryOffset = this.gripTo.clone().applyQuaternion(a.root.quaternion);
     this.grabHeight = a.root.position.y;
     this.playerHome = g.avatar.root.parent;
@@ -545,7 +645,7 @@ export class FlyingZombieEncounter {
 
   _startSky() {
     const g = this.game;
-    this.state = "sky"; this.elapsed = 0; this.skyTime = 0; this.vanishedAt = null;
+    this.state = "sky"; this.elapsed = 0; this.skyTime = 0; this.gameOverShown = false;
     g.runner.alive = false; g.runner.vitality = 0;
     this.skyFrom = g.camera.position.clone(); this.skyRotationFrom = g.camera.quaternion.clone();
     // Escape outward from the roof at roughly 45 degrees, with a small random
@@ -568,38 +668,22 @@ export class FlyingZombieEncounter {
   _sky(dt) {
     const g = this.game, cam = g.camera;
     this.skyTime += dt;
-    this.attacker.root.position.addScaledVector(this.skyVelocity, dt);
-    this._faceDirection(this.attacker, this.skyDirection, dt, 5);
+    this._previous.copy(this.attacker.root.position);
+    this._flightTarget.copy(this.attacker.root.position).addScaledVector(this.skyVelocity, dt);
+    this._moveAvoiding(this.attacker, this._flightTarget);
+    this._heading.subVectors(this.attacker.root.position, this._previous);
+    this._faceDirection(this.attacker, this._heading, dt, 5);
+    this._updateCarryGrip(dt);
     this._syncPlayer(dt);
     const blend = smooth(this.skyTime / FLIGHT.skyTransition);
     cam.position.lerpVectors(this.skyFrom, this.skyPosition, blend);
     cam.quaternion.slerpQuaternions(this.skyRotationFrom, this.skyRotation, blend);
     g.sfx?.updateAbductionVoice?.(cam.position.distanceTo(g.hero.position));
-    if (this.state === "sky" && blend === 1 && (this._outOfSkyFrame() || this.skyTime >= FLIGHT.skyFallback)) {
-      this.state = "hold"; this.vanishedAt = this.skyTime;
-      g.sfx?.stopAbductionVoice?.(0.18);
-    }
-    if (this.state === "hold" && this.skyTime - this.vanishedAt >= FLIGHT.skyHold) {
-      this.state = "done";
+    if (!this.gameOverShown && this.skyTime >= FLIGHT.gameOverDelay) {
+      this.gameOverShown = true;
       document.body.classList.remove("story-cutscene");
       g._roofSummary(false, "YOU WERE CAPTURED!", { deathScene: "capture" });
     }
-  }
-
-  _outOfSkyFrame() {
-    const cam = this.game.camera;
-    cam.updateMatrixWorld(true);
-    this._box.setFromObject(this.attacker.root).expandByScalar(0.4);
-    let above = true, behind = true, minY = Infinity, maxY = -Infinity;
-    const { min, max } = this._box;
-    for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
-      this._world.set(x, y, z).applyMatrix4(cam.matrixWorldInverse);
-      if (this._world.z < -cam.near) behind = false;
-      this._world.applyMatrix4(cam.projectionMatrix);
-      if (!Number.isFinite(this._world.y) || this._world.y < 1.05) above = false;
-      minY = Math.min(minY, this._world.y); maxY = Math.max(maxY, this._world.y);
-    }
-    return above || behind || (cam.position.distanceTo(this.attacker.root.position) > 160 && maxY - minY < 0.012);
   }
 
   dispose() {

@@ -140,21 +140,18 @@ export async function run(page, { shots }) {
   notes.ascent = ascent;
   check("failure keeps player attached and climbs past a fixed oblique camera with live weather", ascent.up > 0.1 && ascent.up < 0.35 && ascent.fixed && ascent.climbing && ascent.attached && !ascent.falling && ascent.liveWeather, ascent);
   await shot("05-carried-into-sky");
-  const hold = await page.evaluate(() => {
-    const f = __ab.f; __ab.until(() => f.state === "hold");
-    const exited = f._outOfSkyFrame(); __ab.step(54);
-    return { exited, time: f.vanishedAt, state: __dbg.state, cameraUp: __ab.g.camera.getWorldDirection(new __dbg.THREE.Vector3()).y };
-  });
-  notes.hold = hold;
-  check("angled escape leaves frame before the empty sky hold", hold.exited && hold.time < 12 && hold.state === "playing" && hold.cameraUp > 0.1 && hold.cameraUp < 0.35, hold);
-  await shot("06-empty-sky-hold");
+  await page.evaluate(() => __ab.until(() => __ab.f.gameOverShown));
   const over = await page.evaluate(() => {
     const f = __ab.f, g = __ab.g; __ab.until(() => __dbg.state === "ended");
-    return { title: document.querySelector("#endTitle").textContent, active: document.querySelector("#endScreen").classList.contains("active"), delay: f.skyTime - f.vanishedAt, fx: __dbg.deathFx.playing, up: g.camera.getWorldDirection(new __dbg.THREE.Vector3()).y, fade: g.fade.value };
+    const carrier = f.attacker.root.position.clone(), player = g.hero.position.clone(), delay = f.skyTime;
+    const wing = f.attacker.wings[0].rotation.y, camera = g.camera.position.clone(), rotation = g.camera.quaternion.clone();
+    __ab.step(15);
+    return { title: document.querySelector("#endTitle").textContent, active: document.querySelector("#endScreen").classList.contains("active"), delay, fx: __dbg.deathFx.playing, up: g.camera.getWorldDirection(new __dbg.THREE.Vector3()).y, fade: g.fade.value, attached: g.avatar.root.parent === f.attacker.carry, carrierMoving: !carrier.equals(f.attacker.root.position), playerMoving: g.hero.position.y > player.y, wingsMoving: f.attacker.wings[0].rotation.y !== wing, cameraFixed: camera.equals(g.camera.position) && rotation.equals(g.camera.quaternion), flightState: f.state };
   });
   notes.over = over;
-  check("existing capture summary appears directly over the live sky after two seconds", over.title === "YOU WERE CAPTURED!" && over.active && over.delay >= 2 && over.delay < 2.04 && !over.fx && over.up > 0.1 && over.up < 0.35 && over.fade === 0, over);
-  await shot("07-capture-game-over");
+  check("existing capture summary appears after 3.5 seconds over the live sky", over.title === "YOU WERE CAPTURED!" && over.active && over.delay >= 3.5 && over.delay < 3.56 && !over.fx && over.up > 0.1 && over.up < 0.35 && over.fade === 0, over);
+  check("captured pair and wings continue moving behind Game Over while the camera stays put", over.attached && over.carrierMoving && over.playerMoving && over.wingsMoving && over.cameraFixed && over.flightState === "sky", over);
+  await shot("06-capture-game-over-live");
   const heldOver = await page.evaluate(() => {
     const g = __ab.g, cam = g.camera.position.clone(), q = g.camera.quaternion.clone(), weather = g.roof.weather.time.value;
     // Even a pending normal cutaway must not overwrite the final sky camera.
@@ -163,7 +160,7 @@ export async function run(page, { shots }) {
     return { fixed: cam.equals(g.camera.position) && q.equals(g.camera.quaternion), live: g.roof.weather.time.value > weather };
   });
   notes.heldOver = heldOver;
-  check("later rooftop cutaways cannot replace the held live sky behind statistics", heldOver.fixed && heldOver.live, heldOver);
+  check("later rooftop cutaways cannot replace the live sky camera behind statistics", heldOver.fixed && heldOver.live, heldOver);
   const restart = await page.evaluate(async () => {
     const old = __ab.f; __dbg.restartRun(); const ready = await __ab.ready();
     const g = __ab.g;

@@ -23,7 +23,7 @@ function harness(key='normal', hz=60) {
   const camera=new THREE.PerspectiveCamera(60,16/9,.1,500); camera.position.set(0,10,9);camera.lookAt(0,1,0);scene.add(camera);
   const template=new THREE.Group(); template.userData.character={}; template.add(new THREE.Mesh(new THREE.BoxGeometry(.8,1.8,.5)));
   const handL=new THREE.Bone(),handR=new THREE.Bone();handL.name='handL';handR.name='handR';template.add(handL,handR);
-  const roof={assets:new Map([['patient',{template}]]),state:{ending:null},cutscene:null,breakables:[],enemies:[],solids:[],
+  const roof={assets:new Map([['patient',{template}]]),state:{ending:null},cutscene:null,breakables:[],enemies:[],solids:[],cover:[],
     blocked:(p,r)=>p.x > 2-r && p.x < 4+r && p.z > 2-r && p.z < 4+r,
     groundAt:p=>Math.abs(p.x)>16||Math.abs(p.z)>16||(Math.abs(p.x-10)<.6&&Math.abs(p.z)<.6)?null:0};
   const ui={root:{hidden:true},show(){this.root.hidden=false;},hide(){this.root.hidden=true;},showReaction(s){this.spec=s;},updateReaction(s){this.progress=s;},hideReaction:noop,endReaction:noop};
@@ -35,7 +35,7 @@ function harness(key='normal', hz=60) {
     launcher:{rig:weapon,heatMaterials:[],recoil:0},runner:{alive:true,vitality:100,balls:10,invulnerable:0,shots:0},
     arsenal:{level:()=>0},held:new Set(),charge:{cancel:noop},hud:{toast:noop,hideBanner:noop,setPrompt:noop},ammoHint:{hide:noop},
     audio:new Proxy({},{get:(_,key)=>key === 'ctx' ? null : noop}),_patientSound:noop,
-    _roofSummary(won,title,extra){this.result={won,title,extra};this.phase='over';}
+    _roofSummary(won,title,extra){this.result={won,title,extra};this.summaryCount=(this.summaryCount??0)+1;this.phase='over';}
   });
   const layer={ui,reactions,stopTalk:noop,player:{active:false}};
   const f=new FlyingZombieEncounter(g,{layer,random:()=>.5});g._flying=f;
@@ -103,6 +103,11 @@ for(const hz of [30,60,144]) test(`grab, safe drop, escape, proximity E pickup a
   assert.equal(h.g.avatar.body.position.y,-1,'captured body pivots around the hips');
   assert.ok(h.g.avatar.lastFlail?.k>0.75,'the existing rooftop-fall flail animates the captured player');
   assert.ok(grabber.lastPose?.reach>0.5,'the zombie reaches with its animated arms during capture');
+  grabber.root.updateMatrixWorld(true);
+  const left=grabber.rig.bones.handL.getWorldPosition(new THREE.Vector3());
+  const right=grabber.rig.bones.handR.getWorldPosition(new THREE.Vector3());
+  const handMidpoint=left.add(right).multiplyScalar(0.5);
+  assert.ok(handMidpoint.distanceTo(h.root.getWorldPosition(new THREE.Vector3()))<0.2,'player stays centered between the zombie hands');
   assert.ok(h.f.drop.landed);const floorWeapon=h.weapon.position.clone();
   assert.ok(new THREE.Box3().setFromObject(h.weapon).min.y>=.04);
   for(let i=0;i<8;i++){h.reactions.keyDown('Space');h.reactions.keyUp('Space');h.step();}
@@ -129,11 +134,14 @@ for(const key of ['easy','normal','hard']) test(`${key}: QTE failure carries att
   const moved=carrier.root.position.clone().sub(start);
   assert.ok(Math.abs(moved.y-Math.hypot(moved.x,moved.z))<0.03,'failed capture moves up and outward at the same speed');
   assert.ok(h.g.camera.position.equals(position));assert.ok(h.g.camera.quaternion.equals(rotation));
-  h.until(()=>h.f.state==='hold');assert.ok(h.f.vanishedAt<FLIGHT.skyFallback,'visibility succeeds without fallback');
-  h.step(100);assert.equal(h.g.result,undefined);
-  h.until(()=>h.f.state==='done');
+  h.until(()=>h.f.gameOverShown);
   assert.equal(h.g.result.title,'YOU WERE CAPTURED!');assert.equal(h.g.result.extra.deathScene,'capture');
-  assert.ok(h.f.skyTime-h.f.vanishedAt>=2&&h.f.skyTime-h.f.vanishedAt<2.02);
+  assert.ok(h.f.skyTime>=FLIGHT.gameOverDelay&&h.f.skyTime<FLIGHT.gameOverDelay+1/60);
+  const overCarrier=carrier.root.position.clone(),overPlayer=h.g.hero.position.clone();
+  h.step(30);
+  assert.equal(h.f.state,'sky','capture flight remains active behind Game Over');
+  assert.ok(!carrier.root.position.equals(overCarrier)&&h.g.hero.position.y>overPlayer.y,'carrier and attached player keep moving behind Game Over');
+  assert.equal(h.g.summaryCount,1,'capture summary is shown once');
   assert.ok(h.g.camera.position.equals(position));assert.ok(h.g.camera.quaternion.equals(rotation));
   h.f.dispose();assert.equal(h.root.parent,h.scene);assert.equal(h.weapon.parent,h.shoulder);assert.equal(h.ui.root.hidden,true);
 });
@@ -148,7 +156,7 @@ test('failed capture bearings vary, and an active second flyer keeps moving behi
   assert.ok(bearings[0].angleTo(bearings[1])>0.5,'each abduction can take a different outward bearing');
 
   const h=harness();h.attack();h.f._spawn();h.until(()=>h.f.state==='sky');
-  h.until(()=>h.f.state==='done');
+  h.until(()=>h.f.gameOverShown);
   const background=h.f.actors.find(a=>a!==h.f.attacker&&a.active&&a.state==='circle');assert.ok(background);
   const position=background.root.position.clone(),wing=background.wings[0].rotation.y;
   h.f.update(1/60,h.f.time+1/60);
@@ -163,6 +171,37 @@ test('safe placements avoid cover, hatch holes and ledges; no valid spot prevent
     const p=safeAbductionSpot(h.roof,origin);assert.ok(p);assert.ok(Math.abs(p.x)<=13.5&&Math.abs(p.z)<=13.5);assert.equal(h.roof.blocked(p,1.1),false);assert.equal(h.roof.groundAt(p),0);
   }
   assert.equal(safeAbductionSpot({blocked:()=>true,groundAt:()=>0},new THREE.Vector3()),null);
+  h.f.dispose();
+});
+
+test('flight probes existing roof cover and steers around it without entering the clearance box',()=>{
+  const h=harness();
+  const obstacle=new THREE.Box3(new THREE.Vector3(2,0,-1),new THREE.Vector3(4,4,1));
+  h.roof.cover.push(obstacle);
+  const clearance=obstacle.clone().expandByVector(new THREE.Vector3(FLIGHT.obstacleClearance,FLIGHT.obstacleHeight,FLIGHT.obstacleClearance));
+  const actor=h.f._createActor();actor.root.position.set(-2,2,0);actor.avoidSign=1;
+  for(let i=0;i<260;i++){
+    h.f._moveAvoiding(actor,new THREE.Vector3(Math.min(8,-2+i*.05),2,0));
+    assert.equal(clearance.containsPoint(actor.root.position),false,'body and attached player clear the expanded obstacle volume');
+  }
+  assert.ok(actor.root.position.x>6,'the flyer resumes its intended route after going around the obstacle');
+  h.f.dispose();
+});
+
+test('angled carry route keeps avoiding roof cover after the capture summary appears',()=>{
+  const h=harness();
+  const obstacle=new THREE.Box3(new THREE.Vector3(-13,8,-1),new THREE.Vector3(-11,10,1));
+  h.roof.cover.push(obstacle);
+  const clearance=obstacle.clone().expandByVector(new THREE.Vector3(FLIGHT.obstacleClearance,FLIGHT.obstacleHeight,FLIGHT.obstacleClearance));
+  const actor=h.f._createActor();actor.active=true;actor.root.visible=true;actor.root.position.set(-8,5,0);actor.state='attack';
+  h.f.attacker=actor;h.f.playerHome=h.scene;actor.carry.attach(h.root);h.f._startSky();
+  const start=actor.root.position.clone();
+  h.until(()=>h.f.gameOverShown);
+  assert.equal(h.f.state,'sky');assert.ok(actor.root.position.y>start.y);
+  assert.equal(clearance.containsPoint(actor.root.position),false);
+  const over=actor.root.position.clone();h.step(30);
+  assert.ok(actor.root.position.y>over.y,`the obstacle-aware route continues behind Game Over: ${JSON.stringify({over:over.toArray(),after:actor.root.position.toArray(),velocity:h.f.skyVelocity.toArray()})}`);
+  assert.equal(clearance.containsPoint(actor.root.position),false);
   h.f.dispose();
 });
 
@@ -204,9 +243,12 @@ test('repeated captures reuse one dropped weapon and cleanup cancels an active Q
   assert.equal(h.root.parent,h.scene);assert.equal(h.weapon.parent,h.shoulder);
 });
 
-test('sky visibility fallback cannot stall the capture death and still holds two seconds',()=>{
-  const h=harness();h.attack();h.until(()=>h.f.state==='sky');h.f._outOfSkyFrame=()=>false;
-  h.until(()=>h.f.state==='done');
-  assert.ok(h.f.vanishedAt>=12&&h.f.vanishedAt<12.02);
-  assert.ok(h.f.skyTime>=14&&h.f.skyTime<14.04);h.f.dispose();
+test('capture Game Over is timed from fly-away and live flight continues afterwards',()=>{
+  const h=harness();h.attack();h.until(()=>h.f.state==='sky');
+  h.until(()=>h.f.gameOverShown);
+  assert.ok(h.f.skyTime>=3.5&&h.f.skyTime<3.52);
+  const carrier=h.f.attacker.root.position.clone(),player=h.g.hero.position.clone(),camera=h.g.camera.position.clone();
+  h.step(60);
+  assert.equal(h.f.state,'sky');assert.ok(h.g.hero.position.y>player.y);assert.ok(!carrier.equals(h.f.attacker.root.position));
+  assert.ok(h.g.camera.position.equals(camera));assert.equal(h.g.summaryCount,1);h.f.dispose();
 });
