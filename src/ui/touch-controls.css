@@ -27,6 +27,14 @@
 /* The cutscene's own "Hold Esc to skip" ring: on a touch screen the button is the skip. */
 html.touch .story-skip { display: none !important; }
 
+/* Something to pick up at your feet: big, in the middle, over the score. */
+.tc-pickup {
+  left: 50%; bottom: calc(96px + var(--safe-b, 0px)); transform: translateX(-50%);
+  height: 54px; border-radius: 27px; padding: 0 26px; font-size: 13px;
+  border-color: var(--ember, #ff7a3d); background: rgba(255, 122, 61, .3);
+}
+.tc-pickup.down { transform: translateX(-50%) scale(.95); }
+
 /* The roof's stick: it comes up where the thumb lands. */
 .tc-stick {
   position: fixed; display: none; width: 116px; height: 116px; margin: -58px 0 0 -58px; border-radius: 50%;
@@ -49,6 +57,12 @@ html.touch .story-skip { display: none !important; }
 }
 .tc-half.on { background: linear-gradient(0deg, rgba(255, 122, 61, .14), transparent 55%); }
 .tc-half.on b { opacity: 1; }
+
+/* Hints: the touch screen's own words (.touch-only) in place of the keyboard's (.kb-only);
+   lines with no touch version (.no-touch) go. A controller in use keeps its own (pad-ui.css). */
+.touch-only { display: none !important; }
+html.touch body:not(.pad-mode) .touch-only { display: revert !important; }
+html.touch body:not(.pad-mode) :is(.kb-only, .no-touch) { display: none !important; }
 
 /* The sphere wheel takes a tap on a touch screen (it turns the wheel). */
 html.touch .sphere-wheel { pointer-events: auto; touch-action: none; }

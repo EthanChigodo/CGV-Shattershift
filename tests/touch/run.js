@@ -80,6 +80,12 @@ expect("roof: stick + fire together", both, /down:KeyW.*pointerdown:0:640,150/);
 await take();
 const dodge = await page.evaluate(() => { const b = document.querySelector(".tc-dodge"); const r = b.getBoundingClientRect(); return [getComputedStyle(b).display, r.x + r.width / 2, r.y + r.height / 2]; });
 await tap(dodge[1], dodge[2]); expect(`roof: DODGE button (${dodge[0]})`, await take(), /^down:Space up:Space$/);
+const shown = async (sel) => page.evaluate((sel) => { const b = document.querySelector(sel); const r = b.getBoundingClientRect(); return [getComputedStyle(b).display, r.x + r.width / 2, r.y + r.height / 2]; }, sel);
+expect("roof: no PICK UP with nothing there", (await shown(".tc-pickup"))[0], /^none$/);
+await set({ pickup: true }); await wait(100);
+const pick = await shown(".tc-pickup");
+await tap(pick[1], pick[2]); expect(`roof: PICK UP button (${pick[0]}) = E`, await take(), /^down:KeyE up:KeyE$/);
+await set({ pickup: false });
 const focus = await page.evaluate(() => { const b = document.querySelector(".tc-focus"); const r = b.getBoundingClientRect(); return [getComputedStyle(b).display, r.x + r.width / 2, r.y + r.height / 2]; });
 await hold(focus[1], focus[2], 300); expect(`roof: FOCUS button (${focus[0]})`, await take(), /^pointerdown:2:\d+,\d+ pointerup:2:\d+,\d+$/);
 // A cutscene: the skip button holds Esc.
