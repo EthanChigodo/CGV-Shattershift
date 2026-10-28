@@ -36,10 +36,12 @@ export async function run(page) {
   if (phantom.length) failures.push(`${phantom.length} hit(s) with nothing actually in the way, first at ${phantom[0].d} m`);
   if (log.hits.length > 14) failures.push(`${log.hits.length} hits in one run - far more than the obstacles account for`);
   if (!log.end || !["depart", "fade", "roofArrive"].includes(log.end.phase)) failures.push(`did not reach the lift at the end (${JSON.stringify(log.end)})`);
-  // The right-tool problems (problems.js), answered with the right tool.
+  // The right-tool problems (problems.js): the right tool, fired at one,
+  // solves it (the bot answers each it has the spheres for - two).
   const problems = await page.evaluate(() => globalThis.__meltdown.game.problems.summary());
-  if (problems.count < 3) failures.push(`solved ${problems.count} of the 3 right-tool problems (${JSON.stringify(problems.solved)})`);
-  notes.solved = log.solved;
+  if (log.unsolved?.length) failures.push(`the right tool did not solve ${log.unsolved.join(", ")}`);
+  if (!problems.count) failures.push("no right-tool problem was solved in a whole run");
+  notes.solved = { answered: log.solved, ...problems.solved };
   notes.hits = log.hits.map((h) => `${h.d}m ${h.what}`);
   notes.end = log.end;
   return { failures, notes };

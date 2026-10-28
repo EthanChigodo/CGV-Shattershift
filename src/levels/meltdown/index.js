@@ -184,6 +184,8 @@ export class MeltdownLevel {
    *   designed (the story's difficulty)
    * @param {boolean} [options.extras]  Hard: fire waves among the patterns,
    *   and patients that stalk you in every section, not only the dark
+   * @param {boolean} [options.problems]  the right-tool problems (problems.js):
+   *   fire walls and the jammed shutter (not in the Race)
    */
   constructor({
     origin = new THREE.Vector3(0, 0, 0),
@@ -201,6 +203,7 @@ export class MeltdownLevel {
     density = 1,
     extras = false,
     length = 1,
+    problems = true,
   } = {}) {
     // First, the beats at this difficulty's length (everything below reads them).
     setRouteScale(length);
@@ -278,7 +281,7 @@ export class MeltdownLevel {
     this._buildBeatStairwell();
     // The right-tool problems (problems.js): fire walls to freeze, a jammed
     // shutter to blast - before the filler, which keeps clear of them.
-    this.problemSet = placeLabsProblems(this);
+    this.problemSet = problems ? placeLabsProblems(this) : null;
     this._buildLifts();
     this._buildPatterns();
     this._buildCorridorDressing();

@@ -89,11 +89,14 @@ export function authoredLayout() {
   add(186, "file", { x: L, y: 1.7, index: 1 });
   add(192, "hazard", { x: R, kind: "cart" }); pane(192, C);
   radio(198, "vale", "Every floor is wired, Seven. I signed the order myself.");
+  // The right-tool problems (src/systems/problems.js): a laser grid you can
+  // jump - or kill at its junction box with shock - then the sealed door.
+  add(204, "laser", { mode: "low", side: 1, box: 8 });
   add(210, "collapse", { x: C, kind: "beam" });
   pane(218, L); pane(218, R, { reinforced: true });
   add(228, "cache", { x: C, y: 2.0 });
   add(234, "sign", { x: C, y: 5.9, sign: "bridge", facing: 1, width: 4, height: 1 });
-  add(238, "door", { x: C, hint: "Security door: break it" });
+  add(238, "door", { x: C, sealed: true });
 
   /* ---------------- BEAT B - SKYBRIDGE ---------------- */
   add(242, "event", { event: "explosion", behind: 26, strength: 1 });
@@ -138,6 +141,7 @@ export function authoredLayout() {
   add(578, "sprinkler", { x: 0, ceiling: 6.0 });
   fire(586, L, 3.2, { height: 3.6 }); fire(586, R, 3.2, { height: 3.6 });
   add(596, "cache", { x: C, y: 3.0 });
+  add(600, "laser", { mode: "high", side: -1, box: 9 });
   add(606, "serum", { x: R, y: 1.6, serum: "overdrive" });
   add(616, "hazard", { x: L, kind: "rack" }); pane(616, C); pane(616, R, { mirror: true });
   add(626, "cache", { x: R, y: 2.4 });
@@ -256,11 +260,14 @@ function mulberry(seed) {
  * distance; `difficulty` goes 0 -> 1 over the first 1.5 km.
  */
 export class EndlessGenerator {
-  constructor(seed = Date.now()) {
+  /** `problems`: the right-tool problems among the chunks (not in the Race). */
+  constructor(seed = Date.now(), { problems = true } = {}) {
     this.rand = mulberry(seed);
     this.cursor = 18;
     this.sinceCache = 0;
     this.chunk = 0;
+    this.problems = problems;
+    this.sinceProblem = 0;
   }
 
   pick(list) { return list[Math.floor(this.rand() * list.length)]; }
@@ -283,6 +290,13 @@ export class EndlessGenerator {
         out.push({ d, type: "cache", x: lane, y: 1.8 + this.rand() * 1.4 });
         this.sinceCache = 0;
         length = 10;
+      } else if (this.problems && d > 240 && this.sinceProblem > 200 && r < 0.3) {
+        // A right-tool problem (src/systems/problems.js): a sealed door, or a
+        // laser grid and its junction box - shock's.
+        if (this.rand() < 0.4) out.push({ d: d + 6, type: "door", x: 0, sealed: true });
+        else out.push({ d: d + 10, type: "laser", mode: this.rand() < 0.5 ? "low" : "high", side: this.rand() < 0.5 ? -1 : 1, box: 8 });
+        this.sinceProblem = 0;
+        length = 22;
       } else if (r < 0.26) {
         // Pane gauntlet: glass in two lanes, sometimes all three.
         for (const x of this.rand() < 0.3 + difficulty * 0.4 ? LANES : others) {
@@ -320,6 +334,7 @@ export class EndlessGenerator {
       // Walls keep burning in endless mode too.
       if (this.rand() < 0.35) out.push({ d: d + length * 0.5, type: "fire", x: (this.rand() < 0.5 ? -1 : 1) * 5.15, width: 1.3, depth: 1.8, height: 1.7, decor: true });
       this.sinceCache += length;
+      this.sinceProblem += length;
       this.chunk += 1;
       // Gaps tighten with difficulty but never below a readable spacing.
       this.cursor += length + 6 + (1 - difficulty) * 10 + this.rand() * 6;
