@@ -1613,9 +1613,12 @@ export class MeltdownGame {
       this._follow(V.desired, 16, dt);
     } else {
       // Chase: pulled back a touch as speed rises, trailing the lateral move.
+      // Higher and tipped further down than it was (round 8 feedback: the
+      // depth of the next laser grid was hard to judge): the floor between
+      // you and what is coming is in view, and it still sees far ahead.
       const back = 6.4 + r.speed * 0.05;
-      level.route.sample(r.distance - back, r.lateral * 0.62, 2.8 + r.height * 0.55 - dip, V.desired);
-      level.route.sample(r.distance + 12, r.lateral * 0.3, 1.6, V.look);
+      level.route.sample(r.distance - back, r.lateral * 0.62, 3.45 + r.height * 0.55 - dip, V.desired);
+      level.route.sample(r.distance + 14, r.lateral * 0.3, 0.95, V.look);
       this._follow(V.desired, 70, dt);
     }
 

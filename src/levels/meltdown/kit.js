@@ -190,6 +190,12 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     laser: new THREE.MeshBasicMaterial({ color: 0xff2418, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
     laserGlow: new THREE.MeshBasicMaterial({ color: 0xff1a10, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
     laserPost: std({ color: 0x1a1c1f, emissive: 0xff1a10, emissiveIntensity: 0.6, metalness: 0.8, roughness: 0.35 }),
+    // Where a grid is, read from the floor (round 8 feedback: its depth was
+    // hard to judge): a hot line under the beams, and a faint sheet of light
+    // filling the band you can't pass through.
+    laserFloor: new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }),
+    laserPool: new THREE.MeshBasicMaterial({ color: 0xff2214, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
+    laserCurtain: new THREE.MeshBasicMaterial({ color: 0xff1a10, transparent: true, opacity: 0.075, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
     collider: new THREE.MeshBasicMaterial({ visible: false }),
     glassHousing: std({ color: 0x1c2622, metalness: 0.85, roughness: 0.3 }),
     // Breakables keep the game-wide cyan/green "this can be shot" language.
@@ -733,6 +739,20 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       glowBeam.position.y = y;
       beams.add(glowBeam);
     }
+
+    // The line on the floor right under it, and a soft pool round the line.
+    const line = box(span, 0.012, 0.16, materials.laserFloor, 0.006);
+    line.renderOrder = 2;
+    group.add(line);
+    const pool = box(span, 0.008, 1.5, materials.laserPool, 0.004);
+    group.add(pool);
+    // The band of air the beams close off, as a faint sheet (moves with a sweep).
+    const curtain = mesh(geometries.unitPlane, materials.laserCurtain, { cast: false, receive: false });
+    const top = heights[2] + 0.16;
+    const bottom = mode === "high" ? heights[0] - 0.16 : 0;
+    curtain.scale.set(span, top - bottom, 1);
+    curtain.position.y = (top + bottom) / 2;
+    beams.add(curtain);
 
     const hit = mode === "high"
       ? collider(span, 0.98, 0.35, 1.62, { laser: "high" })
@@ -1738,6 +1758,28 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
    * The body sways on its own when the model is still a stand-in, and runs
    * a procedural shamble on the patient's real skeleton once it arrives.
    */
+  /** A patient's eye: a small hot glow (one material for every lurcher). */
+  let eyeGlow = null;
+  function eyeGlowMaterial() {
+    if (eyeGlow) return eyeGlow;
+    const c = document.createElement("canvas");
+    c.width = c.height = 32;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grad.addColorStop(0, "rgba(255,240,200,1)");
+    grad.addColorStop(0.18, "rgba(255,150,70,0.95)");
+    grad.addColorStop(0.5, "rgba(255,60,20,0.35)");
+    grad.addColorStop(1, "rgba(255,40,10,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 32, 32);
+    const map = new THREE.CanvasTexture(c);
+    map.colorSpace = THREE.SRGBColorSpace;
+    eyeGlow = new THREE.SpriteMaterial({ map, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+    tracked.materials.push(eyeGlow);
+    tracked.textures?.push(map);
+    return eyeGlow;
+  }
+
   function lurcher({ lane = 0, fromSide = 1, seed = 0 } = {}) {
     const group = new THREE.Group();
     group.name = "Lurcher";
@@ -1755,11 +1797,31 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     let model = null;
     /** Burning away once down (ash.js, as on the roof). */
     let ash = null;
+    // Eyes that catch the light: a lurcher reads in the dark beats before it
+    // commits (round 8 audit: they hit you unseen). They ride the head bone.
+    const eyes = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Sprite(eyeGlowMaterial());
+      eye.scale.setScalar(0.13);
+      eye.position.set(side * 0.034, 0, 0);
+      eyes.add(eye);
+    }
+    eyes.visible = false;
+    body.add(eyes);
+    let headBone = null;
     slot.userData.onFilled = (person) => {
       model = person;
       const r = createRig(person);
       rig = r.valid ? r : null;
       heatSignature(person);
+      person.traverse((o) => { if (!headBone && o.isBone && /head/i.test(o.name) && !/end|top|nub/i.test(o.name)) headBone = o; });
+      eyes.visible = !!headBone;
+    };
+    const placeEyes = () => {
+      if (!headBone || !eyes.visible) return;
+      headBone.getWorldPosition(world);
+      body.worldToLocal(world);
+      eyes.position.set(world.x, world.y + 0.035, world.z + 0.1);
     };
 
     const hit = collider(1.0, 1.95, 0.9, 0, { patient: true });
@@ -1826,6 +1888,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     group.userData.tick = (dt, time) => {
       t += dt;
       stagger = Math.max(0, stagger - dt * 2.5);
+      if (state === "down") eyes.visible = false;
+      else placeEyes();
       if (state === "lurch") {
         const k = Math.min(1, t / 1.35);
         mover.position.x = THREE.MathUtils.lerp(startX, lane, k * k * (3 - 2 * k));

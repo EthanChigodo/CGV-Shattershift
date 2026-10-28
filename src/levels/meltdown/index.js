@@ -428,6 +428,7 @@ export class MeltdownLevel {
 
   _hazard(piece, distance, lateral = 0) {
     this._add(this.groups.hazards, piece, distance, lateral);
+    piece.userData.hazardPiece = true;
     // Rubble, gaps and barriers never move: one mesh per material each.
     if (piece.userData.static) bakeStatic(piece);
     const meshes = piece.userData.hazardMeshes ?? (piece.userData.hazardMesh ? [piece.userData.hazardMesh] : []);
@@ -1703,7 +1704,12 @@ export class MeltdownLevel {
     }
 
     for (const entry of this._culled) {
-      entry.piece.visible = Math.abs(entry.distance - distance) < 110 + (entry.slack ?? 0);
+      const ahead = entry.distance - distance;
+      entry.piece.visible = Math.abs(ahead) < 110 + (entry.slack ?? 0)
+        // Obstacles already behind you, between you and the chase camera,
+        // step out of its way (round 8 audit: a glass gate's posts or a
+        // grid you had cleared filled the screen).
+        && !(entry.piece.userData.hazardPiece && ahead < -1.6 && ahead > -9.5);
     }
     for (const entry of this._animated) {
       if (Math.abs(entry.distance - distance) > 80) continue;
