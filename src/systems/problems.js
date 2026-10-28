@@ -130,7 +130,6 @@ export class ProblemLog {
     this.wrongs = {};
     this.bonus = 0;
     this._wrongAt = new Map();
-    this.clock = 0;
   }
 
   on(name, fn) {
@@ -141,11 +140,6 @@ export class ProblemLog {
 
   emit(name, payload) {
     for (const fn of this.handlers.get(name) ?? []) fn(payload);
-  }
-
-  /** Seconds, for the wrong-tool throttle (the levels' clocks differ; any steady one will do). */
-  tick(dt) {
-    this.clock += dt;
   }
 
   /**
@@ -165,9 +159,9 @@ export class ProblemLog {
     const def = PROBLEMS[key];
     if (!def) return;
     this.wrongs[key] = (this.wrongs[key] ?? 0) + 1;
-    const last = this._wrongAt.get(key) ?? -Infinity;
-    if (this.clock - last < 1.5 && this._wrongAt.has(key)) return;
-    this._wrongAt.set(key, this.clock);
+    const now = (globalThis.performance?.now() ?? Date.now()) / 1000;
+    if (now - (this._wrongAt.get(key) ?? -Infinity) < 1.5) return;
+    this._wrongAt.set(key, now);
     this.emit("wrong", { key, def, used, text: wrongLine(def, used) });
   }
 

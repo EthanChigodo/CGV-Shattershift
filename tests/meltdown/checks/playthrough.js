@@ -36,6 +36,10 @@ export async function run(page) {
   if (phantom.length) failures.push(`${phantom.length} hit(s) with nothing actually in the way, first at ${phantom[0].d} m`);
   if (log.hits.length > 14) failures.push(`${log.hits.length} hits in one run - far more than the obstacles account for`);
   if (!log.end || !["depart", "fade", "roofArrive"].includes(log.end.phase)) failures.push(`did not reach the lift at the end (${JSON.stringify(log.end)})`);
+  // The right-tool problems (problems.js), answered with the right tool.
+  const problems = await page.evaluate(() => globalThis.__meltdown.game.problems.summary());
+  if (problems.count < 3) failures.push(`solved ${problems.count} of the 3 right-tool problems (${JSON.stringify(problems.solved)})`);
+  notes.solved = log.solved;
   notes.hits = log.hits.map((h) => `${h.d}m ${h.what}`);
   notes.end = log.end;
   return { failures, notes };

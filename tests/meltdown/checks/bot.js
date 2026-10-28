@@ -6,6 +6,8 @@
  * slide, the trigger, and mashing at ducts. It sees what a careful player
  * sees - it tests where its body will be over the next second against the
  * level's own collide() - and aims at glass by projecting it to the screen.
+ * The right-tool problems (problems.js) it answers as a player should: a
+ * cryo sphere at a fire wall, a full charged shot at the jammed shutter.
  *
  * Returns a log of every hit (what, where) and why the run ended.
  *
@@ -22,7 +24,8 @@ export const BOT_SOURCE = `
   const centre = new THREE.Vector3();
   const size = new THREE.Vector3();
   const p = new THREE.Vector3();
-  const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0 };
+  const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0, solved: [] };
+  const answered = new Set();
   let t = 0;
   let lastHits = 0;
   let lastCollide = [];
@@ -102,6 +105,18 @@ export const BOT_SOURCE = `
         target.b.getWorldPosition(p).project(g.camera);
         g.pointer.set(p.x, p.y);
       } else g.pointer.set(0, -0.1);
+      // A fire wall or the jammed shutter: the right tool, once, from 30 m.
+      const problem = target?.b.userData.problem;
+      if (problem) {
+        r.firing = false;
+        if (!answered.has(target.b) && target.d < 30 && r.balls >= 2) {
+          answered.add(target.b);
+          g.arsenal.select(problem === "firewall" ? "cryo" : "glass");
+          g._shoot(problem === "shutter" ? { charged: 1 } : {});
+          g.arsenal.select("glass");
+          log.solved.push(problem + "@" + Math.round(r.distance));
+        }
+      }
     } else r.firing = false;
 
     g.update(dt, 100 + t);

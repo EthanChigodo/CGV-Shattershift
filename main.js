@@ -71,6 +71,8 @@ import { NameCard } from "./src/ui/name-card.js";
 import { LeaderboardView } from "./src/ui/leaderboard-view.js";
 import { TrophyRoom } from "./src/ui/trophy-room.js";
 import { FieldManual } from "./src/ui/field-manual.js";
+import { ProblemLog, PROBLEMS } from "./src/systems/problems.js";
+import { ProblemCue } from "./src/ui/problem-cue.js";
 import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
 import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/systems/ghosts.js";
 import { TabbedScreen } from "./src/ui/tabbed-screen.js";
@@ -1179,6 +1181,7 @@ function buildCauseway(mode = "story") {
   });
   causeway.builtFor = runDifficulty;
   causeway.addTo(scene);
+  wireProblems(causeway);
   // The Skyline is reached by lift now, not woken into: no containment pod.
   // (Level 1 streams its props and resets their roots' visibility, so hide the parts.)
   causeway.pod?.root?.traverse((o) => { if (o !== causeway.pod.root) o.visible = false; });
@@ -1295,6 +1298,31 @@ function activateSerum(type) {
   arsenal.activate(type);
   // The banner across the top names it (src/ui/serum-fx.js).
   run.flash = Math.max(run.flash, 0.25);
+}
+
+/*
+ * The right-tool problems (src/systems/problems.js): a fire wall only cryo
+ * puts out, a door only shock opens, supplies only gravity reaches... The
+ * levels report what they meet, solve and get wrong to one log; the cue says
+ * it (src/ui/problem-cue.js), and a solve scores and goes in the run report.
+ * (The Labs and the Roof take the log itself: getMeltdown.)
+ */
+const problemLog = new ProblemLog();
+new ProblemCue().bind(problemLog);
+problemLog.on("solved", ({ key, bonus }) => {
+  score += bonus;
+  if (runReport && runKind === "story") {
+    const at = reportLevel() ?? PROBLEMS[key].level;
+    runReport.solved = { ...runReport.solved, [at]: (runReport.solved?.[at] ?? 0) + 1 };
+  }
+  updateUI();
+});
+/** The Skyline's and the Foundry's problems, from their events (a new level: a new log). */
+function wireProblems(level) {
+  problemLog.reset();
+  level.events.on("problem-sighted", (p) => { if (level === causeway || level === foundry) problemLog.sighted(p.key, p); });
+  level.events.on("problem-wrong", (p) => { if (level === causeway || level === foundry) problemLog.wrong(p.key, p.used); });
+  level.events.on("problem-solved", (p) => { if (level === causeway || level === foundry) problemLog.solve(p.key, p); });
 }
 
 const _forward = new THREE.Vector3(0, 0, -1);
@@ -1841,6 +1869,8 @@ function getMeltdown() {
     // A touch screen can't hold the pointer: the roof from above, aimed with a finger.
     topView: PHONE,
     reactionLayer: story,
+    // The right-tool problems' log (the cue, the score and the report listen).
+    problems: problemLog,
   });
   meltdown.setBloom(resolvedQuality() !== "low" && gpuReport().halfFloat !== false);
   meltdownQuality();
@@ -6662,6 +6692,7 @@ globalThis.__dbg = {
   get foundry() { return foundry; },
   get causeway() { return causeway; },
   get meltdown() { return meltdown; },
+  get problems() { return problemLog; },
   enterMeltdown,
   get gravityLift() { return gravityLift; },
   get loadingScreen() { return loadingScreen; },

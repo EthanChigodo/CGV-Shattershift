@@ -60,6 +60,7 @@ import { routeSurfaceHit, locateOnRoute } from "../../systems/spheres.js";
 import { cloneCharacter } from "./characters.js";
 import { ashify } from "./ash.js";
 import { compileReady } from "../../systems/warm-up.js";
+import { placeLabsProblems } from "./problems.js";
 
 const _liftCam = new THREE.Vector3();
 const _liftFwd = new THREE.Vector3();
@@ -275,6 +276,9 @@ export class MeltdownLevel {
     this._buildBeatCorridor();
     this._buildBeatBlackout();
     this._buildBeatStairwell();
+    // The right-tool problems (problems.js): fire walls to freeze, a jammed
+    // shutter to blast - before the filler, which keeps clear of them.
+    this.problemSet = placeLabsProblems(this);
     this._buildLifts();
     this._buildPatterns();
     this._buildCorridorDressing();
@@ -1777,6 +1781,7 @@ export class MeltdownLevel {
     this.endLift?.dispose();
     this.lights.dispose();
     this.ambience.userData.dispose?.();
+    this.problemSet?.dispose();
     this.kit.dispose();
     this.fire.dispose();
     this._frontFire?.dispose();
