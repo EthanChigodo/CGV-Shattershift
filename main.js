@@ -280,6 +280,9 @@ let labsScale = 1;
 /** "3, 2, 1, GO" after a restart: pending until the player is in control, then counting. */
 let countdownPending = false;
 let countdownLeft = 0;
+/** How fast the numbers go: 1 for a restart, quicker coming back from a hit or a scene. */
+let countdownRate = 1;
+let countdownQuick = false;
 /**
  * The story's checkpoint: the sector the player is in and what they carried
  * into it. A death in a story run restarts that sector - with its cutscenes -
@@ -1864,6 +1867,9 @@ function getMeltdown() {
     pendingSkyline = true;
   });
   meltdown.events.on("lap", ({ laps }) => showMessage(`LAP ${laps + 1} // NEW LAYOUT`));
+  // A hit in the Labs: you stop and look back at the fire; once you face
+  // forward again, 3, 2, 1 (lecturer's feedback: no running off mid-turn).
+  meltdown.events.on("stumble", () => requestResumeCountdown());
   meltdown.events.on("collectible", collectibleFound);
   meltdown.events.on("collectible-near", collectibleNear);
   // The ending (the helicopter, then the credits) plays over the main theme.
@@ -4712,6 +4718,7 @@ function animate() {
   // The restart countdown: the world holds still (rendered, not simulated).
   if (countdownLeft > 0) tickCountdown(rawDt);
   else if (!manualStep) { trailerTime += dt; updateGame(dt, trailer.enabled ? trailerTime : clock.elapsedTime); trackRunReport(dt); trackSector(dt); trackGhost(dt); trackCheckpoint(); }
+  watchSceneHandback();
   if (countdownPending) maybeStartCountdown();
   maybeShowUnlocks();
   updateCursor();
@@ -5063,14 +5070,40 @@ function maybeStartCountdown() {
     (currentLevel === 1 && !!causeway) ||
     (currentLevel === 3 && !!meltdown && (meltdown.phase === "run" || meltdown.phase === "roof"));
   if (!inControl) return;
+  // Not while a hit's look-back is still turning the camera round.
+  if (currentLevel === 3 && meltdown.stumbling) return;
   countdownPending = false;
+  countdownRate = countdownQuick ? 1.45 : 1;
+  countdownQuick = false;
   countdownLeft = 3;
   showCountdown(3);
 }
 
+/**
+ * Coming back into control after a hit that stopped you or after a scene (a
+ * quick-time event, a cutscene): the world holds while the numbers count, so
+ * you never start running before the camera is behind you again.
+ */
+function requestResumeCountdown() {
+  if (manualStep || trailer.enabled || state !== "playing") return;
+  // The sector's first card counts you in itself.
+  if (runKind === "story" && storyStage() && !unlocksShown.has(storyStage())) return;
+  countdownPending = true;
+  countdownQuick = true;
+}
+
+/** Watches for control coming back from a scene, once a frame. */
+let sceneHeld = false;
+function watchSceneHandback() {
+  const scene = state === "cutscene" || story.player.active || storyPlaying
+    || (currentLevel === 3 && !!meltdown && (meltdown.phase === "story" || meltdown.phase === "arrive"));
+  if (sceneHeld && !scene && state === "playing" && !paused) requestResumeCountdown();
+  sceneHeld = scene;
+}
+
 function tickCountdown(dt) {
   const before = Math.ceil(countdownLeft);
-  countdownLeft = Math.max(0, countdownLeft - dt);
+  countdownLeft = Math.max(0, countdownLeft - dt * countdownRate);
   const now = Math.ceil(countdownLeft);
   if (now !== before) showCountdown(now);
   if (countdownLeft <= 0) {

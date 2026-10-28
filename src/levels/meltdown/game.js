@@ -135,7 +135,7 @@ const STUMBLE_RECOVER = 0.6;
 /** Running speed through a stumble: nearly stopped looking back, then easing back to full. */
 function stumbleFactor(slow) {
   if (slow <= 0) return 1;
-  if (slow > STUMBLE_RECOVER) return 0.22;
+  if (slow > STUMBLE_RECOVER) return 0.08;
   const k = 1 - slow / STUMBLE_RECOVER;
   return 0.22 + 0.78 * k * k * (3 - 2 * k);
 }
@@ -474,7 +474,7 @@ export class MeltdownGame {
       jumpBuffer: 0, slideBuffer: 0, landed: 0,
       vitality: START_VITALITY, balls: START_BALLS, alive: true, invulnerable: 0, slow: 0,
       finished: false, heat: 0, lockout: 0, weakened: 0, coolant: 0, adrenaline: 0,
-      overchargeShots: 0, barrierShield: 0, fireDistance: -45, lookBack: 0, pushing: false,
+      overchargeShots: 0, barrierShield: 0, fireDistance: -45, lookBack: 0, lookSettle: 0, pushing: false,
       firing: false, fireCooldown: 0, hits: 0, shots: 0, breaks: 0, downs: 0, speed: 0,
       baseSpeed: this.level ? this.level.speedAt(0) : 8.2,
     });
@@ -1270,7 +1270,15 @@ export class MeltdownGame {
     }
     // On its own (the preview) the level runs its own serums' clocks.
     if (this._ownArsenal && playing) this.arsenal.update(dt);
-    r.lookBack = Math.max(0, r.lookBack - dt);
+    // After the look-back, a moment for the camera to swing forward again.
+    if (r.lookBack > 0) r.lookBack = Math.max(0, r.lookBack - dt);
+    else r.lookSettle = Math.max(0, (r.lookSettle ?? 0) - dt);
+  }
+
+  /** A hit's look-back (and the camera swinging forward again) is still playing. */
+  get stumbling() {
+    const r = this.runner;
+    return this.phase === "run" && ((r.lookBack ?? 0) > 0 || (r.lookSettle ?? 0) > 0);
   }
 
   /* ---------------- Phase A ---------------- */
@@ -2162,6 +2170,7 @@ export class MeltdownGame {
     r.invulnerable = STUMBLE_LOOK + STUMBLE_RECOVER + 0.25;
     r.slow = STUMBLE_LOOK + STUMBLE_RECOVER;
     r.lookBack = this.reducedMotion ? 0 : STUMBLE_LOOK;
+    r.lookSettle = 0.32;
     this.trauma = Math.min(1, this.trauma + 0.85);
     this.hitFlash = 1;
     level.impact(1);
@@ -2172,6 +2181,8 @@ export class MeltdownGame {
     this.sfx?.hurt();
     // The dropped balls physically spill out behind you.
     if (dropped) debris.burst(centre, { kind: "ball", count: Math.min(12, dropped), speed: 3, up: 3 });
+    // The host counts you back in (3, 2, 1) once the camera faces forward again.
+    if (r.vitality > 0) this.events.emit("stumble", {});
 
     if (r.vitality <= 0) {
       r.alive = false;
@@ -2336,7 +2347,7 @@ export class MeltdownGame {
     const r = this.runner;
     Object.assign(r, {
       distance, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
-      jumpBuffer: 0, slideBuffer: 0, landed: 0, pushing: false, lookBack: 0, heat: 0, lockout: 0, slow: 0,
+      jumpBuffer: 0, slideBuffer: 0, landed: 0, pushing: false, lookBack: 0, lookSettle: 0, heat: 0, lockout: 0, slow: 0,
       vitality: START_VITALITY, balls: Math.max(r.balls, balls), alive: true, finished: false, firing: false,
       invulnerable: 2.5, fireDistance: distance - 45, speed: this.level.speedAt(distance),
     });
