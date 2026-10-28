@@ -1,16 +1,31 @@
-/** Rooftop-only, non-combat patients: telegraph -> dive -> carry/QTE -> release or sky. */
+/**
+ * Rooftop-only, non-combat patients: telegraph -> dive -> carry/QTE, seen
+ * first person -> shoot it off point-blank, or bitten, out cold and carried
+ * into the sky.
+ */
 import * as THREE from "../../three.js";
 import { cloneCharacter, createRig } from "./characters.js";
 import { ReactionHits, MASH_DIFFICULTY } from "../../story/reaction.js";
 import { StoryUI } from "../../story/story-ui.js";
 
 // All encounter balancing lives here. Accessibility options still come from ReactionHits.
+// How often they come and how fast they swoop: the circle follows you for
+// `tracking` of the `warning`, then the time left plus the `dive` is all you
+// have to get out of it - three seconds on Easy (walk), about one and a half
+// on Normal, half a second on Hard (only the quick shift, Space, gets you out).
 export const ABDUCTION = {
-  easy: { maximum: 1, warning: 3.5, qte: 5, presses: 6, dive: 0.9 },
-  normal: { maximum: 2, warning: 3, qte: 4, presses: 8, dive: 0.75 },
-  hard: { maximum: 2, warning: 2, qte: 2.5, presses: 10, dive: 0.5 },
+  easy: { maximum: 1, warning: 3, tracking: 0.7, qte: 5, presses: 6, dive: 0.75, firstSpawn: [16, 22], spawn: [22, 32], cooldown: [30, 42] },
+  normal: { maximum: 2, warning: 2.4, tracking: 1.4, qte: 4, presses: 8, dive: 0.6, firstSpawn: [9, 13], spawn: [12, 18], cooldown: [18, 26] },
+  hard: { maximum: 2, warning: 1.25, tracking: 1.05, qte: 2.5, presses: 10, dive: 0.35, firstSpawn: [6, 9], spawn: [7, 11], cooldown: [9, 14] },
 };
-export const FLIGHT = { radius: 1.5, tracking: 0.7, firstSpawn: [6, 10], spawn: [8, 14], cooldown: [12, 19], circle: [2.5, 5], lift: 4, pickup: 2, skyTransition: 1.1, gameOverDelay: 3.5, skySpeed: 12, obstacleClearance: 2.6, obstacleHeight: 2.2 };
+/** Endless Roof: from its difficulty to this over `minutes` held - faster, more often. */
+export const ENDLESS_RAMP = { minutes: 4, warning: 1.05, tracking: 0.95, dive: 0.3, cooldown: 0.45, maximum: 3 };
+export const FLIGHT = { radius: 1.5, circle: [2.5, 5], lift: 4, skyTransition: 1.1, gameOverDelay: 3.5, skySpeed: 12, obstacleClearance: 2.6, obstacleHeight: 2.2 };
+/** The struggle up close: where the eye sits under the grip, the shot and the bite. */
+// (In front of its face and under it, looking up: seen from behind its head, the face is upside down.)
+export const CLOSE = { below: 0.85, ahead: 0.55, lift: 0.3, shoot: 0.75, fireAt: 0.14, bite: 1.6, biteAt: 0.24, wakeUp: 1.4 };
+/** Eyes closing after the bite: [time, how closed] - two heavy blinks, then out. */
+const LIDS = [[0.3, 0], [0.55, 0.85], [0.72, 0.3], [1.0, 0.95], [1.12, 0.6], [1.45, 1]];
 const UP = new THREE.Vector3(0, 1, 0);
 const AVOID_ANGLES = [0, 18, 32, 48, 66, 88, 112, 138];
 const AVOID_VERTICAL_SCALES = [1, 0.55, 0.15, 0];
@@ -50,7 +65,7 @@ export class FlyingZombieEncounter {
     this.roof = game.roof;
     this.layer = layer;
     this.random = random;
-    this.tune = ABDUCTION[game.difficulty?.key] ?? ABDUCTION.normal;
+    this.base = ABDUCTION[game.difficulty?.key] ?? ABDUCTION.normal;
     this.root = new THREE.Group();
     this.root.name = "FlyingZombieEncounter";
     game.scene.add(this.root);
@@ -59,9 +74,9 @@ export class FlyingZombieEncounter {
     this.state = "idle";
     this.time = 0;
     this.elapsed = 0;
-    this.spawnIn = this._range(FLIGHT.firstSpawn);
+    this.spawnIn = this._range(this.tune.firstSpawn);
     this.attackIn = 0;
-    this.weapon = null;
+    this.kick = 0;
     this.target = new THREE.Vector3();
     this._world = new THREE.Vector3();
     this._desired = new THREE.Vector3();
@@ -93,11 +108,27 @@ export class FlyingZombieEncounter {
   _own(x) { this.owned.push(x); return x; }
   _range([a, b]) { return a + this.random() * (b - a); }
   get activeCount() { return this.actors.filter((a) => a.active).length; }
-  get controlsPlayer() { return ["grab", "carried", "release", "landing", "sky"].includes(this.state); }
+  get controlsPlayer() { return ["grab", "carried", "shoot", "bite", "release", "landing", "sky"].includes(this.state); }
   get holdsCamera() { return this.controlsPlayer; }
-  get pickupPrompt() {
-    return this.game.phase === "roof" && this.drop?.landed && this.weapon && this.game.hero.position.distanceTo(this.drop.to) <= FLIGHT.pickup
-      ? "E - PICK UP BAZOOKA" : null;
+  /** Seen through your own eyes, the launcher in your hands (game.js leaves it to us). */
+  get firstPerson() { return ["grab", "carried", "shoot", "bite"].includes(this.state); }
+
+  /** This difficulty's pacing - in Endless, quickening the longer the roof is held. */
+  get tune() {
+    const b = this.base, g = this.game;
+    if (g.mode !== "endless-roof") return b;
+    const k = THREE.MathUtils.clamp((g.roofClock ?? 0) / (ENDLESS_RAMP.minutes * 60), 0, 1);
+    const toward = (v, to) => Math.min(v, THREE.MathUtils.lerp(v, to, k));
+    const scale = THREE.MathUtils.lerp(1, ENDLESS_RAMP.cooldown, k);
+    return {
+      ...b,
+      warning: toward(b.warning, ENDLESS_RAMP.warning),
+      tracking: toward(b.tracking, ENDLESS_RAMP.tracking),
+      dive: toward(b.dive, ENDLESS_RAMP.dive),
+      maximum: Math.max(b.maximum, Math.round(THREE.MathUtils.lerp(b.maximum, ENDLESS_RAMP.maximum, k))),
+      spawn: b.spawn.map((v) => v * scale),
+      cooldown: b.cooldown.map((v) => v * scale),
+    };
   }
 
   _marker() {
@@ -192,10 +223,11 @@ export class FlyingZombieEncounter {
         break;
       }
     }
-    if (!clearSpawn) { this.spawnIn = this._range(FLIGHT.spawn); return null; }
+    if (!clearSpawn) { this.spawnIn = this._range(this.tune.spawn); return null; }
     a.angle = angle; a.age = 0; a.wait = this._range(FLIGHT.circle);
     a.state = "circle"; a.active = true; a.root.visible = true;
-    this.spawnIn = this._range(FLIGHT.spawn);
+    a.root.rotation.x = 0;
+    this.spawnIn = this._range(this.tune.spawn);
     return a;
   }
 
@@ -212,7 +244,9 @@ export class FlyingZombieEncounter {
     this.target.copy(this.game.hero.position).setY(0);
     this.marker.position.copy(this.target).y = 0.045;
     this.marker.visible = true;
-    this.game.hud.toast("LOOK UP!", "MOVE OUT OF THE RED CIRCLE", "warn", this.tune.warning * 1000);
+    // (A swoop too quick to walk out of: the quick shift.)
+    const tune = this.tune, quick = tune.warning - tune.tracking + tune.dive < 1;
+    this.game.hud.toast("LOOK UP!", quick ? "QUICK SHIFT (SPACE) OUT OF THE RED CIRCLE" : "MOVE OUT OF THE RED CIRCLE", "warn", tune.warning * 1000);
     this.game._patientSound("shriek", a.root.position, 0.65);
     return true;
   }
@@ -221,7 +255,33 @@ export class FlyingZombieEncounter {
     if (a) { a.state = "depart"; a.age = 0; }
     this.attacker = null;
     this.marker.visible = false;
-    this.attackIn = this._range(FLIGHT.cooldown);
+    this.attackIn = this._range(this.tune.cooldown);
+  }
+
+  /**
+   * A gravity sphere's black hole at `point` (game.js _gravityWell): any
+   * winged one low enough over it - circling, or coming for you - is dragged
+   * down into it and thrown off the roof. Not one carrying you off.
+   */
+  gravityPull(point, radius) {
+    let plucked = 0;
+    for (const a of this.actors) {
+      if (!a.active || !["circle", "attack"].includes(a.state)) continue;
+      if (a === this.attacker && !["warning", "dive"].includes(this.state)) continue;
+      const p = a.root.position;
+      if (Math.hypot(p.x - point.x, p.z - point.z) > radius + 3 || p.y - point.y > 12) continue;
+      if (a === this.attacker) {
+        // Its swoop is over: no circle, no grab.
+        this.marker.visible = false;
+        this.attacker = null;
+        this.state = "idle";
+        this.attackIn = this._range(this.tune.cooldown);
+      }
+      a.state = "pulled"; a.age = 0; a.pullTo = point.clone().setY(point.y + 1.2);
+      plucked += 1;
+    }
+    if (plucked) this.game._patientSound?.("shriek", point, 0.9);
+    return plucked;
   }
 
   _faceDirection(actor, direction, dt, speed = 4) {
@@ -345,7 +405,7 @@ export class FlyingZombieEncounter {
     const g = this.game;
     if (g.paused || this.disposed) return;
     this.time += dt;
-    this._updateWeapon(dt);
+    const tune = this.tune;
     const playing = g.phase === "roof" && g.runner.alive;
     if (!playing && !this.controlsPlayer) {
       this.marker.visible = false;
@@ -359,7 +419,7 @@ export class FlyingZombieEncounter {
     this.attackIn -= dt;
     if (playing) {
       this.spawnIn -= dt;
-      if (this.spawnIn <= 0 && this.activeCount < this.tune.maximum) this._spawn();
+      if (this.spawnIn <= 0 && this.activeCount < tune.maximum) this._spawn();
     }
     for (const a of this.actors) {
       if (!a.active) continue;
@@ -377,6 +437,22 @@ export class FlyingZombieEncounter {
         this._moveAvoiding(a, this._flightTarget);
         this._faceDirection(a, this._heading, dt, 3);
         if (a.age > 4) { a.active = false; a.root.visible = false; }
+      } else if (a.state === "pulled") {
+        // Dragged down into a gravity sphere's black hole, then flung off the roof.
+        this._flightTarget.copy(a.pullTo);
+        a.root.position.lerp(this._flightTarget, 1 - Math.exp(-dt * 4));
+        a.root.rotation.x += dt * 3;
+        if (a.age > 0.7) {
+          const side = Math.abs(a.root.position.x) > 0.5 ? Math.sign(a.root.position.x) : 1;
+          a.velocity = new THREE.Vector3(side * 14, 4, 0);
+          a.state = "blasted"; a.age = 0; a.spin = side * 6;
+        }
+      } else if (a.state === "blasted") {
+        // Shot off point-blank: thrown back tumbling, and down off the roof.
+        a.velocity.y -= 11 * dt;
+        a.root.position.addScaledVector(a.velocity, dt);
+        a.root.rotation.x += dt * a.spin;
+        if (a.age > 3.5) { a.active = false; a.root.visible = false; a.root.rotation.x = 0; }
       }
       this._poseActor(a, dt, time);
     }
@@ -386,7 +462,7 @@ export class FlyingZombieEncounter {
     }
     if (this.state === "warning") {
       if (!this._canAttack()) { this._depart(); this.state = "idle"; return; }
-      if (this.elapsed <= FLIGHT.tracking) this.target.copy(g.hero.position).setY(0);
+      if (this.elapsed <= tune.tracking) this.target.copy(g.hero.position).setY(0);
       this.marker.position.copy(this.target).y = 0.045;
       this.marker.scale.setScalar(1 + 0.025 * Math.sin(time * 15));
       this._desired.copy(this.target).add(new THREE.Vector3(3, 9, 3));
@@ -394,12 +470,12 @@ export class FlyingZombieEncounter {
       this._moveAvoiding(this.attacker, this._desired, 1 - Math.exp(-dt * 3));
       this._heading.subVectors(this.attacker.root.position, this._previous);
       this._faceDirection(this.attacker, this._heading, dt);
-      if (this.elapsed >= this.tune.warning) {
+      if (this.elapsed >= tune.warning) {
         this.state = "dive"; this.elapsed = 0;
         this.diveFrom = this.attacker.root.position.clone();
       }
     } else if (this.state === "dive") {
-      const u = Math.min(1, this.elapsed / this.tune.dive);
+      const u = Math.min(1, this.elapsed / tune.dive);
       this._desired.copy(this.target).add(new THREE.Vector3(0, 1.55, -0.15));
       this._previous.copy(this.attacker.root.position);
       this._flightTarget.lerpVectors(this.diveFrom, this._desired, smooth(u));
@@ -412,9 +488,9 @@ export class FlyingZombieEncounter {
         const grabPoint = this._desired.copy(this.target).add(new THREE.Vector3(0, 1.55, -0.15));
         const reached = this.attacker.root.position.distanceTo(grabPoint) <= 1.65;
         if (reached && Math.hypot(p.x - this.target.x, p.z - this.target.z) <= FLIGHT.radius && p.y < 0.9 && this.roof.groundAt(p) === 0 && this.landingSpot && this._canAttack()) this._grab();
-        else if (this.elapsed >= this.tune.dive + 1.2) { this._depart(); this.state = "idle"; }
+        else if (this.elapsed >= tune.dive + 1.2) { this._depart(); this.state = "idle"; }
       }
-    } else if (this.state === "grab" || this.state === "carried" || this.state === "release") {
+    } else if (["grab", "carried", "shoot", "bite", "release"].includes(this.state)) {
       const a = this.attacker;
       // Small lateral correction toward a clear landing area, visibly flown.
       this._flightTarget.copy(a.root.position);
@@ -427,13 +503,29 @@ export class FlyingZombieEncounter {
       this._faceDirection(a, this._heading, dt, 2.5);
       this._updateCarryGrip(dt);
       this._syncPlayer(dt);
-      this._carryCamera(dt);
+      if (this.firstPerson) this._closeCamera(dt);
+      else this._carryCamera(dt);
       if (this.state === "grab" && this.elapsed >= 0.35) { this.state = "carried"; this.elapsed = 0; this._startQTE(); }
       if (this.state === "carried") {
         this._struggleAudio();
+        const presses = this.reactions._s?.presses ?? 0;
+        if (presses > (this._kickPresses ?? 0)) this.kick = Math.max(this.kick, 1);
+        this._kickPresses = presses;
         const result = this.reactions.update(dt);
-        if (result === "success") { this._endQTE(); g.sfx?.playAbductionVoice?.("escape", { replace: true }); this.state = "release"; this.elapsed = 0; g.audio.whoosh(); }
-        else if (result === "fail") { this._endQTE(); this._startSky(); }
+        if (result === "success") { this._endQTE(); g.sfx?.playAbductionVoice?.("escape", { replace: true }); this.state = "shoot"; this.elapsed = 0; this.fired = false; }
+        else if (result === "fail") { this._endQTE(); this._startBite(); }
+      } else if (this.state === "shoot") {
+        if (!this.fired && this.elapsed >= CLOSE.fireAt) this._pointBlank();
+        if (this.elapsed >= CLOSE.shoot) {
+          const a = this.attacker;
+          this._release();
+          // (Not departing: blown off - _release's _depart, overruled.)
+          a.state = "blasted"; a.age = 0; a.spin = (this.random() < 0.5 ? -1 : 1) * (4 + this.random() * 3);
+        }
+      } else if (this.state === "bite") {
+        if (!this.bitten && this.elapsed >= CLOSE.biteAt) this._bite();
+        this._lids(this._closed(this.elapsed));
+        if (this.elapsed >= CLOSE.bite) this._startSky();
       } else if (this.state === "release" && this.elapsed >= 0.25) this._release();
     } else if (this.state === "landing") {
       const duration = Math.sqrt(2 * Math.max(0.01, this.releaseFrom.y) / 14);
@@ -473,17 +565,16 @@ export class FlyingZombieEncounter {
     this.playerHome = g.avatar.root.parent;
     a.root.updateMatrixWorld(true);
     a.carry.attach(g.avatar.root);
-    this._dropWeapon();
+    this._holdUp();
     g.avatar.hold = 0; g.avatar.shadow.visible = false;
     this.cameraDirection = g.camera.position.clone().sub(g.hero.position).setY(0).normalize();
     if (this.cameraDirection.lengthSq() < 0.1) this.cameraDirection.set(0.6, 0, 0.8);
     this.cameraSide = new THREE.Vector3().crossVectors(UP, this.cameraDirection);
-    // Release a few metres from the dropped gun, so recovery means walking
-    // back to it. Both destinations are checked against the existing roof.
+    // Let go a few metres on - a clear spot on the roof, a clear way down to it.
     for (let i = 0; i < 8; i++) {
       const angle = i * Math.PI / 4;
       const candidate = safeAbductionSpot(this.roof, g.hero.position.clone().add(new THREE.Vector3(Math.cos(angle) * 4, 0, Math.sin(angle) * 4)));
-      if (candidate && candidate.distanceTo(this.drop.to) > FLIGHT.pickup + 1 && candidate.distanceTo(g.hero.position) < 6 && this._clearReleasePath(g.hero.position, candidate)) {
+      if (candidate && candidate.distanceTo(g.hero.position) > 2 && candidate.distanceTo(g.hero.position) < 6 && this._clearReleasePath(g.hero.position, candidate)) {
         this.landingSpot.copy(candidate);
         break;
       }
@@ -495,6 +586,8 @@ export class FlyingZombieEncounter {
     g.sfx?.playAbductionVoice?.("grab", { replace: true });
     this._nextEffort = this.time + 0.9;
     this._lastEffortPresses = 0;
+    this._kickPresses = 0;
+    this.unconscious = false;
   }
 
   _clearReleasePath(from, to) {
@@ -549,7 +642,126 @@ export class FlyingZombieEncounter {
     const struggleTime = this.time - this.grabAt;
     g.avatar.body.position.set(0, -1, 0);
     g.avatar.root.rotation.set(Math.PI / 2 + Math.sin(struggleTime * 2.3) * 0.05, 0, Math.sin(struggleTime * 3.1) * 0.08);
-    g.avatar.flail?.(struggleTime, THREE.MathUtils.lerp(1, 0.75, Math.min(1, struggleTime / 3)));
+    // (Out cold after the bite: hanging limp.)
+    g.avatar.flail?.(struggleTime, this.unconscious ? 0.06 : THREE.MathUtils.lerp(1, 0.75, Math.min(1, struggleTime / 3)));
+  }
+
+  /* ---- up close: first person ---- */
+
+  _headWorld(actor, out) {
+    const head = actor.rig?.bones?.head;
+    if (head) return head.getWorldPosition(out);
+    // (A stand-in without bones: ahead of the grip, along the body.)
+    return out.set(0, 0.2, 0.9).applyQuaternion(actor.root.quaternion).add(actor.root.position);
+  }
+
+  /**
+   * The eye: held up under its face, looking up into it - shaken by every tap
+   * of the struggle, thrown by the shot, lunged at by the bite.
+   */
+  _closeCamera(dt) {
+    const g = this.game, a = this.attacker, cam = g.camera;
+    a.root.updateMatrixWorld(true);
+    const head = this._headWorld(a, this._look);
+    // Its way forward: from the grip to the head.
+    this._heading.subVectors(head, g.hero.position).setY(0);
+    if (this._heading.lengthSq() < 1e-4) this._heading.copy(this.cameraDirection).negate();
+    const eye = this._desired.copy(head).addScaledVector(this._heading.normalize(), CLOSE.ahead);
+    eye.y -= CLOSE.below;
+    if (this.state === "bite") eye.lerp(head, 0.5 * smooth(Math.min(1, this.elapsed / CLOSE.biteAt)));
+    this.kick = Math.max(0, this.kick - dt * 3.5);
+    const t = this.time, calm = g.reducedMotion ? 0.3 : 1;
+    const shake = (0.012 + 0.05 * this.kick) * calm;
+    eye.x += Math.sin(t * 37) * shake; eye.y += Math.sin(t * 29 + 1) * shake; eye.z += Math.sin(t * 41 + 2) * shake;
+    // (Aimed a little under it: the face sits above the struggle's prompt.)
+    this._aimCamera(eye, this._flightTarget.copy(head).setY(head.y - CLOSE.lift), this.state === "grab" ? 1 - Math.exp(-dt * 9) : 1);
+    cam.rotateZ((Math.sin(t * 6.5) * 0.06 + Math.sin(t * 23) * 0.04 * this.kick) * calm);
+    this._handsUp();
+  }
+
+  /** The launcher, in your hands under its face (as game.js holds it first person). */
+  _handsUp() {
+    const g = this.game, rig = g.launcher.rig;
+    if (rig.parent !== g.camera) g.camera.add(rig);
+    const sway = Math.sin(this.time * 9) * 0.02 * (0.4 + this.kick);
+    rig.position.set(0.3 + sway, -0.34 + Math.abs(sway), -0.58 + g.launcher.recoil * 0.14);
+    rig.rotation.set(0.12 + g.launcher.recoil * 0.3, 0.06, sway);
+  }
+
+  /** Into first person: the body out of the way, the launcher kept. */
+  _holdUp() {
+    const g = this.game, rig = g.launcher.rig;
+    this.weaponHome = { parent: rig.parent, p: rig.position.clone(), q: rig.quaternion.clone() };
+    g.avatar.root.visible = false;
+    this._handsUp();
+  }
+
+  /** Out of first person: the body back, the launcher back on its shoulder. */
+  _holster() {
+    const g = this.game, rig = g.launcher.rig, home = this.weaponHome;
+    g.avatar.root.visible = true;
+    if (!home) return;
+    if (rig.parent !== home.parent) home.parent.add(rig);
+    rig.position.copy(home.p); rig.quaternion.copy(home.q);
+    this.weaponHome = null;
+  }
+
+  /** The struggle won: the launcher up under its jaw, and fire. */
+  _pointBlank() {
+    const g = this.game, a = this.attacker;
+    this.fired = true;
+    const at = this._headWorld(a, new THREE.Vector3());
+    g.launcher.recoil = 1;
+    this.kick = 2;
+    g.audio.shot?.(false);
+    g.audio.crash?.(0.9);
+    g.sphereImpact?.splash(at, "shock", 1.4, null, { ground: false });
+    g.debris?.sparks(at, { count: 40, speed: 8 });
+    g._patientSound?.("death", at, 1);
+    // Thrown back the way it faced, and up: a.velocity, for "blasted".
+    this._heading.subVectors(at, g.hero.position).setY(0);
+    if (this._heading.lengthSq() < 1e-4) this._heading.copy(this.cameraDirection).negate();
+    a.velocity = this._heading.normalize().multiplyScalar(9).add(new THREE.Vector3(0, 5, 0));
+  }
+
+  /** The struggle lost: it bites. */
+  _startBite() {
+    this.state = "bite"; this.elapsed = 0; this.bitten = false;
+    this.game._patientSound?.("growl", this.attacker.root.position, 1);
+  }
+
+  _bite() {
+    const g = this.game;
+    this.bitten = true;
+    this.kick = 2.5;
+    g.hitFlash = 1;
+    g.hud.flashDamage?.();
+    g.audio.stumble?.();
+    g.sfx?.play?.("body-hit", { volume: 0.8, cooldown: 0.3, cooldownKey: "abduction-bite" });
+    this.unconscious = true;
+  }
+
+  /** How closed the eyes are, `t` into the bite. */
+  _closed(t) {
+    if (t <= LIDS[0][0]) return 0;
+    for (let i = 1; i < LIDS.length; i++) {
+      const [t1, v1] = LIDS[i], [t0, v0] = LIDS[i - 1];
+      if (t <= t1) return v0 + (v1 - v0) * smooth((t - t0) / (t1 - t0));
+    }
+    return 1;
+  }
+
+  /** Black over the screen as the eyes close (0 open .. 1 out cold). */
+  _lids(closed) {
+    if (!this._lidsEl) {
+      if (closed <= 0 || typeof document.createElement !== "function") return;
+      const el = document.createElement("div");
+      el.className = "abduction-lids";
+      el.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;background:radial-gradient(ellipse 120% 90% at 50% 50%,rgba(20,0,0,.9) 0%,#000 62%);";
+      document.body.appendChild(el);
+      this._lidsEl = el;
+    }
+    this._lidsEl.style.opacity = String(THREE.MathUtils.clamp(closed, 0, 1));
   }
 
   _aimCamera(position, look, blend) {
@@ -571,6 +783,7 @@ export class FlyingZombieEncounter {
 
   _release() {
     const g = this.game;
+    this._holster();
     (this.playerHome ?? g.scene).attach(g.avatar.root);
     g.avatar.root.rotation.set(0, g.hero.yaw, 0);
     g.avatar.body.position.set(0, 0, 0);
@@ -579,6 +792,7 @@ export class FlyingZombieEncounter {
     this.state = "landing"; this.elapsed = 0;
     this._depart();
     g.avatar.reachUp = 0;
+    g.avatar.hold = 1;
   }
 
   _land() {
@@ -590,61 +804,15 @@ export class FlyingZombieEncounter {
     this.state = "return"; this.elapsed = 0;
     this.returnPosition = g.camera.position.clone(); this.returnRotation = g.camera.quaternion.clone();
     document.body.classList.remove("story-cutscene");
-    g.hud.toast("YOU BROKE FREE", "RECOVER YOUR BAZOOKA ON THE ROOF", "", 2600);
+    g.hud.toast("YOU BROKE FREE", "SHOT IT OFF POINT-BLANK", "", 2600);
     g.audio.land?.();
     // MeltdownAudio has no land() cue; use the existing recorded body impact.
     g.sfx?.play?.("body-hit", { volume: 0.45, cooldown: 0.3, cooldownKey: "abduction-landing" });
   }
 
-  _dropWeapon() {
-    if (this.weapon) return; // A second abduction never duplicates an unrecovered weapon.
-    const g = this.game, weapon = g.launcher.rig;
-    const home = { parent: weapon.parent, p: weapon.position.clone(), q: weapon.quaternion.clone(), s: weapon.scale.clone() };
-    g.scene.attach(weapon);
-    const from = weapon.position.clone(), rotation = weapon.quaternion.clone();
-    const to = safeAbductionSpot(this.roof, from) ?? this.landingSpot.clone();
-    const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.random() * Math.PI * 2, 0.1));
-    weapon.quaternion.copy(resting); weapon.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(weapon);
-    to.y = box.isEmpty() ? 0.15 : from.y - box.min.y + 0.045;
-    weapon.quaternion.copy(rotation);
-    weapon.updateMatrixWorld(true);
-    this.weapon = weapon;
-    this.drop = { home, from, to, rotation, resting, t: 0, duration: Math.sqrt(2 * Math.max(0.05, from.y - to.y) / 14), landed: false };
-  }
-
-  _updateWeapon(dt) {
-    const d = this.drop;
-    if (!this.weapon || !d || d.landed) return;
-    d.t += dt;
-    const u = Math.min(1, d.t / d.duration);
-    this.weapon.position.lerpVectors(d.from, d.to, u);
-    this.weapon.position.y = Math.max(d.to.y, d.from.y - 7 * d.t * d.t);
-    this.weapon.quaternion.slerpQuaternions(d.rotation, d.resting, u);
-    this.weapon.rotateZ(Math.sin(u * Math.PI) * 0.35);
-    if (u === 1) { d.landed = true; this.weapon.position.copy(d.to); this.weapon.quaternion.copy(d.resting); }
-  }
-
-  pickup() {
-    if (!this.pickupPrompt || this.controlsPlayer || this.game.paused) return false;
-    this._restoreWeapon();
-    this.game.avatar.hold = 1;
-    this.game._placeLauncher(false);
-    this.game.audio.pickup?.();
-    this.game.hud.toast("BAZOOKA RECOVERED", "", "", 1200);
-    return true;
-  }
-
-  _restoreWeapon() {
-    if (!this.weapon) return;
-    const { parent, p, q, s } = this.drop.home;
-    parent.add(this.weapon);
-    this.weapon.position.copy(p); this.weapon.quaternion.copy(q); this.weapon.scale.copy(s);
-    this.weapon = null; this.drop = null;
-  }
-
   _startSky() {
     const g = this.game;
+    this._holster();
     this.state = "sky"; this.elapsed = 0; this.skyTime = 0; this.gameOverShown = false;
     g.runner.alive = false; g.runner.vitality = 0;
     this.skyFrom = g.camera.position.clone(); this.skyRotationFrom = g.camera.quaternion.clone();
@@ -675,6 +843,8 @@ export class FlyingZombieEncounter {
     this._faceDirection(this.attacker, this._heading, dt, 5);
     this._updateCarryGrip(dt);
     this._syncPlayer(dt);
+    // Coming round (bitten) as it carries you off.
+    if (this.unconscious) this._lids(1 - smooth(this.skyTime / CLOSE.wakeUp));
     const blend = smooth(this.skyTime / FLIGHT.skyTransition);
     cam.position.lerpVectors(this.skyFrom, this.skyPosition, blend);
     cam.quaternion.slerpQuaternions(this.skyRotationFrom, this.skyRotation, blend);
@@ -697,7 +867,9 @@ export class FlyingZombieEncounter {
       g.avatar.body.position.set(0, 0, 0);
       g.avatar.shadow.visible = true;
     }
-    this._restoreWeapon();
+    this._holster();
+    this._lidsEl?.remove();
+    this._lidsEl = null;
     g.avatar.hold = 1; g.avatar.reachUp = 0;
     g.avatar.body.position.set(0, 0, 0);
     if (this.ownLayer) { this.layer.reactions.dispose(); this.layer.ui.dispose(); }

@@ -106,6 +106,8 @@ export class StoryLayer {
    *   retry({id, from}), reactionStart({id}), reactionSuccess({id}), line(line) }
    * @param {number} [o.deathSeconds]  the default death on a failed reaction
    *   (red, then black) before the retry; 0 = the host handles it and calls retry()
+   *   - unless `on.fail` returns "over": one chance, the death plays and then,
+   *   instead of the retry, the scene stops and `on.over()` ends the run
    * @param {string} [o.deathLine]  a subtitle over the death
    */
   play(scene, { camera = null, ctx = {}, on = {}, deathSeconds = 1.8, deathLine = null, deathFx = null } = {}) {
@@ -129,8 +131,8 @@ export class StoryLayer {
     bind("reaction-start", on.reactionStart);
     bind("reaction-success", on.reactionSuccess);
     this._off.push(p.on("reaction-fail", (info) => {
-      on.fail?.(info);
-      if (this._deathSeconds > 0) this._death = { t: 0, info };
+      const over = on.fail?.(info) === "over";
+      if (this._deathSeconds > 0) this._death = { t: 0, info, over: over ? on.over ?? (() => {}) : null };
     }));
     this._off.push(p.on("done", (info) => {
       this.seen.add(info.id);
@@ -196,7 +198,14 @@ export class StoryLayer {
         this.ui.setFade(Math.min(1, Math.max(0, (d.t - 0.35) / 0.6)));
       }
       if (this._deathLine && d.t > 0.4) this.ui.say(this._deathLine.who, this._deathLine.text);
-      if (d.t >= total) this.retry();
+      if (d.t >= total) {
+        // One chance (on.fail said "over"): no retry - the scene stops and the host ends the run.
+        if (d.over) {
+          const over = d.over;
+          this.stop();
+          over();
+        } else this.retry();
+      }
       return { state: "failed", t: this.player.t, timeScale: 0 };
     }
     const out = this.player.update(dt);

@@ -19,9 +19,16 @@ import { isPadCode, padLabel } from "../systems/input-glyphs.js";
  * on the end: a browser that once asked before they existed asks again.
  */
 const PICTURES = new URL("../../assets/ui/unlocks/", import.meta.url).href;
-const PICTURES_VERSION = 2;
+const PICTURES_VERSION = 4;
 
-const TIP_COLOURS = { vent: "#9fe8d8", sprinkler: "#ff6a4a" };
+/** What each sphere is for, where the card brings it in. */
+const SPHERE_USE = {
+  glass: "Breaks glass - the panes, the switches' covers, the cells.",
+  shock: "Shatters all the glass round where it hits - and its EMP is the only thing that brings down HALCYON's security drones.",
+  cryo: "Freezes everything round where it hits, and puts fire out - the fire walls across the Labs burn until a cryo sphere hits them.",
+  gravity: "A black hole: every patient near it is pulled in, lifted off their feet and flung at the open ledge - near one, over it. It drags a winged one out of the sky too.",
+};
+const TIP_COLOURS = { firewall: "#ff8a3a", drone: "#ff4a3a", brute: "#7a5cff", vent: "#9fe8d8", sprinkler: "#ff6a4a" };
 const ABILITY_COLOURS = { throw: "#ffd9a0", launcher: "#9fefff", charge: "#7fe3ff", focus: "#a9c8ff", dodge: "#ff8a5c" };
 
 const hex = (n) => `#${n.toString(16).padStart(6, "0")}`;
@@ -102,14 +109,16 @@ export class UnlockCard {
     this.where.textContent = tipsOnly ? `Endless · ${STAGE_NAMES[stage].replace(/^Sector \d+ · /, "")}` : STAGE_NAMES[stage];
     this.root.querySelector(".uc-title").textContent = tipsOnly ? "Know this first" : "New abilities";
     const items = [];
-    const ball = tipsOnly ? null : BALLS[gains.sphere];
-    if (ball) {
+    for (const key of tipsOnly ? [] : gains.spheres) {
+      const ball = BALLS[key];
+      // (The first one of all needs no "change sphere": it's the only one yet.)
+      const first = stage === "foundry" && key === gains.spheres[0];
       items.push({
-        key: gains.sphere,
-        tag: stage === "foundry" ? "Sphere" : "New sphere",
+        key,
+        tag: first ? "Sphere" : "New sphere",
         name: `${ball.name} sphere`,
-        text: `${ball.text} Costs ${ball.cost} sphere${ball.cost > 1 ? "s" : ""}.`,
-        how: stage === "foundry" ? [] : SPHERE_HOW,
+        text: `${SPHERE_USE[key] ?? ball.text} Costs ${ball.cost} sphere${ball.cost > 1 ? "s" : ""}.`,
+        how: first ? [] : SPHERE_HOW,
         colour: hex(ball.colour),
       });
     }

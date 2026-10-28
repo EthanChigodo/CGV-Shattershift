@@ -228,7 +228,8 @@ export class StoryUI {
    *   press, and a thick bar ticked off in presses (src/ui/mash-prompt.css)
    * @param {number} [view.step]    a mash: how much one press fills (0..1)
    */
-  showReaction({ label, keys, layout = "single", bar = false, mash = false, step = 0 }) {
+  /** `hold`: the key is held, not tapped (on a touch screen its badge says HOLD, not TAP). */
+  showReaction({ label, keys, layout = "single", bar = false, mash = false, hold = false, step = 0 }) {
     this.react.classList.remove("success", "fail");
     this.react.classList.toggle("mash", mash);
     this.reactBar.classList.remove("tap-a", "tap-b");
@@ -246,7 +247,7 @@ export class StoryUI {
         this.reactKeys.appendChild(plus);
       }
       const k = div("story-key", this.reactKeys);
-      const text = keyLabel(code);
+      const text = hold ? keyLabel(code).replace("TAP", "HOLD") : keyLabel(code);
       if (text.length > 2) k.classList.add("wide");
       k.innerHTML = `<svg viewBox="0 0 74 74"><circle class="track" cx="37" cy="37" r="32"/><circle class="timer" cx="37" cy="37" r="32"/></svg><b>${text}</b>`;
       this.reactKeyEls.push(k);

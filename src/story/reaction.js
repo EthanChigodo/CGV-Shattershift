@@ -260,6 +260,7 @@ export class ReactionHits {
       bar: kind === "mash" || kind === "hold",
       // A mash gets the big pulsing prompt, its bar marked in presses.
       mash: kind === "mash",
+      hold: kind === "hold",
       step: kind === "mash" ? s.gain : 0,
     });
     this._draw();

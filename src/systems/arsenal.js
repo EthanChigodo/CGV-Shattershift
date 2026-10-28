@@ -23,8 +23,8 @@
 export const BALLS = {
   glass: { key: "glass", name: "Glass", cost: 1, speed: 40, gravity: 3.2, radius: 0.17, colour: 0xd9fbff, glow: [1.6, 3.2, 3.6], text: "Standard throw. Breaks glass." },
   cryo: { key: "cryo", name: "Cryo", cost: 2, speed: 34, gravity: 4.5, radius: 0.21, colour: 0x7fe9ff, glow: [0.8, 3.6, 4.5], splash: 4.8, text: "Shatters everything within 4.8 m in ice, puts out fires and freezes falling debris." },
-  gravity: { key: "gravity", name: "Gravity", cost: 2, speed: 32, gravity: 4, radius: 0.22, colour: 0x7a5cff, glow: [1.5, 1.1, 4.6], splash: 7, text: "Opens a black hole for a second: drags in every sphere cache, sack and serum within 7 m for you, and pulls people in and stuns them." },
-  shock: { key: "shock", name: "Shock", cost: 3, speed: 32, gravity: 4, radius: 0.23, colour: 0xc77dff, glow: [3.2, 1.2, 4.6], splash: 5.2, text: "Shatters all glass within 5 m. One-hit reinforced glass." },
+  gravity: { key: "gravity", name: "Gravity", cost: 2, speed: 32, gravity: 4, radius: 0.22, colour: 0x7a5cff, glow: [1.5, 1.1, 4.6], splash: 7, text: "Opens a black hole for a second: drags in every sphere cache, sack and serum within 7 m for you. On the roof it lifts the patients in reach and throws them at the open ledge." },
+  shock: { key: "shock", name: "Shock", cost: 3, speed: 32, gravity: 4, radius: 0.23, colour: 0xc77dff, glow: [3.2, 1.2, 4.6], splash: 5.2, text: "Shatters all glass within 5 m. One-hit reinforced glass. Its EMP downs security drones." },
 };
 export const BALL_ORDER = ["glass", "cryo", "shock", "gravity"];
 

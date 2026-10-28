@@ -2,9 +2,31 @@
    (theme.css, nightfall.css): words on the picture, no boxes - the boards as
    the main menu's own list, the board itself as hairline rows. */
 .lb-screen .tr-wrap { width: min(1180px, 100%); }
-.lb-me { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; margin: 14px 0 0; font-size: 13px; color: var(--text-3); animation: settle .9s var(--ease-out) .05s both; }
-.lb-me b { font-stretch: var(--wide); font-weight: 300; font-size: 19px; letter-spacing: .05em; color: var(--text); }
-.lb-me .text-button { font-size: 12px; }
+/* You, on the boards: a card - initials, the name, Change. */
+.lb-me {
+  display: inline-flex; align-items: center; gap: 14px; margin: 16px 0 0; padding: 10px 12px 10px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: rgba(8, 10, 14, .55); backdrop-filter: blur(6px);
+  animation: settle .9s var(--ease-out) .05s both; align-self: flex-start;
+}
+.lb-avatar {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; flex: none;
+  font-style: normal; font-weight: 600; font-size: 14px; letter-spacing: .04em; color: #1a0a04;
+  background: linear-gradient(135deg, var(--ember-2), var(--ember)); box-shadow: 0 0 18px rgba(255, 122, 61, .3);
+}
+.lb-who { display: grid; gap: 2px; min-width: 0; }
+.lb-who small { font-size: 10px; font-weight: 600; letter-spacing: .24em; text-transform: uppercase; color: var(--text-3); }
+.lb-who b { font-stretch: var(--wide); font-weight: 400; font-size: 19px; letter-spacing: .04em; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+.lb-rename {
+  display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; padding: 9px 16px; border-radius: 999px;
+  border: 1px solid var(--accent-border, rgba(255, 138, 66, .45)); background: transparent; color: var(--ember-2);
+  font: 600 11px/1 var(--font); letter-spacing: .18em; text-transform: uppercase; cursor: pointer;
+}
+.lb-rename svg { width: 13px; height: 13px; }
+.lb-rename:hover, .lb-rename:focus-visible { border-color: var(--ember); background: rgba(255, 138, 66, .14); color: var(--text); }
+/* No name yet: the card asks for one. */
+.lb-me.unnamed .lb-avatar { background: transparent; color: var(--text-3); border: 1px dashed var(--line); box-shadow: none; }
+.lb-me.unnamed .lb-who b { color: var(--text-3); }
+.lb-me.unnamed .lb-rename { background: var(--ember); border-color: var(--ember); color: #1a0a04; }
 .lb-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 56px; margin-top: clamp(18px, 3.6vh, 34px); }
 /* The boards: the main menu's list - the one shown lit, an ember line beside it. */
 .lb-boards { align-content: start; margin-top: 0; }

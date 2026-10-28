@@ -1,11 +1,11 @@
 /**
- * What Subject 07 can do, sector by sector, in the story: one new sphere
- * type each level, and a new ability.
+ * What Subject 07 can do, sector by sector, in the story: a sphere type a
+ * level that the level needs, and a new ability.
  *
  *   The Foundry   Glass     throw by hand
- *   The Labs      + Cryo    the launcher, and its charged shot
- *   The Skyline   + Shock   focus (bullet time)
- *   The Roof      + Gravity quick shift (the dodge), free movement
+ *   The Labs      + Cryo    the launcher, its charged shot - cryo puts out the fire walls
+ *   The Skyline   + Shock   focus - shock's EMP is all that brings down the security drones
+ *   The Roof      + Gravity quick shift (the dodge) - gravity throws patients off the roof
  *
  * A story run gets what its sector has reached; Endless and the multiplayer
  * modes have everything. Each sector's gains are shown on a card before it
@@ -26,10 +26,10 @@ export const STAGE_NAMES = {
 
 /** What each sector adds. */
 export const GAINS = {
-  foundry: { sphere: "glass", abilities: ["throw"] },
-  labs: { sphere: "cryo", abilities: ["launcher", "charge"] },
-  skyline: { sphere: "shock", abilities: ["focus"], tips: ["vent", "sprinkler"] },
-  roof: { sphere: "gravity", abilities: ["dodge"] },
+  foundry: { spheres: ["glass"], abilities: ["throw"] },
+  labs: { spheres: ["cryo"], abilities: ["launcher", "charge"], tips: ["firewall"] },
+  skyline: { spheres: ["shock"], abilities: ["focus"], tips: ["drone", "vent", "sprinkler"] },
+  roof: { spheres: ["gravity"], abilities: ["dodge"], tips: ["brute"] },
 };
 
 /**
@@ -77,6 +77,22 @@ export const ABILITIES = {
  * things; Endless shows them once): the Skyline's smoke and fire.
  */
 export const TIPS = {
+  // The obstacles each sphere is for (the level's card says which to use).
+  firewall: {
+    name: "Fire walls",
+    text: "A wall of fire right across the corridor: too tall to jump, and it burns you if you run into it. Change to the cryo sphere and shoot it before you get there - glass and shock do nothing to it.",
+    how: [{ kb: ["Q", "E"], pad: ["PadLB", "PadRB"], does: "change to cryo" }, { kb: ["Click"], pad: ["PadRT"], does: "shoot the fire" }],
+  },
+  drone: {
+    name: "Security drones",
+    text: "HALCYON sends drones after you: one keeps pace ahead and sweeps your lane with a red scan, then locks on and fires down it - change lane when the beam holds still. Its armour shrugs off glass, cryo and gravity: only a shock sphere's EMP brings it down.",
+    how: [{ kb: ["Q", "E"], pad: ["PadLB", "PadRB"], does: "change to shock" }, { kb: ["Click"], pad: ["PadRT"], does: "shoot the drone" }],
+  },
+  brute: {
+    name: "The brute",
+    text: "The big one shrugs off spheres - each does a third of what it should. Throw it off the roof instead: a gravity sphere near it lifts it and flings it at the open ledge.",
+    how: [{ kb: ["Q", "E"], pad: ["PadLB", "PadRB"], does: "change to gravity" }, { kb: ["Click"], pad: ["PadRT"], does: "shoot beside it" }],
+  },
   vent: {
     name: "Air vents",
     text: "Smoke fills the causeway, and thick smoke eats your integrity. Shoot the cover off a vent on the walls and it pulls the smoke out of that stretch. The HUD warns you when the air turns, and says where the next vent is.",
@@ -96,7 +112,7 @@ const upTo = (stage) => STAGES.slice(0, Math.max(0, STAGES.indexOf(stage)) + 1);
 
 /** The sphere types a story run has at this sector. */
 export function spheresAt(stage) {
-  return upTo(stage).map((s) => GAINS[s].sphere);
+  return upTo(stage).flatMap((s) => GAINS[s].spheres);
 }
 
 /** The abilities a story run has at this sector. */

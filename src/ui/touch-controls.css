@@ -14,9 +14,10 @@
 }
 .tc-button.show { display: grid; }
 .tc-button.down { background: rgba(255, 122, 61, .42); border-color: var(--ember, #ff7a3d); transform: scale(.94); }
-/* Beside the sphere wheel (bottom right), clear of the notch. */
-.tc-dodge { right: calc(240px * var(--hud-zoom, 1) + 18px + var(--safe-r, 0px)); bottom: calc(22px + var(--safe-b, 0px)); width: 84px; height: 84px; }
-.tc-focus { right: calc(240px * var(--hud-zoom, 1) + 18px + var(--safe-r, 0px)); bottom: calc(118px + var(--safe-b, 0px)); }
+/* Beside the sphere wheel (bottom right), clear of the notch - and of the
+   sphere count on the wheel's left (300px of HUD, not the wheel's 240). */
+.tc-dodge { right: calc(300px * var(--hud-zoom, 1) + 18px + var(--safe-r, 0px)); bottom: calc(22px + var(--safe-b, 0px)); width: 84px; height: 84px; }
+.tc-focus { right: calc(300px * var(--hud-zoom, 1) + 18px + var(--safe-r, 0px)); bottom: calc(118px + var(--safe-b, 0px)); }
 .tc-skip {
   right: calc(18px + var(--safe-r, 0px)); bottom: calc(18px + var(--safe-b, 0px));
   height: 46px; border-radius: 23px; padding: 0 20px; font-size: 11px;
@@ -26,14 +27,6 @@
 .tc-skip.down { background: linear-gradient(90deg, rgba(255, 122, 61, .55) calc(var(--p, 0) * 100%), rgba(8, 10, 14, .55) 0); transform: none; }
 /* The cutscene's own "Hold Esc to skip" ring: on a touch screen the button is the skip. */
 html.touch .story-skip { display: none !important; }
-
-/* Something to pick up at your feet: big, in the middle, over the score. */
-.tc-pickup {
-  left: 50%; bottom: calc(96px + var(--safe-b, 0px)); transform: translateX(-50%);
-  height: 54px; border-radius: 27px; padding: 0 26px; font-size: 13px;
-  border-color: var(--ember, #ff7a3d); background: rgba(255, 122, 61, .3);
-}
-.tc-pickup.down { transform: translateX(-50%) scale(.95); }
 
 /* The roof's stick: it comes up where the thumb lands. */
 .tc-stick {
@@ -69,3 +62,43 @@ html.touch .sphere-wheel { pointer-events: auto; touch-action: none; }
 html.touch .sphere-wheel .sw-key { display: none; }
 
 @media (prefers-reduced-motion: reduce) { .tc-button, .tc-half b { transition: none; } }
+
+/* Every level on a phone (touch-controls.js "tc-hud"): one corner for all
+   of them - the sphere button and FOCUS where the wheel was (the wheel and
+   its gauges go), integrity and the spheres left top left. The roof over the
+   shoulder ("tc-roof") adds SHOOT, big in the corner, and DODGE beside it,
+   as a phone shooter plays; the runners throw with a tap where you aim. */
+.tc-shoot { right: calc(22px + var(--safe-r, 0px)); bottom: calc(22px + var(--safe-b, 0px)); width: 96px; height: 96px; font-size: 13px;
+  border-color: var(--ember, #ff7a3d); background: rgba(255, 122, 61, .28); }
+.tc-sphere { right: calc(116px + var(--safe-r, 0px)); bottom: calc(108px + var(--safe-b, 0px)); width: 72px; height: 72px; min-width: 0; padding: 0;
+  display: none; place-items: center; align-content: center; gap: 4px; font-size: 9px; letter-spacing: .14em; }
+.tc-sphere.show { display: grid; }
+.tc-sphere i { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, var(--ball, #d9fbff) 45%, rgba(0, 0, 0, .3)); box-shadow: 0 0 14px var(--ball, #d9fbff); }
+html.tc-roof .tc-dodge { right: calc(130px + var(--safe-r, 0px)); bottom: calc(22px + var(--safe-b, 0px)); width: 74px; height: 74px; }
+html.tc-hud .tc-focus { right: calc(22px + var(--safe-r, 0px)); bottom: calc(128px + var(--safe-b, 0px)); width: 72px; height: 72px; min-width: 0; padding: 0; }
+html.tc-hud .sphere-wheel, html.tc-hud .cw-tools { display: none !important; }
+html.tc-hud .cw-vitals { left: calc(20px + var(--safe-l, 0px)); top: 46px; bottom: auto; transform: scale(.86); transform-origin: top left; }
+.tc-ammo { position: fixed; display: none; left: calc(20px + var(--safe-l, 0px)); top: 150px; align-items: baseline; gap: 8px; color: var(--text, #f4f0e8); text-shadow: 0 2px 10px rgba(0, 0, 0, .6); }
+.tc-ammo.show { display: flex; }
+.tc-ammo b { font-stretch: var(--wide); font-weight: 300; font-size: 30px; font-variant-numeric: tabular-nums; }
+.tc-ammo span { font-size: 10px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--text-3, rgba(244, 240, 232, .5)); }
+.tc-ammo.empty b { color: var(--blood, #ff4a3a); }
+/* (The toasts, top left on a phone, give the corner to the vitals in a level: top middle.) */
+html.tc-hud :is(.mlt-toasts, .fdy-toasts) { left: 50% !important; transform: translateX(-50%); top: 58px; align-items: center; }
+/* The stick at rest: faded, where the thumb finds it. */
+.tc-stick.idle { opacity: .45; }
+
+/* A phone held sideways: the toasts top left, under the title - top right is
+   the roof's map, the Labs' timers, the gauges (lifted 360px off the bottom
+   for the sphere wheel, on a 390px-high screen they landed on all of them). */
+html.touch .fdy-toasts, html.touch .mlt-toasts {
+  left: calc(20px + var(--safe-l, 0px)); right: auto !important; top: 54px; bottom: auto !important; align-items: flex-start;
+}
+
+/* The menus' Q / E tab hints: on a touch screen the tabs are tapped (they read "WHEEL" there). */
+html.touch body:not(.pad-mode) .tr-bumper { display: none; }
+
+/* The Foundry's "way out" checklist sat top left under the integrity it gave
+   the corner to: under the spheres now. (Its HUD is drawn at --hud-zoom; the
+   count isn't - so the place is in screen pixels, divided by the zoom.) */
+html.tc-hud .fdy-systems { left: calc((20px + var(--safe-l, 0px)) / var(--hud-zoom, 1)) !important; top: calc(196px / var(--hud-zoom, 1)) !important; bottom: auto !important; right: auto !important; transform: scale(.86); transform-origin: top left; }

@@ -129,10 +129,14 @@ const ROOF_SPEED = 6.4;
  * the camera swings, moves the aim again and shakes.
  */
 const _gw = new THREE.Vector3();
-/** A hit: seconds looking back at the fire, then seconds getting back up to speed. */
-const STUMBLE_LOOK = 0.9;
+/**
+ * A hit, as in the Foundry and the Skyline: knocked to a stumble, back up to
+ * speed over these seconds - no look back at the fire, no standing still -
+ * and nothing hits you again for HIT_MERCY.
+ */
 const STUMBLE_RECOVER = 0.6;
-/** Running speed through a stumble: nearly stopped looking back, then easing back to full. */
+const HIT_MERCY = 1.2;
+/** Running speed through a stumble: knocked nearly to a stop, then easing back to full. */
 function stumbleFactor(slow) {
   if (slow <= 0) return 1;
   if (slow > STUMBLE_RECOVER) return 0.22;
@@ -466,7 +470,6 @@ export class MeltdownGame {
   /* ================================================================ */
 
   _resetRunner() {
-    this._dying = null;
     this.ammoRecovery.reset();
     this.ammoHint.hide();
     Object.assign(this.runner, {
@@ -474,7 +477,7 @@ export class MeltdownGame {
       jumpBuffer: 0, slideBuffer: 0, landed: 0,
       vitality: START_VITALITY, balls: START_BALLS, alive: true, invulnerable: 0, slow: 0,
       finished: false, heat: 0, lockout: 0, weakened: 0, coolant: 0, adrenaline: 0,
-      overchargeShots: 0, barrierShield: 0, fireDistance: -45, lookBack: 0, pushing: false,
+      overchargeShots: 0, barrierShield: 0, fireDistance: -45, pushing: false,
       firing: false, fireCooldown: 0, hits: 0, shots: 0, breaks: 0, downs: 0, speed: 0,
       baseSpeed: this.level ? this.level.speedAt(0) : 8.2,
     });
@@ -1056,7 +1059,7 @@ export class MeltdownGame {
   }
 
   onPointerDown(event) {
-    if (this._flying?.weapon || this._flying?.controlsPlayer) return;
+    if (this._flying?.controlsPlayer) return;
     this.audio.start();
     if (event.button === 0) {
       this.runner.firing = true;
@@ -1067,7 +1070,7 @@ export class MeltdownGame {
   }
 
   onPointerUp(event) {
-    if (this._flying?.weapon || this._flying?.controlsPlayer) { this.charge?.cancel(); return; }
+    if (this._flying?.controlsPlayer) { this.charge?.cancel(); return; }
     if (event.button !== 0) return;
     this.runner.firing = false;
     if (!this.charge?.holding) return;
@@ -1092,10 +1095,6 @@ export class MeltdownGame {
     if (this._flying?.controlsPlayer) {
       if (code === "Space") event.preventDefault?.();
       return this._isGameKey(code) || /^(Key[A-Z]|Digit\d)$/.test(code);
-    }
-    if (code === "KeyE" && this.phase === "roof" && this._flying?.pickupPrompt) {
-      if (!event.repeat) this._flying.pickup();
-      return true;
     }
     this.held.add(code);
     this.audio.start();
@@ -1270,7 +1269,6 @@ export class MeltdownGame {
     }
     // On its own (the preview) the level runs its own serums' clocks.
     if (this._ownArsenal && playing) this.arsenal.update(dt);
-    r.lookBack = Math.max(0, r.lookBack - dt);
   }
 
   /* ---------------- Phase A ---------------- */
@@ -1335,17 +1333,7 @@ export class MeltdownGame {
         this._caughtByFire();
       }
     }
-    if (this._dying) {
-      // Caught: the fire comes on over you, the camera shaking, before the
-      // run is over (the host burns the screen meanwhile - "dying").
-      this._dying.t += dt;
-      r.fireDistance += (r.distance + 5 - r.fireDistance) * Math.min(1, dt * 2.4);
-      this.trauma = Math.max(this.trauma, 0.65);
-      if (this._dying.t > 1.6) {
-        this._dying = null;
-        this._finishRun(false, "CAUGHT BY THE FIRE");
-      }
-    } else if (this.phase !== "depart") {
+    if (this.phase !== "depart") {
       const gap = 4 + r.vitality * 0.42;
       const target = r.distance - gap;
       if (!cutscene) r.fireDistance += (target - r.fireDistance) * Math.min(1, dt * (target > r.fireDistance ? 0.9 : 3));
@@ -1367,7 +1355,7 @@ export class MeltdownGame {
       avatar.update(dt, {
         // Height above what's underfoot (a fallen duct's top is ground too).
         speed: r.speed, lateralVel: r.lateralVel, height: r.height - (r.ground ?? 0), sliding: r.sliding > 0,
-        pushing: r.pushing, stumble: r.lookBack > 0.5 ? 1 : 0, aiming: r.firing,
+        pushing: r.pushing, stumble: r.slow > STUMBLE_RECOVER * 0.5 ? 1 : 0, aiming: r.firing,
       });
       // Blink through the mercy window after a hit (not the long
       // "invulnerable" a test or demo teleport sets).
@@ -1488,7 +1476,7 @@ export class MeltdownGame {
 
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
-    this.hud.setPrompt(this.phase !== "run" ? null : level.ductAhead(r.distance, 7) && r.height < 0.5 ? "SPACE - JUMP THE DUCT" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
+    this.hud.setPrompt(this.phase !== "run" ? null : level.ductAhead(r.distance, 7) && r.height < 0.5 ? "SPACE - JUMP THE DUCT" : level.fireWallAhead(r.distance) ? (this.arsenal.ball === "cryo" ? "FIRE WALL - SHOOT IT WITH CRYO" : "FIRE WALL AHEAD - CRYO (Q/E) PUTS IT OUT") : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 
@@ -1605,22 +1593,17 @@ export class MeltdownGame {
       this._follow(V.desired, 16, dt);
     } else {
       // Chase: pulled back a touch as speed rises, trailing the lateral move.
+      // A little higher and looking a little more down the corridor than
+      // it did, so the floor ahead shows - where the next laser grid stands
+      // (lecturer's feedback: hard to judge how far it was).
       const back = 6.4 + r.speed * 0.05;
-      level.route.sample(r.distance - back, r.lateral * 0.62, 2.8 + r.height * 0.55 - dip, V.desired);
-      level.route.sample(r.distance + 12, r.lateral * 0.3, 1.6, V.look);
+      level.route.sample(r.distance - back, r.lateral * 0.62, 3.3 + r.height * 0.55 - dip, V.desired);
+      level.route.sample(r.distance + 14, r.lateral * 0.3, 1.2, V.look);
       this._follow(V.desired, 70, dt);
     }
 
-    // A stumble makes you look back at the fire gaining on you - the moment
-    // the brief describes. Lasts under a second; reduced motion skips it.
-    if (r.lookBack > 0 && !reduced && mode !== "ORBIT") {
-      const k = Math.sin(Math.min(1, r.lookBack / 0.9) * Math.PI);
-      level.route.sample(Math.max(0, r.fireDistance), 0, 2.5, V.behind);
-      V.look.lerp(V.behind, k);
-    }
-
     if (this.snapCamera) V.smoothedLook.copy(V.look);
-    else V.smoothedLook.lerp(V.look, 1 - Math.exp(-dt * (r.lookBack > 0 ? 6 : 12)));
+    else V.smoothedLook.lerp(V.look, 1 - Math.exp(-dt * 12));
     camera.lookAt(V.smoothedLook);
 
     // Lean the view slightly into lane changes.
@@ -1698,7 +1681,8 @@ export class MeltdownGame {
   }
 
   _placeLauncher(firstPerson) {
-    if (this._flying?.weapon) return;
+    // (Struggling with a flying patient, first person: flying-zombies.js holds it.)
+    if (this._flying?.firstPerson) return;
     // An exterior fall owns the actual rig until retry, including under the summary.
     if (this._fall?.weapon) return;
     const { launcher, avatar, camera, runner: r } = this;
@@ -1745,7 +1729,7 @@ export class MeltdownGame {
    */
   /** `charged`: the charge it went out with (0 none; systems/charge.js). */
   _shoot({ charged = 0 } = {}) {
-    if (this._flying?.weapon || this._flying?.controlsPlayer) return;
+    if (this._flying?.controlsPlayer) return;
     const { runner: r, level, audio } = this;
     const V = this._v;
     if (!r.alive || (!level && !this.roof)) return;
@@ -1805,6 +1789,22 @@ export class MeltdownGame {
     this.sfx?.throwBall();
   }
 
+  /** A fire wall put out (a cryo sphere): steam, frost, the way clear. */
+  _putOutWall(target) {
+    const wall = target.userData.wall;
+    if (!wall || wall.userData.out) return;
+    wall.userData.putOut();
+    const i = this.level.breakables.indexOf(target);
+    if (i >= 0) this.level.breakables.splice(i, 1);
+    const at = target.getWorldPosition(new THREE.Vector3());
+    this.sphereImpact.splash(at, "cryo", 5, null, { ground: true });
+    this.debris.sparks(at, { count: 30, speed: 3 });
+    this.runner.breaks += 1;
+    this.hud.toast("FIRE OUT", "THE WAY IS CLEAR", "power", 1400);
+    this.sfx?.glassBreak();
+    this.audio.whoosh?.();
+  }
+
   /** A vial: the serum it holds goes in (the Skyline's power-ups). */
   _applyPowerup(kind) {
     const serum = VIAL_SERUM[kind] ?? kind;
@@ -1836,6 +1836,7 @@ export class MeltdownGame {
       if (at.distanceTo(point) > def.splash) continue;
       // Power-ups (serum capsules) take a direct hit, never a splash.
       if (target.userData.kind === "powerup") continue;
+      if (target.userData.kind === "firewall") { if (ball.kind === "cryo") this._putOutWall(target); continue; }
       this._onBallBreakable(target, at.clone(), { power: ball.kind === "shock" ? 99 : 2, velocity: ball.velocity.clone(), kind: "glass" });
     }
     if (ball.kind === "cryo" && this.level && !this.roof) this.runner.fireDistance -= 6;
@@ -1845,13 +1846,16 @@ export class MeltdownGame {
 
   /**
    * The gravity sphere's black hole: the sacks and serums in reach are
-   * dragged in and yours; the patients and scientists are yanked toward it
-   * and stunned (on the roof, out of their charge) - nobody is hurt.
+   * dragged in and yours. On the roof the patients and scientists in reach
+   * are lifted and thrown at the open ledge (roof.js Enemy.lift) - the
+   * brute too, which spheres barely hurt - and a winged one low enough is
+   * dragged out of the sky (flying-zombies.js gravityPull).
    */
   _gravityWell(point, radius) {
     const targets = this.roof ? this.roof.breakables : this.level?.breakables ?? [];
     const at = new THREE.Vector3();
     let pulled = 0;
+    let lifted = 0;
     for (const target of targets.slice()) {
       if (!target.parent) continue;
       target.getWorldPosition(at);
@@ -1861,19 +1865,17 @@ export class MeltdownGame {
         this._onBallBreakable(target, at.clone(), { power: 99, velocity: new THREE.Vector3(), kind: "glass", walkIn: true });
         pulled += 1;
       } else if (data.kind === "enemy" && data.enemy?.alive) {
-        const e = data.enemy;
-        _gw.subVectors(point, e.position).setY(0);
-        const d = _gw.length();
-        if (d > 0.3) e.velocity.addScaledVector(_gw.divideScalar(d), Math.min(9, 3 + d));
-        if (!["emerge", "fall", "down"].includes(e.state)) e.setState?.("stunned");
-        e.stagger = 1;
+        if (data.enemy.lift?.(point)) lifted += 1;
       } else if (data.kind === "patient") {
         data.node?.userData.stagger?.();
       }
     }
     this.debris.sparks(point, { count: 30, speed: 3 });
     this.audio.whoosh?.();
+    const plucked = this._flying?.gravityPull(point, radius) ?? 0;
     if (pulled) this.hud.toast("GRAVITY", `${pulled} PULLED IN`, "power", 1400);
+    if (lifted) this.hud.toast("GRAVITY", `${lifted} THROWN`, "power", 1400);
+    if (plucked) this.hud.toast("GRAVITY", "PULLED OUT OF THE SKY", "power", 1600);
     // It keeps pulling while it is open (_updateWell).
     this._well = { point: point.clone(), radius, t: 1.1 };
   }
@@ -1888,7 +1890,7 @@ export class MeltdownGame {
       return;
     }
     for (const e of this.roof.enemies) {
-      if (!e.alive || e.removed || ["emerge", "fall", "down"].includes(e.state)) continue;
+      if (!e.alive || e.removed || ["emerge", "fall", "down", "lifted", "thrown"].includes(e.state)) continue;
       _gw.subVectors(w.point, e.position).setY(0);
       const d = _gw.length();
       if (d > w.radius || d < 0.7) continue;
@@ -1900,6 +1902,12 @@ export class MeltdownGame {
   _onBallBreakable(object, point, ball) {
     if (this.roof) return this._onRoofBreakable(object, point, ball);
     const { level, debris, audio, hud, runner: r } = this;
+    // A fire wall: only cold puts it out.
+    if (object.userData.kind === "firewall") {
+      if (ball.kind === "cryo") this._putOutWall(object);
+      else hud.toast("FIRE WALL", "PUT IT OUT WITH CRYO (Q/E)", "warn", 1400);
+      return true;
+    }
     const result = level.breakTarget(object, ball.power);
     if (!result) return true;
     if (result.partial) {
@@ -2000,6 +2008,7 @@ export class MeltdownGame {
       if (at.distanceTo(point) > radius) continue;
       const data = target.userData;
       if (data.kind === "powerup") continue;
+      if (data.kind === "firewall") { if (ball.kind === "cryo") this._putOutWall(target); continue; }
       if (ball.kind === "gravity" && (data.kind === "sack" || data.kind === "enemy")) continue;
       const enemy = data.kind === "enemy";
       if (this._onBallBreakable(target, at.clone(), { power: enemy ? (ball.charged >= 1 ? 3 : 2) : 99, velocity: ball.velocity.clone(), kind: "glass" }) !== false) broken += 1;
@@ -2155,13 +2164,11 @@ export class MeltdownGame {
     const dropped = Math.min(r.balls, Math.max(r.balls > 0 ? 1 : 0, Math.round(r.balls * HIT_BALL_DROP_RATIO)));
     r.balls -= dropped;
     r.hits += 1;
-    // The stumble: you all but stop while you look back at the fire, and
-    // only then pick up speed again, facing forward - and nothing can hit
-    // you until you have your bearings (round 4 playtest: you were running
-    // into the next thing while still looking back).
-    r.invulnerable = STUMBLE_LOOK + STUMBLE_RECOVER + 0.25;
-    r.slow = STUMBLE_LOOK + STUMBLE_RECOVER;
-    r.lookBack = this.reducedMotion ? 0 : STUMBLE_LOOK;
+    // The stumble: knocked nearly to a stop, then back up to speed, and a
+    // moment's mercy - as in the Foundry and the Skyline (no look back at the
+    // fire: playtest, it felt wrong).
+    r.slow = STUMBLE_RECOVER;
+    r.invulnerable = Math.max(r.invulnerable, HIT_MERCY);
     this.trauma = Math.min(1, this.trauma + 0.85);
     this.hitFlash = 1;
     level.impact(1);
@@ -2285,14 +2292,16 @@ export class MeltdownGame {
     this.events.emit("phase", { phase: "depart" });
   }
 
-  /** Out of vitality in the Labs: the fire catches you (see the run frame), then the run is over. */
+  /**
+   * Out of vitality in the Labs: the run is over there and then - the host
+   * greys the last frame out under the end screen, as in the Foundry and the
+   * Skyline (no fire coming on over you any more: playtest, it felt wrong).
+   */
   _caughtByFire() {
-    if (this._dying || this.runner.finished) return;
-    this._dying = { t: 0 };
+    if (this.runner.finished) return;
     this.runner.firing = false;
     this.ammoHint.hide();
-    this.audio.whoosh();
-    this.events.emit("dying", { cause: "fire" });
+    this._finishRun(false, "CAUGHT BY THE FIRE");
   }
 
   _finishRun(survived, title) {
@@ -2329,15 +2338,15 @@ export class MeltdownGame {
    * offers it): the level as it was, the runner at `distance`, vitality full,
    * the fire well behind, a moment of grace. The host counts you back in.
    */
-  resumeAt(distance, balls = 0) {
-    this._dying = null;
+  /** `vitality`: what a checkpoint restart gives back (main.js: less, the harder it is). */
+  resumeAt(distance, balls = 0, vitality = START_VITALITY) {
     this.ammoRecovery.reset();
     this.ammoHint.hide();
     const r = this.runner;
     Object.assign(r, {
       distance, lane: 1, lateral: 0, lateralVel: 0, height: 0, verticalVelocity: 0, sliding: 0,
-      jumpBuffer: 0, slideBuffer: 0, landed: 0, pushing: false, lookBack: 0, heat: 0, lockout: 0, slow: 0,
-      vitality: START_VITALITY, balls: Math.max(r.balls, balls), alive: true, finished: false, firing: false,
+      jumpBuffer: 0, slideBuffer: 0, landed: 0, pushing: false, heat: 0, lockout: 0, slow: 0,
+      vitality, balls: Math.max(r.balls, balls), alive: true, finished: false, firing: false,
       invulnerable: 2.5, fireDistance: distance - 45, speed: this.level.speedAt(distance),
     });
     this.projectiles.clear?.();
@@ -2947,7 +2956,7 @@ export class MeltdownGame {
     this._fall.start({
       from: p, velocity: v, kind, face, wallAt: ROOF_WALL, onFreeze,
       exterior: kind === "ledge" && this.phase === "roofFall",
-      weapon: this._flying?.weapon ? null : this.launcher.rig,
+      weapon: this.launcher.rig,
       onDone: () => {
         document.body.classList.remove("story-cutscene");
         onDone();
@@ -3077,7 +3086,6 @@ export class MeltdownGame {
       avatar.root.position.copy(hero.position);
       avatar.root.rotation.y = hero.yaw;
       const speed = hero.velocity.length() + (hero.dodge > 0 ? DODGE_SPEED : 0);
-      if (this._flying?.weapon) avatar.hold = 0;
       avatar.update(dt, { speed, lateralVel: 0, height: hero.vy < -1 ? 1 : 0, sliding: hero.dodge > 0, aiming: r.firing });
 
       const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
@@ -3241,7 +3249,7 @@ export class MeltdownGame {
     this.hud.setBalls(r.balls);
     const hint = this.phase === "roof" ? roof?.extractionHint(this.hero.position) : null;
     const gen = this.phase === "roof" && !hint ? roof?.generatorHint?.(this.hero.position) : null;
-    this.hud.setPrompt(this._flying?.pickupPrompt ?? (hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : gen === "pull" ? "SPACE x3 - PULL-START THE GENERATOR" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : gen === "go" ? "THE GENERATOR - BY THE LIFT" : null));
+    this.hud.setPrompt((hint === "jump" ? "SPACE - JUMP FOR THE LADDER!" : hint === "go" ? "GET TO THE EAST LEDGE" : gen === "pull" ? "SPACE x3 - PULL-START THE GENERATOR" : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : gen === "go" ? "THE GENERATOR - BY THE LIFT" : null));
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 

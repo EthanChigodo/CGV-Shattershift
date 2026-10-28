@@ -8,7 +8,8 @@
  * - the same test the game uses. A cluster passes if some lane and pose gets
  * a player box through its whole span at some moment. Glass that blocks
  * every otherwise-clear route is counted as "needs a shot", since the
- * launcher always has a way to break it.
+ * launcher always has a way to break it - and so is a fire wall, which a
+ * cryo sphere puts out (it is meant to be impassable without one).
  */
 
 export const name = "fairness";
@@ -59,7 +60,7 @@ export async function run(page) {
         level.route.sample(d, lane, pose.lift, centre);
         centre.y += 0.18 + pose.height / 2;
         box.setFromCenterAndSize(centre, size.set(0.9, pose.height, 0.9));
-        const hits = level.collide(box, d, 12).filter((m) => !(ignoreGlass && m.userData.glass));
+        const hits = level.collide(box, d, 12).filter((m) => !(ignoreGlass && (m.userData.glass || m.userData.fireWall)));
         if (hits.length) return true;
       }
       return false;

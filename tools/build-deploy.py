@@ -4,7 +4,7 @@ Build the upload for the department's LAMP server (CGV brief, sections 5-6).
 The game needs no bundler - it is plain ES modules with an import map - so a
 "build" is a clean copy of only what the browser loads:
 
-    index.html, main.js, styles.css, src/, lib/, assets/, api/
+    index.html, main.js, styles.css, manifest.webmanifest, src/, lib/, assets/, api/
 
 (no tests, docs, tools, node_modules, .git), checked for the things the brief
 says break a hosted game: absolute paths, filenames that only work on a
@@ -28,7 +28,7 @@ DIST = os.path.join(ROOT, "dist")
 OUT = os.path.join(DIST, "fracture-run")
 ZIP = os.path.join(DIST, "fracture-run.zip")
 
-FILES = ["index.html", "main.js", "styles.css"]
+FILES = ["index.html", "main.js", "styles.css", "manifest.webmanifest"]
 FOLDERS = ["src", "lib", "assets", "api"]
 # The leaderboard's own data (made on the server by api/leaderboard.php) and
 # any MySQL credentials stay out of the upload.
