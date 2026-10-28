@@ -31,16 +31,9 @@ export const GAME_TITLE = "FRACTURE RUN";
  */
 export const STORY_CREDITS = {
   team: "Driven by Design",
-  roles: [
-    { role: "Sector 01 - The Shifting Foundry", names: ["Nkosilathi Dube"] },
-    { role: "Sector 02 - The Labs, and the Roof", names: ["Victor Hyginus"] },
-    { role: "Sector 03 - The Skyline", names: ["Athalia Mamba"] },
-    { role: "The briefing", names: ["Ethan Chigodo", "Victor Hyginus"] },
-    { role: "Cutscenes", names: ["Victor Hyginus", "Tebogo Sebopela"] },
-    { role: "Sound and effects", names: ["Hlakulo Hlungwani"] },
-    { role: "In-game settings", names: ["Ethan Chigodo", "Tebogo Sebopela"] },
-    { role: "Storyline", names: ["The whole team"] },
-  ],
+  // The group, together - by surname, no one credited with a part: the
+  // game is the team's.
+  members: ["Ethan Chigodo", "Nkosilathi Dube", "Hlakulo Hlungwani", "Victor Hyginus", "Athalia Mamba", "Tebogo Sebopela"],
   cast: [
     ["Subject 07", "You"],
     ["Dr. Elias Okoro", "scientist_good.glb"],

@@ -2,8 +2,9 @@
  * Phase 4, the Labs in the story (index.html via __dbg.story): the breach
  * (every incubator bursts once, Vale on the monitor, nothing can hit you),
  * Okoro running ahead and never in your lane close to you, his pistol never
- * changing anything, the bend attack (waits for you to land; a failure costs
- * vitality and retries; success costs nothing), the desk (the bag, Okoro
+ * changing anything, the bend attack (waits for you to land; success costs
+ * nothing; one chance - a failure plays the death and ends the run, at the
+ * end of this check), the desk (the bag, Okoro
  * gone, the doors shut on him), then the quiet ride up (src/elevators/
  * quiet-ride.js) and the hand-over to the Skyline.
  * Endless Labs has none of it.
@@ -46,6 +47,10 @@ export async function run(page, { shots }) {
       get m() { return __dbg.meltdown; },
       get d() { return __dbg.meltdown?.director; },
       get L() { return __dbg.story.layer; },
+      /** The quiet ride's prompts: Space held for each. */
+      answerRide() {
+        if (__dbg.gravityLift?.gate) __dbg.story.layer.reactions.keyDown("Space");
+      },
     };
   });
 
@@ -116,20 +121,8 @@ export async function run(page, { shots }) {
   check("his pistol never breaks a breakable or changes your stats", runToBend.breaksByPistol === 0, JSON.stringify(runToBend));
   check("the bend attack starts at the first turn", runToBend.scene === "bendAttack" && runToBend.d > 225 && runToBend.d < 245, JSON.stringify(runToBend));
 
-  const bend = await page.evaluate(() => {
-    const m = __t.m;
-    const r = m.runner;
-    const v0 = r.vitality;
-    __t.until(() => __t.L.reactions.running, 300);
-    // First, let it win.
-    __t.until(() => !__t.L.reactions.running, 400);
-    __t.step(2);
-    const afterFail = r.vitality;
-    const retried = __t.until(() => __t.L.reactions.running, 400);
-    return { v0, afterFail, retried, alive: r.alive };
-  });
-  check("a lost struggle costs vitality, not your life", bend.afterFail === bend.v0 - 30 && bend.alive, JSON.stringify(bend));
-  check("...and the struggle comes round again", bend.retried, JSON.stringify(bend));
+  const bend = await page.evaluate(() => ({ running: __t.until(() => __t.L.reactions.running, 300) }));
+  check("the struggle starts", bend.running, JSON.stringify(bend));
   await shot("03-bend-attack");
   const bendWin = await page.evaluate(() => {
     const m = __t.m;
@@ -205,12 +198,34 @@ export async function run(page, { shots }) {
   const up = await page.evaluate(async () => {
     // Step the rest of the ride (~20 s) without waiting on the wall clock -
     // software GL renders each step slowly - then let any async handover land.
-    __t.until(() => __dbg.currentLevel === 1 && !__dbg.gravityLift, 1200);
-    const ok = await __t.wait(() => __dbg.currentLevel === 1 && !__dbg.gravityLift, 120000);
+    __t.until(() => (__t.answerRide(), __dbg.currentLevel === 1 && !__dbg.gravityLift), 1200);
+    const ok = await __t.wait(() => (__t.answerRide(), __dbg.currentLevel === 1 && !__dbg.gravityLift), 120000);
     return { ok, level: __dbg.currentLevel, state: __dbg.state, fade: document.querySelector(".story-fade").style.opacity };
   });
   check("the quiet ride hands over to the Skyline", up.ok && up.level === 1, JSON.stringify(up));
   check("the story layer's black is cleared for the Skyline", up.fade === "0" || up.fade === "", JSON.stringify(up));
+
+  // ---- The bend, lost: one chance - the death, then the run is over ------------
+  // (Seen once, a scene isn't played again: forget it, as a sector restart does.)
+  await page.evaluate(() => { __dbg.story.layer.seen.delete("bendAttack"); __dbg.story.jump("labs"); });
+  const lost = await page.evaluate(async () => {
+    await __t.wait(() => __t.m?.phase === "run" && !!__t.d, 180000);
+    __t.until(() => __t.m.phase === "run" && !__t.L.active, 2000);
+    const m = __t.m, r = m.runner;
+    r.invulnerable = 999;
+    r.distance = 222;
+    const started = __t.until(() => __t.L.sceneId === "bendAttack" && __t.L.reactions.running, 900);
+    // Let it win.
+    __t.until(() => !__t.L.reactions.running, 600);
+    const dying = __t.until(() => __t.L.deathTime > 0.5, 120);
+    __t.until(() => __dbg.state === "ended", 300);
+    await __t.wait(() => document.querySelector("#endScreen").classList.contains("active"), 15000);
+    return {
+      started, dying, state: __dbg.state, phase: m.phase, retried: __t.L.reactions.running,
+      title: document.querySelector("#endTitle").textContent, end: document.querySelector("#endScreen").classList.contains("active"),
+    };
+  });
+  check("a lost struggle at the bend plays the death and ends the run (one chance)", lost.started && lost.dying && lost.state === "ended" && lost.title === "THEY GOT YOU" && lost.end && !lost.retried, JSON.stringify(lost));
 
   // ---- Endless Labs: none of it ------------------------------------------------
   const endless = await page.evaluate(async () => {

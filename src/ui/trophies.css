@@ -272,9 +272,7 @@
 }
 .cr-person { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; border-radius: 0; background: none; font-size: 14px; font-weight: 400; }
 .cr-person i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-style: normal; font-size: 10px; font-weight: 600; color: var(--night); background: var(--tc, var(--text-3)); }
-.cr-person.all { --tc: var(--text-3); }
 .cr-card { grid-template-columns: 1fr; }
-.cr-names { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 10px; }
 .cr-by { color: var(--tc); font-weight: 500; }
 .cr-small { margin: 4px 0 0 !important; color: var(--text-3) !important; font-size: 12px !important; }
 .cr-url { word-break: break-all; }

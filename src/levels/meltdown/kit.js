@@ -189,6 +189,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     ventGlow: std({ color: 0x1a0a04, emissive: 0xff5a14, emissiveIntensity: 0.4, metalness: 0.6, roughness: 0.5 }),
     laser: new THREE.MeshBasicMaterial({ color: 0xff2418, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
     laserGlow: new THREE.MeshBasicMaterial({ color: 0xff1a10, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
+    // The line on the floor under a laser grid: where it is, at a glance.
+    laserFloor: new THREE.MeshBasicMaterial({ color: 0xff2a18, toneMapped: false }),
     laserPost: std({ color: 0x1a1c1f, emissive: 0xff1a10, emissiveIntensity: 0.6, metalness: 0.8, roughness: 0.35 }),
     collider: new THREE.MeshBasicMaterial({ visible: false }),
     glassHousing: std({ color: 0x1c2622, metalness: 0.85, roughness: 0.3 }),
@@ -461,6 +463,46 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
   }
 
   /**
+   * A wall of fire right across the corridor, over a charred beam: too tall
+   * to jump, it burns whoever runs into it - until a cryo sphere puts it out
+   * (game.js _putOutWall). The cryo sphere's reason to be in the Labs.
+   * `userData.breakableMeshes`: what a sphere hits; `userData.putOut()`.
+   */
+  function fireWall({ span = 10, seed = 0 } = {}) {
+    const group = new THREE.Group();
+    group.name = "FireWall";
+    const flames = new THREE.Group();
+    group.add(flames);
+    for (let i = 0; i < 4; i += 1) {
+      const f = fireSpot({ width: span / 4 + 0.5, depth: 1.1, height: 3.4, light: false, seed: seed + i });
+      f.position.x = (i - 1.5) * (span / 4);
+      flames.add(f);
+    }
+    group.add(box(span, 0.22, 0.55, materials.rubbleDark, 0));
+    const hit = collider(span, 3.6, 0.9, 0, { fireWall: true });
+    group.add(hit);
+    // What a sphere hits (the flames themselves are sprites).
+    const target = new THREE.Mesh(geometries.unitBox, materials.collider);
+    target.scale.set(span, 3.2, 0.7);
+    target.position.y = 1.6;
+    target.userData = { kind: "firewall", breakable: true, alive: true, label: "FIRE WALL", wall: group };
+    group.add(target);
+    const anchor = new THREE.Object3D();
+    anchor.position.y = 1.4;
+    group.add(anchor);
+    group.userData.emitter = { kind: "point", anchor, color: 0xff6a1e, base: 6, distance: 12, intensityAt: (time) => (group.userData.out ? 0 : 5 + Math.sin(time * 13) * 1.2) };
+    group.userData.hazardMesh = hit;
+    group.userData.breakableMeshes = [target];
+    group.userData.putOut = () => {
+      flames.visible = false;
+      hit.userData.disabled = true;
+      target.userData.alive = false;
+      group.userData.out = true;
+    };
+    return group;
+  }
+
+  /**
    * Hangs at the ceiling until the level calls setFallen(t). A pulsing red
    * ring on the floor marks the landing spot while it falls - the telegraph.
    * Once down it stays as rubble the player has to hurdle.
@@ -719,6 +761,12 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       const post = box(0.35, 3.4, 0.35, materials.laserPost, 0, side * (span / 2 + 0.1));
       group.add(post);
     }
+
+    // Where it stands, on the floor: a bright line right under the beams and
+    // a dim red band either side - floating beams alone were hard to judge
+    // the distance to (lecturer's feedback). (Fixed, even under a sweep.)
+    group.add(box(span, 0.02, 0.09, materials.laserFloor, 0.005));
+    group.add(box(span, 0.01, 1.1, materials.laserGlow, 0.004));
 
     const beams = new THREE.Group();
     group.add(beams);
@@ -1985,6 +2033,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     floorGap,
     pendulum,
     laserGrid,
+    fireWall,
     fireVent,
     topplingShelf,
     rollingCylinder,

@@ -40,9 +40,10 @@ function touchNameFor(label) {
   const k = String(label).trim().toUpperCase();
   const roof = touchPlace === "roof";
   const names = {
-    Q: "WHEEL", E: "WHEEL", ESC: "PAUSE", ENTER: "TAP", C: "C",
+    // (The roof, as a phone shooter: SHOOT, the sphere button, the right side dragged to look.)
+    Q: "SPHERE", E: "SPHERE", ESC: "PAUSE", ENTER: "TAP", C: "C",
     SPACE: roof ? "DODGE" : "SWIPE ↑", SHIFT: "SWIPE ↓",
-    RMB: "FOCUS", "RIGHT CLICK": "FOCUS", CLICK: "TAP", "HOLD CLICK": "HOLD", MOUSE: "FINGER",
+    RMB: "FOCUS", "RIGHT CLICK": "FOCUS", CLICK: roof ? "SHOOT" : "TAP", "HOLD CLICK": roof ? "HOLD SHOOT" : "HOLD", MOUSE: roof ? "DRAG RIGHT" : "FINGER",
     A: roof ? "STICK" : "SWIPE ←", D: roof ? "STICK" : "SWIPE →",
     W: roof ? "STICK" : "SWIPE ↑", S: roof ? "STICK" : "SWIPE ↓", WASD: "STICK",
   };
@@ -56,12 +57,12 @@ function touchText(str) {
     // (Said as what you do on the glass, before the single keys are renamed.)
     .replace(/\bE - PICK UP ([A-Z]+)\b/g, "PICK UP THE $1 - TAP THE BUTTON")
     .replace(/\btap SPACE rapidly\b/gi, "tap the right side of the screen fast")
-    .replace(/\bQ ?\/ ?E\b/g, "THE WHEEL")
+    .replace(/\bQ ?\/ ?E\b/g, "THE SPHERE BUTTON")
     .replace(/\bA \/ D\b/g, roof ? "THE STICK" : "SWIPE")
     .replace(/\bWASD\b/g, "THE STICK")
-    .replace(/\bHOLD CLICK\b/gi, "HOLD")
+    .replace(/\bHOLD CLICK\b/gi, roof ? "HOLD SHOOT" : "HOLD")
     .replace(/\bRIGHT CLICK\b/gi, "FOCUS")
-    .replace(/\bCLICK\b/g, "TAP")
+    .replace(/\bCLICK\b/g, roof ? "SHOOT" : "TAP")
     .replace(/\bSPACE\b/g, roof ? "DODGE" : "SWIPE UP")
     .replace(/\bSHIFT\b/g, "SWIPE DOWN")
     .replace(/\b(ESC|Esc)\b/g, "PAUSE");

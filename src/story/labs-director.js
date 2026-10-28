@@ -49,8 +49,9 @@ const _w = new THREE.Vector3();
 function buildPistol() {
   const group = new THREE.Group();
   group.name = "Pistol";
-  const steel = new THREE.MeshStandardMaterial({ color: 0x23272b, metalness: 0.85, roughness: 0.32 });
-  const polymer = new THREE.MeshStandardMaterial({ color: 0x15171a, metalness: 0.1, roughness: 0.72 });
+  // (Lighter than real blued steel: dark-on-dark it didn't read as a gun at all.)
+  const steel = new THREE.MeshStandardMaterial({ color: 0x5a6068, metalness: 0.8, roughness: 0.3 });
+  const polymer = new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.15, roughness: 0.6 });
   const stipple = new THREE.MeshStandardMaterial({ color: 0x0f1012, roughness: 0.95 });
   const bore = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 });
   const dot = new THREE.MeshBasicMaterial({ color: 0x9dffb0 });
@@ -109,6 +110,8 @@ function buildPistol() {
   group.traverse((o) => {
     if (o.isMesh) o.castShadow = true;
   });
+  // A little over life size: at game distance a real one was a few dark specks.
+  group.scale.setScalar(1.35);
   return group;
 }
 
@@ -141,7 +144,8 @@ export class LabsDirector {
     this.okoro.root.visible = false;
     this.pistol = buildPistol();
     // In his right hand, kept upright (not rolled round the forearm).
-    this.okoro.hold(this.pistol, { hand: "R", offset: [0, -0.02, -0.03], upright: true });
+    // Pointing ahead of him, a little down (low ready), in his hand whatever his arm does.
+    this.okoro.hold(this.pistol, { hand: "R", offset: [0, 0.03, 0], facing: 0.35, fist: true });
     this.guide = new FoundryGuide({
       okoro: this.okoro,
       level: this.level,
@@ -501,22 +505,26 @@ export class LabsDirector {
             game._patientSound?.("death", null, 1);
           }
         },
+        // It wins: one chance, as with the roof's flying patients - the
+        // death plays out (_bendDeath: it comes down on you), then the run is
+        // over. (It used to cost 30 and come round again, and when that 30
+        // was the last of you the run stuck: stopped mid-death, then retried.)
         fail: () => {
-          // It wins: a heavy hit, not instant death (unless that was the last of you).
-          r.vitality = Math.max(0, r.vitality - 30);
+          r.vitality = 0;
           game.hitFlash = 1;
           game.hud.flashDamage();
           this.log.push(["struggle-fail", r.vitality]);
-          if (r.vitality <= 0) {
-            this.layer.stop();
-            this._endScene();
-            r.alive = false;
-            game._finishRun(false, "THEY GOT YOU");
-          }
+          return "over";
+        },
+        over: () => {
+          this._endScene();
+          r.alive = false;
+          game._finishRun(false, "THEY GOT YOU");
         },
         done: () => {
           patient.root.visible = false;
           this._endScene();
+          // (Then 3, 2, 1, as after every cutscene: main.js watchCutscenes.)
           this._startRun(d);
         },
       },

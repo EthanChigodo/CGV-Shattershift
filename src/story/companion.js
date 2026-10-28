@@ -144,6 +144,9 @@ const _x = new THREE.Vector3();
 const _y = new THREE.Vector3();
 const _z = new THREE.Vector3();
 const _basis = new THREE.Matrix4();
+const _fwdAhead = new THREE.Vector3();
+/** Which way a ValveBiped finger bone's local Z turns it in (toward the palm). */
+const FIST_SIGN = -1;
 const Y = new THREE.Vector3(0, 1, 0);
 const _X = new THREE.Vector3(1, 0, 0);
 
@@ -256,9 +259,15 @@ export class Companion {
    * Carry an object in a hand. It is re-placed every frame at the hand bone,
    * pointing along the forearm. `offset` is in the object's frame after that.
    */
-  hold(object, { hand = "R", offset = [0, 0, 0], rotation = [0, 0, 0], upright = false } = {}) {
+  /**
+   * `upright`: along the forearm, its top kept up. `facing`: pointing the way
+   * he faces whatever the arm does, `facing` radians down (a pistol at low
+   * ready - along the forearm it swung back into his sleeve when his hands
+   * came up, and only its smallest parts showed).
+   */
+  hold(object, { hand = "R", offset = [0, 0, 0], rotation = [0, 0, 0], upright = false, facing = null, fist = false } = {}) {
     this.root.add(object);
-    this.props.push({ object, hand, offset: new THREE.Vector3(...offset), rotation: new THREE.Euler(...rotation), upright });
+    this.props.push({ object, hand, offset: new THREE.Vector3(...offset), rotation: new THREE.Euler(...rotation), upright, facing, fist });
     return object;
   }
 
@@ -517,8 +526,29 @@ export class Companion {
     strap.geometry.computeVertexNormals();
   }
 
+  /**
+   * Close a hand round what it holds (`fist` on hold): the model's own finger
+   * bones (ValveBiped Finger0-4: the thumb, then index to little; three
+   * joints each), turned in once - the rig never moves them, so they stay.
+   */
+  _makeFist(side) {
+    if (!this.model || this._fist?.model === this.model && this._fist.side === side) return;
+    this._fist = { model: this.model, side };
+    this.model.traverse((b) => {
+      if (!b.isBone) return;
+      const m = b.name.match(side === "R" ? /_R_Finger(\d)(\d?)_/ : /_L_Finger(\d)(\d?)_/);
+      if (!m || /_end_/.test(b.name)) return;
+      const thumb = m[1] === "0";
+      const joint = m[2] === "" ? 0 : Number(m[2]);
+      // Knuckles less, the middle joints most; the thumb across, a little.
+      const curl = thumb ? [0.25, 0.35, 0.3][joint] : [1.05, 1.25, 0.85][joint];
+      b.rotation.z += FIST_SIGN * curl;
+    });
+  }
+
   _placeProps() {
     if (!this.props.length) return;
+    for (const p of this.props) if (p.fist) this._makeFist(p.hand);
     this.root.updateMatrixWorld(true);
     this.model?.updateMatrixWorld(true);
     this.root.getWorldQuaternion(_qi).invert();
@@ -534,7 +564,22 @@ export class Companion {
       _dir.subVectors(_a, _b).normalize().applyQuaternion(_qi);
       this.root.worldToLocal(_a);
       p.object.position.copy(_a);
-      if (p.upright && Math.abs(_dir.y) < 0.97) {
+      if (p.facing !== null) {
+        // A pistol in the fist: the barrel first - the way he faces, dipped
+        // `facing` (rad) below level, low ready - -Z in his root's frame (his
+        // toes point down -Z: aimed at +Z, the slide ran back along his
+        // forearm); the prop's barrel is its -Z. Then its grip down the hand
+        // (from the wrist toward the fingers, `_dir`), squared to the barrel
+        // (squaring the barrel to a hanging hand pointed it at the ceiling).
+        _z.set(0, -Math.sin(p.facing), -Math.cos(p.facing)).negate();
+        _y.copy(_dir).negate().addScaledVector(_z, _dir.dot(_z)).normalize();
+        if (_y.y < 0.2) _y.set(0, 1, 0).addScaledVector(_z, -_z.y).normalize();
+        _x.crossVectors(_y, _z).normalize();
+        _y.crossVectors(_z, _x);
+        p.object.quaternion.setFromRotationMatrix(_basis.makeBasis(_x, _y, _z));
+        // (In the palm, not at the wrist.)
+        p.object.position.addScaledVector(_dir, 0.06);
+      } else if (p.upright && Math.abs(_dir.y) < 0.97) {
         // Along the forearm, but its top kept up (a pistol held level, not
         // rolled however the arm happens to turn).
         _z.copy(_dir).negate();

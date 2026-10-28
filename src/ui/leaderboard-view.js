@@ -54,9 +54,18 @@ export class LeaderboardView {
     this._pick(board, true);
   }
 
+  /** Who you are on the boards: a card - your initials, your name, Change (or Choose). */
   _me() {
     const name = this.lb.name;
-    this.me.innerHTML = `<span>Playing as</span><b>${name ? escape(name) : "No name yet"}</b><button type="button" class="text-button lb-rename">${name ? "Change name" : "Choose a name"}</button>`;
+    // (Two words: their first letters; one: its first two.)
+    const words = name ? name.replace(/[^A-Za-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean) : [];
+    const initials = !name ? "?" : (words.length > 1 ? words[0][0] + words[1][0] : words[0] ?? name).slice(0, 2).toUpperCase();
+    const pencil = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 2.3l2.4 2.4-8.4 8.4-3.1.7.7-3.1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+    this.me.classList.toggle("unnamed", !name);
+    this.me.innerHTML = `
+      <i class="lb-avatar" aria-hidden="true">${escape(initials)}</i>
+      <span class="lb-who"><small>Playing as</small><b>${name ? escape(name) : "No name yet"}</b></span>
+      <button type="button" class="lb-rename">${pencil}${name ? "Change name" : "Choose a name"}</button>`;
     this.me.querySelector(".lb-rename").addEventListener("click", () => this.onChangeName?.(() => { this._me(); this._load(); }));
   }
 

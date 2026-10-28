@@ -34,6 +34,7 @@
 import * as THREE from "../../three.js";
 import { gateRecoveryWaiting } from "../../systems/ammo-recovery.js";
 import { CausewayKit, CASE_FILES } from "./kit.js";
+import { SecurityDrones } from "./drones.js";
 import { ShellTreadmill } from "./shell.js";
 import { ReflectionProbe } from "./probe.js";
 import { LAYERS, setLayer } from "./layers.js";
@@ -217,7 +218,10 @@ export class CausewayLevel {
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this._player = new THREE.Vector3();
+    this._playerLocal = new THREE.Vector3();
     this.distance = 0;
+    // HALCYON's security drones: only a shock sphere brings one down (drones.js).
+    this.drones = new SecurityDrones(this, { mode, hard });
 
     // Spawn the start so the menu and intro have a world to look at.
     this._stream(0);
@@ -740,9 +744,11 @@ export class CausewayLevel {
    * @param {{point?:THREE.Vector3, direction?:THREE.Vector3, ball?:string, body?:boolean}} hit
    * @returns {null | {kind, points, spheres, label, position, cracked?, rejected?, serum?, file?}}
    */
-  breakTarget(mesh, { point, direction, ball = "glass", body = false } = {}) {
+  breakTarget(mesh, { point, direction, ball = "glass", body = false, sphere = ball } = {}) {
     const data = mesh.userData;
     if (!data.alive) return null;
+    // A security drone: armoured - only a shock sphere (what was thrown) downs it.
+    if (data.kind === "drone") return this.drones.hit(mesh, { sphere });
     const rec = data.record;
     const position = new THREE.Vector3();
     mesh.getWorldPosition(position);
@@ -909,6 +915,8 @@ export class CausewayLevel {
       this._ring(point, 0xd28bff, radius);
       this._flashAt(point, 0xd28bff, 10);
     }
+    // (A drone in reach of a shock burst comes down: Causeway.breakTarget,
+    // through the host's sweep of targetsNear - with the sphere thrown.)
     return { extinguished, frozen };
   }
 
@@ -1111,6 +1119,7 @@ export class CausewayLevel {
     this._updateFinale(dt, distance, playing, ammunition, throwCost);
 
     this.shield.position.copy(this._player).sub(this.origin);
+    this.drones.update(dt, time, distance, this._playerLocal.copy(this._player).sub(this.origin), playing);
     this.probe.position.set(this._player.x * 0.5, 1.8, this._player.z - 7);
 
     // Aimable targets.
@@ -1121,6 +1130,7 @@ export class CausewayLevel {
       for (const t of rec.targets) if (t.userData.alive) this.breakables.push(t);
       for (const c of rec.colliders) if (!c.userData.disabled) this.solids.push(c);
     }
+    for (const t of this.drones.targets()) this.breakables.push(t);
     return s;
   }
 
@@ -1645,6 +1655,7 @@ export class CausewayLevel {
   }
 
   dispose() {
+    this.drones.dispose();
     for (const rec of this.live) this._despawn(rec);
     this.live.length = 0;
     while (this.debris.length) this._removeDebris(0);

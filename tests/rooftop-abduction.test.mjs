@@ -8,7 +8,7 @@ registerHooks({resolve(s,c,next) {
   if(s.startsWith('three/addons/')) return next(new URL('lib/three/examples/jsm/'+s.slice(13),base).href,c);
   return next(s,c);
 }});
-const { FlyingZombieEncounter, ABDUCTION, FLIGHT, abductionReaction, safeAbductionSpot } = await import('../src/levels/meltdown/flying-zombies.js');
+const { FlyingZombieEncounter, ABDUCTION, ENDLESS_RAMP, FLIGHT, CLOSE, abductionReaction, safeAbductionSpot } = await import('../src/levels/meltdown/flying-zombies.js');
 const { ReactionHits } = await import('../src/story/reaction.js');
 const { MeltdownGame } = await import('../src/levels/meltdown/game.js');
 const classes = new Set();
@@ -46,7 +46,7 @@ function harness(key='normal', hz=60) {
   return {g,f,ui,reactions,roof,scene,weapon,shoulder,root,template,step,until,attack};
 }
 
-for(const [key,count,warning,time,presses] of [['easy',1,3.5,5,6],['normal',2,3,4,8],['hard',2,2,2.5,10]]) {
+for(const [key,count,warning,time,presses] of [['easy',1,3,5,6],['normal',2,2.4,4,8],['hard',2,1.25,2.5,10]]) {
   test(`${key}: capped separate models, animated wings and exact QTE balancing`,()=>{
     const h=harness(key); const {f,roof,reactions}=h;
     assert.deepEqual([f.tune.maximum,f.tune.warning,f.tune.qte,f.tune.presses],[count,warning,time,presses]);
@@ -73,29 +73,42 @@ for(const [key,count,warning,time,presses] of [['easy',1,3.5,5,6],['normal',2,3,
 }
 
 test('random intervals are bounded and spawning begins after the arrival grace',()=>{
-  const h=harness('normal');h.f.attackIn=1000;
-  h.step(5*60);assert.equal(h.f.activeCount,0);
-  h.step(4*60);assert.equal(h.f.activeCount,1);assert.ok(h.f.spawnIn>=7&&h.f.spawnIn<=14);
-  h.step(14*60);assert.equal(h.f.activeCount,2);
+  const h=harness('normal');h.f.attackIn=1000;const t=ABDUCTION.normal;
+  h.step(Math.floor((t.firstSpawn[0]-.1)*60));assert.equal(h.f.activeCount,0);
+  h.step(Math.ceil((t.firstSpawn[1]-t.firstSpawn[0]+.2)*60));assert.equal(h.f.activeCount,1);assert.ok(h.f.spawnIn>=t.spawn[0]-1&&h.f.spawnIn<=t.spawn[1]);
+  h.step(Math.ceil(t.spawn[1]*60));assert.equal(h.f.activeCount,2);
   h.step(30*60);assert.equal(h.f.activeCount,2);h.f.dispose();
 });
 
-test('target tracks briefly then locks; moving out causes a miss without dropping the gun',()=>{
-  const h=harness();h.attack();h.g.hero.position.x=1;h.step(20);assert.equal(h.f.target.x,1);
-  h.step(40);const target=h.f.target.clone();h.g.hero.position.x=7;
-  h.until(()=>h.f.state==='idle');assert.ok(h.f.target.equals(target));
-  assert.equal(h.weapon.parent,h.shoulder);assert.equal(h.f.weapon,null);
-  assert.ok(h.f.attackIn>=12);assert.equal(h.g.phase,'roof');assert.equal(h.f.marker.visible,false);h.f.dispose();
+test('easy swoops rarely and slowly, hard often and too fast to walk out of',()=>{
+  const window=(t)=>t.warning-t.tracking+t.dive;
+  assert.ok(window(ABDUCTION.easy)>=2.5&&window(ABDUCTION.normal)>window(ABDUCTION.hard)&&window(ABDUCTION.hard)<0.6);
+  assert.ok(ABDUCTION.easy.cooldown[0]>ABDUCTION.normal.cooldown[1]&&ABDUCTION.normal.cooldown[0]>ABDUCTION.hard.cooldown[1]);
 });
 
-for(const hz of [30,60,144]) test(`grab, safe drop, escape, proximity E pickup and cleanup at ${hz}Hz`,()=>{
+test('endless roof quickens the swoops the longer the roof is held',()=>{
+  const h=harness('normal');h.g.mode='endless-roof';h.g.roofClock=0;
+  const start=h.f.tune;assert.equal(start.warning,ABDUCTION.normal.warning);
+  h.g.roofClock=ENDLESS_RAMP.minutes*60*2;const late=h.f.tune;
+  assert.equal(late.warning,ENDLESS_RAMP.warning);assert.equal(late.dive,ENDLESS_RAMP.dive);assert.equal(late.maximum,ENDLESS_RAMP.maximum);
+  assert.ok(late.cooldown[1]<start.cooldown[0]&&late.warning-late.tracking+late.dive<0.5);
+  h.g.mode='full';assert.equal(h.f.tune,ABDUCTION.normal,'the story keeps its difficulty');h.f.dispose();
+});
+
+test('target tracks then locks; moving out causes a miss with the gun kept in hand',()=>{
+  const h=harness();const tune=ABDUCTION.normal;h.attack();h.g.hero.position.x=1;h.step(20);assert.equal(h.f.target.x,1);
+  h.step(Math.ceil((tune.tracking+.1)*60)-20);const target=h.f.target.clone();h.g.hero.position.x=7;
+  h.until(()=>h.f.state==='idle');assert.ok(h.f.target.equals(target));
+  assert.equal(h.weapon.parent,h.shoulder);
+  assert.ok(h.f.attackIn>=tune.cooldown[0]);assert.equal(h.g.phase,'roof');assert.equal(h.f.marker.visible,false);h.f.dispose();
+});
+
+for(const hz of [30,60,144]) test(`grab, first-person struggle, point-blank shot, release and cleanup at ${hz}Hz`,()=>{
   const h=harness('normal',hz);h.attack();
-  h.until(()=>h.f.state==='dive');
-  h.scene.updateMatrixWorld(true);const start=h.weapon.getWorldPosition(new THREE.Vector3()), q=h.weapon.getWorldQuaternion(new THREE.Quaternion());
   h.until(()=>h.f.state==='grab');
   assert.equal(h.g.phase,'roofAbduct');assert.equal(h.root.parent,h.f.attacker.carry);
-  assert.ok(h.weapon.position.distanceTo(start)<1e-8);assert.ok(h.weapon.quaternion.angleTo(q)<1e-7);
-  assert.equal(h.weapon.parent,h.scene);assert.equal(h.f.weapon,h.weapon);
+  assert.equal(h.weapon.parent,h.g.camera,'the launcher stays in your hands, first person');
+  assert.equal(h.root.visible,false,'your own body is out of the close-up');assert.ok(h.f.firstPerson);
   h.g._shoot();assert.equal(h.g.runner.balls,10,'no shooting while abducted');
   const grabber=h.f.attacker;grabber.lastPose=null;grabber.rig.pose=(pose)=>{grabber.lastPose=pose;};
   h.until(()=>h.f.state==='carried');const y=h.g.hero.position.y;h.step(Math.ceil(hz*.5));assert.ok(h.g.hero.position.y>y);
@@ -108,18 +121,29 @@ for(const hz of [30,60,144]) test(`grab, safe drop, escape, proximity E pickup a
   const right=grabber.rig.bones.handR.getWorldPosition(new THREE.Vector3());
   const handMidpoint=left.add(right).multiplyScalar(0.5);
   assert.ok(handMidpoint.distanceTo(h.root.getWorldPosition(new THREE.Vector3()))<0.2,'player stays centered between the zombie hands');
-  assert.ok(h.f.drop.landed);const floorWeapon=h.weapon.position.clone();
-  assert.ok(new THREE.Box3().setFromObject(h.weapon).min.y>=.04);
+  // The close-up: the eye just under the grip, looking up into its face.
+  h.g.camera.updateMatrixWorld(true);
+  const face=h.f._headWorld(grabber,new THREE.Vector3()),eye=h.g.camera.getWorldPosition(new THREE.Vector3());
+  assert.ok(eye.distanceTo(face)<2,'close up to it');
+  assert.ok(h.g.camera.getWorldDirection(new THREE.Vector3()).dot(face.clone().sub(eye).normalize())>0.9,'looking up into its face');
   for(let i=0;i<8;i++){h.reactions.keyDown('Space');h.reactions.keyUp('Space');h.step();}
+  assert.equal(h.f.state,'shoot');
+  h.until(()=>h.f.fired);assert.ok(h.g.launcher.recoil>0.5,'the launcher kicks');
   h.until(()=>h.g.phase==='roof');assert.equal(h.g.hero.position.y,0);
-  assert.equal(h.root.parent,h.scene);assert.equal(h.g.avatar.hold,0);assert.ok(h.weapon.position.equals(floorWeapon));
+  assert.equal(grabber.state,'blasted','shot off, not flying away');
+  assert.equal(h.root.parent,h.scene);assert.equal(h.root.visible,true);assert.equal(h.g.avatar.hold,1);assert.equal(h.weapon.parent,h.shoulder);
   assert.equal(h.roof.groundAt(h.g.hero.position),0);assert.equal(h.roof.blocked(h.g.hero.position,.45),false);
-  h.g._shoot();assert.equal(h.g.runner.balls,10,'unarmed shooting blocked');
-  h.g.hero.position.set(-12,0,-12);assert.equal(h.f.pickup(),false);
-  h.g.hero.position.copy(h.f.drop.to).setY(0);
-  assert.ok(h.f.pickupPrompt.includes('E'));assert.equal(h.g.onKeyDown({code:'KeyE',repeat:false}),true);
-  assert.equal(h.f.weapon,null);assert.equal(h.weapon.parent,h.shoulder);assert.equal(h.g.avatar.hold,1);
+  const fell=grabber.root.position.y;h.step(hz);assert.ok(grabber.root.position.y<fell,'it falls away');
   const group=h.f.root;h.f.dispose();h.f.dispose();assert.equal(group.parent,null);assert.equal(h.f.actors.length,0);
+});
+
+test('a lost struggle: the bite, the eyes closing, then carried off limp',()=>{
+  const h=harness();h.attack();h.until(()=>h.f.state==='carried');
+  h.until(()=>h.f.state==='bite');assert.ok(h.f.firstPerson);
+  h.until(()=>h.f.bitten);assert.equal(h.g.hitFlash,1);assert.ok(h.f.unconscious);
+  assert.ok(h.f._closed(CLOSE.bite)===1&&h.f._closed(0)===0&&h.f._closed(0.72)<h.f._closed(0.55),'two heavy blinks, then out');
+  h.until(()=>h.f.state==='sky');assert.equal(h.weapon.parent,h.shoulder);assert.equal(h.root.visible,true);
+  h.step(10);assert.ok(h.g.avatar.lastFlail.k<0.1,'hanging limp');h.f.dispose();
 });
 
 for(const key of ['easy','normal','hard']) test(`${key}: QTE failure carries attached player along a 45-degree path past a fixed oblique camera`,()=>{
@@ -205,14 +229,14 @@ test('angled carry route keeps avoiding roof cover after the capture summary app
   h.f.dispose();
 });
 
-test('pause freezes carry, weapon and QTE; edge fall keeps the existing dropped weapon separate',()=>{
+test('pause freezes carry, the close-up and QTE; an edge fall after leaves the launcher on the shoulder',()=>{
   const h=harness();h.attack();h.until(()=>h.f.state==='carried');
-  h.g.setPaused(true);const y=h.g.hero.position.y,t=h.reactions._s.total,weapon=h.weapon.position.clone();h.step(60);
+  h.g.setPaused(true);const y=h.g.hero.position.y,t=h.reactions._s.total,weapon=h.weapon.position.clone(),eye=h.g.camera.position.clone();h.step(60);
   h.reactions._onKeyDown({code:'Space',repeat:false});assert.equal(h.reactions._s.presses,0);
-  assert.equal(h.reactions._s.total,t);assert.equal(h.g.hero.position.y,y);assert.ok(h.weapon.position.equals(weapon));
+  assert.equal(h.reactions._s.total,t);assert.equal(h.g.hero.position.y,y);assert.ok(h.weapon.position.equals(weapon));assert.ok(h.g.camera.position.equals(eye));
   h.g.setPaused(false);assert.equal(h.reactions.paused,false);
   for(let i=0;i<8;i++){h.reactions.keyDown('Space');h.reactions.keyUp('Space');}h.until(()=>h.g.phase==='roof');
-  const groundParent=h.weapon.parent;h.g.phase='roofFall';h.step();assert.equal(h.f.weapon,h.weapon);assert.equal(h.weapon.parent,groundParent);assert.equal(h.f.marker.visible,false);
+  h.g.phase='roofFall';h.step();assert.equal(h.weapon.parent,h.shoulder);assert.equal(h.f.marker.visible,false);
   h.f.dispose();assert.equal(classes.size,0);
 });
 
@@ -229,13 +253,13 @@ test('accessibility reuses long windows, hold conversion and pad glyph mapping w
   }
 });
 
-test('repeated captures reuse one dropped weapon and cleanup cancels an active QTE',()=>{
+test('repeated captures keep the one launcher and cleanup cancels an active QTE',()=>{
   const h=harness();h.attack();h.until(()=>h.f.state==='carried');
   for(let i=0;i<8;i++){h.reactions.keyDown('Space');h.reactions.keyUp('Space');}
-  h.until(()=>h.f.state==='idle');const weapon=h.f.weapon,drop=h.f.drop;
+  h.until(()=>h.f.state==='idle');assert.equal(h.weapon.parent,h.shoulder);
   h.attack();h.until(()=>h.f.state==='carried');
-  assert.equal(h.f.weapon,weapon);assert.equal(h.f.drop,drop);
-  let count=0;h.scene.traverse(o=>{if(o===weapon)count++;});assert.equal(count,1);
+  assert.equal(h.weapon.parent,h.g.camera);
+  let count=0;h.scene.traverse(o=>{if(o===h.weapon)count++;});assert.equal(count,1);
   assert.equal(h.g.onKeyDown({code:'KeyV'}),true,'view shortcuts are captured');
   assert.equal(h.g.onKeyDown({code:'Digit1'}),true,'debug scene switches are captured');
   assert.equal(h.g.onKeyDown({code:'Escape'}),false,'pause remains available');
