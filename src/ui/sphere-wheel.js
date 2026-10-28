@@ -60,7 +60,7 @@ export class SphereWheel {
     this.root.innerHTML = `
       <div class="sw-x"><i></i><i></i></div>
       <div class="sw-panel"></div>
-      <b class="sw-key sw-q">Q</b><b class="sw-key sw-e">E</b>
+      <b class="sw-key sw-q" data-key="Q">Q</b><b class="sw-key sw-e" data-key="E">E</b>
       <div class="sw-count"><strong>0</strong><span>SPHERES</span></div>
       ${BALL_ORDER.map((key) => `<div class="sw-slot" data-ball="${key}" style="--x:${SLOTS[key][0]}px;--y:${SLOTS[key][1]}px;--c:#${BALLS[key].colour.toString(16).padStart(6, "0")}">${medallion(key)}</div>`).join("")}
       <div class="sw-label"><b></b><span></span></div>`;
@@ -74,8 +74,14 @@ export class SphereWheel {
   }
 
   /** Each frame: the sphere in use, how many you have, what the next one costs. */
-  update({ ball = "glass", spheres = 0, cost = 1, visible = true }) {
+  update({ ball = "glass", spheres = 0, cost = 1, visible = true, allowed = null }) {
     const s = this.state;
+    // The types not earned yet in the story (progression.js): dimmed, locked.
+    const lockKey = allowed ? [...allowed].join() : "";
+    if (lockKey !== s.lockKey) {
+      s.lockKey = lockKey;
+      for (const [key, slot] of Object.entries(this.slots)) slot.classList.toggle("locked", !!allowed && !allowed.has(key));
+    }
     if (visible !== s.visible) {
       s.visible = visible;
       this.root.classList.toggle("show", visible);

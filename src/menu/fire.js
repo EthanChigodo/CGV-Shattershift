@@ -126,7 +126,8 @@ const FLAME_FRAGMENT = /* glsl */ `
   }
 `;
 
-class Flames {
+/** Flames out of windows (the Skyline's blast tower borrows them: stages/demolition-tower.js). */
+export class Flames {
   constructor({ haze, noise, max = 48 }) {
     this.max = max;
     const plane = new THREE.PlaneGeometry(1, 1, 1, 6);
@@ -474,7 +475,7 @@ const EMBER_FRAGMENT = /* glsl */ `
   }
 `;
 
-class Embers {
+export class Embers {
   constructor({ count, origin, spread, wind, size = 0.22, rise = 4.5, life = 9, color = new THREE.Color(6, 2.2, 0.5), seed = 41 }) {
     const r = rng(seed);
     const s1 = new Float32Array(count * 4);
@@ -869,4 +870,4 @@ export class DriftingAsh {
   }
 }
 
-export { Embers };
+

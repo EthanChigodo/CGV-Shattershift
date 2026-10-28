@@ -1,0 +1,111 @@
+/* What a sector gives you, before it starts (src/ui/unlock-card.js): the
+   picture dimmed behind; each new thing a picture of it in play, its name,
+   what it does and its keys - in the NIGHTFALL look (theme.css). */
+.unlock-card {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  padding: 32px 24px;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 45%, rgba(4, 6, 9, .62), rgba(4, 6, 9, .92)),
+    rgba(4, 6, 9, .25);
+  backdrop-filter: blur(8px);
+  font-family: var(--font);
+  color: var(--text);
+  text-shadow: var(--shadow-text);
+}
+.unlock-card[hidden] { display: none; }
+.uc-box { width: min(1120px, 100%); }
+.uc-eyebrow { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 500; letter-spacing: .03em; color: var(--ember-2); }
+.uc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 10px var(--ember); }
+.uc-title {
+  margin: 10px 0 28px;
+  font-stretch: var(--wide);
+  font-weight: 220;
+  font-size: clamp(30px, 3.6vw, 48px);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+.uc-title::after { content: ""; display: block; width: 44px; height: 1px; margin-top: 18px; background: var(--ember); }
+.uc-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 28px; }
+.unlock-card.few .uc-items { grid-template-columns: repeat(auto-fit, minmax(300px, 420px)); }
+/* Four (the Skyline: its new things and what to know): one row, a little tighter. */
+.unlock-card.many .uc-box { width: min(1280px, 100%); }
+.unlock-card.many .uc-items { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 22px; }
+.unlock-card.many .uc-name { font-size: 19px; }
+.unlock-card.many .uc-text { font-size: 14px; }
+.uc-item { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.unlock-card.show .uc-item { animation: ucIn .8s var(--ease-out) both; animation-delay: calc(.12s + var(--i) * .14s); }
+@keyframes ucIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* The picture: a frame of it in play, a hairline of its colour under it. */
+.uc-pic {
+  position: relative;
+  margin: 0 0 8px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #07090c;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+.uc-pic::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--c), transparent); }
+.uc-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.unlock-card.show .uc-pic img { animation: ucKen 9s ease-out both; }
+@keyframes ucKen { from { transform: scale(1.08); } to { transform: scale(1); } }
+.uc-pic-fallback { display: none; position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--c) 60%, white) 0 9%, color-mix(in srgb, var(--c) 45%, transparent) 10%, transparent 42%), radial-gradient(ellipse at 50% 120%, color-mix(in srgb, var(--c) 30%, transparent), transparent 60%), #07090c; }
+.uc-pic.missing img { display: none; }
+.uc-pic.missing .uc-pic-fallback { display: block; }
+
+.uc-tag { font-size: 11px; font-weight: 600; letter-spacing: .24em; text-transform: uppercase; color: var(--c); }
+.uc-name { font-stretch: var(--wide); font-weight: 300; font-size: 22px; letter-spacing: .06em; text-transform: uppercase; }
+.uc-text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--text-2); }
+.uc-how { display: grid; gap: 6px; margin: 6px 0 0; }
+.uc-how-line { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.uc-how dt { display: flex; gap: 4px; }
+.uc-how dt > span { display: flex; gap: 4px; }
+.uc-how dd { margin: 0; font-size: 13px; color: var(--text-3); }
+.unlock-card kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.9em;
+  height: 1.9em;
+  padding: 0 .55em;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  font: 600 12px var(--font);
+  color: var(--text);
+  background: rgba(255, 255, 255, .05);
+  text-shadow: none;
+}
+
+.uc-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 28px; margin-top: 36px; }
+.uc-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--ember);
+  background: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-stretch: var(--wide);
+  font-weight: 300;
+  font-size: 15px;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  text-shadow: var(--shadow-text);
+  cursor: pointer;
+  transition: color .25s, gap .35s var(--ease-out);
+}
+.uc-button i { font-style: normal; font-size: 9px; color: var(--ember); }
+.uc-button:hover, .uc-button:focus-visible { color: var(--ember-2); gap: 20px; outline: none; }
+.uc-keys { margin: 0; font-size: 13px; color: var(--text-3); }
+
+@media (max-width: 700px) {
+  .uc-items, .unlock-card.few .uc-items { grid-template-columns: 1fr; }
+  .uc-title { margin-bottom: 20px; }
+}

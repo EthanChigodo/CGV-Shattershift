@@ -255,20 +255,6 @@ export const memory = {
         await new Promise((r) => setTimeout(r, 50));
         return { geometries: d.renderer.info.memory.geometries, textures: d.renderer.info.memory.textures };
       };
-      // The menu's 3D stage streams in at boot and uploads its textures once
-      // (src/menu/backdrop.js): let it land first, so only restarts are measured.
-      const t0 = performance.now();
-      while (!(d.menuStage.live || d.menuStage.failed) && performance.now() - t0 < 180000) await new Promise((r) => setTimeout(r, 200));
-      // Other assets still stream in at boot (the story's people, Level 3's
-      // models) and upload when first drawn: restart until the count holds
-      // for three in a row, then measure. A real leak never holds.
-      let held = 0;
-      let last = -1;
-      for (let i = 0; i < 14 && held < 3; i += 1) {
-        const t = (await sample()).textures;
-        held = t === last ? held + 1 : 0;
-        last = t;
-      }
       const counts = [];
       for (let i = 0; i < 5; i += 1) counts.push(await sample());
       const failures = [];
@@ -373,58 +359,6 @@ export const aim = {
       const files = d.causeway.summary().files;
       if (!files.includes(1)) failures.push("running through the case file at 186 m did not collect it");
       return { failures, notes: { ...results, fileCollected: files.includes(1) } };
-    });
-  },
-};
-
-/**
- * Tower C (src/fx/demolition.js): the "tower" event at 256 m brings it down
- * where the first-person camera sees it - a charge on every floor, the
- * blast, the top falling - and it is down while you are still on the
- * bridge, with no light added for it.
- */
-export const demolition = {
-  name: "demolition",
-  async run(page) {
-    return page.evaluate(() => {
-      const d = globalThis.__dbg;
-      const THREE = d.THREE;
-      const failures = [];
-      d.resetGame("story");
-      d.setHealth(1e6);
-      const lights = () => { let n = 0; d.scene.traverse((o) => { if (o.isLight) n += 1; }); return n; };
-      const before = lights();
-      const phases = [];
-      const off = d.causeway.events.on("demolition", (p) => phases.push(p.phase));
-      const tower = d.causeway.towerC;
-      d.setCausewayDistance(250);
-      const frustum = new THREE.Frustum();
-      const m = new THREE.Matrix4();
-      let frames = 0;
-      let seen = 0;
-      let startD = null;
-      for (let i = 0; i < 30 * 16 && !tower.state.down; i += 1) {
-        d.setHealth(1e6);
-        d.step(1);
-        if (!tower.started) continue;
-        startD ??= d.causewayDistance();
-        frames += 1;
-        d.camera.updateMatrixWorld();
-        frustum.setFromProjectionMatrix(m.multiplyMatrices(d.camera.projectionMatrix, d.camera.matrixWorldInverse));
-        // Where it's happening: the cut, then the falling top's foot.
-        const y = tower.base + (tower.cutFloor + 1) * tower.floorHeight - tower.state.drop * 0.5;
-        if (frustum.containsPoint(tower.root.localToWorld(new THREE.Vector3(0, y, 0)))) seen += 1;
-      }
-      off();
-      const notes = { startD: startD?.toFixed(1), downD: d.causewayDistance().toFixed(1), inView: `${seen}/${frames}`, crushes: phases.filter((p) => p === "crush").length };
-      if (startD === null || startD > 262) failures.push(`Tower C never started (or late: ${startD})`);
-      if (!tower.state.down) failures.push("Tower C never came down");
-      if (tower.state.charged !== tower.floors) failures.push(`${tower.state.charged}/${tower.floors} floors' charges went`);
-      for (const p of ["charges", "blast", "collapse", "down"]) if (!phases.includes(p)) failures.push(`no "${p}" event`);
-      if (seen < frames * 0.85) failures.push(`Tower C in view for only ${seen} of ${frames} frames`);
-      if (d.causewayDistance() > 540) failures.push("Tower C still falling past the end of the bridge");
-      if (lights() !== before) failures.push(`lights went from ${before} to ${lights()}`);
-      return { failures, notes };
     });
   },
 };

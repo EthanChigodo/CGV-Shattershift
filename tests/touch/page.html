@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#111} canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none}</style>
+<title>Touch controls check</title>
+<link rel="stylesheet" href="/src/ui/touch-controls.css">
+<canvas id="game"></canvas>
+<div class="sphere-wheel" style="position:fixed;right:20px;bottom:20px;width:120px;height:120px;background:#333"></div>
+<script type="module">
+import { TouchControls } from "/src/systems/touch-controls.js";
+window.log = [];
+window.hostMode = "run";
+window.wantsKeys = null;
+window.skyline = false;
+const canvas = document.getElementById("game");
+addEventListener("keydown", (e) => log.push(`down:${e.code}`));
+addEventListener("keyup", (e) => log.push(`up:${e.code}`));
+for (const t of ["pointerdown", "pointerup"]) addEventListener(t, (e) => { if (e.pointerType === "mouse") log.push(`${t}:${e.button}:${Math.round(e.clientX)},${Math.round(e.clientY)}`); });
+window.pickup = false;
+window.tc = new TouchControls({ canvas, mode: () => hostMode, wants: () => wantsKeys, canFocus: () => true, skyline: () => skyline, pickup: () => pickup });
+tc.attachWheel(document.querySelector(".sphere-wheel"), () => log.push("wheel"));
+const loop = () => { tc.update(1 / 60); requestAnimationFrame(loop); };
+loop();
+window.ready = true;
+</script>

@@ -345,7 +345,6 @@ export class PoliceHelicopters {
    */
   update(dt, time, { worldZ, distance, deckY = 0, overDeck = true, cityY = -60, spotZ = null, spotSpread = 7 }) {
     for (const [i, c] of this.craft.entries()) {
-      if (c.released) continue;
       c.angle += c.rate * dt;
       // An orbit to one side of the route, ahead of the player, carried along with them.
       const cz = worldZ(distance + c.ahead);
@@ -397,34 +396,6 @@ export class PoliceHelicopters {
       c.spot.scale.setScalar(onDeck ? 3.6 : 7);
       c.spot.material.opacity = onDeck ? 0.45 : 0.3;
     }
-  }
-
-  /**
-   * Hand a craft over to something else (heli-crash.js): it stops circling
-   * and its searchlight goes out. Returns { holder, mainHub, tailHub } (the
-   * hubs only once the model is in), or null if it's already gone.
-   */
-  release(index = 0) {
-    const c = this.craft[index];
-    if (!c || c.released) return null;
-    c.released = true;
-    c.beam.visible = false;
-    c.spot.visible = false;
-    c.lamp.visible = false;
-    return { holder: c.holder, mainHub: c.mainHub, tailHub: c.tailHub };
-  }
-
-  /** Back into the circuit, whole again (a restart). */
-  restore(index) {
-    const c = this.craft[index];
-    if (!c?.released) return;
-    c.released = false;
-    c.snapped = false;
-    c.beam.visible = true;
-    c.spot.visible = true;
-    c.lamp.visible = true;
-    c.holder.visible = true;
-    if (c.tailHub) c.tailHub.visible = true;
   }
 
   dispose() {

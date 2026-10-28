@@ -1,0 +1,71 @@
+/* Touch controls (src/systems/touch-controls.js): only the buttons take
+   touches; everything else on the glass is read as swipes, taps and holds. */
+
+.touch-ui { position: fixed; inset: 0; z-index: 9; pointer-events: none; display: none; font-family: var(--font); }
+.touch-ui.show { display: block; }
+
+.tc-button {
+  position: fixed; display: none; place-items: center; pointer-events: auto; touch-action: none;
+  min-width: 76px; height: 76px; padding: 0 14px; border-radius: 50%;
+  border: 1px solid rgba(244, 240, 232, .38); background: rgba(8, 10, 14, .42);
+  color: var(--text, #f4f0e8); font: 600 12px/1 var(--font); letter-spacing: .16em; text-transform: uppercase;
+  -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;
+  backdrop-filter: blur(4px); transition: background .12s, transform .12s, border-color .12s;
+}
+.tc-button.show { display: grid; }
+.tc-button.down { background: rgba(255, 122, 61, .42); border-color: var(--ember, #ff7a3d); transform: scale(.94); }
+/* Beside the sphere wheel (bottom right), clear of the notch. */
+.tc-dodge { right: calc(240px * var(--hud-zoom, 1) + 18px + var(--safe-r, 0px)); bottom: calc(22px + var(--safe-b, 0px)); width: 84px; height: 84px; }
+.tc-focus { right: calc(240px * var(--hud-zoom, 1) + 18px + var(--safe-r, 0px)); bottom: calc(118px + var(--safe-b, 0px)); }
+.tc-skip {
+  right: calc(18px + var(--safe-r, 0px)); bottom: calc(18px + var(--safe-b, 0px));
+  height: 46px; border-radius: 23px; padding: 0 20px; font-size: 11px;
+  /* Fills from the left as it is held. */
+  background: linear-gradient(90deg, rgba(255, 122, 61, .55) calc(var(--p, 0) * 100%), rgba(8, 10, 14, .42) 0);
+}
+.tc-skip.down { background: linear-gradient(90deg, rgba(255, 122, 61, .55) calc(var(--p, 0) * 100%), rgba(8, 10, 14, .55) 0); transform: none; }
+/* The cutscene's own "Hold Esc to skip" ring: on a touch screen the button is the skip. */
+html.touch .story-skip { display: none !important; }
+
+/* Something to pick up at your feet: big, in the middle, over the score. */
+.tc-pickup {
+  left: 50%; bottom: calc(96px + var(--safe-b, 0px)); transform: translateX(-50%);
+  height: 54px; border-radius: 27px; padding: 0 26px; font-size: 13px;
+  border-color: var(--ember, #ff7a3d); background: rgba(255, 122, 61, .3);
+}
+.tc-pickup.down { transform: translateX(-50%) scale(.95); }
+
+/* The roof's stick: it comes up where the thumb lands. */
+.tc-stick {
+  position: fixed; display: none; width: 116px; height: 116px; margin: -58px 0 0 -58px; border-radius: 50%;
+  border: 1px solid rgba(244, 240, 232, .32); background: radial-gradient(circle, rgba(8, 10, 14, .1), rgba(8, 10, 14, .38));
+}
+.tc-stick.show { display: block; }
+.tc-stick i {
+  position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; border-radius: 50%;
+  background: rgba(244, 240, 232, .55); box-shadow: 0 0 16px rgba(255, 122, 61, .35); transform: translate(-50%, -50%);
+}
+
+/* A quick-time hit: the two halves of the screen, and what each wants. */
+.tc-react { position: fixed; inset: 0; display: none; grid-template-columns: 1fr 1fr; }
+.tc-react.show { display: grid; }
+.tc-half { display: grid; align-items: end; justify-items: center; padding: 0 16px calc(13vh + var(--safe-b, 0px)); }
+.tc-left { border-right: 1px dashed rgba(244, 240, 232, .16); }
+.tc-half b {
+  font-stretch: var(--wide); font-weight: 500; font-size: clamp(15px, 3.6vh, 22px); letter-spacing: .14em; color: var(--text, #f4f0e8);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .7); opacity: 0; transition: opacity .2s;
+}
+.tc-half.on { background: linear-gradient(0deg, rgba(255, 122, 61, .14), transparent 55%); }
+.tc-half.on b { opacity: 1; }
+
+/* Hints: the touch screen's own words (.touch-only) in place of the keyboard's (.kb-only);
+   lines with no touch version (.no-touch) go. A controller in use keeps its own (pad-ui.css). */
+.touch-only { display: none !important; }
+html.touch body:not(.pad-mode) .touch-only { display: revert !important; }
+html.touch body:not(.pad-mode) :is(.kb-only, .no-touch) { display: none !important; }
+
+/* The sphere wheel takes a tap on a touch screen (it turns the wheel). */
+html.touch .sphere-wheel { pointer-events: auto; touch-action: none; }
+html.touch .sphere-wheel .sw-key { display: none; }
+
+@media (prefers-reduced-motion: reduce) { .tc-button, .tc-half b { transition: none; } }

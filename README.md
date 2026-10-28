@@ -26,29 +26,42 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 
 ## Controls
 
-| Keyboard and mouse | Controller (PlayStation / Xbox) | Action |
-| --- | --- | --- |
-| Mouse | Right stick | Aim - the crosshair follows the mouse (or the stick, like a mouse); aim assist (Settings) helps with small targets |
-| Left mouse | R2 / RT | Throw a sphere |
-| Right mouse (hold) | L2 / LT (hold) | Focus - slow time to aim |
-| `A` / `D` or left / right | Left stick or d-pad left / right | Change lane |
-| `W` / `S` or up / down | Left stick or d-pad up / down | Sprint / brake (the Skyline); jump / slide (the Foundry, the Labs) |
-| `Q` / `E` or mouse wheel | L1 / R1 (LB / RB) | Sphere type: glass, cryo, shock, gravity (picked in the main menu's loadout and the pause menu too) |
-| `Space` / `Shift` | ✕ / ○ (A / B) | Jump / slide |
-| `C` | △ / Y | First-person / chase camera |
-| `V` / VIEW button | Create / View | Choose which HUD panels show |
-| `H` | L3 / LS (click) | Hide the whole HUD |
-| `P` | R3 / RS (click) | Photo mode (filters, save photo, save 360° panorama); on a pad the right stick orbits, the triggers zoom |
-| `Esc` | Options / Menu | Pause and settings |
-| `R` | ✕ / A on *Run again* | Run again from the end screen |
-| Mouse, `Esc` | D-pad or left stick, ✕ / A, ○ / B, L1 / R1 | Menus: move, press, back, switch tabs; left / right change sliders and lists |
-| `1` `2` `3` `4` | - | Demo: jump to Sector 01 (Foundry), 02 (Labs), 03 (Skyline), the Roof - with that stage's story and cutscenes |
-| `5` | - | Demo: ride the Gravity Fault lift (Sector 01 to 02); left mouse (R2) fires at the brake clamps |
-| `6` | - | Demo: the quiet ride from the Labs up to the Skyline |
-| The Labs and the Roof | | Hold left mouse (R2) to fire; jump onto fallen ducts (running into one hurts); on the roof `WASD` (the left stick, analog) moves - the open ledges are a long drop - and `Space` (✕ / A) dodges or jumps for the ladder, while the right stick aims the way it points; `B` bloom, `K` credits. Photo mode is not available there |
-| Cutscenes | | Hold `Esc` (Options / Menu) to skip the talking; reaction prompts show the keys to press - or, with a pad in use, its buttons |
+| Input | Action |
+| --- | --- |
+| Mouse | Aim - the crosshair follows the mouse; aim assist (Settings) helps with small targets |
+| Left mouse | Throw a sphere |
+| Right mouse (hold) | Focus - slow time to aim |
+| `A` / `D` or left / right | Change lane |
+| `W` / `S` or up / down | Sprint / brake (the Skyline); jump / slide (the Foundry, the Labs) |
+| `Q` / `E` or mouse wheel | Sphere type: glass, cryo, shock, gravity (picked in the main menu's loadout and the pause menu too) |
+| `Space` / `Shift` | Jump / slide |
+| `C` | First-person / chase camera |
+| `V` / VIEW button | Choose which HUD panels show |
+| `H` | Hide the whole HUD |
+| `P` | Photo mode (filters, save photo, save 360° panorama) |
+| `Esc` | Pause and settings |
+| `R` | Run again from the end screen |
+| `1` `2` `3` `4` | Demo: jump to Sector 01 (Foundry), 02 (Labs), 03 (Skyline), the Roof - with that stage's story and cutscenes |
+| `5` | Demo: ride the Gravity Fault lift (Sector 01 to 02); left mouse fires at the brake clamps |
+| `6` | Demo: the quiet ride from the Labs up to the Skyline |
+| The Labs and the Roof | Hold left mouse to fire; jump onto fallen ducts (running into one hurts); on the roof `WASD` moves (the open ledges are a long drop) and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available there |
+| Cutscenes | Hold `Esc` to skip the talking; reaction prompts show the keys to press |
 
-A PlayStation (DualShock 4, DualSense) or Xbox pad plays everything, menus included, with no keyboard or mouse: plug it in at any time and press a button. Prompts name the pad's buttons while it is in use and the keys again once you touch the keyboard or mouse; it rumbles on glass, hits and deaths. Settings > Controller has the stick's sensitivity, invert and vibration. The full map and how it works: [`docs/controllers.md`](./docs/controllers.md).
+### On a phone or tablet (held sideways)
+
+| Touch | Action |
+| --- | --- |
+| Swipe left / right | Change lane |
+| Swipe up / down | Jump / slide (the Skyline: keep the finger down after it to sprint / brake) |
+| Tap | Throw at that spot |
+| Hold | Charge (the Labs' launcher too), aiming where the finger is; let go to throw |
+| Tap the sphere wheel | Change sphere |
+| FOCUS (held) | Slow time, once it is earned |
+| The roof | A stick comes up under your left thumb (walk); the right side aims and fires; DODGE dodges, pulls the generator's cord and jumps for the ladder |
+| Cutscenes | HOLD TO SKIP; a quick-time hit says what to do on each half of the screen (swipe there, or tap that side) |
+| PAUSE | At the top of the screen |
+
+A touch screen is found by itself; `?touch` on the address forces the touch controls on (`?touch=0` off). `?fps` shows the frame rate at the top.
 
 A run that uses a demo key (`1`-`6`) still plays on, but it no longer counts for the records: the fastest story run (from Sector 01 to the helicopter, in h:mm:ss) and each Endless level's best (distance and the time it took).
 
@@ -138,7 +151,6 @@ During a run, press `1`, `2`, `3`, `4` or `5` (see Controls). These shortcuts ar
 - [`docs/level-2-foundry.md`](./docs/level-2-foundry.md) and [`docs/test-plan-level-2.md`](./docs/test-plan-level-2.md) - Level 2.
 - [`docs/elevators.md`](./docs/elevators.md) - the elevators: the Gravity Fault lift (Level 2 to 3), how it plugs into `main.js`, and the plan for Level 3's lifts.
 - [`docs/figure-wear-shader.md`](./docs/figure-wear-shader.md) - the player figure (lab subject: scrubs, wristband, IV port) and its wear shader - clean, dusty, bloodied, geared up - block by block.
-- [`docs/controllers.md`](./docs/controllers.md) - playing with a PlayStation or Xbox pad: the full map, menus, prompts, rumble, and how it plugs into the game's keyboard and mouse input.
 - [`docs/credits.md`](./docs/credits.md) - credits and asset register.
 - [`docs/pull-request-level-1.md`](./docs/pull-request-level-1.md) - pull request description and push steps for Level 1.
 
@@ -150,7 +162,6 @@ npx playwright install chromium
 node tests/causeway/run.js
 node tests/foundry/run.js
 node tests/elevators/run.js
-node tests/controllers/run.js
 ```
 
 ## Team workflow
@@ -181,13 +192,23 @@ Deployment is a zip uploaded to the Moodle submission (no SSH); the server only 
 python tools/build-deploy.py
 ```
 
-This writes `dist/fracture-run/` (only `index.html`, `main.js`, `styles.css`, `src/`, `lib/`, `assets/` - no tests, docs or node_modules) and `dist/fracture-run.zip` with `index.html` at the top level, after checking for absolute paths (`/...`), spaces in filenames and filenames whose case does not match the code. Play the build before uploading, from a subfolder and case-sensitive like the real server:
+This writes `dist/fracture-run/` (only `index.html`, `main.js`, `styles.css`, `src/`, `lib/`, `assets/`, `api/` - no tests, docs or node_modules) and `dist/fracture-run.zip` with `index.html` at the top level, after checking for absolute paths (`/...`), spaces in filenames and filenames whose case does not match the code. Play the build before uploading, from a subfolder and case-sensitive like the real server:
 
 ```text
 python tools/serve.py 4173 dist
 ```
 
 then open `http://localhost:4173/fracture-run/` and play it through (check the console for 404s). Upload `dist/fracture-run.zip` following Moodle's naming convention, then open the published URL in Chrome and play it again.
+
+#### The global leaderboards (`api/leaderboard.php`)
+
+The leaderboards are one PHP file shipped in the build's `api/` folder, on the same server as the game - so they need **PHP on the LAMP server**. It keeps its data in whatever the server allows: SQLite if PHP has it, else a single JSON file (locked while written), in `api/data/` (made on the first call, closed to the web by its own `.htaccess`, the file under a random name) or - if the game's folder is read-only - the server's temp folder. If it still says it can't open its storage, open `.../api/leaderboard.php?action=diag`: it lists the PHP version, the database drivers and which folders it can write to (no secrets). For MySQL instead, put an `api/config.php` beside it (never committed, never in the zip):
+
+```php
+<?php return ['dsn' => 'mysql:host=localhost;dbname=fracture;charset=utf8mb4', 'user' => '...', 'pass' => '...'];
+```
+
+Names are unique (ignoring case, spaces and punctuation); a player proves who they are with a token kept in their browser (only its hash is stored). Without PHP the game plays as before: the boards say they're offline, names and bests wait in the browser and go up when the server answers. To try it locally: `php -S localhost:4199` in the repository, then `http://localhost:4199/index.html` (`?askname` shows the name card even under the test harness).
 
 Three.js r160 is kept in the repository (`lib/three/`) rather than loaded from a CDN, so the game runs offline and on networks that block jsDelivr (the lab machines do).
 

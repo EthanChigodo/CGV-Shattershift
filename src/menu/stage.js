@@ -29,6 +29,7 @@
  */
 
 import * as THREE from "../three.js";
+import { drawableType } from "../systems/gpu.js";
 import { GLTFLoader } from "../three-addons.js";
 import { noiseTexture, createHazeUniforms, createSky } from "./atmosphere.js";
 import { AscensionTower } from "./tower.js";
@@ -38,6 +39,7 @@ import { MenuRoof, ROOF } from "./roof.js";
 import { MenuHelicopters } from "./helicopters.js";
 import { createFigure } from "./figure.js";
 import { ShotRig, SHOTS } from "./shots.js";
+import { compileReady } from "../systems/warm-up.js";
 
 /** Where things stand (metres; the roof's surface is y = 0). */
 const SUBJECT = new THREE.Vector3(4.2, 0, -3.1);
@@ -185,7 +187,8 @@ export class MenuStage {
     // Settle the moving parts, then let the scene see itself.
     for (let i = 0; i < 4; i += 1) this.update(0.25);
     try {
-      if (this.renderer.compileAsync) await this.renderer.compileAsync(this.scene, this.camera);
+      // (Drawn through the game's post chain: compiled for a render target.)
+      await compileReady(this.renderer, this.scene, this.camera, { throughTarget: true });
     } catch (error) {
       console.warn("[menu stage] async compile failed", error);
     }
@@ -210,6 +213,7 @@ export class MenuStage {
     }
     if (this.figure) this.figure.dispose();
     this.figure = f;
+    f.root.visible = !this.standing;
     f.root.position.copy(SUBJECT);
     f.root.rotation.y = this.facing;
     this.scene.add(f.root);
@@ -220,10 +224,14 @@ export class MenuStage {
   /** The burning tower and the sky in the puddles: a cube capture of the stage, prefiltered. */
   _captureEnvironment() {
     const size = QUALITY[this.quality].env;
-    const target = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType });
+    const target = new THREE.WebGLCubeRenderTarget(size, { type: drawableType() });
     const cube = new THREE.CubeCamera(0.5, 6000, target);
     cube.position.copy(SUBJECT).add(new THREE.Vector3(-1, 0.6, 2));
-    const hidden = [this.figure?.root, this.helis.root, this.ash.points, this.fire.shards.points].filter(Boolean);
+    // Only what the puddles need to show - the sky, the burning tower and
+    // its fire: everything else hidden, so the capture (a render target,
+    // so its own variants of every program it draws) compiles a handful of
+    // programs, not the whole stage's again - seconds off the boot.
+    const hidden = [this.figure?.root, this.helis.root, this.ash.points, this.fire.shards.points, this.city?.root, this.roof?.root].filter(Boolean);
     const was = hidden.map((o) => o.visible);
     for (const o of hidden) o.visible = false;
     const prevTarget = this.renderer.getRenderTarget();
@@ -252,6 +260,23 @@ export class MenuStage {
     };
   }
 
+  /**
+   * Customise (src/modes/locker/) puts the game's own figure - headwear,
+   * launcher and all - where Subject 07 stands, and takes it away again.
+   * `avatar` is a PlayerAvatar; null brings Subject 07 back.
+   */
+  standIn(avatar) {
+    if (this.standing) this.scene.remove(this.standing.root);
+    this.standing = avatar;
+    if (this.figure) this.figure.root.visible = !avatar;
+    if (!avatar) return;
+    avatar.root.position.copy(SUBJECT);
+    // (The avatar's model is turned half round inside it: it runs down -Z.)
+    avatar.root.rotation.set(0, this.facing + Math.PI, 0);
+    avatar.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.scene.add(avatar.root);
+  }
+
   /** A camera shot (SHOTS); eased to over ~2.6 s. */
   setShot(name) {
     if (!SHOTS[name]) return;
@@ -260,11 +285,13 @@ export class MenuStage {
   }
 
   /** Subject 07's body, skin and hair. Skin and hair change at once; a new body fades in. */
-  setFigure({ character, skin, hair } = {}) {
+  setFigure({ character, skin, hair, outfit, shoes } = {}) {
     const spec = this.figureSpec;
     if (skin) spec.skin = skin;
     if (hair) spec.hair = hair;
-    this.figure?.setLook({ skin: spec.skin, hair: spec.hair });
+    if (outfit) spec.outfit = outfit;
+    if (shoes) spec.shoes = shoes;
+    this.figure?.setLook({ skin: spec.skin, hair: spec.hair, outfit: spec.outfit, shoes: spec.shoes });
     if (character && character !== spec.character) {
       spec.character = character;
       const wanted = character;
@@ -274,7 +301,7 @@ export class MenuStage {
           f.dispose();
           return;
         }
-        f.setLook({ skin: this.figureSpec.skin, hair: this.figureSpec.hair });
+        f.setLook({ skin: this.figureSpec.skin, hair: this.figureSpec.hair, outfit: this.figureSpec.outfit, shoes: this.figureSpec.shoes });
         if (!this.isReady || this.fade > 0.9) {
           this._placeFigure(f);
           return;
@@ -346,7 +373,7 @@ export class MenuStage {
     this._rim = (this._rim ?? new THREE.Color()).setRGB(0.55, 0.21, 0.06).multiplyScalar(f + blast * 1.2 + this.helis.onSubject * 0.4);
 
     if (this.figure) this.figure.update(dt, t, this._figureContext());
-    this.bounceWeight += ((this.rig.name === "appearance" ? 1 : 0) - this.bounceWeight) * (1 - Math.exp(-dt * 1.8));
+    this.bounceWeight += ((this.rig.name === "appearance" || this.rig.name === "kit" ? 1 : 0) - this.bounceWeight) * (1 - Math.exp(-dt * 1.8));
     this.bounce.position.copy(this.camera.position).add(this._v.set(-0.7, 0.6, 0).applyQuaternion(this.camera.quaternion));
     this.bounce.intensity = this.bounceWeight * 3.2;
 

@@ -18,6 +18,7 @@
  */
 
 import * as THREE from "../three.js";
+import { drawableType } from "../systems/gpu.js";
 import { LAYERS } from "../levels/causeway/layers.js";
 
 const equirectFragment = /* glsl */ `
@@ -118,7 +119,7 @@ export class PhotoMode {
    */
   capture360(scene, position, glassShared = null, { faceSize = 1024, width = 2048 } = {}) {
     const r = this.renderer;
-    const cubeTarget = new THREE.WebGLCubeRenderTarget(faceSize, { type: THREE.HalfFloatType });
+    const cubeTarget = new THREE.WebGLCubeRenderTarget(faceSize, { type: drawableType(r) });
     const cube = new THREE.CubeCamera(0.1, 1600, cubeTarget);
     for (const cam of cube.children) {
       cam.layers.set(LAYERS.WORLD);

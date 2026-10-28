@@ -20,6 +20,7 @@
  *   banner.closeIntro();
  *   banner.update(arsenal.list(), { shieldCharges });
  */
+import { padLabel } from "../systems/input-glyphs.js";
 
 import { serumPicture } from "./menus.js";
 
@@ -93,8 +94,7 @@ export class PowerupBanner {
     this.cardButton = el("button", "pu-card-button", info);
     this.cardButton.type = "button";
     this.cardButton.innerHTML = "<span>Got it</span><i>&#9654;</i>";
-    // (With a controller in use, Space reads as its ✕ / A and the rest goes: src/systems/key-glyphs.js.)
-    el("p", "pu-card-keys", info).innerHTML = "<span data-pad-hide><kbd>Click</kbd> </span><kbd>Space</kbd><span data-pad-hide> or <kbd>Enter</kbd></span> to carry on";
+    el("p", "pu-card-keys", info).innerHTML = `<span class="kb-only"><kbd>Click</kbd> <kbd>Space</kbd> or <kbd>Enter</kbd> to carry on</span><span class="touch-only">Tap to carry on</span><span class="pad-only"><kbd data-pad="PadA">${padLabel("PadA")}</kbd> to carry on</span>`;
     this.open = false;
   }
 

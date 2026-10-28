@@ -14,7 +14,7 @@
  *    lobby has its own. Anything else can ask for one: requestMenuShot(name)
  *    (a window "menu:shot" event), e.g. an overlay that is not a .screen.
  *  - Subject 07 follows the loadout: a window "loadout:change" event with
- *    { character, skin, hair } (main.js sends it from the pickers).
+ *    { character, skin, hair, outfit } (main.js sends it from Customise).
  *  - It never blocks the menus: until the stage is in (or if it fails) the
  *    host keeps its old backdrop; when it arrives it fades up from black.
  *  - It costs nothing during a run: the host stops calling update/render
@@ -26,12 +26,16 @@ import { MenuStage } from "./stage.js";
 
 /** Which shot each menu page gets (ids of the `.screen` sections in index.html). */
 export const SCREEN_SHOTS = {
-  storyScreen: "title",
+  storyScreen: "opening",
   startScreen: "title",
-  appearanceScreen: "appearance",
+  singleScreen: "dossier",
   newGameScreen: "newgame",
   chaptersScreen: "chapters",
   endlessScreen: "endless",
+  multiScreen: "versus",
+  arenaModeScreen: "versus",
+  trophiesScreen: "dim",
+  leaderboardsScreen: "dim",
   settingsScreen: "dim",
   manualScreen: "dim",
   creditsScreen: "dim",
@@ -51,9 +55,11 @@ export class MenuBackdrop {
    * @param {() => string} o.quality                    "low" | "medium" | "high"
    * @param {() => boolean} o.reducedMotion
    * @param {() => {character:string, skin:string, hair:string}} o.figure  the saved loadout
+   * @param {boolean} [o.enabled]                      false: never build it (the old backdrop stays)
    */
-  constructor({ renderer, assetBase, quality, reducedMotion, figure }) {
+  constructor({ renderer, assetBase, quality, reducedMotion, figure, enabled = true }) {
     this.renderer = renderer;
+    this.enabled = enabled;
     this.assetBase = assetBase;
     this.quality = quality;
     this.reducedMotion = reducedMotion;
@@ -96,6 +102,8 @@ export class MenuBackdrop {
   /** Start building the stage (models stream in the background). Safe to call twice. */
   preload() {
     if (this.stage || this.failed || this._pending) return;
+    // (Switched off: software WebGL - main.js. The old backdrop stays.)
+    if (!this.enabled) { this.failed = true; return; }
     // (A moment later: the boot's loading screen gets its first frames first.)
     this._pending = setTimeout(() => this._create(), 80);
   }
@@ -117,6 +125,18 @@ export class MenuBackdrop {
       this.failed = true;
       this.stage = null;
     }
+  }
+
+  /** Still to come: wanted, not failed, not in yet (the host draws nothing meanwhile, not the old backdrop). */
+  get waiting() {
+    return this.enabled && !this.failed && !this.live;
+  }
+
+  /** Resolves once the stage is in, has failed, or `ms` have passed. */
+  async settled(ms = 30000) {
+    this.preload();
+    const until = performance.now() + ms;
+    while (this.waiting && performance.now() < until) await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   /** The stage is built and can draw. */

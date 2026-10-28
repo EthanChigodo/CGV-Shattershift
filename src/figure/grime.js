@@ -28,6 +28,7 @@
  */
 
 import * as THREE from "../three.js";
+import { NOISE_GLSL, noiseTexture } from "./noise.js";
 
 /** How many differently-seeded variants of each material are dealt out. */
 const VARIANTS = 6;
@@ -37,16 +38,14 @@ attribute vec3 grimePos;
 varying vec3 vGrimeP;
 `;
 
+// (The noise from a texture, noise.js: hashed, ~70 calls of it took
+// Direct3D's compiler 12 s for one program and froze the Roof.)
 const GRIME_FRAGMENT_HEAD = /* glsl */ `
 uniform float uGrimeSeed;
 uniform float uGrimeAmount;
 varying vec3 vGrimeP;
-float gHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-float gNoise(vec3 x) {
-  vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(gHash(i), gHash(i + vec3(1, 0, 0)), f.x), mix(gHash(i + vec3(0, 1, 0)), gHash(i + vec3(1, 1, 0)), f.x), f.y),
-             mix(mix(gHash(i + vec3(0, 0, 1)), gHash(i + vec3(1, 0, 1)), f.x), mix(gHash(i + vec3(0, 1, 1)), gHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-}
+${NOISE_GLSL}
+float gNoise(vec3 x) { return noise3(x); }
 float gFbm(vec3 p) {
   float a = 0.5, s = 0.0;
   for (int i = 0; i < 4; i++) { s += a * gNoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
@@ -152,7 +151,7 @@ const GRIME_NORMAL = /* glsl */ `
 /** Chain the grime onto a material (once). */
 function grimeMaterial(material, seed, amount) {
   material.userData.grime = { seed, amount };
-  const uniforms = { uGrimeSeed: { value: seed }, uGrimeAmount: { value: amount } };
+  const uniforms = { uGrimeSeed: { value: seed }, uGrimeAmount: { value: amount }, uNoise: { value: noiseTexture() } };
   const before = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
     before?.call(material, shader, renderer);

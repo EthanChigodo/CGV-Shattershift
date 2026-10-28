@@ -2,12 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- On a phone (src/ui/phone.js): added to the home screen it opens full
+         screen and sideways; the browser's bars take the game's colour. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#05070a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Fracture Run" />
     <meta name="description" content="Fracture Run - a playable CGV project concept demo." />
     <title>Fracture Run - CGV Demo</title>
     <!-- A refresh that is about to put you back in a run (or on another menu
          page): no buttons on the opening screen meanwhile (main.js lifts it). -->
     <script>
+      // Until the game has loaded (main.js lifts it): "Loading", nothing to press.
+      document.documentElement.classList.add("booting");
       try {
         var s = JSON.parse(sessionStorage.getItem("fractureRun.session") || "null");
         if (s && !navigator.webdriver && (s.where === "run" || (s.screen && s.screen !== "storyScreen"))) {
@@ -31,20 +41,67 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./src/ui/theme.css" />
     <link rel="stylesheet" href="./styles.css" />
-    <link rel="stylesheet" href="./src/ui/figure-pick.css" />
+    <link rel="stylesheet" href="./src/ui/nightfall.css" />
     <link rel="stylesheet" href="./src/ui/mash-prompt.css" />
     <link rel="stylesheet" href="./src/ui/causeway-hud.css" data-causeway-hud />
     <link rel="stylesheet" href="./src/ui/serum-fx.css" data-serum-fx />
-    <link rel="stylesheet" href="./src/ui/pad-input.css" />
+    <link rel="stylesheet" href="./src/ui/phone.css" />
+    <link rel="stylesheet" href="./src/ui/touch-controls.css" />
   </head>
   <body>
+    <!-- Loading, and coming back to where you were after a refresh: the title,
+         a tip or a feature at a time, a bar - over everything until main.js
+         lifts html.booting (the menu, or the run, is ready under it). -->
+    <div id="bootScreen" class="boot-screen" aria-live="polite">
+      <div class="boot-copy">
+        <h1 class="logo" aria-label="Fracture Run">
+          <span class="logo-word" aria-hidden="true"><span class="logo-top">FRACTURE</span><span class="logo-bottom">FRACTURE</span><svg class="logo-crack" viewBox="0 0 1000 100" preserveAspectRatio="none"><polyline points="0,50 60,53 120,47 190,58 270,49 340,55 430,57 480,46 610,44 650,52 780,52 860,45 1000,46" /></svg></span>
+          <em aria-hidden="true">Run</em>
+        </h1>
+        <p class="boot-tip"><small>Did you know</small><b id="bootTip"></b></p>
+        <div class="boot-loading"><span><em class="bl-load">Loading the tower</em><em class="bl-resume">Resuming where you were</em></span><i></i></div>
+      </div>
+      <script>
+        // While the game loads: tips and the game's features, one at a time
+        // (here, not in main.js: they have to run before the game's code is in).
+        (() => {
+          const tips = [
+            "Twenty-one trophies and a platinum to earn - see them under Trophies & Stats.",
+            "Finish the story for the Escapee kit: the Ember outfit, the Visor and a molten launcher.",
+            "Up to four players on the roof: King of the Hill, or Capture the Flag.",
+            "Race a friend head to head, split screen, through the Foundry, the Labs or the Skyline.",
+            "Your best run comes back as a ghost to race against.",
+            "Some nights it rains on the roof. Some nights it storms.",
+            "Plug in a PlayStation or Xbox controller: every menu and every level plays with it.",
+            "Cryo freezes, shock knocks back, gravity pulls. Switch spheres with Q and E.",
+            "Sprinkler bulbs are glass. Break one and the fire below goes out.",
+            "Slide feet first under the low beams - or slam down into a slide from the air.",
+            "Make Subject 07 yours: complexion, hair, outfit, headwear and the launcher's finish.",
+            "Shock shatters reinforced glass in one hit.",
+          ];
+          const el = document.getElementById("bootTip");
+          let i = Math.floor(Math.random() * tips.length);
+          const next = () => {
+            if (!document.documentElement.classList.contains("booting")) return;
+            el.classList.remove("in");
+            setTimeout(() => {
+              el.textContent = tips[i];
+              i = (i + 1) % tips.length;
+              el.classList.add("in");
+              setTimeout(next, 3800);
+            }, el.textContent ? 320 : 0);
+          };
+          next();
+        })();
+      </script>
+    </div>
     <canvas id="game" aria-label="Fracture Run game canvas"></canvas>
     <div id="countdown" class="countdown" hidden aria-live="assertive"></div>
 
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark"></span>
-        <div><strong>Fracture Run</strong><small>Subject 07</small></div>
+        <div><strong>FRACTURE RUN</strong><small>SUBJECT 07 // ASCENSION TOWER</small></div>
       </div>
       <div class="topbar-actions">
         <button id="pauseButton" class="icon-button" title="Pause (Esc)" aria-label="Pause">
@@ -72,33 +129,47 @@
     <div id="message" class="message" aria-live="polite"></div>
     <div id="caption" class="caption" aria-live="polite"></div>
     <div id="launchControls" class="controls launch-controls" aria-label="Controls">
-      <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
-      <span><kbd>MOUSE</kbd> Aim and throw</span>
-      <span><kbd>W</kbd><kbd>S</kbd> Sprint and brake</span>
-      <span><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
-      <span><kbd>RMB</kbd> Focus</span>
+      <span class="kb-only"><kbd>A</kbd><kbd>D</kbd> Change lane</span>
+      <span class="kb-only"><kbd>MOUSE</kbd> Aim and throw</span>
+      <span class="kb-only"><kbd>W</kbd><kbd>S</kbd> Sprint and brake</span>
+      <span class="kb-only"><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
+      <span class="kb-only"><kbd>RMB</kbd> Focus</span>
+      <span class="touch-only" data-keep-keys><kbd>SWIPE ← →</kbd> Change lane</span>
+      <span class="touch-only" data-keep-keys><kbd>TAP</kbd> Aim and throw</span>
+      <span class="touch-only" data-keep-keys><kbd>SWIPE ↑ ↓</kbd> Jump / slide - keep the finger down to sprint / brake</span>
+      <span class="touch-only" data-keep-keys><kbd>TAP THE WHEEL</kbd> Sphere type</span>
+      <span class="touch-only" data-keep-keys><kbd>HOLD FOCUS</kbd> Focus</span>
+      <span class="pad-only"><kbd>L-STICK</kbd> Lane, sprint and brake</span>
+      <span class="pad-only"><kbd>R-STICK</kbd> Aim</span>
+      <span class="pad-only"><kbd data-pad="PadRT">RT</kbd> Throw</span>
+      <span class="pad-only"><kbd data-pad="PadLB">LB</kbd><kbd data-pad="PadRB">RB</kbd> Sphere wheel</span>
+      <span class="pad-only"><kbd data-pad="PadLT">LT</kbd> Focus</span>
     </div>
 
     <section id="storyScreen" class="screen active title-screen">
-      <div class="screen-copy story-copy">
+      <div class="screen-copy compact story-copy">
         <div id="storyPrompt">
           <h1 class="logo" aria-label="Fracture Run">
             <span class="logo-word" aria-hidden="true"><span class="logo-top">FRACTURE</span><span class="logo-bottom">FRACTURE</span><svg class="logo-crack" viewBox="0 0 1000 100" preserveAspectRatio="none"><polyline points="0,50 60,53 120,47 190,58 270,49 340,55 430,57 480,46 610,44 650,52 780,52 860,45 1000,46" /></svg></span>
             <em aria-hidden="true">Run</em>
           </h1>
           <p class="intro">A short film first: what Project Ascension was, who ran it, and why the tower is coming down tonight. Skip it any time.</p>
-          <nav class="menu-list" aria-label="Start">
-            <button id="storyBeginButton" class="menu-button primary" type="button"><span><b>Watch the briefing</b><small>What happened here, and why</small></span></button>
-            <button id="storySkipToMenuButton" class="menu-button" type="button"><span><b>Skip to the menu</b><small>You can watch it later</small></span></button>
-          </nav>
+          <div class="menu-list menu-list-row">
+            <button id="storyBeginButton" class="menu-button primary" type="button">
+              <i class="menu-glyph" aria-hidden="true">&#9654;</i><span><b>Watch the briefing</b><small>What happened here, and why</small></span>
+            </button>
+            <button id="storySkipToMenuButton" class="menu-button" type="button">
+              <i class="menu-glyph" aria-hidden="true">&#8677;</i><span><b>Skip to the menu</b><small>You can watch it later</small></span>
+            </button>
+          </div>
         </div>
         <div id="storyPlayer" hidden>
-          <p class="eyebrow">Tower status: critical</p>
+          <p class="eyebrow">TOWER STATUS // CRITICAL</p>
           <div id="storyLine"></div>
           <div id="storyDots" class="story-dots" aria-hidden="true"></div>
         </div>
       </div>
-      <button id="storySkipButton" class="icon-button story-skip" hidden>Skip</button>
+      <button id="storySkipButton" class="icon-button story-skip" hidden>SKIP</button>
     </section>
 
     <section id="startScreen" class="screen menu-screen title-screen">
@@ -110,125 +181,223 @@
         <p class="tagline">Wake up. Get to the roof.</p>
         <p class="intro">You are Subject 07, the experiment that woke up. Dr. Vale has armed the charges. Climb out of the basement, through the labs and across the skyline to the helicopter on the roof before the tower comes down.</p>
         <nav class="menu-list" aria-label="Main menu">
-          <button id="continueButton" class="menu-button primary" type="button" hidden><span><b>Continue</b><small id="continueNote">Where you left off</small></span></button>
-          <button id="startButton" class="menu-button primary" type="button"><span><b>New game</b><small>The whole escape, from the ward to the roof</small></span></button>
-          <button id="chaptersButton" class="menu-button" type="button"><span><b>Chapters</b><small>Play any part of the story</small></span></button>
-          <button id="endlessButton" class="menu-button" type="button"><span><b>Endless</b><small>One place, until you go down</small></span></button>
-          <button id="versusButton" class="menu-button" type="button"><span><b>Versus</b><small>Two players, split screen, one seat on the helicopter</small></span></button>
-          <div class="menu-minor">
-            <button id="appearanceButton" class="menu-button" type="button"><span><b>Appearance</b><small>Body, skin, hair, starting sphere</small></span></button>
-            <button id="manualButton" class="menu-button" type="button"><span><b>Field manual</b><small>Every object, sphere and serum</small></span></button>
-            <button id="settingsButton" class="menu-button" type="button"><span><b>Settings</b><small>Controls, graphics, accessibility</small></span></button>
-            <button id="replayStoryButton" class="menu-button" type="button"><span><b>Replay the briefing</b><small>Why the tower is coming down</small></span></button>
-            <button id="lastReportButton" class="menu-button" type="button" hidden><span><b>Last run report</b><small>Deaths, hits and quick-time events, level by level</small></span></button>
-            <button id="creditsButton" class="menu-button" type="button"><span><b>Credits</b><small>The team, and every asset we did not make</small></span></button>
-          </div>
+          <button id="singleButton" class="menu-button primary menu-big" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9654;</i><span><b>Single player</b><small id="singleNote">The story, the chapters, Endless - and your Subject 07</small></span>
+          </button>
+          <button id="multiButton" class="menu-button menu-big" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9783;</i><span><b>Multiplayer</b><small>Arena and Race: 2 - 4 players, on controllers</small></span>
+          </button>
+          <button id="leaderboardsButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9650;</i><span><b>Leaderboards</b><small>The fastest, the highest, the furthest - everyone's</small></span>
+          </button>
+          <button id="trophiesButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:17px;height:17px"><path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 5H3.5c0 3 1.5 4.5 3.8 4.8M17 5h3.5c0 3-1.5 4.5-3.8 4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 13v4M8 21h8l-1-4H9z" fill="currentColor"/></svg></i><span><b>Trophies &amp; stats</b><small id="trophiesNote">Your trophies, records and numbers</small></span>
+          </button>
+          <button id="manualButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">?</i><span><b>Field manual</b><small>Every object, sphere and serum</small></span>
+          </button>
+          <button id="settingsButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9881;</i><span><b>Settings</b><small>Controls, graphics, accessibility</small></span>
+          </button>
+          <button id="replayStoryButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9673;</i><span><b>Replay the briefing</b><small>Why the tower is coming down</small></span>
+          </button>
+          <button id="lastReportButton" class="menu-button" type="button" hidden>
+            <i class="menu-glyph" aria-hidden="true">&#9776;</i><span><b>Last run report</b><small>Your deaths, hits and quick-time events, level by level</small></span>
+          </button>
+          <button id="creditsButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9733;</i><span><b>Credits</b><small>The team, and every asset we did not make</small></span>
+          </button>
         </nav>
         <p id="progressLine" class="progress-line"></p>
+        <div id="padMenuList" class="pad-list" aria-label="Controllers"></div>
       </div>
-      <button id="subjectLine" class="subject-line" type="button" aria-label="Change appearance">
-        <span class="label">Subject 07</span>
-        <b id="subjectSummary">Female, light skin, black hair</b>
-        <small id="subjectSphere">Starts with the glass sphere</small>
-      </button>
-      <p class="prompt-bar" aria-hidden="true"><span data-pad-hide><kbd>&#8593;</kbd><kbd>&#8595;</kbd> Choose <kbd>Enter</kbd> Select</span><span class="pad-only" data-pad-keep><kbd class="g-ps">&#10005;</kbd><kbd class="g-xb">A</kbd> Select</span></p>
     </section>
 
-    <section id="appearanceScreen" class="screen appearance-screen" aria-label="Appearance">
-      <div class="appearance-panel">
-        <p class="label">Subject 07</p>
-        <h2 class="screen-title">Appearance</h2>
-        <div class="field">
-          <p class="card-label">Body</p>
-          <div class="segmented" role="group" aria-label="Choose your character">
-            <button type="button" class="subject-button" data-character="playerFemale">Female</button>
-            <button type="button" class="subject-button" data-character="playerMale">Male</button>
-          </div>
+    <section id="singleScreen" class="screen menu-screen" aria-label="Single player">
+      <div class="menu-main">
+        <p class="eyebrow">SINGLE PLAYER // SUBJECT 07</p>
+        <h2 class="menu-heading">ONE OF YOU.<br />ONE WAY UP.</h2>
+        <nav class="menu-list" aria-label="Single player">
+          <button id="continueButton" class="menu-button primary" type="button" hidden>
+            <i class="menu-glyph" aria-hidden="true">&#9654;</i><span><b>Continue</b><small id="continueNote">Where you left off</small></span>
+          </button>
+          <button id="startButton" class="menu-button primary" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#10010;</i><span><b>New game</b><small>The whole escape, from the ward to the roof</small></span>
+          </button>
+          <button id="chaptersButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9776;</i><span><b>Chapters</b><small>Play any part of the story</small></span>
+          </button>
+          <button id="endlessButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#8734;</i><span><b>Endless</b><small>One place, a new layout every run, until you go down</small></span>
+          </button>
+          <button id="customiseButton" class="menu-button" type="button" data-customise>
+            <i class="menu-glyph" aria-hidden="true">&#9998;</i><span><b>Customise</b><small>Your character and launcher, for every single-player game</small></span>
+          </button>
+          <button id="singleBackButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span>
+          </button>
+        </nav>
+      </div>
+      <aside class="menu-card dossier" aria-label="Subject 07">
+        <p class="eyebrow">SUBJECT 07 // ON FILE</p>
+        <div class="dossier-top">
+          <div class="dossier-figure"><canvas id="dossierFigure" aria-label="Subject 07 as you've dressed them"></canvas><span class="dossier-scan" aria-hidden="true"></span></div>
+          <div class="dossier-body"></div>
         </div>
-        <div class="field">
-          <p class="card-label">Skin <span id="skinName" class="field-value"></span></p>
-          <div id="skinPick" class="skin-pick" role="group" aria-label="Choose a skin tone"></div>
+        <p class="dossier-label">Records</p>
+        <dl class="dossier-records"></dl>
+      </aside>
+    </section>
+
+    <section id="trophiesScreen" class="screen trophies-screen" aria-label="Trophies and statistics">
+      <div class="tr-wrap">
+        <header class="tr-head">
+          <div><p class="eyebrow">SUBJECT 07 // ON RECORD</p><h2>TROPHIES &amp; STATS</h2></div>
+          <button id="trophiesBackButton" type="button" class="primary-button">BACK</button>
+        </header>
+        <div class="tabs tr-tabs" role="tablist" aria-label="Trophies or statistics">
+          <kbd class="tr-bumper" data-key="Q">Q</kbd>
+          <button type="button" role="tab" class="tab on" data-tr-tab="trophies" aria-selected="true">Trophies</button>
+          <button type="button" role="tab" class="tab" data-tr-tab="stats" aria-selected="false">Statistics</button>
+          <kbd class="tr-bumper" data-key="E">E</kbd>
         </div>
-        <div class="field">
-          <p class="card-label">Hair <span id="hairName" class="field-value"></span></p>
-          <div id="hairPick" class="skin-pick hair-pick" role="group" aria-label="Choose a hair colour"></div>
-        </div>
-        <div class="field">
-          <p class="card-label">Starting sphere</p>
-          <div class="ball-pick compact" data-ball-pick data-compact role="group" aria-label="Choose the sphere you start with"></div>
-          <p class="ball-desc" data-ball-desc aria-live="polite"></p>
-        </div>
-        <p class="card-note">Switch spheres any time in a run: <kbd>Q</kbd> <kbd>E</kbd>, the mouse wheel, or the pause menu.</p>
-        <div class="link-row">
-          <button id="appearanceBackButton" class="link-button primary" type="button">Done</button>
+        <div class="tr-scroll">
+          <div class="tr-panel" data-tr-panel="trophies"></div>
+          <div class="tr-panel" data-tr-panel="stats" hidden></div>
         </div>
       </div>
-      <p class="prompt-bar" aria-hidden="true"><span data-pad-hide><kbd>Esc</kbd> Done</span><span class="pad-only" data-pad-keep><kbd class="g-ps">&#9675;</kbd><kbd class="g-xb">B</kbd> Done</span></p>
+    </section>
+
+    <section id="leaderboardsScreen" class="screen trophies-screen lb-screen" aria-label="Leaderboards">
+      <div class="tr-wrap">
+        <header class="tr-head">
+          <div><p class="eyebrow">GLOBAL // EVERYONE WHO PLAYED</p><h2>LEADERBOARDS</h2><p class="lb-me"></p></div>
+          <button id="leaderboardsBackButton" type="button" class="primary-button">BACK</button>
+        </header>
+        <div class="lb-layout">
+          <nav class="menu-list lb-boards" aria-label="Boards"></nav>
+          <div class="lb-body" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="arenaModeScreen" class="screen menu-screen" aria-label="Arena: choose the game">
+      <div class="menu-main">
+        <p class="eyebrow">MULTIPLAYER // THE ARENA // 2 - 4 PLAYERS</p>
+        <h2 class="menu-heading">WHAT ARE<br />WE PLAYING?</h2>
+        <nav class="menu-list" aria-label="Arena games">
+          <button id="kothButton" class="menu-button primary menu-big" type="button" data-arena-mode="koth">
+            <i class="menu-glyph" aria-hidden="true">&#9813;</i><span><b>King of the Hill</b><small>Hold the helipad alone - every player for themselves</small></span>
+          </button>
+          <button id="ctfButton" class="menu-button menu-big" type="button" data-arena-mode="ctf">
+            <i class="menu-glyph" aria-hidden="true">&#9873;</i><span><b>Capture the Flag</b><small>Two teams: steal the other side's core and bring it home</small></span>
+          </button>
+          <button id="arenaModeBackButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span>
+          </button>
+        </nav>
+      </div>
+      <aside class="menu-card multi-card" aria-label="How they play">
+        <p class="eyebrow">HOW THEY PLAY</p>
+        <div class="mode-rules">
+          <section><h3><i style="--c:#ffcf4a">&#9813;</i>King of the Hill</h3>
+            <p>Stand on the helipad alone and its clock is yours; two or more on it and nobody scores. Knock rivals off it, off the open ledges, into the hatches. First to the target time wins.</p></section>
+          <section><h3><i style="--c:#3aa0ff">&#9873;</i>Capture the Flag</h3>
+            <p>Blue (P1, P3) against red (P2, P4) - one on one with two. Run onto the other team's core to take it, and bring it to your plinth while yours is still home. Carrying it you're slower and can't throw; any hit and you drop it. A teammate touching your dropped core sends it home. First to 3 captures.</p></section>
+        </div>
+      </aside>
+    </section>
+
+    <section id="multiScreen" class="screen menu-screen" aria-label="Multiplayer">
+      <div class="menu-main">
+        <p class="eyebrow">MULTIPLAYER // ON THE SAME SCREEN</p>
+        <h2 class="menu-heading">BRING<br />YOUR FRIENDS.</h2>
+        <nav class="menu-list" aria-label="Multiplayer">
+          <button id="arenaButton" class="menu-button primary" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#9673;</i><span><b>Arena</b><small>2 - 4 players on the roof: hold the pad</small></span>
+          </button>
+          <button id="raceButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#8660;</i><span><b>Race</b><small>2 players, split screen: head to head</small></span>
+          </button>
+          <button id="multiBackButton" class="menu-button" type="button">
+            <i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span>
+          </button>
+        </nav>
+      </div>
+      <aside class="menu-card multi-card" aria-label="Controllers">
+        <p class="eyebrow">CONTROLLERS // CONNECTED</p>
+        <div id="padMultiList" class="pad-list pad-list-col"></div>
+        <ul class="multi-notes">
+          <li><b>Any controller</b> - USB, or Bluetooth once it's paired with this computer. Press a button on it to connect.</li>
+          <li><b>One player can use the keyboard and mouse</b> - press Enter in the lobby.</li>
+          <li><b>Each player</b> picks their character and launcher before the match, in their controller's colour.</li>
+        </ul>
+      </aside>
     </section>
 
     <section id="chaptersScreen" class="screen list-screen" aria-label="Chapters">
-      <div class="screen-copy">
-        <h2 class="screen-title">Chapters</h2>
+      <div class="screen-copy chapters-copy">
+        <p class="eyebrow">CHAPTERS // THE WAY UP</p>
+        <h2>PLAY ANY PART OF THE STORY.</h2>
         <p class="intro">Each chapter starts as the story reaches it, cutscenes and all.</p>
-        <div class="inline-choice">
-          <p class="card-label chapters-difficulty-label">Play them on</p>
-          <div class="segmented chapters-difficulty" role="group" aria-label="Choose the difficulty for the chapters">
-            <button type="button" class="subject-button difficulty-button" data-difficulty="easy">Easy</button>
-            <button type="button" class="subject-button difficulty-button" data-difficulty="normal">Normal</button>
-            <button type="button" class="subject-button difficulty-button" data-difficulty="hard">Hard</button>
-          </div>
+        <p class="card-label chapters-difficulty-label">Play them on</p>
+        <div class="segmented chapters-difficulty" role="group" aria-label="Choose the difficulty for the chapters">
+          <button type="button" class="subject-button difficulty-button" data-difficulty="easy">Easy</button>
+          <button type="button" class="subject-button difficulty-button" data-difficulty="normal">Normal</button>
+          <button type="button" class="subject-button difficulty-button" data-difficulty="hard">Hard</button>
         </div>
         <p id="difficultyNote" class="card-note difficulty-note"></p>
         <div class="chapter-grid">
           <button type="button" class="chapter-card" data-chapter="briefing"><em>00</em><b>The briefing</b><span>The film: Project Ascension, Dr. Vale, and why the tower is coming down.</span></button>
-          <button type="button" class="chapter-card" data-chapter="foundry"><em>01</em><b>Wake up / The Foundry</b><span>The ward, Dr. Okoro, and the plant floor on level 141. Its machinery will not stop for you.</span></button>
+          <button type="button" class="chapter-card" data-chapter="foundry"><em>01</em><b>Wake up / The Foundry</b><span>The ward, Dr. Okoro, and the plant floor on level 141 - its machinery will not stop for you.</span></button>
           <button type="button" class="chapter-card" data-chapter="lift"><em>01→02</em><b>The Gravity Fault</b><span>The lift up from the plant floor, and the launcher that crashes into it.</span></button>
           <button type="button" class="chapter-card" data-chapter="labs"><em>02</em><b>The Labs</b><span>The labs are burning and the test subjects are loose.</span></button>
           <button type="button" class="chapter-card" data-chapter="skyline"><em>03</em><b>The Skyline</b><span>Across the glass causeway, before the tower goes.</span></button>
           <button type="button" class="chapter-card" data-chapter="roof"><em>03+</em><b>The Roof</b><span>Hold out until the helicopter comes.</span></button>
         </div>
-        <div class="link-row">
-          <button id="chaptersBackButton" class="link-button" type="button">Back</button>
+        <div class="menu-list menu-list-row">
+          <button id="chaptersBackButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span></button>
         </div>
       </div>
-      <p class="prompt-bar" aria-hidden="true"><span data-pad-hide><kbd>Enter</kbd> Play <kbd>Esc</kbd> Back</span><span class="pad-only" data-pad-keep><kbd class="g-ps">&#10005;</kbd><kbd class="g-xb">A</kbd> Play <kbd class="g-ps">&#9675;</kbd><kbd class="g-xb">B</kbd> Back</span></p>
     </section>
 
     <section id="newGameScreen" class="screen list-screen" aria-label="New game">
-      <div class="screen-copy">
-        <h2 class="screen-title">How hard do you want it?</h2>
+      <div class="screen-copy chapters-copy">
+        <p class="eyebrow">NEW GAME // CHOOSE YOUR DIFFICULTY</p>
+        <h2>HOW HARD DO YOU WANT IT?</h2>
         <p class="intro">You can change it for the chapters later. Endless gets harder on its own.</p>
         <p id="newGameWarning" class="card-note new-game-warning" hidden>Starting a new game replaces your saved one.</p>
-        <div class="difficulty-grid">
-          <button type="button" class="difficulty-card" data-new-game="easy"><b>Easy</b><span>Slower, fewer obstacles, hits hurt less, spheres come back faster.</span></button>
-          <button type="button" class="difficulty-card" data-new-game="normal"><b>Normal</b><span>The escape as designed. One checkpoint per level.</span></button>
-          <button type="button" class="difficulty-card" data-new-game="hard"><b>Hard</b><span>Faster, more obstacles and new ones, hits hurt more, no checkpoints.</span></button>
+        <div class="chapter-grid difficulty-grid">
+          <button type="button" class="chapter-card difficulty-card" data-new-game="easy"><em>I</em><b>Easy</b><span>Slower, fewer obstacles, hits hurt less, spheres come back faster.</span></button>
+          <button type="button" class="chapter-card difficulty-card" data-new-game="normal"><em>II</em><b>Normal</b><span>The escape as designed. One checkpoint per level.</span></button>
+          <button type="button" class="chapter-card difficulty-card" data-new-game="hard"><em>III</em><b>Hard</b><span>Faster, more obstacles and new ones, hits hurt more, no checkpoints.</span></button>
         </div>
-        <div class="link-row">
-          <button id="newGameBackButton" class="link-button" type="button">Back</button>
+        <div class="menu-list menu-list-row">
+          <button id="newGameBackButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Back</b></span></button>
         </div>
       </div>
-      <p class="prompt-bar" aria-hidden="true"><span data-pad-hide><kbd>Enter</kbd> Begin <kbd>Esc</kbd> Back</span><span class="pad-only" data-pad-keep><kbd class="g-ps">&#10005;</kbd><kbd class="g-xb">A</kbd> Begin <kbd class="g-ps">&#9675;</kbd><kbd class="g-xb">B</kbd> Back</span></p>
     </section>
 
-    <section id="pauseScreen" class="screen menu-screen pause-screen">
+    <section id="pauseScreen" class="screen menu-screen">
       <div class="menu-main">
-        <h2 class="screen-title">Paused</h2>
+        <p class="eyebrow">RUN PAUSED</p>
+        <h2>HOLDING POSITION</h2>
         <div class="pause-stats">
-          <div><span>Sector</span><strong id="pauseLevel">01 / 03</strong></div>
-          <div><span>Score</span><strong id="pauseScore">000000</strong></div>
-          <div><span>Spheres</span><strong id="pauseAmmo">18</strong></div>
-          <div><span>Integrity</span><strong id="pauseHealth">100</strong></div>
+          <div><span>SECTOR</span><strong id="pauseLevel">01 / 03</strong></div>
+          <div><span>SCORE</span><strong id="pauseScore">000000</strong></div>
+          <div><span>SPHERES</span><strong id="pauseAmmo">18</strong></div>
+          <div><span>INTEGRITY</span><strong id="pauseHealth">100</strong></div>
         </div>
         <ol id="pauseMissions" class="pause-missions"></ol>
         <nav class="menu-list" aria-label="Pause menu">
-          <button id="resumeButton" class="menu-button primary" type="button"><span><b>Resume</b><small>Or press Esc</small></span></button>
-          <button id="pauseSettingsButton" class="menu-button" type="button"><span><b>Settings</b></span></button>
-          <button id="restartRunButton" class="menu-button" type="button"><span><b>Restart run</b></span></button>
-          <button id="quitButton" class="menu-button" type="button"><span><b>Quit to menu</b></span></button>
+          <button id="resumeButton" class="menu-button primary" type="button"><i class="menu-glyph" aria-hidden="true">&#9654;</i><span><b>Resume</b><small data-keys>Or press Esc</small></span></button>
+          <button id="pauseSettingsButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#9881;</i><span><b>Settings</b></span></button>
+          <button id="restartRunButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8635;</i><span><b>Restart run</b></span></button>
+          <button id="quitButton" class="menu-button" type="button"><i class="menu-glyph" aria-hidden="true">&#8592;</i><span><b>Quit to menu</b></span></button>
         </nav>
       </div>
-      <aside class="pause-guide" aria-label="Moves, spheres and power-ups">
+      <aside class="menu-card pause-guide" aria-label="Moves, spheres and power-ups">
         <div class="tabs" role="tablist">
           <button type="button" role="tab" class="tab on" data-tab="moves" aria-selected="true">Moves</button>
           <button type="button" role="tab" class="tab" data-tab="spheres" aria-selected="false">Spheres</button>
@@ -249,160 +418,194 @@
       </aside>
     </section>
 
-    <section id="settingsScreen" class="screen">
-      <div class="screen-copy compact">
-        <p id="settingsEyebrow" class="eyebrow">Settings</p>
-        <h2 id="settingsTitle" class="screen-title">Settings</h2>
-
-        <div class="settings-group">
-          <p class="settings-heading">Interface - what the HUD shows (also the VIEW button)</p>
-          <div data-hud-toggles></div>
-        </div>
-
-        <div class="settings-group">
-          <p class="settings-heading">Gameplay</p>
-          <label class="setting-row">
-            <span>Aim sensitivity</span>
-            <input type="range" id="sensitivitySlider" min="50" max="200" value="100" />
-          </label>
-          <label class="setting-row toggle-row">
-            <span>Aim assist (small targets near the crosshair count as aimed at)</span>
-            <input type="checkbox" id="aimAssistToggle" checked />
-          </label>
-          <div class="setting-row">
-            <span>Power-up tips (each serum is explained the first time you pick it up)</span>
-            <button type="button" id="resetPowerupTipsButton" class="text-button">Show them again</button>
+    <section id="settingsScreen" class="screen trophies-screen settings-screen" aria-label="Settings">
+      <div class="tr-wrap">
+        <header class="tr-head">
+          <div><p id="settingsEyebrow" class="eyebrow">SETTINGS</p><h2 id="settingsTitle">CALIBRATE YOUR RUN</h2></div>
+          <div class="st-head-buttons">
+            <button id="resetSettingsButton" type="button" class="text-button">Reset to defaults</button>
+            <button id="settingsBackButton" type="button" class="primary-button">BACK</button>
           </div>
-          <div class="setting-row">
-            <span>Credits: the team, models, music and sound, libraries</span>
-            <button type="button" id="settingsCreditsButton" class="text-button">View credits</button>
+        </header>
+        <div class="tabs tr-tabs fm-tabs" role="tablist" aria-label="Settings sections">
+          <kbd class="tr-bumper" data-key="Q">Q</kbd>
+          <button type="button" role="tab" class="tab on" data-st-tab="gameplay" aria-selected="true">Gameplay</button>
+          <button type="button" role="tab" class="tab" data-st-tab="graphics" aria-selected="false">Graphics</button>
+          <button type="button" role="tab" class="tab" data-st-tab="sound" aria-selected="false">Sound</button>
+          <button type="button" role="tab" class="tab" data-st-tab="access" aria-selected="false">Accessibility</button>
+          <button type="button" role="tab" class="tab" data-st-tab="hud" aria-selected="false">HUD</button>
+          <button type="button" role="tab" class="tab" data-st-tab="controls" aria-selected="false">Controls</button>
+          <kbd class="tr-bumper" data-key="E">E</kbd>
+        </div>
+        <div class="tr-scroll">
+
+          <div class="tr-panel" data-st-panel="gameplay">
+            <p class="fm-blurb">How the run plays: aiming, and the tips along the way.</p>
+            <section class="tr-sec st-sec"><h3>Aiming</h3>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Aim sensitivity</b><small>How far the crosshair moves with the mouse</small></span>
+              <input type="range" id="sensitivitySlider" min="50" max="200" value="100" />
+            </label>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Aim assist</b><small>Small targets near the crosshair count as aimed at</small></span>
+              <input type="checkbox" id="aimAssistToggle" checked />
+            </label>
+              <label class="setting-row st-row toggle-row">
+                <span class="st-label"><b>Ghost runs</b><small>Your best run through each place - fastest in the story, furthest in Endless - runs beside you, see-through</small></span>
+                <input type="checkbox" id="ghostsToggle" checked />
+              </label>
+            </section>
+            <section class="tr-sec st-sec"><h3>Help</h3>
+            <div class="setting-row st-row">
+              <span class="st-label"><b>Power-up tips</b><small>Each serum is explained the first time you pick it up</small></span>
+              <button type="button" id="resetPowerupTipsButton" class="text-button">Show them again</button>
+            </div>
+            <div class="setting-row st-row">
+              <span class="st-label"><b>Credits</b><small>The team, models, music and sound, libraries</small></span>
+              <button type="button" id="settingsCreditsButton" class="text-button">View credits</button>
+            </div>
+            </section>
           </div>
-        </div>
 
-        <div class="settings-group">
-          <p class="settings-heading">Graphics</p>
-          <label class="setting-row">
-            <span>Quality</span>
-            <select id="qualitySelect">
-              <option value="auto">Auto (adapts to your GPU)</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low (no post-processing)</option>
-            </select>
-          </label>
-          <p class="setting-note" id="qualityNote" aria-live="polite"></p>
-          <label class="setting-row">
-            <span>Shadows (off is faster)</span>
-            <input type="checkbox" id="shadowsToggle" checked />
-          </label>
-          <label class="setting-row">
-            <span>Visual effects: bloom, screen glow and grading (off is faster)</span>
-            <input type="checkbox" id="effectsToggle" checked />
-          </label>
-          <label class="setting-row">
-            <span>Resolution (lower is faster)</span>
-            <select id="resolutionSelect">
-              <option value="1">100%</option>
-              <option value="0.85">85%</option>
-              <option value="0.7">70%</option>
-              <option value="0.5">50%</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="settings-group">
-          <p class="settings-heading">Sound</p>
-          <label class="setting-row toggle-row">
-            <span>Character voices: Okoro, Vale, the pilot, 07 (the HALCYON intercom always speaks; the subtitles stay)</span>
-            <input type="checkbox" id="voicesToggle" checked />
-          </label>
-        </div>
-
-        <div class="settings-group">
-          <p class="settings-heading">Accessibility</p>
-          <label class="setting-row">
-            <span>Subtitle size</span>
-            <select id="subtitleSizeSelect">
-              <option value="normal">Normal</option>
-              <option value="large">Large</option>
-              <option value="xl">Extra large</option>
-            </select>
-          </label>
-          <label class="setting-row toggle-row">
-            <span>Reduced motion &amp; camera shake</span>
-            <input type="checkbox" id="reducedMotionToggle" />
-          </label>
-          <label class="setting-row toggle-row">
-            <span>Longer reaction windows (story quick-time hits)</span>
-            <input type="checkbox" id="longReactionsToggle" />
-          </label>
-          <label class="setting-row toggle-row">
-            <span>Fill bars by holding the key instead of tapping it fast</span>
-            <input type="checkbox" id="holdInsteadOfMashToggle" />
-          </label>
-        </div>
-
-        <div class="settings-group">
-          <p class="settings-heading">Controls</p>
-          <div class="controls settings-controls">
-            <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
-            <span><kbd>MOUSE</kbd> Aim and throw</span>
-            <span><kbd>RMB</kbd> Focus (slow time)</span>
-            <span><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
-            <span><kbd>W</kbd><kbd>S</kbd> Sprint / brake (Sector 03)</span>
-            <span><kbd>SPACE</kbd><kbd>SHIFT</kbd> Jump / slide</span>
-            <span><kbd>C</kbd> Change camera</span>
-            <span><kbd>HOLD CLICK</kbd> Fire the launcher (Sector 02, Roof) - it overheats</span>
-            <span><kbd>SPACE</kbd> Push a fallen duct (tap fast, Sector 02)</span>
-            <span><kbd>WASD</kbd> Move on the roof, <kbd>SPACE</kbd> dodge / jump for the ladder</span>
-            <span><kbd>P</kbd> Photo mode (Sectors 01, 03)</span>
-            <span><kbd>M</kbd> Minimap</span>
-            <span><kbd>ESC</kbd> Pause</span>
+          <div class="tr-panel" data-st-panel="graphics" hidden>
+            <p class="fm-blurb">Quality against speed. Auto adapts to your graphics card.</p>
+            <section class="tr-sec st-sec"><h3>Quality</h3>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Quality preset</b><small>Auto, or fixed: High, Medium, Low (Low has no post-processing)</small></span>
+              <select id="qualitySelect">
+                <option value="auto">Auto (adapts to your GPU)</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low (no post-processing)</option>
+              </select>
+            </label>
+              <p class="setting-note" id="qualityNote" aria-live="polite"></p>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Resolution</b><small>Lower is faster</small></span>
+              <select id="resolutionSelect">
+                <option value="1">100%</option>
+                <option value="0.85">85%</option>
+                <option value="0.7">70%</option>
+                <option value="0.5">50%</option>
+              </select>
+            </label>
+            </section>
+            <section class="tr-sec st-sec"><h3>Effects</h3>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Shadows</b><small>Off is faster</small></span>
+              <input type="checkbox" id="shadowsToggle" checked />
+            </label>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Visual effects</b><small>Bloom, screen glow and colour grading - off is faster</small></span>
+              <input type="checkbox" id="effectsToggle" checked />
+            </label>
+            </section>
           </div>
-        </div>
 
-        <div class="settings-group">
-          <p class="settings-heading">Controller - PlayStation or Xbox pad</p>
-          <p class="setting-note" id="padStatus" aria-live="polite"></p>
-          <label class="setting-row">
-            <span>Stick aim sensitivity</span>
-            <input type="range" id="padSensitivitySlider" min="50" max="200" value="100" />
-          </label>
-          <label class="setting-row toggle-row">
-            <span>Invert the aim stick's up and down</span>
-            <input type="checkbox" id="padInvertToggle" />
-          </label>
-          <label class="setting-row toggle-row">
-            <span>Vibration (hits, glass, deaths)</span>
-            <input type="checkbox" id="padVibrationToggle" checked />
-          </label>
-          <div class="controls settings-controls" data-pad-controls></div>
-        </div>
+          <div class="tr-panel" data-st-panel="sound" hidden>
+            <p class="fm-blurb">Who you hear. The subtitles always stay.</p>
+            <section class="tr-sec st-sec"><h3>Voices</h3>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Character voices</b><small>Okoro, Vale, the pilot, 07 - the HALCYON intercom always speaks</small></span>
+              <input type="checkbox" id="voicesToggle" checked />
+            </label>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Player grunts</b><small>Your character's effort, pain, breathing and screams</small></span>
+              <input type="checkbox" id="gruntsToggle" checked />
+            </label>
+            </section>
+          </div>
 
-        <div class="button-row">
-          <button id="settingsBackButton" class="primary-button">BACK</button>
-          <button id="resetSettingsButton" class="text-button">Reset to defaults</button>
+          <div class="tr-panel" data-st-panel="access" hidden>
+            <p class="fm-blurb">Make it easier to read, to watch and to react.</p>
+            <section class="tr-sec st-sec"><h3>Reading and motion</h3>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Subtitle size</b><small>There are no voiceovers for some lines - make them easy to read</small></span>
+              <select id="subtitleSizeSelect">
+                <option value="normal">Normal</option>
+                <option value="large">Large</option>
+                <option value="xl">Extra large</option>
+              </select>
+            </label>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Reduced motion</b><small>Less camera shake, no look back after a hit</small></span>
+              <input type="checkbox" id="reducedMotionToggle" />
+            </label>
+            </section>
+            <section class="tr-sec st-sec"><h3>Quick-time hits</h3>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Longer reaction windows</b><small>The story's quick-time hits give you 1.6x the time</small></span>
+              <input type="checkbox" id="longReactionsToggle" />
+            </label>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Hold instead of tapping</b><small>Fill the bars by holding the key instead of tapping it fast</small></span>
+              <input type="checkbox" id="holdInsteadOfMashToggle" />
+            </label>
+            </section>
+          </div>
+
+          <div class="tr-panel" data-st-panel="hud" hidden>
+            <p class="fm-blurb">What the HUD shows in a run - also the VIEW button (V) mid-run.</p>
+            <section class="tr-sec st-sec"><h3>Panels</h3>
+              <div data-hud-toggles></div>
+            </section>
+          </div>
+
+          <div class="tr-panel" data-st-panel="controls" hidden>
+            <p class="fm-blurb">Controllers, and the keys. Every move is in the Field Manual.</p>
+            <section class="tr-sec st-sec"><h3>Controllers</h3>
+              <p class="setting-note">Any controller works - USB, or Bluetooth once it is paired with this computer (Xbox, PlayStation, Switch Pro and others). Press a button on it and it connects here, in its player colour.</p>
+              <div id="padSettingsList" class="pad-list"></div>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Controller aim speed</b><small>The right stick</small></span>
+              <input type="range" id="padAimSlider" min="50" max="200" value="100" />
+            </label>
+            <label class="setting-row st-row toggle-row">
+              <span class="st-label"><b>Vibration</b><small>Quick-time hits, going down</small></span>
+              <input type="checkbox" id="padVibrationToggle" checked />
+            </label>
+            </section>
+            <section class="tr-sec st-sec"><h3>On a controller</h3>
+              <div id="padControls" class="controls settings-controls st-keys"></div>
+            </section>
+            <section class="tr-sec st-sec"><h3>Keyboard and mouse</h3>
+              <div class="controls settings-controls st-keys" data-keep-keys>
+                <span><kbd>A</kbd><kbd>D</kbd> Change lane</span>
+                <span><kbd>MOUSE</kbd> Aim and throw</span>
+                <span><kbd>RMB</kbd> Focus (slow time)</span>
+                <span><kbd>Q</kbd><kbd>E</kbd> Sphere type</span>
+                <span><kbd>W</kbd><kbd>S</kbd> Sprint / brake (Sector 03)</span>
+                <span><kbd>SPACE</kbd><kbd>SHIFT</kbd> Jump / slide</span>
+                <span><kbd>C</kbd> Change camera</span>
+                <span><kbd>HOLD CLICK</kbd> Fire the launcher (Sector 02, Roof) - it overheats</span>
+                <span><kbd>SPACE</kbd> Push a fallen duct (tap fast, Sector 02)</span>
+                <span><kbd>WASD</kbd> Move on the roof, <kbd>SPACE</kbd> dodge / jump for the ladder</span>
+                <span><kbd>P</kbd> Photo mode (Sectors 01, 03)</span>
+                <span><kbd>ESC</kbd> Pause</span>
+              </div>
+            </section>
+          </div>
+
         </div>
       </div>
     </section>
 
     <section id="endScreen" class="screen end-screen">
-      <div class="end-card">
+      <div class="end-bg" aria-hidden="true"><i class="end-scan"></i><i class="end-glow"></i></div>
+      <div class="screen-copy compact end-card">
         <div class="end-main">
-          <p id="endEyebrow" class="end-eyebrow">Sector complete</p>
-          <h2 id="endTitle" class="end-title">Calibration lift reached</h2>
-          <p id="endText" class="end-text">All three tower sectors are stable.</p>
-          <div class="end-numbers">
-            <div class="end-score"><strong id="finalScore" class="num">000000</strong><span>Final score</span></div>
-            <ul id="endChips" class="end-chips"></ul>
-          </div>
+          <p id="endEyebrow" class="eyebrow end-eyebrow">SECTOR COMPLETE</p>
+          <h2 id="endTitle" class="end-title">CALIBRATION LIFT REACHED</h2>
+          <p id="endText" class="intro end-text">All three tower sectors are stable.</p>
+          <div class="end-score"><span>FINAL SCORE</span><strong id="finalScore">000000</strong></div>
           <p id="endStats" class="end-stats" hidden></p>
-          <div class="link-row end-actions">
-            <button id="restartButton" class="link-button primary" type="button">Run again</button>
-            <button id="restartSectorButton" class="link-button" type="button" hidden>Restart sector</button>
-            <button id="endMenuButton" class="link-button" type="button">Back to menu</button>
+          <ul id="endChips" class="end-chips"></ul>
+          <div class="button-row end-actions">
+            <button id="restartButton" class="primary-button">RUN AGAIN</button>
+            <button id="restartSectorButton" class="text-button" hidden>Restart sector</button>
+            <button id="endMenuButton" class="text-button">Back to menu</button>
           </div>
-          <p class="prompt-bar end-keys" aria-hidden="true"><span><kbd>R</kbd> Retry</span> <span><kbd>Esc</kbd> Menu</span></p>
+          <p class="hint-inline end-keys kb-only"><kbd>R</kbd> retry &nbsp; <kbd>Esc</kbd> menu</p>
         </div>
         <div class="end-side">
           <div id="endProgress" class="end-progress" hidden></div>
@@ -412,26 +615,32 @@
     </section>
 
     <section id="endlessScreen" class="screen list-screen" aria-label="Endless">
-      <div class="screen-copy">
-        <h2 class="screen-title">Endless</h2>
-        <p class="intro">Pick a place and see how far you get. Each environment on its own, separate from the story, until you go down. The corridors come back as new layouts, a little faster every lap.</p>
+      <div class="screen-copy compact">
+        <p class="eyebrow">ENDLESS // SEPARATE FROM THE STORY</p>
+        <h2>PICK A PLACE.<br />SEE HOW FAR YOU GET.</h2>
+        <p class="intro">Each environment on its own, until you go down. Every run is a new layout, and every lap after it, a little faster each time.</p>
+        <p class="card-label">Difficulty</p>
+        <div class="segmented endless-difficulty" role="group" aria-label="Choose the difficulty for Endless">
+          <button type="button" class="subject-button difficulty-button" data-endless-difficulty="easy">Easy</button>
+          <button type="button" class="subject-button difficulty-button" data-endless-difficulty="normal">Normal</button>
+          <button type="button" class="subject-button difficulty-button" data-endless-difficulty="hard">Hard</button>
+        </div>
         <div class="endless-grid">
           <button type="button" class="endless-card" data-endless="foundry"><b>The Foundry</b><span>The plant floor, lap after lap.</span><small></small></button>
           <button type="button" class="endless-card" data-endless="labs"><b>The Labs</b><span>The Meltdown's corridors, reshuffled every lap.</span><small></small></button>
           <button type="button" class="endless-card" data-endless="skyline"><b>The Skyline</b><span>The Glass Causeway, randomised, faster every 250 m.</span><small></small></button>
           <button type="button" class="endless-card" data-endless="roof"><b>The Roof</b><span>No helicopter. The waves never stop.</span><small></small></button>
         </div>
-        <div class="link-row">
-          <button id="endlessBackButton" class="link-button" type="button">Back</button>
+        <div class="button-row">
+          <button id="endlessBackButton" class="primary-button">BACK</button>
         </div>
       </div>
-      <p class="prompt-bar" aria-hidden="true"><span data-pad-hide><kbd>Enter</kbd> Play <kbd>Esc</kbd> Back</span><span class="pad-only" data-pad-keep><kbd class="g-ps">&#10005;</kbd><kbd class="g-xb">A</kbd> Play <kbd class="g-ps">&#9675;</kbd><kbd class="g-xb">B</kbd> Back</span></p>
     </section>
 
     <section id="reportScreen" class="screen credits-screen" aria-label="Last run report">
       <div class="screen-copy credits-copy">
         <div class="manual-head">
-          <h2 class="screen-title">Last run report</h2>
+          <h2>Last run report</h2>
           <button id="reportBackButton" type="button" class="primary-button">BACK</button>
         </div>
         <p id="reportScreenMeta" class="intro"></p>
@@ -439,102 +648,32 @@
       </div>
     </section>
 
-    <section id="creditsScreen" class="screen credits-screen" aria-label="Credits">
-      <div class="screen-copy credits-copy">
-        <div class="manual-head">
-          <h2 class="screen-title">Credits</h2>
+    <section id="creditsScreen" class="screen trophies-screen" aria-label="Credits">
+      <div class="tr-wrap">
+        <header class="tr-head">
+          <div><p class="eyebrow">FRACTURE RUN // DRIVEN BY DESIGN</p><h2>CREDITS</h2></div>
           <button id="creditsBackButton" type="button" class="primary-button">BACK</button>
+        </header>
+        <div class="tabs tr-tabs fm-tabs" role="tablist" aria-label="Credits sections">
+          <kbd class="tr-bumper" data-key="Q">Q</kbd>
+          <button type="button" role="tab" class="tab on" data-st-tab="team" aria-selected="true">The team</button>
+          <button type="button" role="tab" class="tab" data-st-tab="models" aria-selected="false">Models</button>
+          <button type="button" role="tab" class="tab" data-st-tab="sound" aria-selected="false">Music &amp; sound</button>
+          <button type="button" role="tab" class="tab" data-st-tab="tools" aria-selected="false">Made with</button>
+          <kbd class="tr-bumper" data-key="E">E</kbd>
         </div>
-        <div id="creditsBody" class="credits-body"></div>
+        <div id="creditsBody" class="tr-scroll"></div>
       </div>
     </section>
 
-    <section id="manualScreen" class="screen manual-screen" aria-label="Field manual">
-      <div class="screen-copy manual-copy">
-        <div class="manual-head">
-          <h2 class="screen-title">Field manual</h2>
+    <section id="manualScreen" class="screen trophies-screen" aria-label="Field manual">
+      <div class="tr-wrap">
+        <header class="tr-head">
+          <div><p class="eyebrow">FIELD MANUAL // ASCENSION TOWER</p><h2>FIELD MANUAL</h2></div>
           <button id="manualTopBackButton" type="button" class="primary-button">BACK</button>
-        </div>
-        <p class="manual-legend"><span data-act="break">Break it</span> shoot or throw at it <span data-act="avoid">Avoid it</span> change lanes or put it out <span data-act="collect">Collect it</span> run through or shoot it <span data-act="tool">Your tools</span> what you have</p>
-        <div class="tabs manual-tabs" role="tablist">
-          <button type="button" role="tab" class="tab on" data-tab="m-tools" aria-selected="true">Spheres &amp; serums</button>
-          <button type="button" role="tab" class="tab" data-tab="m-foundry" aria-selected="false">01 Foundry</button>
-          <button type="button" role="tab" class="tab" data-tab="m-labs" aria-selected="false">02 Labs</button>
-          <button type="button" role="tab" class="tab" data-tab="m-skyline" aria-selected="false">03 Skyline</button>
-          <button type="button" role="tab" class="tab" data-tab="m-roof" aria-selected="false">The Roof</button>
-        </div>
-        <div class="tab-panel" data-panel="m-tools">
-          <div class="manual-grid tools">
-            <article data-tone="white" data-act="tool"><h3>Glass sphere <small>1 per throw</small></h3><p>Standard throw. Punches through panes and keeps going; ricochets off walls and ceilings.</p></article>
-            <article data-tone="cyan" data-act="tool"><h3>Cryo sphere <small>2 per throw</small></h3><p>Goes off like shock, in ice: shatters what's within 4.8 m, puts out fires, freezes falling debris and machinery, knocks people down. Frosts the floor where it lands on it.</p></article>
-            <article data-tone="violet" data-act="tool"><h3>Shock sphere <small>3 per throw</small></h3><p>Shatters all glass within 5 m. One-hit reinforced glass.</p></article>
-            <article data-tone="indigo" data-act="tool"><h3>Gravity sphere <small>2 per throw</small></h3><p>Opens a black hole for a second where it bursts. It breaks nothing: it drags in every sphere cache, sack and serum within 7 m and they're yours, and it yanks patients and scientists toward it and stuns them.</p></article>
-            <article data-tone="cyan" data-act="collect"><h3>Sphere caches and sacks</h3><p>Shoot cyan caches in Foundry and Skyline. In Labs and on the Roof, shoot sacks or run through them to collect once, without spending ammunition.</p></article>
-            <article data-tone="cyan" data-act="tool"><h3>Emergency recovery</h3><p>At zero spheres, 2.5 seconds of active gameplay (1.6 on Easy, 3.5 on Hard) restores one sphere. It stops at one: use Glass (Q/E) to shoot a supply. Pause, cutscenes and death do not charge it. While empty, a yellow wireframe marks the nearest nearby, unobstructed supply when one is available.</p></article>
-            <article data-tone="prism" data-act="collect"><h3>Prism split</h3><p>Gold capsule. Every throw splits into three spheres. 10 s.</p></article>
-            <article data-tone="fire" data-act="collect"><h3>Thermal Aegis</h3><p>Orange capsule. See through smoke and the dark, and fire can't burn you: walk through flames and fire vents, the fire behind you in the Labs barely gains, a canister's blast only shoves you. 12 s.</p></article>
-            <article data-tone="green" data-act="collect"><h3>Kinetic shield</h3><p>Green capsule. Absorbs the next two impacts. 25 s.</p></article>
-            <article data-tone="serum" data-act="collect"><h3>Overdrive</h3><p>Pink capsule. Free throws, faster running, heavier hits. 8 s.</p></article>
-            <article data-tone="serum" data-act="collect"><h3>Unlimited spheres</h3><p>Blue capsule, a figure of eight inside. Every throw is free - cryo and shock too. 10 s.</p></article>
-            <article data-tone="serum" data-act="collect"><h3>Restoration</h3><p>Green capsule, a ring of spheres inside. +20 spheres and your integrity back to full, at once.</p></article>
-            <article data-tone="amber" data-act="collect"><h3>Records</h3><p>Gold holograms in light beams, in every sector: plant logs, patient records, case files, flight records. Run through one to read it.</p></article>
-          </div>
-        </div>
-        <div class="tab-panel" data-panel="m-foundry" hidden>
-          <div class="manual-grid">
-            <article data-tone="glass" data-act="break"><h3>Switch cells</h3><p>Glass cells on stems. Break one and the gate it holds opens - three stand between you and the lift.</p></article>
-            <article data-tone="cyan" data-act="break"><h3>Pressure cells</h3><p>Small glass cells everywhere: score, and three spheres back each.</p></article>
-            <article data-tone="cyan" data-act="tool"><h3>Out of spheres?</h3><p>Keep avoiding machinery. Emergency recharge restores one sphere after 2.5 seconds empty; switch to Glass with Q/E and shoot a pressure cell for +3.</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>Pistons and presses</h3><p>Slam down on a rhythm. Read the timing or change lanes; cryo freezes them for a few seconds.</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>Barriers</h3><p>Low ones you jump (Space or W), high ones you slide under (Shift or S).</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>Slag carts (Hard)</h3><p>A tub of molten metal rolling to and fro across all three lanes. Take the lane it is leaving, or jump it.</p></article>
-            <article data-tone="fire" data-act="break"><h3>Plant charges</h3><p>Near the end Vale's charges arm and the shutters start sealing: a clock to the lift. Break the extraction valve.</p></article>
-          </div>
-        </div>
-        <div class="tab-panel" data-panel="m-labs" hidden>
-          <div class="manual-grid">
-            <article data-tone="fire" data-act="avoid"><h3>The fire front</h3><p>It's behind you the whole way. Slow down and it catches you.</p></article>
-            <article data-tone="cyan" data-act="collect"><h3>Sphere sacks</h3><p>Run through the floating cyan crystal to collect without shooting, or break it with projectiles. At zero, recharge restores one sphere after 2.5 seconds of play. Use Glass (Q/E); a yellow wireframe marks a nearby unobstructed sack ahead.</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>Fallen ducts</h3><p>Jump onto them and off the far side - running into one is a hit. At the fire crossings, the duct is the only bridge.</p></article>
-            <article data-tone="hazard" data-act="break"><h3>Patients</h3><p>Lurch out into your lane. In the dark they stalk you, following your lane until the last moment: shoot them (two hits) or sidestep late.</p></article>
-            <article data-tone="blue" data-act="tool"><h3>The launcher's light</h3><p>When the power dies, your beam is the only light. Spheres glow - firing ahead is scouting.</p></article>
-            <article data-tone="glass" data-act="break"><h3>Glass and lasers</h3><p>Panes break (glass spheres go straight through); laser grids you jump or slide.</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>Fire waves (Hard)</h3><p>Three floor vents erupting one after another, so the fire rolls across the corridor. Be in the lane it has just left.</p></article>
-          </div>
-        </div>
-        <div class="tab-panel" data-panel="m-skyline" hidden>
-          <div class="manual-grid">
-          <article data-tone="glass" data-act="break"><h3>Glass pane</h3><p>Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity.</p></article>
-          <article data-tone="glass" data-act="break"><h3>Reinforced glass and doors</h3><p>Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one.</p></article>
-          <article data-tone="cyan" data-act="collect"><h3>Sphere cache</h3><p>Floating crystal. Shoot it for +3 spheres. At zero, emergency recharge restores one sphere after 2.5 seconds of play; use Glass (Q/E). The sealed gate keeps its seven-second aiming budget but holds that clock while you are empty and cannot throw. Overdrive throws are free even at zero.</p></article>
-          <article data-tone="hazard" data-act="avoid"><h3>Solid hazards</h3><p>Dark steel with amber stripes: carts, cabinets, racks, fallen beams. They never break. Change lanes.</p></article>
-          <article data-tone="fire" data-act="avoid"><h3>Fire</h3><p>Burns integrity while you stand in it and thickens the smoke. Put it out with a sprinkler or a cryo sphere.</p></article>
-          <article data-tone="blue" data-act="break"><h3>Sprinkler bulb</h3><p>The small red glass bulb on the ceiling. Shoot it to flood the area and put out the fires below it.</p></article>
-          <article data-tone="green" data-act="break"><h3>Air vent</h3><p>A round frosted cover in the wall with a glowing cyan ring and a SMOKE VENT sign, angled toward you. The ring pulses when the air is smoky. Throw a sphere at it to pull the smoke out; the ring turns green.</p></article>
-          <article data-tone="hazard" data-act="avoid"><h3>Ceiling collapse</h3><p>A red ring on the floor means something is about to fall there. Beams block the lane. Falling glass can be shot mid-air.</p></article>
-          <article data-tone="glass" data-act="break"><h3>Rotating sculpture</h3><p>A steel pole blocks the centre lane; glass blades sweep the outer lanes. Shoot the blades or time your lane.</p></article>
-          <article data-tone="serum" data-act="collect"><h3>Serum capsules</h3><p>Prism split (triple throw), Thermal Aegis (see through smoke, fireproof), kinetic shield (absorbs two hits), overdrive (free throws, faster), unlimited spheres (every throw free), restoration (+20 spheres and full integrity).</p></article>
-          <article data-tone="amber" data-act="collect"><h3>Case files</h3><p>Five gold holograms, each standing in a column of light: two in the ward, one on the skybridge, two in the atrium. Run through one or shoot it to read what happened here.</p></article>
-          <article data-tone="white" data-act="break"><h3>Specimen tanks</h3><p>Glass tanks along the walls. Optional score.</p></article>
-          <article data-tone="amber" data-act="break"><h3>Lift gate</h3><p>Break locks I, II, III in order. Wrong order is rejected. You have seven seconds once you reach the gate.</p></article>
-          <article data-act="tool"><h3>Sprint, brake, focus</h3><p>W sprints, S brakes (the bridge collapses behind you, so do not brake long). Hold right mouse to slow time.</p></article>
-        </div>
-        </div>
-        <div class="tab-panel" data-panel="m-roof" hidden>
-          <div class="manual-grid">
-            <article data-tone="hazard" data-act="break"><h3>Patients</h3><p>Climb out of the hatches, stalk, wind up and charge in a straight line. Sidestep one near an open ledge and it goes over.</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>Open hatches</h3><p>The square holes the patients climb out of go straight down into the building. Step into one and you fall.</p></article>
-            <article data-tone="serum" data-act="break"><h3>Scientists</h3><p>Fire slow orbs from their gadgets - dodge them (Space). Three hits each.</p></article>
-            <article data-tone="fire" data-act="break"><h3>Gas canisters</h3><p>Red, by the cover. Shoot one and everyone near it goes down - chains into the next. Not too close yourself.</p></article>
-            <article data-tone="cyan" data-act="collect"><h3>Supply drop</h3><p>A flare, a crate under a parachute: spheres and a serum. Walk into them or shoot them.</p></article>
-            <article data-tone="cyan" data-act="tool"><h3>Emergency reserve</h3><p>At zero, 2.5 seconds of active play restores one sphere. Walk through a sack without spending it, or select Glass (Q/E) to shoot a supply. Overdrive throws remain free at zero. Keep dodging: recovery does not stop enemies.</p></article>
-            <article data-tone="hazard" data-act="avoid"><h3>The brute</h3><p>The last wave's big one: six hits, charges harder (on Hard, the second wave brings one too). Use a canister or the ledge.</p></article>
-            <article data-tone="amber" data-act="collect"><h3>The helicopter</h3><p>Clear the roof and it lands; still fighting when it comes and it hangs off the ledge - jump for the ladder.</p></article>
-          </div>
-        </div>
-        <div class="button-row">
-          <button id="manualBackButton" class="primary-button">BACK</button>
-        </div>
+        </header>
+        <div class="tabs tr-tabs fm-tabs" role="tablist" aria-label="Field manual sections"></div>
+        <div class="tr-scroll"><div class="fm-page"></div></div>
       </div>
     </section>
 

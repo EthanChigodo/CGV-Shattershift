@@ -15,7 +15,7 @@
  */
 
 import { CAST } from "./script.js";
-import { padGlyph } from "../systems/key-glyphs.js";
+import { padLabel } from "../systems/input-glyphs.js";
 
 function ensureStylesheet() {
   if (document.querySelector("link[data-story-ui]")) return;
@@ -35,9 +35,9 @@ function div(className, parent) {
 
 const KEY_LABELS = { Space: "SPACE", ShiftLeft: "SHIFT", Enter: "ENTER", Escape: "ESC" };
 
-/** "KeyE" -> "E", "Space" -> "SPACE" - or, while a controller is in use, its button ("△", "A"). */
+/** "KeyE" -> "E", "Space" -> "SPACE", "PadRT" -> "RT" (or "R2", "ZR"). */
 export function keyLabel(code) {
-  const pad = padGlyph(code);
+  const pad = padLabel(code);
   if (pad) return pad;
   if (KEY_LABELS[code]) return KEY_LABELS[code];
   if (code.startsWith("Key")) return code.slice(3);
@@ -238,7 +238,6 @@ export class StoryUI {
     this.reactLabel.textContent = label;
     this.reactKeys.innerHTML = "";
     this.reactKeyEls = [];
-    this.reactCodes = keys;
     keys.forEach((code, i) => {
       if (i > 0 && layout === "together") {
         const plus = document.createElement("span");
@@ -293,16 +292,6 @@ export class StoryUI {
       timer.style.strokeDashoffset = show ? (201 * (1 - Math.max(0, Math.min(1, time)))).toFixed(1) : "201";
     });
     if (bar !== null) this.reactBarFill.style.width = `${(Math.max(0, Math.min(1, bar)) * 100).toFixed(1)}%`;
-  }
-
-  /** The player switched device mid-prompt: the same prompt, in the new device's names. */
-  relabelReaction(label) {
-    this.reactLabel.textContent = label;
-    this.reactKeyEls.forEach((k, i) => {
-      const text = keyLabel(this.reactCodes[i]);
-      k.classList.toggle("wide", text.length > 2);
-      k.querySelector("b").textContent = text;
-    });
   }
 
   /** "success" | "fail" flash, then hide. */

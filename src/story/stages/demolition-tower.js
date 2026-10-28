@@ -1,41 +1,59 @@
 /**
  * The tower behind the skybridge, demolished (the Skyline's blast): the
- * charges go floor by floor, bottom to top - a band of white flashes and
- * blown-out windows at each level - then the blast cuts its core level with
- * the bridge and the top comes down: leaning toward you, crushing the
- * floors under it one by one, sinking into its own dust, which rolls out
- * across the bridge while glass and debris rain past. The shared collapse
- * system (src/fx/demolition.js), with its own particles.
+ * charges go floor by floor, bottom to top - a band of blown-out windows and
+ * a burst of fire at each level - then the whole building goes up at once
+ * and comes down, dragging the near end of the bridge with it.
  *
- *   const tower = new DemolitionTower({ floors: 24, quality: "high" });
+ *   const tower = new DemolitionTower({ floors: 24 });
  *   tower.root.position.copy(where);           // base centre, below the bridge
  *   scene.add(tower.root);
  *   tower.detonate();                           // starts the sequence
- *   tower.update(dt, camera);                   // every frame
- *   tower.fallout(camera);                      // glass and dust round you
- *   tower.state  // { floorsGone, whole (0..1 after the blast), sink (m), done }
+ *   tower.update(dt);                           // every frame
+ *   tower.state  // { floorsGone, whole (0..1 after the big one), sink (m) }
  *
- * Light-free like the rest of the stage: lit windows are emissive, the
- * blasts additive - no real lights, so nothing in the level recompiles
- * mid-cutscene.
+ * Light-free like the Fireball: lit windows are emissive, the blasts are
+ * additive sprites and flashing bands - no real lights, so nothing in the
+ * level recompiles mid-cutscene.
+ *
+ * And it burns: the menu's tower fire (src/menu/fire.js) - flames roaring
+ * out of the windows of each floor as its charge goes, on the faces the
+ * bridge sees, still burning as it comes down; embers pouring up round it.
  */
 
 import * as THREE from "../../three.js";
-import { DemolitionFX, DemolitionBuilding, BLAST_DELAY } from "../../fx/demolition.js";
+import { Fireball } from "./fireball.js";
+import { Flames, Embers } from "../../menu/fire.js";
+import { createHazeUniforms, noiseTexture } from "../../menu/atmosphere.js";
+
+/** A facade of office windows, some lit, on a dark concrete frame. */
+function facadeTexture(seed = 7) {
+  const w = 256;
+  const h = 512;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  g.fillStyle = "#1a1c20";
+  g.fillRect(0, 0, w, h);
+  let s = seed;
+  const rnd = () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+  const cols = 8;
+  const rows = 16;
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const lit = rnd();
+      const shade = lit > 0.62 ? `rgba(255,${190 + Math.floor(rnd() * 50)},${120 + Math.floor(rnd() * 60)},${0.65 + rnd() * 0.3})` : `rgba(40,60,80,${0.5 + rnd() * 0.3})`;
+      g.fillStyle = shade;
+      g.fillRect(x * (w / cols) + 4, y * (h / rows) + 5, w / cols - 8, h / rows - 12);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
 
 const FLOOR_HEIGHT = 4.2;
-/** Where the blast cuts the core (a share of the floors up): about level with the bridge. */
-const CUT = 0.36;
-/** How far the top leans over as it comes down (radians). */
-const LEAN = 0.38;
-/** Where it's watched from, in the tower's frame: the bridge, 75 m along it. */
-const VIEWER = new THREE.Vector3(42, 36, -75);
-/** It leans across your view, toward the bridge. */
-const FALL = new THREE.Vector3(0.87, 0, 0.49);
-/** The dust off the blast, rolling out across the bridge (+x). */
-const SURGE = { puffs: 9, speed: 14 };
-/** The night it's lit by: the burning sky, the fires below (linear RGB). */
-const LIGHT = { ambient: [0.07, 0.05, 0.05], key: [0.2, 0.15, 0.13], keyDir: new THREE.Vector3(0.3, 1, 0.4), fire: [0.6, 0.26, 0.08] };
 
 export class DemolitionTower {
   /**
@@ -43,90 +61,205 @@ export class DemolitionTower {
    * @param {number} [o.floors]   storeys (the root is at the base)
    * @param {number} [o.width]    footprint, metres (square)
    * @param {number} [o.interval] seconds between floors going
-   * @param {"high"|"medium"|"low"} [o.quality]
    */
-  constructor({ floors = 24, width = 22, interval = 0.11, quality = "high" } = {}) {
+  constructor({ floors = 24, width = 22, interval = 0.11 } = {}) {
     this.floors = floors;
     this.width = width;
     this.interval = interval;
     this.height = floors * FLOOR_HEIGHT;
     this.root = new THREE.Group();
     this.root.name = "DemolitionTower";
-    this.fx = new DemolitionFX({ quality, fogScale: 0.7, light: LIGHT });
-    this.building = new DemolitionBuilding({
-      fx: this.fx, width, depth: width, floors, floorHeight: FLOOR_HEIGHT, top: this.height, bottom: -260,
-      seed: 13, lit: 0.36, name: "DemolitionTowerSlabs",
+
+    // The building: one box, windows on all four faces.
+    this.texture = facadeTexture();
+    this.texture.repeat.set(width / 22, floors / 16);
+    this.material = new THREE.MeshStandardMaterial({
+      color: 0x8a8c90, roughness: 0.85, metalness: 0.2,
+      map: this.texture, emissiveMap: this.texture, emissive: 0xffffff, emissiveIntensity: 0.55,
     });
-    this.building.onEvent = (name, info) => this._on(name, info);
-    this.root.add(this.building.root, this.fx.root);
+    this.body = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(width, this.height, width), this.material);
+    box.position.y = this.height / 2;
+    this.body.add(box);
+    // A roof plant and a mast, so the silhouette reads as a tower.
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 });
+    const plant = new THREE.Mesh(new THREE.BoxGeometry(width * 0.5, 4, width * 0.4), roofMat);
+    plant.position.y = this.height + 2;
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.4, 14, 6), roofMat);
+    mast.position.set(width * 0.2, this.height + 7, 0);
+    this.body.add(plant, mast);
+    this.root.add(this.body);
+    this._materials = [this.material, roofMat];
+    this._geometries = [box.geometry, plant.geometry, mast.geometry];
+
+    // A band of blown-out fire round each floor, flashed as it goes.
+    this.bandGeometry = new THREE.BoxGeometry(width + 0.6, FLOOR_HEIGHT * 0.55, width + 0.6);
+    this._geometries.push(this.bandGeometry);
+    this.bands = [];
+    for (let i = 0; i < floors; i += 1) {
+      const m = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+      const band = new THREE.Mesh(this.bandGeometry, m);
+      band.position.y = (i + 0.5) * FLOOR_HEIGHT;
+      band.visible = false;
+      this.body.add(band);
+      this.bands.push({ mesh: band, at: Infinity, glow: 0 });
+      this._materials.push(m);
+    }
+
+    // Bursts: a small pool for the floors, a big one for the end.
+    this.pool = Array.from({ length: 8 }, () => new Fireball());
+    this.big = [new Fireball(), new Fireball(), new Fireball()];
+    for (const f of [...this.pool, ...this.big]) this.root.add(f.root);
+    this._next = 0;
+
+    // Fire out of the windows, and embers (menu/fire.js). Flames take world
+    // positions: each is placed from the falling body every frame (_burn).
+    const haze = createHazeUniforms();
+    // (Barely any of the menu's night haze: the Skyline has its own fog.)
+    haze.uHazeDensity.value = 0.0012;
+    this.noise = noiseTexture();
+    this.flames = new Flames({ haze, noise: this.noise, max: 72 });
+    this.flames.uniforms.uWind.value.set(-0.6, 0, 0.2).normalize();
+    this.flameSpots = [];
+    this.embers = new Embers({
+      count: 520, origin: new THREE.Vector3(), spread: new THREE.Vector3(width * 1.6, this.height * 0.8, width * 1.6),
+      wind: new THREE.Vector3(-1.4, 0, 0.5), size: 0.5, rise: 9, life: 7, seed: 23,
+    });
+    this.embers.points.visible = false;
+    this.root.add(this.flames.mesh, this.embers.points);
+    this._local = new THREE.Vector3();
 
     this.time = 0;
     this.started = false;
     this.state = { floorsGone: 0, whole: 0, sink: 0, done: false };
+    this.wholeAt = Infinity;
     /** The two faces that face the viewer (0..3 = +x, +z, -x, -z). */
     this.towardFaces = [0, 3];
     this.onFloor = null; // (index) => {} - for sound and shake
     this.onWhole = null; // () => {}
   }
 
-  /** Light the charges: floor by floor from the bottom, then the blast. */
+  /** Light the charges: floor by floor from the bottom, then all of it. */
   detonate() {
-    if (this.started) return;
     this.started = true;
     this.time = 0;
-    this.root.updateMatrixWorld();
-    this.building.detonate({
-      interval: this.interval, cut: CUT, lean: LEAN, fall: FALL, blowouts: 0.12,
-      viewer: this.root.localToWorld(VIEWER.clone()),
-    });
+    this.bands.forEach((b, i) => (b.at = i * this.interval));
+    this.wholeAt = this.floors * this.interval + 0.35;
   }
 
-  /** Seconds from detonate() to the blast. */
+  /** Seconds from detonate() to the whole building going up. */
   get wholeDelay() {
-    return this.floors * this.interval + BLAST_DELAY;
+    return this.floors * this.interval + 0.35;
   }
 
-  /** Glass and debris raining past `follow` (the camera), dust blowing across from the tower. */
-  fallout(follow, seconds = 7) {
-    const from = VIEWER.clone().negate().setY(0).normalize();
-    return this.fx.fallout(follow, { seconds, from });
+  /**
+   * A burst against one face of the building (a burst at its centre would
+   * be hidden inside it). `face` 0..3 = +x, +z, -x, -z; default cycles.
+   */
+  _burst(y, size, big = false, face = null, spread = 1) {
+    const pool = big ? this.big : this.pool;
+    const f = pool[this._next++ % pool.length];
+    const side = face ?? this.towardFaces[this._next % 2];
+    const half = this.width / 2 + (big ? size * 0.12 : 0.5);
+    const along = big ? 0 : ((this._next % 5) - 2) * this.width * 0.2;
+    const x = side === 0 ? half : side === 2 ? -half : along;
+    const z = side === 1 ? half : side === 3 ? -half : along;
+    // The bursts live under this.root, so this is in the tower's own frame
+    // (a world position here would be offset by the tower's twice).
+    f.burst(new THREE.Vector3(x, y + this.body.position.y, z), { size, spread });
   }
 
-  _on(name, info) {
-    if (name === "charge") {
-      this.state.floorsGone = info.floor + 1;
-      this.onFloor?.(info.floor);
-    } else if (name === "blast") {
-      this._surge();
-      this.onWhole?.();
+  /** Flames out of three windows of floor `i` on each face the bridge sees. */
+  _ignite(i) {
+    const half = this.width / 2 + 0.2;
+    for (const side of this.towardFaces) {
+      const n = new THREE.Vector3(side === 0 ? 1 : side === 2 ? -1 : 0, 0, side === 1 ? 1 : side === 3 ? -1 : 0);
+      for (let k = 0; k < 3; k += 1) {
+        // (Not every window: most floors, a different three.)
+        if ((i * 7 + k * 3 + side) % 4 === 0) continue;
+        const along = ((k + ((i * 5) % 3) * 0.33) / 3 - 0.4) * this.width * 0.8;
+        const local = new THREE.Vector3(n.x ? n.x * half : along, (i + 0.35) * FLOOR_HEIGHT, n.z ? n.z * half : along);
+        this.flameSpots.push({ local, normal: n });
+        this.flames.add({ position: local.clone(), normal: n, width: 2.8 }, { grow: 0.5, power: 1 });
+      }
     }
   }
 
-  /** The blast's dust, out of the bridge-side face and across the bridge. */
-  _surge() {
-    const fx = this.fx;
-    const y = (Math.round(this.floors * CUT) + 1) * FLOOR_HEIGHT;
-    for (let k = 0; k < fx.n(SURGE.puffs, 4); k += 1) {
-      const p = this.root.localToWorld(new THREE.Vector3(this.width / 2 + 2, y + (Math.random() - 0.3) * 12, (Math.random() - 0.5) * this.width * 1.4));
-      const v = new THREE.Vector3(1, 0.05, (Math.random() - 0.5) * 0.6).normalize().multiplyScalar(SURGE.speed * (0.6 + Math.random() * 0.6));
-      fx.dust(p, { velocity: v, size: [10, 34 + Math.random() * 14], life: 9 + Math.random() * 4, drag: 0.18, rise: 0.6, shade: 0.62, warm: 0.45 });
+  /** The flames ride the falling body; the embers come from it. */
+  _burn(dt) {
+    this.body.updateMatrixWorld(true);
+    // (Flames.add keeps the latest `max`: the oldest spots dropped first.)
+    const spots = this.flameSpots.slice(-this.flames.list.length);
+    const m = this.body.matrixWorld;
+    spots.forEach((s, i) => {
+      const f = this.flames.list[i];
+      if (!f) return;
+      f.position.copy(this._local.copy(s.local).applyMatrix4(m)).y -= 1.2;
+      f.normal.copy(s.normal).transformDirection(m);
+    });
+    this.flames.update(dt, this.time);
+    this.embers.points.visible = this.started && this.state.floorsGone > 0 && !this.state.done;
+    if (this.embers.points.visible) {
+      this.embers.uniforms.uOrigin.value.copy(this._local.set(0, this.height * 0.45, 0).applyMatrix4(m));
+      this.embers.update(this.time, 900);
     }
   }
 
-  update(dt, camera = null) {
-    if (this.started) this.time += dt;
-    this.building.update(dt);
-    const s = this.building.state;
-    if (s.blown) this.state.whole = THREE.MathUtils.clamp((this.time - this.wholeDelay) / 0.4, 0.01, 1);
-    this.state.sink = s.drop;
-    this.state.done = s.down;
-    this.fx.update(dt, camera);
+  update(dt) {
+    for (const f of [...this.pool, ...this.big]) f.update(dt);
+    if (!this.started) return;
+    this.time += dt;
+    const t = this.time;
+    this._burn(dt);
+    for (const [i, b] of this.bands.entries()) {
+      if (t < b.at) continue;
+      if (!b.mesh.visible) {
+        b.mesh.visible = true;
+        b.glow = 1;
+        this.state.floorsGone = i + 1;
+        this._burst((i + 0.5) * FLOOR_HEIGHT, 15 + (i % 3) * 4);
+        this._ignite(i);
+        this.onFloor?.(i);
+      }
+      // A flash that settles into a lasting glow (the floor's on fire now).
+      b.glow = Math.max(0.28, b.glow - dt * 2.2);
+      b.mesh.material.opacity = b.glow * (0.85 + Math.sin(t * 23 + i) * 0.15);
+    }
+    if (t >= this.wholeAt) {
+      if (this.state.whole === 0) {
+        // All of it at once, out of the faces toward the bridge (the host
+        // says which: `towardFaces`).
+        const [a, b] = this.towardFaces;
+        // (Held close to the building: big bursts at full spread reach the bridge.)
+        this._burst(this.height * 0.35, 70, true, a, 0.4);
+        this._burst(this.height * 0.65, 60, true, b, 0.4);
+        this._burst(this.height * 0.9, 52, true, a, 0.4);
+        this.onWhole?.();
+      }
+      this.state.whole = Math.min(1, (t - this.wholeAt) / 0.4);
+      // Down it comes: slow at first, then faster, leaning as it goes.
+      const k = Math.max(0, t - this.wholeAt - 0.5);
+      this.state.sink = 0.5 * 9.8 * 0.35 * k * k;
+      this.body.position.y = -this.state.sink;
+      this.body.rotation.z = Math.min(0.22, k * k * 0.03);
+      this.material.emissiveIntensity = Math.max(0.05, 0.55 - k * 0.3);
+      if (this.state.sink > this.height) {
+        this.body.visible = false;
+        this.flames.mesh.visible = false;
+        this.state.done = true;
+      }
+    }
   }
 
   dispose() {
-    this.building.dispose();
-    this.fx.dispose();
     this.root.removeFromParent();
+    for (const f of [...this.pool, ...this.big]) f.dispose();
+    this.flames.dispose?.();
+    this.embers.dispose();
+    this.noise.dispose();
+    for (const m of this._materials) m.dispose();
+    for (const g of this._geometries) g.dispose();
+    this.texture.dispose();
   }
 }
 

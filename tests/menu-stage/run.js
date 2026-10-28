@@ -75,7 +75,8 @@ async function main() {
   try {
     const { page, errors } = await openPage(browser, { width: 1366, height: 768 });
     page.setDefaultTimeout(240000);
-    await page.goto(`${server.origin}/index.html`, { waitUntil: "load", timeout: 120000 });
+    // (?menustage: the checks run in software WebGL, where the game leaves the stage off.)
+    await page.goto(`${server.origin}/index.html?menustage`, { waitUntil: "load", timeout: 120000 });
     await page.waitForFunction(() => globalThis.__dbg?.menuStage, null, { polling: 250 });
 
     // ---- To the menu, and the stage comes up ----
@@ -88,18 +89,20 @@ async function main() {
     await page.evaluate(() => { __dbg.manual = true; });
     await page.evaluate(() => __dbg.step(45));
     const live = await page.evaluate(() => ({ live: __dbg.menuStage.live, showing: __dbg.menuStage.showing, shot: __dbg.menuStage.shot, state: __dbg.state }));
-    check(live.live && live.showing && live.shot === "title" && live.state === "intro", `stage up behind the main menu (${JSON.stringify(live)})`);
+    check(live.live && live.showing && ["opening", "title"].includes(live.shot) && live.state === "intro", `stage up behind the first screen (${JSON.stringify(live)})`);
     check(errors.length === 0, `no page errors on the way (${errors.length})`);
 
     // ---- Each page of the menu, and its shot ----
     const pages = [
+      ["storyScreen", "opening"],
       ["startScreen", "title"],
-      ["appearanceScreen", "appearance"],
+      ["singleScreen", "dossier"],
       ["newGameScreen", "newgame"],
       ["chaptersScreen", "chapters"],
       ["endlessScreen", "endless"],
       ["settingsScreen", "dim"],
-      [null, "versus"],
+      ["multiScreen", "versus"],
+      [null, "appearance"],
       ["startScreen", "title"],
     ];
     const seen = {};
@@ -119,7 +122,7 @@ async function main() {
           el.classList.add("active");
         } else dispatchEvent(new CustomEvent("menu:shot", { detail: { shot: name } }));
       }, [screen, shot]);
-      await page.evaluate(() => __dbg.step(90)); // 3 s: past the 2.6 s move
+      await page.evaluate(() => __dbg.step(150)); // 5 s: past the move (4.2 s out of the opening, 2.6 s otherwise)
       const r = await page.evaluate(measure);
       const now = await page.evaluate(() => ({ shot: __dbg.menuStage.shot, rig: __dbg.menuStage.stage.rig.name, moving: __dbg.menuStage.stage.rig.t < 1 }));
       seen[shot] = r;
@@ -133,10 +136,7 @@ async function main() {
     check(seen.dim.mean < seen.title.mean, `"dim" is darker than "title" (${seen.dim.mean} < ${seen.title.mean})`);
 
     // ---- The loadout re-dresses Subject 07 ----
-    await page.evaluate(() => {
-      document.querySelector('[data-skin="dark"]')?.click();
-      document.querySelector('[data-hair="blonde"]')?.click();
-    });
+    await page.evaluate(() => __dbg.applyLook({ skin: "dark", hair: "blonde", outfit: "blue" }));
     await page.evaluate(() => __dbg.step(2));
     const look = await page.evaluate(() => {
       const u = __dbg.menuStage.stage.figure?.look?.uniforms;
@@ -144,7 +144,7 @@ async function main() {
     });
     check(look && look.tone === 1 && look.hair === 1, `skin and hair change at once (${JSON.stringify(look)})`);
     const before = await page.evaluate(() => __dbg.menuStage.stage.figure?.height);
-    await page.evaluate(() => document.querySelector('[data-character="playerMale"]')?.click());
+    await page.evaluate(() => __dbg.applyLook({ character: "playerMale" }));
     await page.waitForFunction((h) => {
       __dbg.step(3);
       const f = __dbg.menuStage.stage.figure;
@@ -152,7 +152,7 @@ async function main() {
     }, before, { polling: 500, timeout: 120000 });
     const after = await page.evaluate(() => ({ height: +__dbg.menuStage.stage.figure.height.toFixed(2), spec: __dbg.menuStage.stage.figureSpec }));
     check(after.spec.character === "playerMale" && after.spec.skin === "dark" && after.spec.hair === "blonde", `a new body swaps in, still dressed as picked (${JSON.stringify(after)})`);
-    await page.evaluate(() => { document.querySelector('[data-character="playerFemale"]')?.click(); __dbg.step(2); });
+    await page.evaluate(() => { __dbg.applyLook({ character: "playerFemale" }); __dbg.step(2); });
     const r2 = await page.evaluate(measure);
     check(r2.lit > 0.3, `still drawing after the swaps (${JSON.stringify(r2)})`);
     await page.screenshot({ path: path.join(SHOTS, "loadout.jpg"), quality: 80 });

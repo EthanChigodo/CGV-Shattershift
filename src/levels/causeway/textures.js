@@ -51,7 +51,7 @@ export function heightToNormal(heightCanvas, strength = 2) {
   const h = heightCanvas.height;
   const src = heightCanvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
   const out = canvas(w, h);
-  const ctx = out.getContext("2d");
+  const ctx = out.getContext("2d", { willReadFrequently: true });
   const img = ctx.createImageData(w, h);
   const at = (x, y) => src[(((y + h) % h) * w + ((x + w) % w)) * 4] / 255;
   for (let y = 0; y < h; y += 1) {
@@ -129,9 +129,9 @@ function labTile(size = 512) {
   const colour = canvas(size);
   const height = canvas(size);
   const rough = canvas(size);
-  const c = colour.getContext("2d");
-  const h = height.getContext("2d");
-  const ro = rough.getContext("2d");
+  const c = colour.getContext("2d", { willReadFrequently: true });
+  const h = height.getContext("2d", { willReadFrequently: true });
+  const ro = rough.getContext("2d", { willReadFrequently: true });
   const r = rng(11);
   const tiles = 4;
   const step = size / tiles;
@@ -209,8 +209,8 @@ function labTile(size = 512) {
 function ceramicWall(size = 512) {
   const colour = canvas(size);
   const height = canvas(size);
-  const c = colour.getContext("2d");
-  const h = height.getContext("2d");
+  const c = colour.getContext("2d", { willReadFrequently: true });
+  const h = height.getContext("2d", { willReadFrequently: true });
   c.fillStyle = "#e7ecef"; c.fillRect(0, 0, size, size);
   h.fillStyle = "#a0a0a0"; h.fillRect(0, 0, size, size);
   const g = c.createLinearGradient(0, 0, 0, size);
@@ -250,7 +250,7 @@ function ceramicWall(size = 512) {
 /** Brushed steel for trusses, frames, and the lift. */
 function brushedSteel(size = 256) {
   const colour = canvas(size);
-  const c = colour.getContext("2d");
+  const c = colour.getContext("2d", { willReadFrequently: true });
   const r = rng(5);
   c.fillStyle = "#8a9399"; c.fillRect(0, 0, size, size);
   for (let i = 0; i < 900; i += 1) {
@@ -265,8 +265,8 @@ function brushedSteel(size = 256) {
 function steelDeck(size = 512) {
   const colour = canvas(size);
   const height = canvas(size);
-  const c = colour.getContext("2d");
-  const h = height.getContext("2d");
+  const c = colour.getContext("2d", { willReadFrequently: true });
+  const h = height.getContext("2d", { willReadFrequently: true });
   c.fillStyle = "#5d666c"; c.fillRect(0, 0, size, size);
   h.fillStyle = "#606060"; h.fillRect(0, 0, size, size);
   const step = 32;
@@ -295,7 +295,7 @@ function steelDeck(size = 512) {
 /** Black/amber hazard paint for anything solid - the "never shoot this" colour. */
 function hazardPaint(size = 256) {
   const colour = canvas(size);
-  const c = colour.getContext("2d");
+  const c = colour.getContext("2d", { willReadFrequently: true });
   c.fillStyle = "#1a1c1f"; c.fillRect(0, 0, size, size);
   c.fillStyle = "#f2a11f";
   for (let i = -size; i < size * 2; i += 64) {
@@ -310,7 +310,7 @@ function hazardPaint(size = 256) {
 /** Lab equipment casing: off-white enamel with panel lines and a status strip. */
 function equipmentCasing(size = 256) {
   const colour = canvas(size);
-  const c = colour.getContext("2d");
+  const c = colour.getContext("2d", { willReadFrequently: true });
   c.fillStyle = "#3a4046"; c.fillRect(0, 0, size, size);
   c.fillStyle = "#2a2f33"; c.fillRect(8, 8, size - 16, size - 16);
   c.fillStyle = "#f2a11f"; c.fillRect(0, size - 22, size, 14);
@@ -328,7 +328,7 @@ function equipmentCasing(size = 256) {
 /** A wall sign. Backlit signs read at running speed; small text does not. */
 export function signTexture(title, subtitle = "", { accent = "#35c8e0", width = 512, height = 128 } = {}) {
   const c = canvas(width, height);
-  const x = c.getContext("2d");
+  const x = c.getContext("2d", { willReadFrequently: true });
   x.fillStyle = "#0e1418"; x.fillRect(0, 0, width, height);
   x.fillStyle = accent; x.fillRect(0, 0, 10, height);
   x.fillStyle = "#f4fbff";
@@ -346,7 +346,7 @@ export function signTexture(title, subtitle = "", { accent = "#35c8e0", width = 
 /** Text drawn for the case-file hologram. White on transparent. */
 export function hologramTexture(lines) {
   const c = canvas(256, 320);
-  const x = c.getContext("2d");
+  const x = c.getContext("2d", { willReadFrequently: true });
   x.clearRect(0, 0, 256, 320);
   x.strokeStyle = "rgba(255,255,255,0.9)"; x.lineWidth = 4;
   x.strokeRect(10, 10, 236, 300);
@@ -363,7 +363,7 @@ export function hologramTexture(lines) {
 /** A soft round sprite for smoke, embers, water, and dust. */
 function softSprite(size = 64) {
   const c = canvas(size);
-  const x = c.getContext("2d");
+  const x = c.getContext("2d", { willReadFrequently: true });
   const g = x.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   g.addColorStop(0, "rgba(255,255,255,1)");
   g.addColorStop(0.4, "rgba(255,255,255,0.5)");
@@ -377,7 +377,7 @@ function softSprite(size = 64) {
 /** Floor warning decal for incoming collapse: a red ring and chevrons. */
 function warningDecal(size = 256) {
   const c = canvas(size);
-  const x = c.getContext("2d");
+  const x = c.getContext("2d", { willReadFrequently: true });
   x.clearRect(0, 0, size, size);
   x.strokeStyle = "rgba(255,70,50,1)"; x.lineWidth = 14;
   x.beginPath(); x.arc(size / 2, size / 2, size * 0.4, 0, Math.PI * 2); x.stroke();
@@ -395,8 +395,8 @@ function warningDecal(size = 256) {
 function ceilingTiles(size = 512) {
   const colour = canvas(size);
   const height = canvas(size);
-  const c = colour.getContext("2d");
-  const h = height.getContext("2d");
+  const c = colour.getContext("2d", { willReadFrequently: true });
+  const h = height.getContext("2d", { willReadFrequently: true });
   const r = rng(71);
   const n = 4;
   const step = size / n;
@@ -440,7 +440,7 @@ function ceilingTiles(size = 512) {
 /** A sheet of paper with ruled lines and a data table - lab notes on the floor. */
 function paperSheet() {
   const c = canvas(128, 176);
-  const x = c.getContext("2d");
+  const x = c.getContext("2d", { willReadFrequently: true });
   x.fillStyle = "#e8e4d8"; x.fillRect(0, 0, 128, 176);
   x.fillStyle = "rgba(40,40,60,0.55)";
   for (let i = 0; i < 16; i += 1) x.fillRect(12, 16 + i * 9, 40 + ((i * 37) % 64), 2);
@@ -455,7 +455,7 @@ function paperSheet() {
 /** Crack and scorch decal on transparent background. */
 function crackDecal(size = 256) {
   const c = canvas(size);
-  const x = c.getContext("2d");
+  const x = c.getContext("2d", { willReadFrequently: true });
   const r = rng(91);
   x.clearRect(0, 0, size, size);
   const g = x.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
@@ -483,7 +483,19 @@ function crackDecal(size = 256) {
  * Build every texture the level needs once. The kit owns them and disposes
  * them with the level.
  */
+/**
+ * The Skyline's texture set: made once per page and shared by every build
+ * of the level (each run rebuilds it, and the textures are the same every
+ * time) - so a rebuild costs neither the drawing nor a fresh upload to the
+ * GPU. The kit doesn't dispose it (disposeTextures skips it).
+ */
+let shared = null;
 export function createCausewayTextures() {
+  shared ??= makeCausewayTextures();
+  return shared;
+}
+
+function makeCausewayTextures() {
   const tile = labTile();
   tile.map.repeat.set(2, 2); tile.normalMap.repeat.set(2, 2); tile.roughnessMap.repeat.set(2, 2);
   const deck = steelDeck();
@@ -517,6 +529,8 @@ export function createCausewayTextures() {
 }
 
 export function disposeTextures(textures) {
+  // (The shared set stays for the next build: createCausewayTextures.)
+  if (textures === shared) return;
   const visit = (value) => {
     if (!value) return;
     if (value.isTexture) { value.dispose(); return; }

@@ -1,0 +1,678 @@
+/*
+ * The menus in the NIGHTFALL look (src/ui/theme.css), over styles.css.
+ *
+ * The menus are a live shot of the tower burning at night with Subject 07
+ * on the next roof (src/menu/). Words sit straight on that shot, as in a
+ * film's titles: no cards, no panels, no boxes. A soft gradient behind the
+ * words keeps them legible; dense pages (trophies, settings, the manual,
+ * credits) draw a blurred veil over the whole picture instead. One thing is
+ * lit at a time: the choice you are on, with an ember line beside it.
+ *
+ * The rules shared with the teammates' version (siphokazi-tech6 styles.css)
+ * are theirs; the tower's floors, the dossier, the controllers and the
+ * Arena's rules are ours, in the same language: a column of words on the
+ * right, the figure standing between the two columns.
+ */
+
+:root {
+  --gutter: clamp(24px, 6vw, 112px);
+  /* The older names the HUD files read, on the new palette. */
+  --bg: var(--night);
+  --panel-bg: rgba(6, 8, 11, .72);
+  --accent: var(--ember);
+  --accent-strong: var(--ember);
+  --accent-hot: var(--warn);
+  --accent-border: var(--line-2);
+  --accent-border-soft: var(--line);
+  --accent-glow: rgba(255, 122, 61, .3);
+  --text: #f4f0e8;
+  --text-dim: var(--text-2);
+  --text-dimmer: var(--text-3);
+  --font-body: var(--font);
+  font-family: var(--font);
+  background: var(--night);
+}
+body { background: var(--night); font-family: var(--font); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+::selection { background: var(--ember); color: var(--night); }
+
+/* ---- In a run: the game's name, pause and view ----------------------------- */
+
+.topbar {
+  z-index: 6; height: 56px; align-items: flex-start; border-bottom: 0; background: none; pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.brand { gap: 10px; text-shadow: var(--shadow-text); }
+.brand-mark { width: 14px; height: 1px; background: var(--ember); animation: none; }
+.brand strong { font-stretch: var(--wide); font-size: 11px; font-weight: 500; letter-spacing: .32em; text-transform: uppercase; color: var(--text-2); }
+.brand small { display: none; }
+body.cw-active .brand-mark { background: var(--glass); }
+body.pregame .topbar, body:has(.screen.active:not(#pauseScreen)) .topbar { display: none; }
+
+kbd {
+  border: 1px solid var(--line-2); border-radius: 5px; background: rgba(244, 240, 232, .05); color: var(--text);
+  font-family: var(--font); font-weight: 600; box-shadow: none;
+}
+
+/* ---- Screens: words on the picture ---------------------------------------- */
+
+.screen {
+  padding: clamp(48px, 9vh, 96px) var(--gutter) clamp(64px, 10vh, 100px);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  /* Shade on the left, where the words are; the picture is left alone. */
+  background:
+    linear-gradient(90deg, rgba(3, 5, 8, .78) 0%, rgba(3, 5, 8, .5) 30%, rgba(3, 5, 8, .12) 56%, rgba(3, 5, 8, 0) 70%),
+    linear-gradient(0deg, rgba(3, 5, 8, .5) 0%, rgba(3, 5, 8, 0) 32%);
+  scrollbar-width: thin; scrollbar-color: var(--line-2) transparent;
+}
+.screen::before { display: none; }
+/* Before the stage is in (or without WebGL to spare): the old corridor, darker. */
+body:not(.menu-live) .screen:not(#pauseScreen):not(#endScreen) { background-color: rgba(3, 5, 8, .45); }
+.screen-copy { width: min(680px, 100%); margin: auto 0; position: relative; }
+.screen-copy.compact { width: min(720px, 100%); }
+
+/* Entrances: everything settles in from a little below, one after another. */
+.screen.active .screen-copy > *, .screen.active .menu-main > *, .screen.active .menu-card > *,
+.screen.active .menu-list > .menu-button,
+.screen.active .chapter-grid > *, .screen.active .endless-grid > * {
+  animation: settle .9s var(--ease-out) both;
+}
+.screen.active :is(.screen-copy, .menu-main, .menu-card) > :nth-child(2) { animation-delay: .06s; }
+.screen.active :is(.screen-copy, .menu-main, .menu-card) > :nth-child(3) { animation-delay: .12s; }
+.screen.active :is(.screen-copy, .menu-main, .menu-card) > :nth-child(4) { animation-delay: .18s; }
+.screen.active :is(.screen-copy, .menu-main, .menu-card) > :nth-child(n+5) { animation-delay: .24s; }
+.screen.active :is(.menu-list, .chapter-grid, .endless-grid) > :nth-child(1) { animation-delay: .2s; }
+.screen.active :is(.menu-list, .chapter-grid, .endless-grid) > :nth-child(2) { animation-delay: .25s; }
+.screen.active :is(.menu-list, .chapter-grid, .endless-grid) > :nth-child(3) { animation-delay: .3s; }
+.screen.active :is(.menu-list, .chapter-grid, .endless-grid) > :nth-child(4) { animation-delay: .35s; }
+.screen.active :is(.menu-list, .chapter-grid, .endless-grid) > :nth-child(5) { animation-delay: .4s; }
+.screen.active :is(.menu-list, .chapter-grid, .endless-grid) > :nth-child(n+6) { animation-delay: .45s; }
+@keyframes settle { from { opacity: 0; transform: translateY(10px); } }
+body.reduced-motion .screen *, html.restoring .screen * { animation: none !important; }
+/* (The old entrances.) */
+#startScreen .eyebrow, #startScreen .intro, #startScreen .menu-list, #storyPrompt .menu-list,
+#singleScreen .eyebrow, #multiScreen .eyebrow, #singleScreen h2, #multiScreen h2, #singleScreen .menu-list, #multiScreen .menu-list,
+#arenaModeScreen .eyebrow, #arenaModeScreen h2, #arenaModeScreen .menu-list,
+.dossier, .multi-card, .game-title { animation-name: settle; animation-timing-function: var(--ease-out); }
+
+/* A small tracked line above a heading: where you are. */
+.eyebrow {
+  margin: 0 0 14px; color: var(--ember-2); font-stretch: 112%; font-size: 11px; font-weight: 600; letter-spacing: .24em;
+  text-transform: uppercase; text-shadow: var(--shadow-text);
+}
+.screen h1, .screen h2, .menu-heading {
+  max-width: none; margin: 0; color: var(--text); font-family: var(--font); font-stretch: var(--wide); font-weight: 200;
+  font-size: clamp(32px, min(3.8vw, 6.6vh), 56px); line-height: 1.04; letter-spacing: .02em; text-wrap: balance;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, .4);
+}
+.intro { max-width: 520px; margin: 16px 0 0; color: var(--text-2); font-size: 15px; line-height: 1.6; text-wrap: pretty; text-shadow: 0 1px 12px rgba(0, 0, 0, .5); }
+
+/* ---- Actions as words: Back, Run again, Done ------------------------------ */
+
+.link-button, .primary-button, .text-button {
+  position: relative; display: inline-flex; align-items: center; height: auto; min-width: 0; padding: 10px 0;
+  border: 0; border-radius: 0; background: none; box-shadow: none; cursor: pointer;
+  color: var(--text-2); font-family: var(--font); font-stretch: 112%; font-size: 12.5px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
+  transition: color .2s ease;
+}
+.link-button::before, .primary-button::before, .text-button::before {
+  content: ""; width: 0; height: 1px; margin-right: 0; background: var(--ember);
+  transition: width .35s var(--ease-out), margin .35s var(--ease-out);
+}
+.link-button.primary, .primary-button { color: var(--text); background: none; }
+:is(.link-button, .primary-button, .text-button):is(:hover, :focus-visible, .pad-focus) { color: var(--text); outline: none; background: none; box-shadow: none; transform: none; }
+:is(.link-button, .primary-button, .text-button):is(:hover, :focus-visible, .pad-focus)::before { width: 18px; margin-right: 12px; }
+button:focus-visible { outline: 1px solid var(--ember-2); outline-offset: 4px; }
+:is(.menu-button, .chapter-card, .endless-card, .link-button, .primary-button, .text-button, .subject-button, .tab, .ball-card):focus-visible { outline: none; }
+
+/* ---- The title: FRACTURE, cracked through, and RUN ------------------------- */
+
+.logo { margin: 0; display: inline-grid; justify-items: start; line-height: 1; max-width: none; font-size: inherit; text-shadow: none; }
+.logo-word {
+  position: relative; display: block; color: var(--text);
+  font-stretch: var(--wide); font-weight: 200; font-size: clamp(52px, min(7.2vw, 12vh), 124px);
+  letter-spacing: .055em; line-height: .92; white-space: nowrap;
+  text-shadow: 0 0 46px rgba(255, 122, 61, .16), 0 2px 18px rgba(0, 0, 0, .35);
+}
+.logo-top, .logo-bottom { display: block; }
+.logo-bottom { position: absolute; inset: 0; }
+/* The word is two pieces of the same glass: the line between them is the crack. */
+.logo-top { clip-path: polygon(0 0, 100% 0, 100% 46%, 86% 45%, 78% 52%, 65% 52%, 61% 44%, 48% 46%, 43% 57%, 34% 55%, 27% 49%, 19% 58%, 12% 47%, 6% 53%, 0% 50%); }
+.logo-bottom {
+  clip-path: polygon(0% 50%, 6% 53%, 12% 47%, 19% 58%, 27% 49%, 34% 55%, 43% 57%, 48% 46%, 61% 44%, 65% 52%, 78% 52%, 86% 45%, 100% 46%, 100% 100%, 0 100%);
+  transform: translate(.045em, .04em) rotate(-.25deg);
+}
+.logo-crack { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.logo-crack polyline {
+  fill: none; stroke: var(--ember-2); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .42;
+  stroke-dasharray: 1200; stroke-dashoffset: 0; filter: drop-shadow(0 0 3px rgba(255, 122, 61, .7));
+}
+.logo em {
+  display: flex; align-items: center; gap: 18px; margin-top: .95em; padding-left: .2em;
+  font-style: normal; font-stretch: var(--wide); font-weight: 500; font-size: clamp(12px, 1.15vw, 16px);
+  letter-spacing: 1.1em; text-transform: uppercase; color: var(--ember-2);
+}
+.logo em::before { content: ""; width: 48px; height: 1px; background: var(--ember); }
+.screen.active .logo-bottom { animation: crackShift 1.4s var(--ease-out) .55s both; }
+.screen.active .logo-crack polyline { animation: crackDraw .7s var(--ease-in-out) .45s both; }
+.screen.active .logo-word { animation: logoIn 1.6s var(--ease-out) both; }
+@keyframes logoIn { from { opacity: 0; letter-spacing: .14em; filter: blur(10px); } }
+@keyframes crackShift { from { transform: none; } 18% { transform: translate(.06em, .05em) rotate(-.35deg); } }
+@keyframes crackDraw { from { stroke-dashoffset: 1200; } }
+
+.tagline { margin: 22px 0 0; color: var(--text-2); font-size: 18px; font-weight: 300; font-style: italic; letter-spacing: .01em; text-shadow: 0 1px 14px rgba(0, 0, 0, .5); }
+
+/* ---- Menu lists: one lit choice, an ember line beside it ------------------- */
+
+.menu-list { display: grid; justify-items: start; gap: 0; margin-top: clamp(22px, 4.4vh, 44px); }
+.menu-main .menu-list { gap: 0; margin-top: clamp(18px, 3.6vh, 36px); }
+.menu-list-row { display: flex; flex-wrap: wrap; gap: 0 36px; }
+.menu-button, .menu-list-row .menu-button {
+  position: relative; display: flex; align-items: center; gap: 0; width: auto; min-width: 0; max-width: none; flex: none;
+  min-height: 0; height: clamp(36px, 5.2vh, 46px); padding: 0;
+  border: 0; border-radius: 0; background: none; box-shadow: none; transform: none;
+  color: var(--text-2); text-align: left; cursor: pointer; outline: none;
+  font-family: var(--font); text-shadow: 0 1px 12px rgba(0, 0, 0, .55);
+}
+.menu-button::after { display: none; }
+.menu-button::before {
+  content: ""; flex: none; width: 0; height: 1px; margin-right: 0; background: var(--ember);
+  box-shadow: 0 0 10px rgba(255, 122, 61, .8);
+  transition: width .4s var(--ease-out), margin .4s var(--ease-out);
+}
+.menu-button span { display: flex; align-items: baseline; gap: 18px; min-width: 0; }
+.menu-button b {
+  font-size: clamp(18px, 2.6vh, 23px); font-weight: 400; letter-spacing: .005em; text-transform: none; white-space: nowrap;
+  color: inherit; transition: color .2s ease;
+}
+.menu-button small {
+  font-size: 13px; font-weight: 400; font-style: italic; color: var(--text-3); white-space: nowrap;
+  opacity: 0; transform: translateX(-8px); transition: opacity .25s ease, transform .35s var(--ease-out);
+}
+.menu-button.primary, .menu-button.menu-big { color: var(--text); background: none; border: 0; box-shadow: none; }
+.menu-button.primary b { font-weight: 500; }
+.menu-button.primary small { color: var(--text-3); }
+.menu-button.menu-big { min-height: 0; height: clamp(40px, 5.8vh, 52px); }
+.menu-button.menu-big b { font-size: clamp(21px, 3vh, 27px); }
+.menu-button:is(:hover, :focus, :focus-visible, .pad-focus),
+.menu-button.primary:is(:hover, :focus, :focus-visible, .pad-focus) { color: var(--text); background: none; box-shadow: none; transform: none; border: 0; }
+.menu-button:is(:hover, :focus, .pad-focus)::before { width: 30px; margin-right: 16px; }
+.menu-button:is(:hover, :focus, .pad-focus) small { opacity: 1; transform: none; }
+html.pad-active .screen :is(.menu-button, .chapter-card, .endless-card, .link-button, .primary-button, .text-button).pad-focus { outline: none; box-shadow: none; }
+.menu-glyph, .menu-button .menu-glyph, .menu-button.menu-big .menu-glyph { display: none; }
+@media (max-height: 760px) { .menu-button small { display: inline; } .menu-button { min-height: 0; } }
+/* The quieter half of the main menu: smaller, dimmer, under a hairline. */
+#startScreen .menu-list > .menu-button:nth-child(3) { margin-top: clamp(8px, 1.6vh, 16px); }
+#startScreen .menu-list > .menu-button:nth-child(n+3) { height: clamp(28px, 3.9vh, 34px); color: var(--text-3); }
+#startScreen .menu-list > .menu-button:nth-child(n+3) b { font-size: clamp(14px, 1.95vh, 16px); }
+#startScreen .menu-list > .menu-button:nth-child(n+3) small { font-size: 12px; }
+#startScreen .menu-list > .menu-button:nth-child(n+3):is(:hover, :focus, .pad-focus) { color: var(--text); }
+#startScreen .menu-list > .menu-button:nth-child(n+3):is(:hover, :focus, .pad-focus)::before { width: 20px; margin-right: 12px; }
+#startScreen .menu-list > .menu-button:nth-child(3)::after {
+  content: ""; display: block; position: absolute; left: 0; top: calc(-1 * clamp(4px, .8vh, 8px)); width: 250px; height: 1px; background: var(--line);
+}
+
+/* ---- The opening and the main menu ----------------------------------------- */
+
+.title-screen, .menu-screen { align-items: center; justify-content: flex-start; gap: clamp(24px, 5vw, 80px); }
+#storyScreen .screen-copy { width: min(640px, 100%); text-align: left; }
+#storyScreen .intro { margin: 26px 0 0; font-size: 15px; color: var(--text-2); }
+#storyPrompt .menu-list { justify-content: flex-start; margin-top: clamp(22px, 4.4vh, 44px); }
+#storyLine {
+  min-height: 140px; display: flex; align-items: center; justify-content: flex-start;
+  font-stretch: var(--wide); font-size: clamp(26px, 4vw, 52px); font-weight: 200; line-height: 1.1; letter-spacing: .08em; text-transform: uppercase;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, .5);
+}
+.story-dots { justify-content: flex-start; gap: 6px; margin-top: 26px; }
+.story-dots i { width: 22px; height: 1px; border-radius: 0; background: var(--line-2); }
+.story-dots i.on { background: var(--ember); }
+/* Loading at boot: one quiet line under the title. */
+.boot-loading span { color: var(--text-3); font-stretch: 112%; font-size: 10.5px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; }
+/* The boot screen (and a refresh resuming): over everything until the game
+   is ready, then it fades and the menu (or the run) is there under it. */
+.boot-screen {
+  position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; padding: 0 var(--gutter);
+  background: radial-gradient(ellipse at 70% 60%, rgba(255, 122, 61, .05), transparent 55%), var(--night);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .9s var(--ease-out), visibility 0s linear .9s;
+}
+html.booting .boot-screen { opacity: 1; visibility: visible; pointer-events: auto; transition: none; }
+.boot-copy { width: min(640px, 100%); }
+.boot-screen .boot-loading { display: grid; justify-items: start; gap: 12px; margin-top: 0; }
+.boot-screen .logo { margin-bottom: clamp(26px, 5vh, 48px); }
+.boot-screen .logo-word { animation: logoIn 1.6s var(--ease-out) both; }
+.boot-screen .logo-bottom { animation: crackShift 1.4s var(--ease-out) .55s both; }
+.boot-screen .logo-crack polyline { animation: crackDraw .7s var(--ease-in-out) .45s both; }
+.boot-loading em { font-style: normal; }
+html.restoring .bl-load, html:not(.restoring) .bl-resume { display: none; }
+.boot-tip { display: grid; gap: 8px; min-height: 5.2em; max-width: 520px; margin: 0 0 22px; }
+.boot-tip small { color: var(--ember-2); font-stretch: 112%; font-size: 10.5px; font-weight: 600; letter-spacing: .24em; text-transform: uppercase; }
+.boot-tip b { color: var(--text-2); font-size: 17px; font-weight: 300; line-height: 1.5; text-shadow: var(--shadow-text); opacity: 0; transform: translateY(6px); transition: opacity .32s ease, transform .5s var(--ease-out); }
+.boot-tip b.in { opacity: 1; transform: none; }
+/* No crosshair or HUD before the game is up. */
+html.booting :is(.reticle, .hud, .ghost-chip) { display: none !important; }
+.boot-loading i { width: 200px; height: 1px; border-radius: 0; background: var(--line); }
+.boot-loading i::after { background: linear-gradient(90deg, transparent, var(--ember), var(--ember-2)); }
+
+.menu-main { width: min(560px, 100%); position: relative; margin-block: auto; }
+.menu-main .intro { margin-top: 12px; max-width: 440px; font-size: 13.5px; color: var(--text-3); }
+.progress-line { margin: 18px 0 0; color: var(--text-3); font-size: 12px; line-height: 1.6; }
+
+/* ---- The column on the right: the tower, Subject 07, the controllers ------- */
+/* No card: words on the picture, the far right, the figure between. */
+
+.menu-screen {
+  background:
+    linear-gradient(90deg, rgba(3, 5, 8, .78) 0%, rgba(3, 5, 8, .5) 28%, rgba(3, 5, 8, .1) 48%, rgba(3, 5, 8, 0) 58%),
+    linear-gradient(270deg, rgba(3, 5, 8, .74) 0%, rgba(3, 5, 8, .46) 18%, rgba(3, 5, 8, 0) 34%),
+    linear-gradient(0deg, rgba(3, 5, 8, .5) 0%, rgba(3, 5, 8, 0) 32%);
+}
+.menu-screen > .menu-card {
+  width: min(330px, 100%); margin: auto 0 auto auto; padding: 0;
+  border: 0; border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  text-shadow: var(--shadow-text);
+}
+body.menu-live .menu-card { background: none; backdrop-filter: none; }
+.menu-card .eyebrow { color: var(--ember-2); margin-bottom: 14px; }
+
+
+/* Subject 07 on file: the figure is on the roof now, so the card is words. */
+.dossier-top { grid-template-columns: 1fr; margin-top: 0; }
+body.menu-live .dossier-figure { display: none; }
+.dossier-figure { border: 1px solid var(--line); border-radius: 0; }
+.dossier-figure::after { color: var(--night); background: var(--ember-2); border-radius: 0; }
+.dossier-id { margin: 0 0 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.dossier-id em { width: auto; height: auto; border-radius: 0; background: none; color: var(--ember-2); box-shadow: none; font-stretch: var(--wide); font-size: 34px; font-weight: 200; font-style: normal; }
+.dossier-id b { font-size: 16px; font-weight: 400; letter-spacing: .02em; }
+.dossier-id small { color: var(--text-3); }
+.dossier-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.dossier-row span { color: var(--text-3); font-size: 12px; font-weight: 500; letter-spacing: .04em; text-transform: none; }
+.dossier-row b { font-size: 14px; font-weight: 400; }
+.dossier-row i { width: 12px; height: 12px; }
+.dossier-label { margin: 18px 0 6px; color: var(--ember-2); font-stretch: 112%; font-size: 11px; font-weight: 600; letter-spacing: .24em; }
+.dossier-records dt { color: var(--text-3); }
+.dossier-records dd { font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* Controllers and the Arena's rules. */
+.multi-notes { color: var(--text-2); }
+.multi-notes li { padding-left: 18px; position: relative; }
+.multi-notes li::before { content: ""; position: absolute; left: 0; top: .7em; width: 10px; height: 1px; background: var(--line-2); }
+.mode-rules h3 { font-size: 16px; font-weight: 400; letter-spacing: .01em; text-transform: none; }
+.mode-rules h3 i { width: 22px; height: 22px; font-size: 12px; background: none; color: var(--c); box-shadow: none; border: 1px solid var(--c); }
+.mode-rules p { color: var(--text-2); }
+
+/* ---- Chapters, New game, Endless: lists of places ---------------------------- */
+
+.list-screen { align-items: center; justify-content: flex-start;
+  background:
+    linear-gradient(90deg, rgba(3, 5, 8, .82) 0%, rgba(3, 5, 8, .62) 34%, rgba(3, 5, 8, .16) 62%, rgba(3, 5, 8, 0) 76%),
+    linear-gradient(0deg, rgba(3, 5, 8, .5) 0%, rgba(3, 5, 8, 0) 32%);
+}
+.list-screen .screen-copy, .chapters-copy { width: min(620px, 100%); }
+.card-label {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 24px 0 10px;
+  color: var(--text-3); font-size: 12px; font-weight: 500; letter-spacing: .04em; text-transform: none;
+}
+.card-note { color: var(--text-3); font-size: 12.5px; line-height: 1.55; }
+.difficulty-note { min-height: 1.5em; margin-top: 6px; }
+@media (max-height: 820px) {
+  #chaptersScreen .difficulty-note, #chaptersScreen .intro { display: none; }
+  #chaptersScreen .chapter-card span { font-size: 12px; }
+  #chaptersScreen .card-label { margin-top: 14px; }
+}
+.new-game-warning { color: var(--warn); }
+
+/* Words, the picked one underlined in ember. */
+.segmented { display: flex; gap: 26px; }
+.subject-button, .difficulty-button {
+  flex: none; min-width: 0; height: auto; position: relative; padding: 6px 0 8px; border: 0; border-radius: 0; background: none; box-shadow: none; cursor: pointer;
+  color: var(--text-3); font-family: var(--font); font-size: 15px; font-weight: 400; letter-spacing: .01em; text-transform: none;
+  transition: color .2s ease;
+}
+.subject-button::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--ember);
+  transform: scaleX(0); transform-origin: left; transition: transform .45s var(--ease-out);
+}
+.subject-button:is(:hover, :focus-visible, .pad-focus) { color: var(--text-2); outline: none; border: 0; }
+.subject-button.picked, .difficulty-button[data-difficulty].picked { color: var(--text); border: 0; background: none; box-shadow: none; }
+.subject-button.picked::after { transform: scaleX(1); }
+.chapters-difficulty [data-difficulty="easy"].picked::after { background: var(--ok); }
+.chapters-difficulty [data-difficulty="hard"].picked::after { background: var(--blood); }
+
+.chapter-grid, .endless-grid { display: grid; grid-template-columns: 1fr; gap: 0; margin: 26px 0 0; border-top: 1px solid var(--line); }
+.chapter-card, .endless-card {
+  position: relative; display: grid; grid-template-columns: 86px minmax(0, 1fr); column-gap: 14px; row-gap: 2px; align-items: baseline;
+  min-height: 0; padding: clamp(6px, 1.15vh, 14px) 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none;
+  color: var(--text-3); text-align: left; cursor: pointer; outline: none; font-family: var(--font); transform: none;
+  transition: background .3s ease;
+}
+.chapter-card::after, .endless-card::after {
+  content: ""; position: absolute; left: 0; bottom: -1px; height: 1px; width: 0; background: var(--ember);
+  transition: width .5s var(--ease-out);
+}
+:is(.chapter-card, .endless-card):is(:hover, :focus, :focus-visible, .pad-focus) {
+  border: 0; border-bottom: 1px solid var(--line); transform: none; box-shadow: none;
+  background: linear-gradient(90deg, rgba(255, 122, 61, .07), rgba(255, 122, 61, 0) 70%);
+}
+:is(.chapter-card, .endless-card):is(:hover, :focus, .pad-focus)::after { width: 100%; }
+.chapter-card em {
+  position: static; grid-row: 1 / span 2; align-self: center; font-style: normal; font-stretch: var(--wide); font-size: 20px; font-weight: 200;
+  color: var(--text-4); white-space: nowrap; transition: color .25s ease;
+}
+.chapter-card b, .endless-card b { font-size: clamp(17px, 2.5vh, 20px); font-weight: 400; letter-spacing: .005em; color: var(--text-2); transition: color .25s ease; }
+.chapter-card span, .endless-card span { grid-column: 2; font-size: 13px; line-height: 1.5; }
+:is(.chapter-card, .endless-card):is(:hover, :focus, .pad-focus) em { color: var(--ember-2); }
+:is(.chapter-card, .endless-card):is(:hover, :focus, .pad-focus) b { color: var(--text); }
+:is(.chapter-card, .endless-card):is(:hover, :focus, .pad-focus) span { color: var(--text-2); }
+.chapter-card + .menu-list, .chapters-copy > .menu-list-row { margin-top: 26px; }
+
+/* New game: the three ways, a triage dot each (in place of the numeral). */
+.difficulty-card { min-height: 0; grid-template-columns: 22px minmax(0, 1fr); padding: clamp(14px, 2.4vh, 22px) 0; }
+.difficulty-card em { display: none; }
+.difficulty-card::before { content: ""; grid-row: 1 / span 2; align-self: center; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 10px currentColor; color: var(--warn); }
+.difficulty-card[data-new-game="easy"]::before { background: var(--ok); color: var(--ok); }
+.difficulty-card[data-new-game="hard"]::before { background: var(--blood); color: var(--blood); }
+.difficulty-card b { font-stretch: var(--wide); font-size: clamp(24px, 3.6vh, 32px); font-weight: 250; letter-spacing: .04em; }
+.difficulty-card span { font-size: 13.5px; }
+
+/* Endless: best run on the right. */
+.endless-card { grid-template-columns: minmax(0, 1fr) auto; }
+.endless-card b, .endless-card span { grid-column: 1; }
+.endless-card small { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--text-3); font-size: 12px; font-weight: 400; letter-spacing: 0; font-variant-numeric: tabular-nums; text-align: right; }
+.endless-card small:empty { display: none; }
+.route-list { color: var(--text-2); }
+
+/* ---- Pause: the run on hold ---------------------------------------------------- */
+
+#pauseScreen {
+  background: linear-gradient(90deg, rgba(3, 5, 8, .82) 0%, rgba(3, 5, 8, .55) 42%, rgba(3, 5, 8, .35) 100%);
+  backdrop-filter: blur(7px) saturate(.7); -webkit-backdrop-filter: blur(7px) saturate(.7);
+}
+.pause-stats { display: flex; flex-wrap: wrap; gap: 14px 0; margin: 28px 0 22px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.pause-stats div { padding: 0 24px 0 0; border: 0; background: none; }
+.pause-stats div + div { padding-left: 24px; border-left: 1px solid var(--line); }
+.pause-stats span { display: block; color: var(--text-3); font-size: 12px; font-weight: 500; letter-spacing: .04em; text-transform: none; }
+.pause-stats strong { display: block; white-space: nowrap; margin-top: 6px; font-stretch: var(--wide); font-size: clamp(22px, 2.4vw, 32px); font-weight: 200; line-height: 1; font-variant-numeric: tabular-nums; }
+#pauseScreen > .menu-card.pause-guide { width: min(440px, 100%); max-height: calc(100vh - 140px); overflow-y: auto; scrollbar-width: thin; }
+.tabs { display: flex; gap: 26px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+.tabs .tab {
+  position: relative; height: 38px; padding: 0; border: 0; border-radius: 0; background: none; cursor: pointer;
+  color: var(--text-3); font-family: var(--font); font-size: 14px; font-weight: 500; letter-spacing: .01em; text-transform: none; transition: color .2s ease;
+}
+.tabs .tab::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--ember); transform: scaleX(0); transform-origin: left; transition: transform .4s var(--ease-out); }
+.tabs .tab:is(:hover, :focus-visible) { color: var(--text-2); outline: none; }
+.tabs .tab.on { color: var(--text); background: none; border: 0; box-shadow: none; }
+.tabs .tab.on::after { transform: scaleX(1); }
+
+/* ---- Dense pages: a veil over the whole picture, not a box ----------------- */
+
+:is(#trophiesScreen, #settingsScreen, #manualScreen, #creditsScreen, #reportScreen) {
+  background: rgba(3, 5, 8, .58);
+  backdrop-filter: blur(20px) saturate(.8) brightness(.8); -webkit-backdrop-filter: blur(20px) saturate(.8) brightness(.8);
+}
+
+/* ---- Controllers: a quiet line, not a pill ---------------------------------- */
+
+.pad-list .pad-chip { padding: 2px 0; border: 0; border-radius: 0; background: none; color: var(--text-3); font-size: 12px; text-shadow: var(--shadow-text); }
+.pad-list .pad-chip.none { opacity: 1; }
+.pad-list-col .pad-chip { padding: 8px 0; border-bottom: 1px solid var(--line); color: var(--text-2); }
+/* With a controller: the same ember line as the mouse, not a ring. */
+body.pad-mode .screen :is(.menu-button, .chapter-card, .endless-card, .link-button, .primary-button, .text-button, .subject-button).pad-focus {
+  outline: none !important; box-shadow: none !important;
+}
+
+.move-list dd { color: var(--text-2); }
+.move-list dd b, .move-list dd strong { color: var(--text); font-weight: 500; }
+.move-list dd small, .move-list dd em { color: var(--text-3); }
+.move-list dd { font-size: 13.5px; font-weight: 400; line-height: 1.45; }
+.move-list .here dd { color: var(--text); }
+.move-list .here dt kbd { border-color: var(--ember-2); }
+
+/* ---- In a run: pause and view, the crosshair, messages, the countdown --------- */
+
+.topbar-actions { display: flex; gap: 4px; }
+.icon-button {
+  height: 30px; min-width: 0; padding: 0 12px; cursor: pointer;
+  border: 0; border-radius: 15px; background: transparent;
+  color: var(--text-2); font-stretch: 112%; font-size: 11px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
+  text-shadow: var(--shadow-text); transition: color .2s ease, background .2s ease;
+}
+.icon-button:hover, .icon-button:focus-visible { color: var(--text); background: rgba(244, 240, 232, .08); outline: none; }
+.pause-glyph { display: inline-flex; gap: 2.5px; margin-right: 8px; vertical-align: -1px; }
+.pause-glyph i { width: 2px; height: 9px; background: currentColor; }
+
+.view-menu {
+  position: absolute; top: 48px; right: 18px; z-index: 12; width: 300px; padding: 16px 18px 12px;
+  background: rgba(6, 8, 11, .72); backdrop-filter: blur(18px) saturate(.8); -webkit-backdrop-filter: blur(18px) saturate(.8);
+  border-radius: 12px; pointer-events: auto; box-shadow: 0 30px 60px rgba(0, 0, 0, .45);
+}
+.view-menu[hidden] { display: none; }
+.view-menu-title { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--text-3); }
+.view-menu .setting-row { min-height: 36px; font-size: 13px; }
+.view-menu-hint { margin: 10px 0 0; color: var(--text-3); font-size: 12px; }
+
+
+.reticle { position: fixed; z-index: 4; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); pointer-events: none; transition: width .15s ease, height .15s ease; }
+.reticle::before, .reticle::after, .reticle i::before, .reticle i::after {
+  content: ""; position: absolute; background: rgba(244, 240, 232, .92); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .55), 0 0 6px rgba(0, 0, 0, .4); transition: background .15s ease;
+}
+.reticle::before { width: 8px; height: 1.5px; left: 0; top: 14.25px; }
+.reticle::after { width: 8px; height: 1.5px; right: 0; top: 14.25px; }
+.reticle i::before { width: 1.5px; height: 8px; left: 14.25px; top: 0; }
+.reticle i::after { width: 1.5px; height: 8px; left: 14.25px; bottom: 0; }
+.reticle b { position: absolute; width: 4px; height: 4px; left: 13px; top: 13px; border-radius: 50%; background: var(--ball, var(--text)); box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 0 10px var(--ball, transparent); }
+.reticle.hot::before, .reticle.hot::after, .reticle.hot i::before, .reticle.hot i::after { background: var(--ember-2); }
+.reticle.hot b { background: var(--ember); box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 0 12px var(--ember); }
+.reticle.assist { outline: 1px solid rgba(255, 178, 126, .55); outline-offset: 6px; border-radius: 50%; }
+body.aiming, body.aiming #game { cursor: none; }
+body.aiming button, body.aiming .view-menu, body.aiming .view-menu * { cursor: pointer; }
+
+.message {
+  position: fixed; z-index: 5; left: 50%; top: 22%; transform: translateX(-50%) translateY(4px);
+  color: var(--text); font-stretch: 112%; font-size: 13px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; white-space: nowrap;
+  text-shadow: var(--shadow-text), 0 0 30px rgba(0, 0, 0, .5);
+  opacity: 0; transition: opacity .3s ease, transform .4s var(--ease-out); pointer-events: none;
+}
+.message:empty { display: none; }
+.message.show { opacity: 1; transform: translateX(-50%); }
+.message.under-title { top: 34%; }
+
+.caption {
+  position: fixed; z-index: 6; left: 50%; top: 44%; transform: translate(-50%, -50%); width: min(92vw, 1100px); text-align: center;
+  color: var(--text); font-stretch: var(--wide); font-size: clamp(28px, 4.4vw, 58px); font-weight: 200; line-height: 1.05;
+  letter-spacing: .2em; text-transform: uppercase; text-shadow: 0 2px 20px rgba(0, 0, 0, .55);
+  opacity: 0; transition: opacity .8s ease, letter-spacing 1.4s var(--ease-out); pointer-events: none;
+}
+.caption.show { opacity: 1; letter-spacing: .16em; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 24px 0; color: var(--text-2); font-size: 13px; }
+.controls span { display: flex; align-items: center; gap: 7px; }
+kbd {
+  display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 6px;
+  border: 1px solid var(--line-2); border-radius: 5px; background: rgba(244, 240, 232, .05); color: var(--text);
+  font-family: var(--font); font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1;
+}
+.launch-controls {
+  position: fixed; z-index: 6; left: 50%; bottom: 64px; transform: translateX(-50%); justify-content: center;
+  margin: 0; width: max-content; max-width: 92vw; text-shadow: var(--shadow-text);
+  opacity: 0; transition: opacity .8s ease; pointer-events: none;
+}
+.launch-controls.show { opacity: 1; }
+
+body.pregame .topbar, body:has(.screen.active) .topbar { display: none; }
+body.pregame .hud, body.pregame .reticle,
+body.paused .hud, body.paused .reticle { display: none; }
+body.cutscene #hud, body.cutscene #reticle, body.cutscene #launchControls,
+body.cutscene .cw-ui, body.cutscene .reticle-hint { display: none !important; }
+
+.fade-overlay { position: fixed; inset: 0; z-index: 9; background: #000; opacity: 0; pointer-events: none; }
+
+/* The restart countdown: 3, 2, 1 - thin, enormous, over the frozen frame. */
+.countdown {
+  position: fixed; z-index: 12; left: 50%; top: 44%; transform: translate(-50%, -50%); pointer-events: none;
+  color: var(--text); font-stretch: var(--wide); font-size: clamp(110px, 18vw, 220px); font-weight: 100; line-height: .8;
+  text-shadow: 0 0 60px rgba(0, 0, 0, .6);
+}
+.countdown[hidden] { display: none; }
+.countdown.tick { animation: cdTick .9s var(--ease-out) both; }
+@keyframes cdTick { from { transform: translate(-50%, -50%) scale(1.25); opacity: 0; filter: blur(10px); } 30% { opacity: 1; filter: blur(0); } to { transform: translate(-50%, -50%) scale(1); opacity: .9; } }
+body.reduced-motion .countdown.tick { animation: none; }
+
+/* ---- The end screen: the last moment, held, and a quiet title --------------- */
+
+.end-screen {
+  --end: #ff8a73; align-items: flex-end; padding-top: 56px; padding-bottom: clamp(36px, 8vh, 84px);
+  background:
+    linear-gradient(0deg, rgba(3, 5, 8, .86) 0%, rgba(3, 5, 8, .52) 42%, rgba(3, 5, 8, .1) 78%),
+    linear-gradient(90deg, rgba(3, 5, 8, .55) 0%, rgba(3, 5, 8, 0) 62%);
+}
+.end-screen.is-win { --end: var(--ok); }
+.end-card { width: 100%; display: grid; gap: clamp(28px, 5vw, 80px); align-items: end; }
+.end-card:has(.end-side > :not([hidden])) { grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); }
+.end-side:not(:has(> :not([hidden]))) { display: none; }
+.end-main { position: relative; max-width: 720px; }
+.end-eyebrow { margin: 0; color: var(--end); font-stretch: 112%; font-size: 12px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; }
+.end-title {
+  margin: 14px 0 0; color: var(--text); font-stretch: var(--wide); font-size: clamp(30px, 4.4vw, 62px); font-weight: 200;
+  line-height: 1.06; letter-spacing: .14em; text-transform: uppercase; text-wrap: balance;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, .5);
+}
+.end-text { max-width: 560px; margin: 16px 0 0; color: var(--text-2); font-size: 15.5px; line-height: 1.6; }
+.end-numbers { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 18px 40px; margin: clamp(22px, 4vh, 36px) 0 0; }
+.end-score { display: grid; gap: 6px; }
+.end-score strong { font-stretch: var(--wide); font-size: clamp(40px, 4.6vw, 64px); font-weight: 200; line-height: .9; letter-spacing: .03em; color: var(--text); font-variant-numeric: tabular-nums; }
+.end-score span, .end-chips span { color: var(--text-3); font-size: 12px; font-weight: 500; }
+.end-stats { margin: 12px 0 0; color: var(--text-3); font-size: 13px; white-space: pre-wrap; }
+.end-chips { display: flex; flex-wrap: wrap; gap: 14px 30px; margin: 0; padding: 0 0 2px; list-style: none; }
+.end-chips:empty { display: none; }
+.end-chips li { display: grid; gap: 6px; padding-left: 30px; border-left: 1px solid var(--line); }
+.end-chips li:first-child { padding-left: 0; border-left: 0; }
+.end-chips b { font-stretch: var(--wide); font-size: clamp(20px, 2.2vw, 28px); font-weight: 250; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.end-actions { margin-top: clamp(22px, 4vh, 36px); }
+.end-keys { position: static; margin-top: 16px; }
+/* The entrance: the title surfaces slowly, the rest after it. */
+.end-screen.enter .end-eyebrow { animation: settle 1s var(--ease-out) .1s both; }
+.end-screen.enter .end-title { animation: quietTitle 2.2s var(--ease-out) .15s both; }
+.end-screen.enter .end-text { animation: settle 1.1s var(--ease-out) .9s both; }
+.end-screen.enter .end-numbers, .end-screen.enter .end-stats { animation: settle 1.1s var(--ease-out) 1.15s both; }
+.end-screen.enter .end-actions, .end-screen.enter .end-keys { animation: settle 1.1s var(--ease-out) 1.4s both; }
+.end-screen.enter .end-side { animation: settle 1.2s var(--ease-out) 1.3s both; }
+@keyframes quietTitle { from { opacity: 0; letter-spacing: .3em; filter: blur(8px); } 40% { opacity: .7; } }
+body.reduced-motion .end-screen *, body.reduced-motion .end-screen { animation: none !important; }
+.end-side { display: grid; gap: 22px; align-self: end; }
+.end-side .end-progress, .end-side .end-report { max-width: none; margin: 0; }
+.end-side .ep-note { margin-top: 30px; }
+.end-side .rr-table td { padding: 5px 8px; }
+.end-side .rr-cols { margin-top: 12px; gap: 20px; }
+.end-side .rr-deaths { max-height: 150px; overflow-y: auto; }
+.end-side .rr-big { font-size: 30px; }
+@media (max-width: 960px) {
+  .end-card:has(.end-side > :not([hidden])) { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .end-screen { align-items: flex-start; }
+}
+@media (max-height: 680px) {
+  .end-title { font-size: clamp(26px, 3.4vw, 42px); }
+  .end-text { font-size: 14px; }
+}
+
+/* The progress line: how far you got, a route up the tower. */
+.end-progress { margin: 0 0 22px; max-width: 640px; }
+.end-progress[hidden] { display: none; }
+.ep-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 30px; color: var(--text-3); font-size: 12px; font-weight: 500; }
+.ep-head b { color: var(--text); font-stretch: var(--wide); font-size: 26px; font-weight: 250; }
+.ep-track { position: relative; height: 1px; margin: 0 6px; background: var(--line-2); }
+.ep-fill { position: absolute; left: 0; top: -0.5px; height: 2px; background: var(--end, var(--ember)); box-shadow: 0 0 10px var(--end, var(--ember)); animation: epGrow 1.6s var(--ease-out) .8s both; }
+.ep-track i span { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--text-3); font-style: normal; }
+.ep-tick, .ep-start, .ep-end, .ep-best { position: absolute; top: -4px; width: 1px; height: 9px; background: var(--line-2); }
+.ep-tick span, .ep-start span, .ep-end span { top: 16px; }
+.ep-start { left: 0; }
+.ep-end { left: 100%; background: var(--ok); }
+.ep-end span { color: var(--ok); }
+.ep-best { background: var(--glass); }
+.ep-best span { top: -20px; color: var(--glass); }
+.ep-you { position: absolute; top: 0; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 4px rgba(244, 240, 232, .14), 0 0 14px var(--end, var(--ember)); animation: epYou 1.6s var(--ease-out) .8s both; }
+.ep-you span { top: -26px; color: var(--text); }
+.ep-flag { position: absolute; top: -20px; width: 1px; height: 22px; background: var(--glass); }
+.ep-flag::before { content: ""; position: absolute; left: 1px; top: 0; width: 10px; height: 7px; background: var(--glass); clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.ep-flag span { top: -16px !important; left: 8px !important; transform: none !important; color: var(--glass) !important; }
+.ep-note { margin: 34px 0 0; color: var(--text-3); font-size: 13px; }
+@keyframes epGrow { from { width: 0; } }
+@keyframes epYou { from { left: 0; } }
+body.reduced-motion .ep-fill, body.reduced-motion .ep-you { animation: none; }
+
+/* ---- The run report (end screen and the menu's Last run report) ------------ */
+
+.report-page { margin-top: 22px; max-width: none; }
+.end-report { margin: 0 0 24px; max-width: 680px; }
+.end-report[hidden] { display: none; }
+.rr-eyebrow { margin: 0 0 12px; color: var(--end, var(--ember-2)); font-stretch: 112%; font-size: 11px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; }
+.rr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rr-table th { text-align: left; padding: 6px 8px; color: var(--text-3); font-size: 11.5px; font-weight: 500; border-bottom: 1px solid var(--line-2); }
+.rr-table td { padding: 7px 8px; color: var(--text-2); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.rr-table td:not(:first-child), .rr-table th:not(:first-child) { text-align: right; }
+.rr-cols { display: grid; grid-template-columns: 1.4fr 1fr; gap: 26px; margin-top: 16px; }
+.rr-label { margin: 0 0 8px; color: var(--text-3); font-size: 12px; font-weight: 500; }
+.rr-deaths { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.rr-deaths li { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; padding: 4px 0 4px 12px; border-left: 1px solid var(--blood); }
+.rr-deaths li.none { border-left-color: var(--ok); }
+.rr-deaths b { color: var(--text); font-size: 13px; font-weight: 500; }
+.rr-deaths span { grid-column: 1; color: var(--text-3); font-size: 12px; }
+.rr-deaths em { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--blood); font-style: normal; font-stretch: var(--wide); font-weight: 250; font-size: 22px; }
+.rr-big { margin: 0; color: var(--text); font-stretch: var(--wide); font-size: 38px; font-weight: 200; line-height: 1; }
+.rr-big small { color: var(--text-3); font-stretch: 100%; font-size: 13px; font-weight: 500; }
+.rr-sub { margin: 6px 0 14px; color: var(--text-3); font-size: 13px; }
+.rr-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 8px 0 20px; }
+.rr-tile { display: grid; gap: 6px; padding: 4px 18px; }
+.rr-tile:first-child { padding-left: 0; }
+.rr-tile + .rr-tile { border-left: 1px solid var(--line); }
+.rr-tile b { font-stretch: var(--wide); font-size: clamp(26px, 2.8vw, 36px); font-weight: 200; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.rr-tile span { font-size: 12px; font-weight: 500; color: var(--text-3); }
+.rr-tile.bad b { color: var(--blood); }
+.rr-tile.good b { color: var(--ok); }
+.rr-levels { margin: 0 0 18px; padding: 0; list-style: none; display: grid; gap: 0; border-top: 1px solid var(--line); }
+.rr-levels li { display: grid; grid-template-columns: 34px minmax(130px, 1.1fr) 2fr auto auto; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rr-levels li.unplayed { opacity: .4; }
+.rr-num { font-stretch: var(--wide); font-size: 18px; font-weight: 200; color: var(--text-3); }
+.rr-name { display: grid; line-height: 1.25; }
+.rr-name b { font-size: 14px; font-weight: 500; color: var(--text); }
+.rr-name small { font-size: 11.5px; color: var(--text-3); }
+.rr-bar { height: 2px; background: var(--line); overflow: hidden; }
+.rr-bar i { display: block; height: 100%; background: var(--blood); }
+.rr-levels li.clean .rr-bar i { background: var(--ok); }
+.rr-time { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
+.rr-tags { display: flex; gap: 10px; }
+.rr-tags em { font-style: normal; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.rr-levels li.hurt .rr-tags em.d { color: var(--blood); }
+.end-side .rr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; gap: 12px 0; }
+.end-side .rr-tile:nth-child(3) { border-left: 0; padding-left: 0; }
+.end-side .rr-tile b { font-size: 26px; }
+.end-side .rr-levels li { grid-template-columns: 26px 1fr 1fr auto; gap: 10px; padding: 7px 0; }
+.end-side .rr-levels .rr-tags { display: none; }
+.end-side .rr-deaths { max-height: 130px; overflow-y: auto; }
+@media (max-width: 760px) {
+  .rr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rr-cols { grid-template-columns: 1fr; }
+  .rr-levels li { grid-template-columns: 26px 1fr auto; }
+  .rr-levels .rr-bar, .rr-levels .rr-tags { display: none; }
+}
+#reportScreen .credits-copy { width: min(960px, 100%); }
+#reportScreen .report-page { max-width: none; }
+
+/* (Ours: the end screen's old backdrop, and its card padding.) */
+.end-bg { display: none; }
+.end-screen .end-card { width: 100%; padding: 0; border: 0; background: none; }
+.end-screen .end-card::before { display: none; }
+.end-side .end-report { padding: 0; border: 0; background: none; }
+.end-actions .primary-button { min-width: 0; height: auto; }
+.end-score span { order: 2; }
+
+/* Your ghost run, under the top of the screen: a quiet line in glass. */
+.ghost-chip {
+  padding: 0; border: 0; border-radius: 0; background: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  color: var(--text-2); font-stretch: 112%; font-size: 10.5px; font-weight: 600; letter-spacing: .22em; text-shadow: var(--shadow-text);
+}
+.ghost-chip b { color: var(--ember-2); font-stretch: var(--wide); font-size: 15px; font-weight: 300; letter-spacing: .02em; }
+.ghost-chip.ahead b { color: var(--ok); }
+/* Nothing of the run's own HUD over the end screen's held frame. */
+body:has(#endScreen.active) :is(.reticle, .ghost-chip) { display: none; }
+/* The ghost's lead is for the run: never over a menu. */
+body:has(.screen.active) .ghost-chip { display: none; }

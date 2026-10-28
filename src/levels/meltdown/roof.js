@@ -42,6 +42,7 @@
  */
 
 import * as THREE from "../../three.js";
+import { RoofWeather } from "./weather.js";
 import { createMeltdownKit, heatSignature } from "./kit.js";
 import { ashify } from "./ash.js";
 import { createFireMaterials } from "./fire.js";
@@ -52,8 +53,14 @@ import { Helicopter } from "./helicopter.js";
 import { createLift, ROOF_LIFT } from "./elevator.js";
 import { photoReady, applyPhotoSet, PHOTO_SETS } from "./photo-textures.js";
 import { CityAtNight } from "./city.js";
+import { TowerCollapse } from "./skyline-collapse.js";
+import { CbdBuildings, CBD_SETS } from "./cbd.js";
+import { Demolition } from "./demolition.js";
+import { LoadShedding } from "./load-shedding.js";
+import { CityWar } from "./war.js";
 import { createPropKit } from "../../story/stages/props.js";
 import { buildHatchGuards } from "./hatch-guard.js";
+import { compileReady } from "../../systems/warm-up.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -68,6 +75,70 @@ const ARRIVAL_CUT = 2.9;
 /** Where the arrival hands the camera over: the host's roof camera offsets. */
 const ARRIVAL_CAMERA = new THREE.Vector3(0, 11.5, 8.5);
 const ARRIVAL_LOOK = new THREE.Vector3(0, 0.6, -3.4);
+/**
+ * Before the doors open, the first time you come up (once per page load, so
+ * a retry isn't held up, and not in Endless): the camera at the north
+ * parapet looks out over the downtown - from the Art Deco tower's crown,
+ * across to the far buildings and down to the civic dome on the streets
+ * (cbd.js).
+ * The banner shows over it.
+ */
+const SKYLINE_SECONDS = 6;
+/**
+ * Generic towers of the city brought down as the fight goes on (at these
+ * `chaos` levels; demolition.js).
+ * The first to go is a cutaway the first time: the fight holds, letterboxed,
+ * while a helicopter's-eye camera watches it fall.
+ */
+const DEMOLISH_AT = [0.22, 0.58, 0.9];
+/**
+ * Load-shedding (load-shedding.js): in the story, once, part way into the
+ * fight (after the first demolition's cutaway); in Endless, again and again,
+ * the stage climbing 2, 4, 6, 8 and the dark lasting longer each time.
+ */
+const SHED_STORY = { at: 0.3, stage: 6, seconds: 15 };
+const SHED_ENDLESS = { first: 40, every: 75 };
+/** The emergency strobe, on its battery: on the lift housing. */
+const STROBE = new THREE.Vector3(2.6, 3.7, EDGE - 1.6);
+/**
+ * The generator beside the lift housing. In the dark, three pulls on its
+ * cord (Space, in reach) and it catches: the floods back at a flicker - and
+ * the noise sets every patient on the roof off.
+ */
+const GENERATOR = new THREE.Vector3(-4.4, 0, EDGE - 1.7);
+const GENERATOR_REACH = 2.3;
+const GENERATOR_PULLS = 3;
+/**
+ * The inverter corner: solar panels on a frame, the battery, and one LED
+ * lamp that stays on when the grid goes. In the dark the patients that
+ * aren't on to you drift to it, like moths.
+ */
+const INVERTER_LAMP = new THREE.Vector3(12.2, 2.75, EDGE - 2.3);
+const LURE_FROM = 8;
+/**
+ * The towers that come down: generic towers like the rest of the city, but
+ * placed where they can be seen go: in the gaps above the near rooftops
+ * the roof camera looks over (the brick block's, the flats'), out of the
+ * way of the downtown's buildings (cbd.js CBD_SETS). The Labs' annexes
+ * (demolition.js); `topple`: the later two go over sideways as they fall.
+ */
+const CONDEMNED = [
+  { x: -20, z: -150, top: 20, w: 26, d: 22, yaw: 0.08, finish: 0 },
+  { x: -35, z: -95, top: 4, w: 22, d: 19, yaw: -0.1, finish: 2, topple: 0.34 },
+  { x: -75, z: -150, top: 10, w: 24, d: 20, yaw: 0.2, finish: 1, topple: -0.38 },
+];
+let cutawayShown = false;
+/**
+ * Towers across the street that come down as the fight goes on (at these
+ * `chaos` levels; skyline-collapse.js). Placed where the roof camera sees
+ * them: one ahead to the right, one further off to the left - clear of
+ * the downtown's buildings.
+ */
+const COLLAPSES = [
+  { x: 26, z: -56, height: 178, width: 24, depth: 20, fail: 118, lean: -0.07, seed: 1, chaos: 0.42 },
+  { x: -55, z: -118, height: 176, width: 26, depth: 22, fail: 104, lean: 0.05, seed: 2, chaos: 0.78 },
+];
+let skylineShown = false;
 
 /** The open hatches the patients climb out of (holes: step in and you fall). */
 export const HATCHES = [new THREE.Vector3(-10.5, 0, 2.6), new THREE.Vector3(10, 0, -1), new THREE.Vector3(-6, 0, -12), new THREE.Vector3(8, 0, 10)];
@@ -277,6 +348,7 @@ const SKY_VERTEX = /* glsl */ `
 `;
 const SKY_FRAGMENT = /* glsl */ `
   uniform float uTime;
+  uniform float uWar;
   varying vec3 vDir;
   float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
   float noise(vec2 p) {
@@ -293,6 +365,8 @@ const SKY_FRAGMENT = /* glsl */ `
     vec2 p = vDir.xz / max(0.15, h + 0.3) * 1.6 + vec2(uTime * 0.02, uTime * 0.01);
     float smoke = noise(p) * 0.6 + noise(p * 2.7) * 0.4;
     col = mix(col, vec3(0.07, 0.05, 0.045), smoothstep(0.45, 0.85, smoke) * 0.7 * smoothstep(-0.1, 0.3, h));
+    // The war (war.js): the horizon burning orange, the smoke lit from under.
+    col += vec3(0.34, 0.1, 0.03) * uWar * (1.0 - smoothstep(-0.05, 0.4, h)) * (0.6 + 0.6 * smoke);
     // A few stars through the gaps.
     vec2 sp = floor(vDir.xz / (h + 1.0) * 380.0);
     float star = step(0.9975, hash(sp)) * smoothstep(0.25, 0.6, h) * (1.0 - smoothstep(0.4, 0.7, smoke));
@@ -307,6 +381,13 @@ const SKY_FRAGMENT = /* glsl */ `
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _lure = new THREE.Vector3();
+const _skyB = new THREE.Vector3();
+const _skyC = new THREE.Vector3();
+const _skyD = new THREE.Vector3();
+/** Where the transformer goes as the power comes back: on the parapet by the lift housing. */
+const _SHED_SPARKS = new THREE.Vector3(-6, 1.4, EDGE - 0.4);
+const _rayCamera = new THREE.PerspectiveCamera();
 
 /** Seconds a downed body takes to burn away to ash. */
 const ASH_SECONDS = 1.45;
@@ -349,6 +430,17 @@ class Enemy {
     }
 
     // The hurtbox is what balls hit; it follows the body.
+    // Eyes that catch the light in the dark (load-shedding): two glints,
+    // invisible until the grid goes down.
+    if (kind === "patient" && level.eyes) {
+      for (const x of [-0.035, 0.035]) {
+        const eye = new THREE.Sprite(level.eyes);
+        eye.position.set(x, 1.63, 0.13);
+        eye.scale.setScalar(0.07);
+        this.body.add(eye);
+      }
+    }
+
     this.hurt = new THREE.Mesh(level.kit.geometries.unitBox, level.kit.materials.collider);
     this.hurt.scale.set(0.9, 1.9, 0.8);
     this.hurt.position.y = 0.95;
@@ -497,17 +589,21 @@ class Patient extends Enemy {
             break;
           }
         }
-        this.face(player, dt, 5);
-        _v.subVectors(player, this.position).setY(0);
+        // In the dark, one that isn't on to you drifts to the inverter's lamp;
+        // the generator's racket sets them all off, faster.
+        const goal = this.level.lure(this.position, player);
+        const rage = 1 + 0.35 * this.level.rage;
+        this.face(goal, dt, 5);
+        _v.subVectors(goal, this.position).setY(0);
         const d = _v.length();
-        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * stride(this.persona, time) * dt);
+        if (d > 1.2) this.position.addScaledVector(_v.divideScalar(d), this.stats.stalk * rage * stride(this.persona, time) * dt);
         this.position.addScaledVector(this.velocity, dt);
         this.velocity.multiplyScalar(Math.max(0, 1 - dt * 5));
         this.collide();
         this.position.x = THREE.MathUtils.clamp(this.position.x, -WALK_LIMIT, WALK_LIMIT);
         // Each their own shamble: pace, limp or drag or lurch, arms, twitches.
-        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2, speed: d > 1.2 ? this.stats.stalk * stride(this.persona, time) : 0 });
-        if (d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
+        shamble(rig, this.persona, time, { reach: 0.9, lean: 0.3, stride: 0.35, knee: 0.6, cadence: 4.2 * rage, speed: d > 1.2 ? this.stats.stalk * rage * stride(this.persona, time) : 0 });
+        if (goal === player && d < this.stats.notice && this.cooldown <= 0 && !ctx.frozen && this.level.clearLine(this.position, player)) {
           this.setState("windup");
           this.level.events.emit("patient-windup", { position: this.position.clone() });
         }
@@ -532,7 +628,7 @@ class Patient extends Enemy {
         break;
       }
       case "charge": {
-        const step = this.stats.charge * dt;
+        const step = this.stats.charge * (1 + 0.2 * this.level.rage) * dt;
         this.position.addScaledVector(this.dir, step);
         this.travelled += step;
         rig?.pose({ clip: ["run", "walk"], speed: this.stats.charge, dt, phase: time * 13 + this.phase, stride: 0.7, knee: 1.1, lean: 0.55, reach: 0.4, armSwing: 0.2 });
@@ -745,8 +841,11 @@ export class RoofLevel {
    *   (src/systems/difficulty.js `roof`, plus `extras` for Hard): time
    *   between waves, patients' speed, the helicopter's wait
    */
-  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null } = {}) {
+  constructor({ assets = new Map(), seed = Date.now() % 100000, heliSeconds, endless = false, assetBase = null, difficulty = null, light = false } = {}) {
     this.assets = assets;
+    // Below High quality (a laptop's own graphics): fewer downtown buildings
+    // and one police helicopter, not three - the roof is the heaviest scene.
+    this.light = light;
     this.endless = endless;
     this.difficulty = { waves: 1, damage: 1, enemySpeed: 1, heli: 1, lastWave: 3, extras: false, ...difficulty };
     this.events = createEmitter();
@@ -789,7 +888,12 @@ export class RoofLevel {
       extractT: 0,
     };
 
+    // The grid, before the city that goes dark with it.
+    this.shed = new LoadShedding({ stage: endless ? 2 : SHED_STORY.stage, seconds: SHED_STORY.seconds * (this.difficulty.shed ?? 1) });
+    // The patients' eyes in the dark (load-shedding): one material for all.
+    this.eyes = this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0xd8ff6a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, fog: false }));
     this._buildSet();
+    this._buildPower();
     this._dressRoof();
     this._buildSkyline(assetBase);
     this._buildLights();
@@ -854,6 +958,8 @@ export class RoofLevel {
     const k = this.kit;
     const mat = k.materials;
     const roofing = this._track(new THREE.MeshStandardMaterial(photoReady({ map: roofingTexture(), roughnessMap: k.textures.floorRoughness, roughness: 1, metalness: 0.05 })));
+    /** The deck's surface (the weather wets it). */
+    this.deckMaterial = roofing;
     roofing.envMapIntensity = 0.5;
     this.owned.textures.push(roofing.map);
     // Tarred gravel (Poly Haven, CC0) when it arrives; the wet patches stay.
@@ -1021,7 +1127,7 @@ export class RoofLevel {
 
     // Sky dome.
     this.skyMaterial = new THREE.ShaderMaterial({
-      uniforms: { uTime: this.fire.time },
+      uniforms: { uTime: this.fire.time, uWar: { value: 0 } },
       vertexShader: SKY_VERTEX,
       fragmentShader: SKY_FRAGMENT,
       side: THREE.BackSide,
@@ -1162,10 +1268,118 @@ export class RoofLevel {
    * lights on the masts, police helicopters circling with their searchlights.
    */
   _buildSkyline(assetBase) {
-    this.city = new CityAtNight({ seed: 41, streetY: -160, neighbours: 3 });
+    // Right round you, the old downtown (cbd.js): Art Deco, tower flats, red
+    // brick, a domed civic building - several sets of them, the generic
+    // towers leaving their spots empty.
+    this.cbd = new CbdBuildings({ streetY: -160, sets: this.light ? CBD_SETS.slice(0, 2) : CBD_SETS });
+    this.collapses = COLLAPSES.map((c) => Object.assign(new TowerCollapse({ ...c, streetY: -160 }), { chaosAt: c.chaos }));
+    const clear = [...this.cbd.footprints, ...COLLAPSES.map((c) => ({ x: c.x, z: c.z, r: Math.max(c.width, c.depth) * 0.6 }))];
+    this.city = new CityAtNight({
+      seed: 41, streetY: -160, neighbours: 3, condemned: CONDEMNED, grid: this.shed.uniforms,
+      // (None of the others in their spots, or right round them.)
+      clear: [...clear, ...CONDEMNED.map((c) => ({ x: c.x, z: c.z, r: Math.hypot(c.w, c.d) * 0.6 + 16 }))],
+    });
+    const demolitions = this.city.demolitions.map((tower, k) => new Demolition({ city: this.city, tower, seed: 3 + k, topple: CONDEMNED[k].topple ?? 0 }));
+    this.root.add(this.city.root, this.cbd.root, ...this.collapses.map((c) => c.root));
+    // The first is the cutaway, if a camera can be placed to see it whole.
+    const blocked = [...clear.map((c) => ({ ...c, top: Infinity })), ...this.city.footprints.filter((f) => !CONDEMNED.some((c) => c.x === f.x && c.z === f.z))];
+    if (demolitions[0]) demolitions[0].shot = this._cutawayShot(demolitions[0], blocked);
+    this.demolitions = demolitions.map((d, k) => Object.assign(d, { chaosAt: DEMOLISH_AT[k], cutaway: k === 0 && Boolean(d.shot) }));
     this.city.root.name = "Skyline";
-    this.root.add(this.city.root);
-    if (assetBase) this.city.loadHelicopters(assetBase).catch(() => {});
+    this.root.add(...this.demolitions.map((d) => d.root));
+    // And the city at war round them, worse and worse with the chaos.
+    this.war = new CityWar({ streetY: -160 });
+    this.root.add(this.war.root);
+    if (assetBase) this.city.loadHelicopters(assetBase, { count: this.light ? 1 : 3 }).catch(() => {});
+  }
+
+  /** The generator and the inverter corner (load-shedding). */
+  _buildPower() {
+    const k = this.kit;
+    const mat = {
+      yellow: this._track(new THREE.MeshStandardMaterial({ color: 0xd89a18, roughness: 0.55, metalness: 0.2 })),
+      engine: this._track(new THREE.MeshStandardMaterial({ color: 0x23262a, roughness: 0.6, metalness: 0.6 })),
+      grey: this._track(new THREE.MeshStandardMaterial({ color: 0x8a8f94, roughness: 0.7, metalness: 0.3 })),
+      cell: this._track(new THREE.MeshStandardMaterial({ color: 0x10223f, roughness: 0.12, metalness: 0.5, emissive: 0x050a14 })),
+      frame: this._track(new THREE.MeshStandardMaterial({ color: 0xb7bcc2, roughness: 0.4, metalness: 0.8 })),
+    };
+    // The generator: an open yellow frame, the engine inside, a fuel tank on top.
+    const G = GENERATOR;
+    this._box(1.3, 0.95, 0.85, k.materials.collider, G.x, 0, G.z, { solid: true, cover: true });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) this._box(0.06, 0.9, 0.06, mat.yellow, G.x + sx * 0.62, 0, G.z + sz * 0.39);
+    for (const y of [0.04, 0.88]) for (const sz of [-1, 1]) this._box(1.3, 0.06, 0.06, mat.yellow, G.x, y, G.z + sz * 0.39);
+    this._box(0.8, 0.5, 0.6, mat.engine, G.x - 0.1, 0.08, G.z);
+    this._box(0.9, 0.22, 0.7, mat.yellow, G.x, 0.92, G.z);
+    this._box(0.08, 0.12, 0.08, mat.engine, G.x + 0.3, 1.14, G.z);                       // the filler cap
+    this._box(0.06, 0.06, 0.08, k.materials.lightTube, G.x + 0.5, 0.5, G.z - 0.43);       // the pull-start handle
+    const exhaust = k.smokeJet({ count: 10 });
+    exhaust.scale.set(0.5, 1.2, 0.5);
+    exhaust.visible = false;
+    this._put(exhaust, G.x - 0.55, 0.7, G.z + 0.2);
+    // The inverter corner: two panels tilted to the north sky, the battery
+    // cabinet, an LED lamp on a pole.
+    const L = INVERTER_LAMP;
+    for (const dx of [-1.1, 1.1]) {
+      // (Facing north: the sun's side, down here.)
+      const panel = this._box(2.0, 0.05, 1.1, mat.cell, L.x - 0.6 + dx, 0.55, L.z + 0.5);
+      panel.rotation.x = -0.4;
+      this._box(0.05, 0.72, 0.05, mat.frame, L.x - 0.6 + dx, 0, L.z + 0.85);
+      this._box(0.05, 0.42, 0.05, mat.frame, L.x - 0.6 + dx, 0, L.z + 0.15);
+    }
+    this._box(0.7, 1.1, 0.45, mat.grey, L.x + 1.6, 0, L.z + 0.6, { solid: true, cover: true });
+    this._box(0.06, L.y, 0.06, mat.frame, L.x, 0, L.z);
+    this._box(0.36, 0.08, 0.2, mat.frame, L.x, L.y, L.z);
+    this.lampGlow = new THREE.Sprite(this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0xfff0d0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 })));
+    this.lampGlow.position.set(L.x, L.y - 0.05, L.z);
+    this.lampGlow.scale.setScalar(1.6);
+    // The battery's charge light.
+    this.chargeLed = new THREE.Sprite(this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0x46ff6a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false })));
+    this.chargeLed.position.set(L.x + 1.6, 0.95, L.z + 0.36);
+    this.chargeLed.scale.setScalar(0.18);
+    this.groups.set.add(this.lampGlow, this.chargeLed);
+    this.generator = { pulls: 0, running: false, rpm: 0, last: -9, exhaust };
+    this.rage = 0;
+  }
+
+  /**
+   * Space in reach of the generator in the dark: a pull on its cord (the
+   * third starts it). True if it took the key (no dodge then).
+   */
+  pullGenerator(player) {
+    const gen = this.generator;
+    if (!gen || gen.running || !this.shed?.outage) return false;
+    if (Math.hypot(player.x - GENERATOR.x, player.z - GENERATOR.z) > GENERATOR_REACH) return false;
+    // Too slow between pulls and it floods: start again.
+    if (this.state.time - gen.last > 2.5) gen.pulls = 0;
+    gen.last = this.state.time;
+    gen.pulls += 1;
+    gen.rpm = 1;
+    const position = GENERATOR.clone().setY(0.6);
+    if (gen.pulls < GENERATOR_PULLS) this.events.emit("generator-pull", { n: gen.pulls, of: GENERATOR_PULLS, position });
+    else {
+      gen.running = true;
+      gen.exhaust.visible = true;
+      this.rage = 1;
+      this.events.emit("generator-on", { position });
+    }
+    return true;
+  }
+
+  /** "pull" (in reach, in the dark), "go" (it's there to start), else null. */
+  generatorHint(player) {
+    const gen = this.generator;
+    if (!gen || gen.running || !this.shed?.outage || this.shed.darkness < 0.5) return null;
+    return Math.hypot(player.x - GENERATOR.x, player.z - GENERATOR.z) <= GENERATOR_REACH ? "pull" : "go";
+  }
+
+  /**
+   * Where a stalking patient heads: you - or, in the dark with the
+   * generator quiet, the inverter's lamp if you're far off.
+   */
+  lure(from, player) {
+    if ((this.shed?.darkness ?? 0) < 0.5 || this.generator?.running) return player;
+    if (Math.hypot(from.x - player.x, from.z - player.z) < LURE_FROM) return player;
+    return _lure.set(INVERTER_LAMP.x - 0.8, 0, INVERTER_LAMP.z - 1.4);
   }
 
   _buildLights() {
@@ -1174,6 +1388,18 @@ export class RoofLevel {
     this.moon = new THREE.DirectionalLight(0x9fb2d6, 0.9);
     this.moon.position.set(-30, 60, -20);
     g.add(this.hemisphere, this.moon);
+    // The emergency strobe for load-shedding: always there, dark until then
+    // (a light added mid-fight would recompile every shader).
+    this.strobe = new THREE.PointLight(0xff2412, 0, 28, 1.4);
+    this.strobe.position.copy(STROBE);
+    this.strobeGlow = new THREE.Sprite(this._track(new THREE.SpriteMaterial({ map: this._glowDot(), color: 0xff3020, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 })));
+    this.strobeGlow.position.copy(STROBE);
+    this.strobeGlow.scale.setScalar(2.2);
+    g.add(this.strobe, this.strobeGlow);
+    // The inverter's lamp: one warm-white LED, on whenever the grid is off.
+    this.lamp = new THREE.PointLight(0xfff0d6, 0, 15, 1.5);
+    this.lamp.position.copy(INVERTER_LAMP).setY(INVERTER_LAMP.y - 0.15);
+    g.add(this.lamp);
     // Two floods and two dim glows up from the city past the ledges: a fixed four.
     this.points = [];
     for (const f of this.floods) {
@@ -1677,10 +1903,44 @@ export class RoofLevel {
    * @param {THREE.Vector3} p.playerVelocity
    * @returns {{damage:number, from:THREE.Vector3, knock:number, source:string}[]} hits on the player this frame
    */
+  /** The weather: "clear", "rain" or "storm" (src/levels/meltdown/weather.js). */
+  setWeather(kind, audio = null) {
+    this.weather?.dispose();
+    this.weather = kind && kind !== "clear" ? new RoofWeather(this, { kind, audio }) : null;
+    return this.weather;
+  }
+
   update({ dt, time, player, playerVelocity }) {
     const s = this.state;
     this.fire.setTime(time);
+    this.weather?.update(dt, time);
     this.city?.update(dt, time, { haze: this.cityHaze });
+    this.cbd?.update(dt, time, this.shed ? (x, z) => this.shed.power(x, z) : null);
+    for (const c of this.collapses ?? []) {
+      for (const e of c.update(dt, time)) {
+        // "seen" at the blast; the sounds ("blast", "fall") when they reach you.
+        this.events.emit(e.kind === "seen" ? "tower-seen" : "tower-down", { kind: e.kind, strength: e.strength, position: c.root.position });
+      }
+    }
+    if (this.war) {
+      const live = !this.state.ending || this.state.ending === "extraction";
+      for (const b of this.war.update(dt, time, live ? this.state.chaos : 0)) this.events.emit("war-blast", b);
+      const glow = this.war.glow;
+      this.city.war.uWar.value = THREE.MathUtils.clamp((this.state.chaos - 0.15) / 0.85, 0, 1);
+      if (this.skyMaterial) this.skyMaterial.uniforms.uWar.value = glow;
+    }
+    for (const d of this.demolitions ?? []) {
+      for (const e of d.update(dt, time)) {
+        if (e.kind === "seen") this.events.emit("tower-seen", { position: d.root.position });
+        else this.events.emit("tower-down", { kind: e.kind === "charges" || e.kind === "chem" || e.kind === "pop" ? "blast" : "fall", strength: e.strength, position: d.root.position });
+      }
+    }
+    if (this.cutscene?.kind === "cutaway") {
+      // The fight holds while the camera watches the city (the host does too).
+      for (const piece of this._ticking) piece.userData.tick?.(dt, time);
+      this._updateCutaway(dt);
+      return [];
+    }
     if (this.cutscene?.kind === "arrival") {
       // The arrival is over (the host has seen `done`): hand the roof over.
       if (!this._arrival) this.cutscene = null;
@@ -1749,11 +2009,18 @@ export class RoofLevel {
     this._updateChaos(dt, time, ctx);
     for (const piece of this._ticking) piece.userData.tick?.(dt, time);
 
+    this._updateShedding(dt, time, ctx);
+    const dark = this.shed?.darkness ?? 0;
+    const roofDark = this.darkness;
     for (const p of this.points) {
       if (p.flicker) {
         p.flash = Math.max(0, (p.flash ?? 0) - dt * 3);
-        // Steady (no fire to flicker), flaring with each blast in the facade.
-        p.light.intensity = p.base * (1 + s.chaos * 0.4 + p.flash * 12);
+        // Steady (no fire to flicker), flaring with each blast in the facade;
+        // dimmer with the city's lights out below.
+        p.light.intensity = p.base * (1 + s.chaos * 0.4 + p.flash * 12) * (1 - 0.6 * dark);
+      } else {
+        // The floods: out in load-shedding (but for the generator).
+        p.light.intensity = p.base * (1 - roofDark);
       }
     }
 
@@ -1795,7 +2062,8 @@ export class RoofLevel {
    * player are, the host applies it. PLACEHOLDER staging (see elevator.js).
    */
   beginArrival() {
-    this._arrival = { t: 0, opened: false };
+    this._arrival = { t: 0, opened: false, lead: this.endless || skylineShown ? 0 : SKYLINE_SECONDS };
+    skylineShown = true;
     this._liftClose = 0;
     this.lift?.userData.lift.setDoors(0);
     this.cutscene = {
@@ -1811,7 +2079,8 @@ export class RoofLevel {
     const a = this._arrival;
     const out = this.cutscene;
     a.t += dt;
-    const t = a.t;
+    // Arrival time: negative while the skyline shot plays.
+    const t = a.t - a.lead;
     const smooth = THREE.MathUtils.smoothstep;
     const lift = this.lift?.userData.lift;
     if (!a.opened && t > 0.7) {
@@ -1819,7 +2088,7 @@ export class RoofLevel {
       this.events.emit("lift-open", {});
     }
     lift?.setDoors((t - 0.7) / 0.9);
-    lift?.setLight(t < 0.5 ? (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1);
+    lift?.setLight(t >= 0 && t < 0.5 ? (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1);
 
     // Walk out of the cabin to the spawn point.
     const walk = smooth(t, 1.2, 2.8);
@@ -1832,7 +2101,27 @@ export class RoofLevel {
     // In front of the housing, dollying back as the player walks toward the
     // camera; then a cut to the game camera (a swing round would turn the
     // view through 180 degrees - the doors face away from the game camera).
-    if (t < ARRIVAL_CUT) {
+    if (t < 0) {
+      // The skyline: from the Art Deco tower's floodlit crown, across the
+      // downtown, out to the tower flats on the far side, and down to the
+      // civic dome on the street - a cubic curve through the four (de
+      // Casteljau) - drifting west along the parapet to the open west ledge,
+      // where nothing of the roof is in the way of looking straight down.
+      // Held on the crown while the level card and the fade clear, then the sweep.
+      const k = smooth(a.t, 1.4, a.lead - 0.2);
+      out.camera.set(THREE.MathUtils.lerp(6, -14.5, k), 4.2 + k * 2.3, THREE.MathUtils.lerp(-EDGE + 1.5, -EDGE + 3, k));
+      const [near, far] = CBD_SETS;
+      const p0 = _w.set(near.deco.x, 14, near.deco.z);
+      const p1 = _skyB.set(far.deco.x, 40, far.deco.z);
+      const p2 = _skyC.set(far.civic.x, -95, far.civic.z);
+      const p3 = _skyD.set(near.civic.x, -150, near.civic.z);
+      p0.lerp(p1, k);
+      p1.lerp(p2, k);
+      p2.lerp(p3, k);
+      p0.lerp(p1, k);
+      p1.lerp(p2, k);
+      out.look.copy(p0.lerp(p1, k));
+    } else if (t < ARRIVAL_CUT) {
       const dolly = smooth(t, 0.9, ARRIVAL_CUT);
       out.camera.set(-1.3, 1.8, LIFT_DOOR.z - 5.9).lerp(_w.set(-1.6, 2.0, LIFT_DOOR.z - 7.7), dolly);
       out.look.set(0, 1.3, LIFT_DOOR.z).lerp(_w.copy(out.player).setY(1.2), smooth(t, 1.2, 2.4));
@@ -1844,6 +2133,182 @@ export class RoofLevel {
       out.done = true;
       this._arrival = null;
       this.events.emit("arrived", {});
+    }
+  }
+
+  /* ---------------- Load-shedding ---------------- */
+
+  /** 0 (lit) .. 1 (the grid down on the roof): for the host's torch, fog and HUD. */
+  /** How orange the sky is with the city burning (war.js): 0..1. */
+  get warGlow() {
+    return this.war?.glow ?? 0;
+  }
+
+  /** The roof's: 0 lit .. 1 dark (the generator, running, brings most of it back). */
+  get darkness() {
+    return (this.shed?.darkness ?? 0) * (1 - 0.75 * (this.generator?.power ?? 0));
+  }
+
+  _updateShedding(dt, time, ctx) {
+    const s = this.state;
+    const shed = this.shed;
+    if (!shed) return;
+    const live = !s.ending && !s.heliArrived;
+    // When it comes: once in the story, again and again in Endless.
+    if (live && !shed.active && !this.cutscene) {
+      if (this.endless) {
+        const due = SHED_ENDLESS.first + (shed.count) * SHED_ENDLESS.every;
+        if (s.time >= due) {
+          const stage = Math.min(8, 2 + shed.count * 2);
+          shed.start({ stage, seconds: 10 + stage * 1.5 });
+        }
+      } else if (!shed.count && s.time >= Math.max(18, s.heliAt * SHED_STORY.at)) {
+        shed.start();
+      }
+    }
+    for (const e of shed.update(dt)) {
+      if (e.kind === "warning") this.events.emit("shed-warning", { stage: e.stage, seconds: e.seconds });
+      else if (e.kind === "off") this.events.emit("shed-off", { stage: shed.stage, seconds: shed.seconds });
+      else if (e.kind === "transformer") this.events.emit("shed-transformer", { position: _SHED_SPARKS.clone() });
+      else if (e.kind === "on") this.events.emit("shed-on", {});
+    }
+    // The generator: coughs on each pull, runs till the grid's back.
+    const gen = this.generator;
+    if (gen) {
+      gen.rpm = Math.max(0, gen.rpm - dt * 1.5);
+      if (gen.running && !shed.outage) {
+        gen.running = false;
+        gen.pulls = 0;
+        gen.exhaust.visible = false;
+        this.events.emit("generator-off", { position: GENERATOR.clone() });
+      }
+      // Up to speed over a second, a ragged flicker on the floods.
+      const target = gen.running ? 0.88 + 0.12 * Math.sin(time * 23) * Math.sin(time * 7.3) : 0;
+      gen.power = THREE.MathUtils.damp(gen.power ?? 0, target, gen.running ? 2.5 : 12, dt);
+      this.rage = gen.running ? 1 : Math.max(0, this.rage - dt * 0.5);
+    }
+    const dark = this.darkness;
+    // The inverter's LED: on whenever the grid's off, the charge light blinking.
+    const lamp = shed.darkness > 0.5 ? 1 : 0;
+    this.lamp.intensity = 22 * lamp;
+    this.lampGlow.material.opacity = 0.9 * lamp;
+    this.chargeLed.material.opacity = lamp ? 0.4 + 0.6 * (Math.sin(time * 3) > 0 ? 1 : 0) : 0.9;
+    // The roof's own lights: the floods (in the light loop), the tubes, the sky fill.
+    const tube = this.kit.materials.lightTube;
+    tube.emissiveIntensity = 1.05 * (1 - dark);
+    this.hemisphere.intensity = 0.55 * (1 - 0.45 * dark);
+    // The strobe on its battery: a short red flash once a second (slow,
+    // for photosensitive players), and a glow round the lamp.
+    const on = shed.darkness > 0.5 ? Math.max(0, 1 - ((time * 1.0) % 1) * 5) : 0;
+    this.strobe.intensity = 45 * on;
+    this.strobeGlow.material.opacity = Math.max(on, shed.darkness * 0.25);
+    // Their eyes, in the dark.
+    this.eyes.opacity = dark * 0.95;
+    // The towers across the street (their own shader) are on the grid too.
+    for (const c of this.collapses ?? []) c.uniforms.uPower.value = shed.power(c.root.position.x, c.root.position.z);
+  }
+
+  /** A soft round glow for sprites. */
+  _glowDot() {
+    if (this._dot) return this._dot;
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.3, "rgba(255,255,255,0.45)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    this._dot = new THREE.CanvasTexture(c);
+    this._dot.colorSpace = THREE.SRGBColorSpace;
+    this.owned.textures.push(this._dot);
+    return this._dot;
+  }
+
+  /* ---------------- Cutaway (a tower coming down) ---------------- */
+
+  /**
+   * The fight holds, letterboxed (the host), while a camera placed off the
+   * tower (_cutawayShot) watches it come down, drifting round it and
+   * following it down. A cutscene like the arrival: `cutscene` says where
+   * the camera is; the host keeps the player where they stood.
+   */
+  /**
+   * Where to film a demolition from: a helicopter's view, above its top, at
+   * a distance that fits it in frame - tried round it (toward the roof
+   * first) until nothing stands in the way and the camera isn't inside a
+   * building. Null if there's no such place.
+   */
+  _cutawayShot(d, blocked) {
+    const street = this.city.streetY;
+    const target = new THREE.Vector3(d.tower.x, street + d.height * 0.75, d.tower.z);
+    const top = target.clone().setY(street + d.height - 4);
+    const solids = [this.city.root, this.cbd.root, ...this.collapses.map((c) => c.tower)];
+    for (const root of solids) root.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    ray.camera = _rayCamera; // (sprites need one to be tested at all)
+    // Anything clearly in front of where the ray meets the tower blocks it
+    // (not what stands flush beside its edge).
+    const own = (h) => d.tower.pieces.some(([fi, index]) => h.object === this.city.towers[fi] && h.instanceId === index);
+    const clearTo = (from, to) => {
+      ray.set(from, to.clone().sub(from).normalize());
+      ray.far = from.distanceTo(to);
+      const hits = ray.intersectObjects(solids, true).filter((h) => !h.object.isSprite);
+      const meets = hits.find(own)?.distance ?? ray.far;
+      return !hits.some((h) => !own(h) && h.distance < meets - 6);
+    };
+    const DRIFT = 0.12;
+    const toRoof = new THREE.Vector3(-d.tower.x, 0, -d.tower.z).normalize();
+    // Best: from over our own roof, as if a camera rose off it.
+    const crane = toRoof.clone().multiplyScalar(-6).setY(60);
+    const craneEnd = crane.clone().sub(target).applyAxisAngle(THREE.Object3D.DEFAULT_UP, DRIFT).add(target).setY(crane.y - 10);
+    if (clearTo(crane, target) && clearTo(crane, top) && clearTo(craneEnd, target)) return { camera: crane, dir: toRoof.clone().negate(), drift: DRIFT };
+    for (const turn of [0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2.2, -2.2, Math.PI]) {
+      for (const reach of [1.25, 1.6]) {
+        const dir = toRoof.clone().applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn);
+        const camera = target.clone().addScaledVector(dir, d.height * reach).setY(street + d.height + 28);
+        if (blocked.some((f) => Math.hypot(camera.x - f.x, camera.z - f.z) < f.r + 4 && f.top > camera.y - 6)) continue;
+        if (camera.length() < 30) continue; // not on our own roof
+        // Clear at the start of the drift and at its end.
+        const end = camera.clone().sub(target).applyAxisAngle(THREE.Object3D.DEFAULT_UP, DRIFT).add(target).setY(camera.y - 10);
+        if (clearTo(camera, target) && clearTo(camera, top) && clearTo(end, target) && clearTo(end, top)) return { camera, dir, drift: DRIFT };
+      }
+    }
+    return null;
+  }
+
+  _beginCutaway(demolition) {
+    cutawayShown = true;
+    this._cut = { t: 0, d: demolition, seconds: Math.min(demolition.duration + 1, 8.5) };
+    this.cutscene = {
+      kind: "cutaway", camera: new THREE.Vector3(), look: new THREE.Vector3(), player: new THREE.Vector3(),
+      playerYaw: 0, action: "stand", timeScale: 1, done: false, hidePlayer: false, hold: 1, reachUp: 0,
+    };
+    this._updateCutaway(0);
+  }
+
+  _updateCutaway(dt) {
+    const c = this._cut;
+    c.t += dt;
+    const d = c.d;
+    const at = d.root.position;
+    // The helicopter's view (_cutawayShot), drifting slowly round it and
+    // sinking a little as the tower comes down.
+    const k = THREE.MathUtils.smoothstep(c.t, 0, c.seconds);
+    const offset = _w.copy(d.shot.camera).sub(at).applyAxisAngle(THREE.Object3D.DEFAULT_UP, k * d.shot.drift);
+    this.cutscene.camera.copy(at).add(offset).setY(d.shot.camera.y - k * 10);
+    // Zoomed in like a news camera, on its upper half for the charges, then
+    // widening a little and sinking with it.
+    this.cutscene.fov = 30 + k * 10;
+    // On the charges first, then up to its top as it starts to go, and down
+    // with it.
+    const tilt = THREE.MathUtils.smoothstep(d.t, 1.1, 2.2);
+    const lookY = THREE.MathUtils.lerp(d.height * 0.42, Math.max(d.height * 0.25, d.height - 30 - d.drop * 0.8), tilt);
+    this.cutscene.look.set(at.x, at.y + lookY, at.z);
+    if (c.t >= c.seconds) {
+      this.cutscene = null;
+      this._cut = null;
     }
   }
 
@@ -1906,6 +2371,17 @@ export class RoofLevel {
       const glow = this.points.find((p) => p.flicker && Math.sign(p.light.position.x) === side);
       if (glow) glow.flash = 1;
       s.blastTimer = 9 - chaos * 6 + this.random() * 2;
+    }
+
+    // Across the street, a tower goes (one at each chaos level in COLLAPSES).
+    for (const c of this.collapses ?? []) {
+      if (live && !c.started && chaos >= c.chaosAt) c.start(ctx?.player);
+    }
+    // And whole towers are brought down (DEMOLISH_AT); the first, a cutaway.
+    for (const d of this.demolitions ?? []) {
+      if (!live || d.started || chaos < d.chaosAt) continue;
+      d.start(ctx?.player);
+      if (d.cutaway && !cutawayShown && !this.cutscene) this._beginCutaway(d);
     }
 
     // The building shudders.
@@ -2200,7 +2676,7 @@ export class RoofLevel {
   }
 
   /** Compile and upload everything before the roof is shown. */
-  prewarm(renderer, camera) {
+  async prewarm(renderer, camera) {
     const scene = this.root.parent ?? this.root;
     // The burn-to-ash shader too (a downed enemy's own copies of its
     // materials), so the first one down doesn't stall the fight compiling
@@ -2215,19 +2691,42 @@ export class RoofLevel {
       warm.add(model);
     }
     scene.add(warm);
-    renderer.compile(scene, camera);
+    // Everything hidden for now as well (renderer.compile skips what isn't
+    // visible): the demolitions' dust, the collapses, the weather, the
+    // helicopter's ladder... - or each one compiles the moment it first
+    // shows, and the fight stalls (the arrival crawled through them). Lights
+    // stay as they are: their count is part of every program.
+    const shown = [];
+    this.root.traverse((o) => {
+      if (!o.visible && !o.isLight) {
+        o.visible = true;
+        shown.push(o);
+      }
+    });
+    // Queued now (it has to see the hidden ones), then waited on without
+    // blocking (systems/warm-up.js): the pieces can go straight back.
+    // (Drawn through the game's composer: compiled for a render target.)
+    const compiled = compileReady(renderer, scene, camera, { throughTarget: true });
+    for (const o of shown) o.visible = false;
     scene.remove(warm);
     // Kept until the roof goes: a disposed material gives its program back.
     this._warmAshes = ashes;
+    await compiled;
   }
 
   dispose() {
+    this.weather?.dispose();
+    this.weather = null;
     this.root.traverse((o) => {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });
     this.lift?.userData.dispose?.();
     for (const a of this._warmAshes ?? []) a.dispose();
     this.city?.dispose();
+    this.cbd?.dispose();
+    for (const d of this.demolitions ?? []) d.dispose();
+    this.war?.dispose();
+    for (const c of this.collapses ?? []) c.dispose();
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
     for (const g of this.owned.geometries) g.dispose();

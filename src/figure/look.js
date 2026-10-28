@@ -44,6 +44,7 @@
  */
 
 import * as THREE from "../three.js";
+import { NOISE_GLSL, noiseTexture } from "./noise.js";
 
 /** Wear values for each stage of the story. */
 export const WEAR = { clean: 0, dusty: 0.33, bloodied: 0.66 };
@@ -174,6 +175,40 @@ function skinTone(atlas, cell) {
   return color;
 }
 
+/** A cloth cell's average colour (the scrubs' own), cached per atlas and cell. */
+const clothCache = new WeakMap();
+function clothTone(atlas, cell) {
+  const fallback = new THREE.Color(0.25, 0.55, 0.52);
+  const image = atlas?.image;
+  if (!image || !cell || !image.getContext) return fallback;
+  let byCell = clothCache.get(atlas);
+  if (!byCell) clothCache.set(atlas, (byCell = new Map()));
+  const id = cell.join(",");
+  if (byCell.has(id)) return byCell.get(id);
+  const [u0, v0, u1, v1] = cell;
+  const ctx = image.getContext("2d", { willReadFrequently: true });
+  let data;
+  try {
+    data = ctx.getImageData(Math.floor(u0 * image.width), Math.floor(v0 * image.height), Math.max(1, Math.floor((u1 - u0) * image.width)), Math.max(1, Math.floor((v1 - v0) * image.height))).data;
+  } catch {
+    return fallback;
+  }
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (let i = 0; i < data.length; i += 16) {
+    if (data[i + 3] < 128) continue;
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    n += 1;
+  }
+  const color = n ? new THREE.Color().setRGB(r / n / 255, g / n / 255, b / n / 255, THREE.SRGBColorSpace) : fallback;
+  byCell.set(id, color);
+  return color;
+}
+
 /**
  * Average brightness of a model's hair (linear luminance, the shader's
  * units), measured once from its atlas cell: the dye keeps each texel's
@@ -217,9 +252,15 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   varying vec3 vRest;
   uniform float uWear;
   uniform float uGear;
+  // Shoes on (src/figure/shoes.js): the model's own clogs aren't drawn.
+  uniform float uNoFeet;
   uniform vec3 uSkin;
   uniform vec3 uTone;
   uniform float uToneOn;
+  uniform vec3 uOutfit;
+  uniform float uOutfitOn;
+  uniform vec3 uTopRef;
+  uniform vec3 uLegRef;
   uniform vec4 uCellTop;
   uniform vec4 uCellBody;
   uniform vec4 uCellBottom;
@@ -247,13 +288,9 @@ const LOOK_FRAGMENT_HEAD = /* glsl */ `
   }
 
   // 3D value noise and a few octaves of it (fbm), for every damage pattern.
-  float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-  float n3(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
-               mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-  }
+  // (From a texture, noise.js: hashed, it took Direct3D's compiler seconds.)
+  ${NOISE_GLSL}
+  float n3(vec3 p) { return noise3(p); }
   float fbm3(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.1 + 7.3) + 0.15 * n3(p * 4.3 + 1.7); }
 
   // Claw marks: three parallel slashes. 'c' is where they start, 'dir' the
@@ -311,6 +348,7 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
     bool body = inCell(uv, uCellBody);
     bool legs = inCell(uv, uCellBottom);
     bool feet = inCell(uv, uCellShoes);
+    if (feet && uNoFeet > 0.5) discard;
     bool bare = body || (top && arm && along > 0.2);
 
     // Skin tone: re-tint the skin in the body texture. Skin pixels are the
@@ -329,6 +367,14 @@ const LOOK_FRAGMENT_MAIN = /* glsl */ `
       // creases) carried across, not one flat colour painted over it.
       vec3 tinted = col * (uTone / max(uSkin, vec3(0.02)));
       col = mix(col, clamp(tinted, 0.0, 1.0), warm);
+    }
+    // The outfit's colour (multiplayer: the controller's): the scrubs
+    // re-dyed, each pixel keeping its own light and dark - the folds, the
+    // seams - relative to the cloth's average; the trousers a shade darker.
+    if (uOutfitOn > 0.5) {
+      const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+      if (top && !(arm && along > 0.2)) col = uOutfit * clamp(dot(col, LUMA) / max(dot(uTopRef, LUMA), 0.03), 0.0, 1.7);
+      if (legs) col = uOutfit * 0.72 * clamp(dot(col, LUMA) / max(dot(uLegRef, LUMA), 0.03), 0.0, 1.7);
     }
     // Short-sleeved scrubs: past the sleeve's end the arm is bare skin.
     if (top && arm && along > 0.2) col = skin * (0.92 + 0.08 * grain);
@@ -505,9 +551,14 @@ export function applyFigureLook(mesh, body) {
   const uniforms = {
     uWear: { value: 0 },
     uGear: { value: 0 },
+    uNoFeet: { value: 0 },
     uSkin: { value: skin.clone() },
     uTone: { value: skin.clone() },
     uToneOn: { value: 0 },
+    uOutfit: { value: new THREE.Color(1, 1, 1) },
+    uOutfitOn: { value: 0 },
+    uTopRef: { value: clothTone(mesh.userData.atlas ?? material.map, cells.material) },
+    uLegRef: { value: clothTone(mesh.userData.atlas ?? material.map, cells.Bottom) },
     uCellTop: { value: cell("material") },
     uCellBody: { value: cell("Body") },
     uCellBottom: { value: cell("Bottom") },
@@ -521,6 +572,7 @@ export function applyFigureLook(mesh, body) {
     uHairOn: { value: 0 },
     uCellHair: { value: cell("Hair") },
     uHairLum: { value: hairLum },
+    uNoise: { value: noiseTexture() },
   };
   const rig = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
@@ -552,8 +604,18 @@ export function applyFigureLook(mesh, body) {
     setWear(value) {
       uniforms.uWear.value = THREE.MathUtils.clamp(value, 0, 1);
     },
+    /** Shoes on: the model's own clogs hidden under them. */
+    setFeetHidden(hidden) {
+      uniforms.uNoFeet.value = hidden ? 1 : 0;
+    },
+
     setGear(on) {
       uniforms.uGear.value = on ? 1 : 0;
+    },
+    /** The scrubs' colour, a CSS colour (null: the model's own). */
+    setOutfit(color) {
+      uniforms.uOutfitOn.value = color ? 1 : 0;
+      if (color) uniforms.uOutfit.value.set(color);
     },
     /** A SKIN_TONES key ("light" = the model's own). */
     setSkinTone(name) {

@@ -140,6 +140,65 @@
   color: var(--text-2);
 }
 
+/* ---- A security camera's feed (the story's lift, before the tremor) ------ */
+
+.elv-feed {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: clamp(11px, 1.35vw, 16px);
+  letter-spacing: 0.08em;
+  color: rgba(226, 240, 222, 0.9);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  /* Scanlines over a dark edge, as on a monitor in a guard's booth. */
+  background:
+    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
+}
+.elv-feed[hidden] { display: none; }
+.elv-feed-grain {
+  position: absolute;
+  inset: -96px;
+  background-image: var(--grain);
+  opacity: 0.09;
+  mix-blend-mode: screen;
+  animation: elv-grain 0.5s steps(6) infinite;
+}
+.elv-feed-name { position: absolute; left: 4%; top: 6%; }
+.elv-feed-rec { position: absolute; right: 4%; top: 6%; color: #ff4a4a; animation: elv-rec 1s steps(2, jump-none) infinite; }
+.elv-feed-time { position: absolute; left: 4%; bottom: 6%; font-variant-numeric: tabular-nums; }
+
+/* The feed breaking up: the grain floods in and the picture rolls. */
+.elv-feed.glitch .elv-feed-grain { opacity: 0.55; animation-duration: 0.18s; }
+.elv-feed.glitch::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18%;
+  background: linear-gradient(to bottom, transparent, rgba(220, 235, 220, 0.25), transparent);
+  animation: elv-roll 0.35s linear infinite;
+}
+
+/* The ride's alerts stay off the camera's picture. */
+.elevator-ui.feed-on .elv-alert { opacity: 0; }
+
+@keyframes elv-grain {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-31px, 17px); }
+  40% { transform: translate(23px, -41px); }
+  60% { transform: translate(-47px, -9px); }
+  80% { transform: translate(11px, 37px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes elv-rec { 50% { opacity: 0.15; } }
+@keyframes elv-roll { from { top: -18%; } to { top: 100%; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .elv-feed-grain, .elv-feed.glitch::after { animation: none; }
+}
+
 /* ---- Cutscenes: letterbox bars that slide in, and subtitles -------------- */
 
 .elv-bar {

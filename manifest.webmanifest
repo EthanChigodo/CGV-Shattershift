@@ -1,0 +1,11 @@
+{
+  "name": "Fracture Run",
+  "short_name": "Fracture Run",
+  "description": "Fracture Run - a playable CGV project concept demo.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05070a",
+  "theme_color": "#05070a"
+}

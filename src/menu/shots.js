@@ -25,9 +25,17 @@ export const SHOTS = {
   // Establishing: low behind Subject 07, the tower burning beyond; the menu
   // text sits in the calm left 40% (sky and smoke).
   title: { from: [-1.55, 1.0, 4.3], figure: [0.7, 0.3, 0.875], attention: 0.35, drift: 1 },
+  // The same, Subject 07 between the menu and the dossier on its right (Single player).
+  dossier: { from: [-1.55, 1.0, 4.3], figure: [0.585, 0.3, 0.875], attention: 0.35, drift: 1 },
+  // The first screen: face to face with Subject 07, on the right of the words,
+  // watching us. Leaving it (Skip to the menu, or after the briefing) the
+  // camera swings round them to the burning tower: the title shot.
+  opening: { from: [-0.95, 1.32, 2.5], local: true, figure: [0.7, 0.16, 0.97], attention: 0.95, drift: 0.6 },
   // Close on Subject 07, three-quarter front, lit by the fire: the controls
   // stand in a column on the right.
   appearance: { from: [-1.45, 1.28, 2.3], local: true, figure: [0.47, 0.13, 0.92], attention: 0.95, drift: 0.6 },
+  // Customise's Launcher screen: side on from their right, the launcher on that shoulder seen along its length.
+  kit: { from: [-2.5, 1.3, 0.35], local: true, figure: [0.42, 0.14, 0.92], attention: 0.25, drift: 0.5 },
   // Low behind them, looking up at the burning floors.
   newgame: { from: [1.2, 0.45, -2.6], local: "fire", aim: "fire", screen: [0.45, 0.3], fov: 58, attention: 0.05, drift: 1 },
   // A long lens up the tower's burning top, the tower in the right half.
@@ -144,10 +152,12 @@ export class ShotRig {
     if (!SHOTS[name]) name = "title";
     if (name === this.name && this.t < 1) return;
     if (name === this.name) return;
+    this._wasOpening = this.name === "opening";
     this.name = name;
     this.from = this._snapshot();
     this.t = 0;
-    this.duration = this.reducedMotion ? 0.9 : 2.6;
+    // (Out of the opening: a slower swing round them, the tower coming into view.)
+    this.duration = this.reducedMotion ? 0.9 : this.from && this.name === "title" && this._wasOpening ? 4.2 : 2.6;
     this.shotTime = 0;
   }
 

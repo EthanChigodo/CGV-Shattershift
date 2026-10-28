@@ -53,25 +53,45 @@ export class Arsenal {
   prefer(key) {
     if (!BALLS[key]) return;
     this.preferred = key;
-    this.ball = key;
+    if (this.has(key)) this.ball = key;
   }
 
   reset() {
-    this.ball = this.preferred ?? "glass";
+    this.ball = this.preferred && this.has(this.preferred) ? this.preferred : "glass";
     this.active = new Map();
     this.shieldCharges = 0;
   }
 
   get current() { return BALLS[this.ball]; }
 
+  /**
+   * The sphere types there are to use (the story earns them a level at a
+   * time: systems/progression.js); null, every one. The sphere in use moves
+   * to glass if it isn't one of them.
+   */
+  allow(keys) {
+    this.allowed = keys ? new Set(keys) : null;
+    if (!this.has(this.ball)) this.ball = "glass";
+  }
+
+  has(key) {
+    return !!BALLS[key] && (!this.allowed || this.allowed.has(key));
+  }
+
+  /** The types there are, in the wheel's order. */
+  get available() {
+    return BALL_ORDER.filter((k) => this.has(k));
+  }
+
   cycle(step) {
-    const i = BALL_ORDER.indexOf(this.ball);
-    this.ball = BALL_ORDER[(i + step + BALL_ORDER.length) % BALL_ORDER.length];
+    const list = this.available;
+    const i = Math.max(0, list.indexOf(this.ball));
+    this.ball = list[(i + step + list.length) % list.length];
     return this.current;
   }
 
   select(key) {
-    if (BALLS[key]) this.ball = key;
+    if (this.has(key)) this.ball = key;
     return this.current;
   }
 

@@ -1,18 +1,16 @@
 import * as THREE from "./src/three.js";
 import { FoundryLevel, BEATS as FOUNDRY_BEATS } from "./src/levels/foundry/index.js";
-import { creditsHTML } from "./src/story/credits-roll.js";
 import { BEATS as LABS_BEATS } from "./src/levels/meltdown/index.js";
 import { FoundryHud } from "./src/ui/foundry-hud.js";
 import { CausewayLevel, LAYERS, ROUTE as CAUSEWAY_ROUTE, BEATS as SKYLINE_BEATS } from "./src/levels/causeway/index.js";
 import { CausewayHud, HUD_PANELS, applyHudPanels } from "./src/ui/causeway-hud.js";
 import { PostFX } from "./src/fx/postfx.js";
 import { PhotoMode } from "./src/fx/photo-mode.js";
-import { Arsenal, BALLS, SERUMS } from "./src/systems/arsenal.js";
+import { Arsenal, BALLS, BALL_ORDER, SERUMS } from "./src/systems/arsenal.js";
 import { AmmoRecovery, canAffordThrow, gateRecoveryWaiting } from "./src/systems/ammo-recovery.js";
 import { AmmoRecoveryHint } from "./src/ui/ammo-recovery.js";
-import { SPHERE_GEOMETRY, SPHERE_FLIGHT, sphereMaterial, sphereHalo } from "./src/systems/spheres.js";
-import { buildBallPickers, buildTabs, showMoves, savedBall } from "./src/ui/menus.js";
-import { installMenuNav } from "./src/ui/menu-nav.js";
+import { SPHERE_GEOMETRY, SPHERE_FLIGHT, sphereMaterial, sphereHalo, worldSphere, touchSphere, launchVelocity, flySphere, floorSphere } from "./src/systems/spheres.js";
+import { saveBall, buildBallPickers, buildTabs, showMoves, savedBall } from "./src/ui/menus.js";
 import { PowerupBanner } from "./src/ui/powerup-banner.js";
 import { MissionTracker, loadProgress } from "./src/systems/missions.js";
 import { CalibrationLift, LIFT_RADIUS } from "./src/levels/common/calibration-lift.js";
@@ -44,16 +42,113 @@ import { themeAt as causewayThemeAt } from "./src/levels/causeway/layout.js";
 import { blastScene } from "./src/story/scenes-skyline.js";
 import { SCENES as STORY_LINES } from "./src/story/script.js";
 import { figureStage, SKIN_TONES, savedSkinTone, saveSkinTone, HAIR_COLOURS, savedHairColour, saveHairColour } from "./src/figure/look.js";
+import { OUTFITS, HEADWEAR, savedOutfit, saveOutfit, savedHeadwear, saveHeadwear } from "./src/figure/outfit.js";
+import { SHOES, savedShoes, saveShoes } from "./src/figure/shoes.js";
+import { applyLauncherSkin, savedLauncherSkin, trailColours } from "./src/figure/launcher-skins.js";
+import { LAUNCHER_HELD } from "./src/figure/launcher-model.js";
+import { MenuBackdrop } from "./src/menu/backdrop.js";
 import { DIFFICULTIES, loadDifficulty, saveDifficulty } from "./src/systems/difficulty.js";
 import { loadSave, writeSave, clearSave, SAVE_STAGE_NAMES } from "./src/systems/story-save.js";
 import { TrailerDirector } from "./src/trailer/director.js";
-import { Gamepads } from "./src/systems/gamepad.js";
-import { PadInput } from "./src/systems/pad-input.js";
-import { Versus } from "./src/versus/index.js";
-import { MenuBackdrop } from "./src/menu/backdrop.js";
+import { Gamepads, PadBridge } from "./src/systems/gamepads.js";
+import { setPadFamily, padLabel, setPadActive, setTouchActive } from "./src/systems/input-glyphs.js";
+import { applyInputNames, watchInputNames, padText, setTouchPlace } from "./src/ui/key-names.js";
+import { TouchControls } from "./src/systems/touch-controls.js";
+import { PadUI, padControlsHTML } from "./src/ui/pad-ui.js";
+import { Arena } from "./src/modes/arena/arena.js";
+import { Race } from "./src/modes/race/race.js";
+import { Locker } from "./src/modes/locker/locker.js";
+import { Portrait } from "./src/ui/portrait.js";
+/** Trophies and the statistics (src/systems/trophies.js) - `progress` is the missions' own. */
+import { progress as achievements } from "./src/systems/trophies.js";
+import { TrophyToast } from "./src/ui/trophy-toast.js";
+import { ChargeShot, CHARGE, chargedShot } from "./src/systems/charge.js";
+import { ChargeTrails } from "./src/fx/charge-trail.js";
+import { abilitiesAt, spheresAt } from "./src/systems/progression.js";
+import { UnlockCard } from "./src/ui/unlock-card.js";
+import { Leaderboard, BOARD, formatValue } from "./src/systems/leaderboard.js";
+import { NameCard } from "./src/ui/name-card.js";
+import { LeaderboardView } from "./src/ui/leaderboard-view.js";
+import { TrophyRoom } from "./src/ui/trophy-room.js";
+import { FieldManual } from "./src/ui/field-manual.js";
+import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
+import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/systems/ghosts.js";
+import { TabbedScreen } from "./src/ui/tabbed-screen.js";
+import { setUpPhone, isTouch } from "./src/ui/phone.js";
+import { FramePacer } from "./src/systems/frame-pacer.js";
+import { useRenderer, drawableType, gpuReport } from "./src/systems/gpu.js";
+import { CreditsRoom } from "./src/ui/credits-room.js";
+import { compileReady, uploadTextures } from "./src/systems/warm-up.js";
+import { LAUNCHER_SKINS, saveLauncherSkin } from "./src/figure/launcher-skins.js";
 
 const canvas = document.querySelector("#game");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+/**
+ * A phone or tablet (src/ui/phone.js): lighter settings of its own - no
+ * multisampling (the costliest thing on a phone's GPU, and invisible at its
+ * pixel density), no more than one pixel per screen point, Medium under Auto,
+ * resolution that can step further down, at most 60 fps and a steady 30 if
+ * it can't keep that (frame-pacer.js). A computer is untouched.
+ */
+const PHONE = isTouch();
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !PHONE });
+useRenderer(renderer);
+drawableType(renderer);
+/**
+ * A phone or tablet: pictures no bigger than 512 px a side on the GPU
+ * (three.js scales larger ones down as it uploads them). The roof held
+ * ~175 MB of textures, most of it 29 at 1024 px; capped, ~58 MB - far less
+ * for a phone's graphics memory to run out of (and the browser to take the
+ * graphics away). On a screen that size they look the same.
+ */
+const PHONE_TEXTURE_MAX = 512;
+function capTextures() {
+  if (PHONE) renderer.capabilities.maxTextureSize = Math.min(renderer.capabilities.maxTextureSize, PHONE_TEXTURE_MAX);
+}
+capTextures();
+/**
+ * The browser can take the graphics away (a phone short of graphics memory,
+ * a driver reset): the picture would stop while the HUD runs on. Three.js
+ * asks for them back; meanwhile a note says so, and when they're back the
+ * sizes and quality are set again (Three.js re-uploads everything itself).
+ * If they don't come back, the note offers a reload.
+ */
+let graphicsResets = 0;
+const gpuNote = document.createElement("div");
+gpuNote.className = "gpu-note";
+gpuNote.hidden = true;
+gpuNote.innerHTML = "<b>Restoring graphics…</b><button type=\"button\" hidden>Reload the game</button>";
+document.body.append(gpuNote);
+gpuNote.querySelector("button").addEventListener("click", () => location.reload());
+let gpuNoteTimer = 0;
+canvas.addEventListener("webglcontextlost", () => {
+  graphicsResets += 1;
+  gpuNote.hidden = false;
+  gpuNote.querySelector("button").hidden = true;
+  clearTimeout(gpuNoteTimer);
+  gpuNoteTimer = setTimeout(() => {
+    gpuNote.querySelector("b").textContent = "The graphics stopped.";
+    gpuNote.querySelector("button").hidden = false;
+  }, 5000);
+});
+canvas.addEventListener("webglcontextrestored", () => {
+  clearTimeout(gpuNoteTimer);
+  // (Three.js reads the GPU's limits afresh: the cap again.)
+  queueMicrotask(capTextures);
+  gpuNote.hidden = true;
+  gpuNote.querySelector("b").textContent = "Restoring graphics…";
+  applyQuality();
+  meltdown?.resize?.(innerWidth, innerHeight);
+});
+// No error check after every shader link: three's check (getProgramInfoLog)
+// makes the driver finish each compile on the spot, one after another;
+// without it the browser compiles them in parallel, in the background - a
+// level's shaders come in far sooner. ?shadercheck (and the automated
+// checks, under webdriver) keep it, to catch a broken shader.
+{
+  const q = new URLSearchParams(location.search);
+  // (?fastshaders: as players get it, under webdriver too - for timing it.)
+  renderer.debug.checkShaderErrors = q.has("shadercheck") || (navigator.webdriver === true && !q.has("fastshaders"));
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -161,7 +256,8 @@ let difficultyKey = loadDifficulty();
 let runDifficulty = "normal";
 /** This run's difficulty settings (src/systems/difficulty.js): Endless is always Normal. */
 function diff() {
-  return DIFFICULTIES[runKind === "story" ? runDifficulty : "normal"];
+  // (The story and Endless each have one - Endless its own, on its screen.)
+  return DIFFICULTIES[runKind === "story" || runKind === "endless" ? runDifficulty : "normal"] ?? DIFFICULTIES.normal;
 }
 let endlessEnv = null; // "foundry" | "labs" | "skyline" | "roof"
 const endlessRun = { laps: 0, distance: 0 };
@@ -190,12 +286,110 @@ let countdownLeft = 0;
  * not the whole run. { stage: "foundry"|"labs"|"skyline"|"roof", score, ammo, balls }
  */
 let storyCheckpoint = null;
+/* ---- Ghost runs (src/systems/ghosts.js): your best run, beside you ----------- */
+
+/** The run being recorded, and the ghost being raced. */
+const ghostRun = { key: null, rec: null, ghost: null, t: 0, lastD: 0, loading: null };
+const _ghostPos = new THREE.Vector3();
+function ghostKey(kind, place) {
+  return `${kind}:${place}:${runDifficulty}`;
+}
+/** The track being run now: the story's or Endless's Foundry, Labs or Skyline (not the roof). */
+function ghostTrack() {
+  if (state !== "playing" || (runKind !== "story" && runKind !== "endless")) return null;
+  if (currentLevel === 2 && foundry) {
+    return { place: "foundry", d: (runKind === "endless" ? endlessRun.distance : 0) + foundryDistance(), x: playerX, h: jumpHeight, slide: sliding > 0 };
+  }
+  if (currentLevel === 1 && causeway) return { place: "skyline", d: causewayDistance(), x: playerX, h: jumpHeight, slide: sliding > 0 };
+  if (currentLevel === 3 && meltdown?.level && !onRoofStage && !meltdown.roof && meltdown.phase === "run") {
+    const r = meltdown.runner;
+    return { place: "labs", d: runKind === "endless" ? meltdown.stats.endlessDistance : r.distance, x: r.lateral, h: r.height - (r.ground ?? 0), slide: r.sliding > 0, labs: true };
+  }
+  return null;
+}
+function trackGhost(dt) {
+  if (paused) return;
+  const at = ghostTrack();
+  const key = at ? ghostKey(runKind, at.place) : null;
+  // A new track - or the same one from the start again (a death, a restart): record afresh.
+  if (key !== ghostRun.key || (at && at.d < ghostRun.lastD - 15)) {
+    ghostRun.ghost?.dispose();
+    Object.assign(ghostRun, { key, rec: key ? new GhostRecording(key, savedLook()) : null, ghost: null, t: 0, lastD: at?.d ?? 0 });
+    hideGhostChip();
+    if (key && settings.ghosts) spawnGhost(key, at.labs);
+  }
+  if (!at) return;
+  ghostRun.t += dt;
+  ghostRun.lastD = at.d;
+  ghostRun.rec.add(ghostRun.t, at.d, at.x, at.h, at.slide);
+  const g = ghostRun.ghost;
+  if (!g || !settings.ghosts) return;
+  const s = g.at(ghostRun.t);
+  const gap = s.d - at.d;
+  // In the world, as far ahead or behind as it is - near enough to see.
+  let visible = !s.done && Math.abs(gap) < 70;
+  if (visible && at.labs) {
+    const route = meltdown.level.route;
+    const d = meltdown.runner.distance + gap;
+    visible = d > 0 && d < route.totalLength;
+    if (visible) {
+      const p = route.sample(d, s.x, s.h);
+      g.place(p.position, p.heading, s, dt);
+    }
+  } else if (visible) {
+    g.place(_ghostPos.set(s.x, playerY + s.h, runZ + 0.5 - gap), 0, s, dt);
+  }
+  g.root.visible = visible;
+  showGhostChip(s.done ? null : -gap);
+}
+/** The ghost for a track, if there is one: its figure, in the right scene. */
+async function spawnGhost(key, labs) {
+  const data = loadGhost(key);
+  if (!data) return;
+  const character = data.look?.character ?? savedCharacter();
+  const assets = await loadMeltdownAssets(MELTDOWN_ASSET_BASE, { names: [character] }).catch(() => null);
+  if (ghostRun.key !== key || ghostRun.ghost) return;
+  const ghost = new Ghost(data, assets?.get(character)?.template);
+  (labs ? meltdown.scene : scene).add(ghost.root);
+  ghostRun.ghost = ghost;
+}
+const ghostChip = document.createElement("div");
+ghostChip.className = "ghost-chip";
+ghostChip.hidden = true;
+document.body.appendChild(ghostChip);
+/** "4.2 m ahead of your ghost" (or behind), top centre. */
+function showGhostChip(lead) {
+  if (lead === null || !settings.ghosts) { hideGhostChip(); return; }
+  ghostChip.hidden = false;
+  const ahead = lead >= 0;
+  ghostChip.classList.toggle("ahead", ahead);
+  ghostChip.innerHTML = `<i></i><b>${Math.abs(lead).toFixed(1)} m</b> ${ahead ? "ahead of" : "behind"} your ghost`;
+}
+function hideGhostChip() {
+  ghostChip.hidden = true;
+}
+/**
+ * A new ghost saved: a notification at the top (the trophies' card), gone
+ * again after a few seconds - not the run's chip, which nothing hid once the
+ * run was over (it stayed on the menus for good).
+ */
+function showGhostNote(title, text) {
+  ghostChip.hidden = true;
+  trophyToast.note({ label: "NEW GHOST", title, text, colour: "#8fe6ff", art: '<i class="tt-ghost"></i>' });
+}
+
+/** The story's sectors, in order (a checkpoint moving on clears the one before). */
+const STORY_STAGES = ["foundry", "labs", "skyline", "roof"];
+/** The sector being played: how long, how many hits (for "Not a Scratch"), and the Labs' throws. */
+const sectorRun = { stage: null, time: 0, hits: 0, lastHits: 0, lastHealth: null, shots: 0, breaks: 0 };
 /** This run keeps the saved game up to date (a New game or a Continue - not a chapter). */
 let saveProgress = false;
 
 /** The story reached a sector: its checkpoint, and the saved game. */
 function setStoryCheckpoint(cp) {
+  const before = storyCheckpoint?.stage;
   storyCheckpoint = cp;
+  if (runKind === "story" && before && STORY_STAGES.indexOf(cp.stage) === STORY_STAGES.indexOf(before) + 1) sectorCleared(before);
   if (saveProgress && storyRun && runKind === "story") writeSave({ ...cp, difficulty: runDifficulty });
 }
 /** The last run ended in a story death (the end screen offers the sector again). */
@@ -213,6 +407,12 @@ const settingsDefaults = {
   subtitleSize: "large",
   // The characters' recorded voices (off: only HALCYON, the intercom, speaks).
   voices: true,
+  // The player's own grunts, pain, breathing and screams.
+  grunts: true,
+  // Your best run on each track, running beside you.
+  ghosts: true,
+  // Controllers: the right stick's aim speed (%), and rumble.
+  padAimSpeed: 100, padVibration: true,
   // Which HUD panels are shown. See HUD_PANELS in src/ui/causeway-hud.js.
   hud: Object.fromEntries(HUD_PANELS.map((p) => [p.key, p.on])),
 };
@@ -302,6 +502,8 @@ const ui = {
   longReactionsToggle: $("#longReactionsToggle"), holdInsteadOfMashToggle: $("#holdInsteadOfMashToggle"),
   subtitleSizeSelect: $("#subtitleSizeSelect"),
   voicesToggle: $("#voicesToggle"),
+  gruntsToggle: $("#gruntsToggle"),
+  ghostsToggle: $("#ghostsToggle"),
   viewButton: $("#viewButton"), viewMenu: $("#viewMenu"), briefing: $("#briefingMissions"),
   qualitySelect: $("#qualitySelect"),
   qualityNote: $("#qualityNote"),
@@ -330,6 +532,9 @@ function applySettingsToControls() {
   applySubtitleSize();
   if (ui.voicesToggle) ui.voicesToggle.checked = settings.voices;
   story.voice.characterVoices = settings.voices;
+  if (ui.gruntsToggle) ui.gruntsToggle.checked = settings.grunts;
+  if (ui.ghostsToggle) ui.ghostsToggle.checked = settings.ghosts;
+  level1Audio.playerVoice = settings.grunts;
   for (const input of document.querySelectorAll("[data-hud-key]")) input.checked = !!settings.hud[input.dataset.hudKey];
   applyHudPanels(settings.hud);
 }
@@ -344,7 +549,7 @@ function applySubtitleSize() {
 function buildHudToggles() {
   for (const container of document.querySelectorAll("[data-hud-toggles]")) {
     container.innerHTML = HUD_PANELS.map((p) => `
-      <label class="setting-row toggle-row"><span>${p.label}</span><input type="checkbox" data-hud-key="${p.key}" /></label>`).join("");
+      <label class="setting-row st-row toggle-row"><span class="st-label"><b>${p.label}</b></span><input type="checkbox" data-hud-key="${p.key}" /></label>`).join("");
   }
   for (const input of document.querySelectorAll("[data-hud-key]")) {
     input.addEventListener("change", () => {
@@ -423,6 +628,9 @@ avatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 const playerBody = new PlayerAvatar();
 playerBody.hold = 0;
 playerBody.setSkinTone(savedSkinTone());
+playerBody.setOutfit(savedOutfit());
+playerBody.setHeadwear(savedHeadwear());
+playerBody.setShoes(savedShoes());
 playerBody.setHairColour(savedHairColour());
 let playerBodyReady = false;
 /** The chosen character's model template, for the lift ride to show the same person. */
@@ -505,7 +713,7 @@ function updateUI() {
 }
 
 function showMessage(text) {
-  ui.message.textContent = text;
+  ui.message.textContent = padText(text);
   ui.message.classList.add("show");
   // A section title up there already: the line sits under it, not across it.
   ui.message.classList.toggle("under-title", !!document.querySelector(".cw-title.show, .mlt-banner.show"));
@@ -606,8 +814,9 @@ function buildFoundry(variant = 0) {
     shadows: false,
     // Fewer pooled lights below High (the Foundry was the slowest level).
     // (Measured: the light pool is most of a Foundry frame - every wall pixel is lit by each.)
-    lightBudget: resolvedQuality() === "high" ? { points: 6, spots: 2 } : { points: 4, spots: 2 },
-    brightness: 1.6,
+    // (A phone or tablet: one fewer, a little brighter each - measured as bright as a computer's Medium.)
+    lightBudget: PHONE ? { points: 3, spots: 2 } : resolvedQuality() === "high" ? { points: 6, spots: 2 } : { points: 4, spots: 2 },
+    brightness: PHONE ? 1.9 : 1.6,
     // The escape clock is as tight at every difficulty's pace.
     runSpeed: FOUNDRY_SPEED_ZONES[2].speed * diff().speed,
     // Harder is longer too (src/systems/difficulty.js).
@@ -854,6 +1063,18 @@ const ammoRecovery = new AmmoRecovery();
 const ammoHint = new AmmoRecoveryHint(scene);
 // The sphere picked in the main menu (or the pause menu) is the one a run starts with.
 arsenal.prefer(savedBall());
+// The launcher's charged shot (systems/charge.js): the Skyline's here, the
+// Labs' and the Roof's through their game (it takes this one).
+const charge = new ChargeShot({ reducedMotion: settings.reducedMotion });
+/** The Skyline's smoke warning is up (it comes at 0.4 and goes below 0.34, so it doesn't flicker). */
+let smokeWarn = false;
+/** Its air stripes in the Skyline (fx/charge-trail.js). */
+const chargeTrails = new ChargeTrails(scene);
+/**
+ * The global leaderboards (systems/leaderboard.js, api/leaderboard.php on
+ * the same server): your unique name, and your bests on every board.
+ */
+const leaderboard = new Leaderboard();
 // Serums in front of the player: the first time each is picked up the
 // game pauses on a card explaining it (PowerupBanner); after that the
 // HUD's serum banner, chips and screen looks (serum-fx.js) carry it.
@@ -904,26 +1125,28 @@ function resetRun() {
 resetRun();
 
 function resolvedQuality() {
-  if (settings.quality === "auto") return autoLow ? "low" : "high";
+  if (settings.quality === "auto") return autoLow ? "low" : PHONE ? "medium" : "high";
   return settings.quality;
 }
 
 function applyQuality() {
   const q = resolvedQuality();
   // Level 3 is fill-rate bound (measured): it always renders at ratio 1.
-  const cap = currentLevel === 3 ? 1 : q === "high" ? 1.5 : q === "medium" ? 1.25 : 1;
+  const cap = PHONE || currentLevel === 3 ? 1 : q === "high" ? 1.5 : q === "medium" ? 1.25 : 1;
   // The Resolution setting scales on top of the preset.
-  const res = (Number(settings.resolution) || 1) * (currentLevel === 3 ? labsScale : 1);
+  // (A phone on Low - the slowest ones - draws a little under one pixel per point.)
+  const res = (Number(settings.resolution) || 1) * (currentLevel === 3 ? labsScale : 1) * (PHONE && q === "low" ? 0.8 : 1);
   renderer.setPixelRatio(Math.min(devicePixelRatio, cap) * res);
   renderer.setSize(innerWidth, innerHeight);
   postfx.setQuality(q);
-  postfx.setScale(q === "medium" ? 0.85 : 1);
+  postfx.setScale(q === "medium" && !PHONE ? 0.85 : 1);
   // Visual effects off: no post-processing at all, whatever the preset.
   if (!settings.effects) postfx.enabled = false;
   // Shadows off: the Skyline's sun stops casting (the Foundry has none; the Labs only on High).
   if (causeway?.sun) causeway.sun.castShadow = q !== "low" && settings.shadows;
   if (meltdown) {
-    meltdown.setBloom(q !== "low" && settings.effects);
+    // (No bloom where the GPU can't draw half-float images - gpu.js.)
+    meltdown.setBloom(q !== "low" && settings.effects && gpuReport().halfFloat !== false);
     meltdownQuality();
     if (meltdown.visible) meltdown.syncRenderer();
   }
@@ -935,8 +1158,7 @@ function applyQuality() {
  */
 function meltdownQuality() {
   const high = settings.quality === "high";
-  // (The roof's demolitions take the preset; Visual effects off keeps them to Low.)
-  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects, fx: settings.effects ? resolvedQuality() : "low" });
+  meltdown?.setQuality({ shadows: high && settings.shadows, ao: high && settings.effects, lite: PHONE });
 }
 
 function causewayDistance() {
@@ -952,7 +1174,7 @@ function buildCauseway(mode = "story") {
     mode,
     quality: resolvedQuality(),
     // Hard: more in the way, reinforced glass, faster sculptures; the collapse keeps pace with you.
-    hard: mode === "story" && diff().extras,
+    hard: diff().extras,
     chaseScale: mode === "story" ? diff().speed : 1,
   });
   causeway.builtFor = runDifficulty;
@@ -997,14 +1219,6 @@ function wireCausewayEvents(level) {
   on("tower-collapse", () => {
     level1Audio.buildingCollapse(0.85);
     if (state === "playing") run.surge = Math.min(1.5, run.surge + 0.5);
-  });
-  // Tower C's demolition (src/fx/demolition.js), as it happens: the charges'
-  // crackle, the blast, steel giving, the floors going one by one.
-  on("demolition", (p) => {
-    if (p.phase === "charges") level1Audio.demolitionCharges(0.9);
-    else if (p.phase === "blast") { level1Audio.explosion(0.8); triggerShake(0.18); }
-    else if (p.phase === "collapse") { level1Audio.metalGroan(0.8); triggerShake(0.25); }
-    else if (p.phase === "crush" && p.floor % 3 === 0) level1Audio.debrisFall(0.5);
   });
   on("pod-break", () => triggerShake(0.3));
   on("tremor", (p) => {
@@ -1092,7 +1306,7 @@ function updateCauseway(dt, time) {
     beginSkylineBlast();
     return;
   }
-  skylineStory?.tower.update(dt, camera);
+  skylineStory?.tower.update(dt);
   skylineStory?.sky.update(dt, time);
   hideRampProps();
   run.time += dt;
@@ -1430,9 +1644,20 @@ function updateCausewayPresentation(dt) {
   });
   causewayHud.setVitals({ integrity: health, smoke, heat: run.heat, sedation: run.sedation });
   causewayHud.setSerums(arsenal.list());
-  if (smoke > 0.55 && !causeway.state.chase.active && !causeway.state.finale.sealed) {
-    causewayHud.warning("Toxic smoke", "Break a vent cover to clear the air", "amber");
-  } else if (!causeway.state.chase.active && !causeway.state.finale.sealed) causewayHud.warning(null);
+  // The smoke: a warning as it builds (amber), and - once it is eating your
+  // integrity (above 0.55, updateCauseway) - a red one; both say what to do
+  // and where: the next vent with its cover on, or the fire to put out.
+  if (!causeway.state.chase.active && !causeway.state.finale.sealed) {
+    smokeWarn = smoke > (smokeWarn ? 0.34 : 0.4);
+    if (smokeWarn) {
+      const draining = smoke > 0.55;
+      const vent = causeway.nextVent(causewayDistance());
+      const what = vent
+        ? `shoot the vent cover ${vent.gap < 3 ? "beside you" : `${Math.round(vent.gap)} m ahead`}, on the ${vent.side < 0 ? "left" : "right"}`
+        : "put the fires out - a sprinkler bulb or a cryo sphere";
+      causewayHud.warning(draining ? "Toxic smoke" : "Smoke building", `${draining ? "Integrity falling" : "Clear the air"} - ${what}`, draining ? "red" : "amber");
+    } else causewayHud.warning(null);
+  }
   document.documentElement.style.setProperty("--ball", `#${ball.colour.toString(16).padStart(6, "0")}`);
 }
 
@@ -1499,7 +1724,7 @@ function refreshContinue() {
 function continueStory() {
   const save = loadSave();
   if (!save) return;
-  ui.start.classList.remove("active");
+  for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
   if (DIFFICULTIES[save.difficulty]) difficultyKey = save.difficulty;
   showDifficultyChoice();
   story.forgetSeen();
@@ -1534,6 +1759,9 @@ function refreshMenuProgress() {
   bits.push(...foundSummary());
   bits.push(`Missions ${p.completed.length}/13`);
   ui.progressLine.textContent = bits.join("   ");
+  achievements.max("files", p.files.length);
+  achievements.max("missions", p.completed.length);
+  refreshTrophiesNote();
   if (ui.briefing) ui.briefing.innerHTML = missions.active.map((m) => `<li class="${p.completed.includes(m.def.id) ? "done" : ""}">${m.def.text}</li>`).join("");
 }
 
@@ -1564,37 +1792,35 @@ const MELTDOWN_ASSET_BASE = new URL("./assets/meltdown/", import.meta.url).href;
 let meltdownEntering = false;
 
 /**
- * Versus (src/versus/): Rooftop Showdown, two players on the roof, split
- * screen. While its lobby or a match is up it owns the input (the handlers
- * below stand aside) and, during a match, the frame (updateGame/renderFrame).
- */
-const versus = new Versus({
-  renderer,
-  assetBase: MELTDOWN_ASSET_BASE,
-  sfx: level1Audio,
-  music,
-  quality: () => resolvedQuality(),
-  reducedMotion: () => settings.reducedMotion,
-  onExit: () => {
-    applyQuality();
-    ui.start.classList.add("active");
-    music.showMenu();
-  },
-});
-
-/**
  * The menus' backdrop: a live 3D shot of the burning tower with Subject 07 on
  * the roof across the street (src/menu/). It streams in at boot without
  * holding the menus; until it is in (or if it fails) the Skyline's corridor
  * stays behind the menus as before. Updated and drawn only on the menus.
  */
+/**
+ * Software WebGL (no graphics card, or the checks' SwiftShader): the stage's
+ * burning city is far too heavy there, so the menus keep the corridor.
+ * ?menustage forces it on (its own checks), ?nomenustage off.
+ */
+function softwareGL() {
+  try {
+    const gl = renderer.getContext();
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    return /swiftshader|llvmpipe|software|basic render/i.test(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "");
+  } catch {
+    return false;
+  }
+}
+const stageParams = new URLSearchParams(location.search);
+const menuStageWanted = stageParams.has("menustage") || (!stageParams.has("nomenustage") && !softwareGL());
 const menuBackdrop = new MenuBackdrop({
   renderer,
+  enabled: menuStageWanted,
   assetBase: MELTDOWN_ASSET_BASE,
   // (Auto means medium here: the frame-rate monitor only watches the runs.)
   quality: () => (settings.quality === "auto" && !autoLow ? "medium" : resolvedQuality()),
   reducedMotion: () => settings.reducedMotion,
-  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour() }),
+  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes() }),
 });
 menuBackdrop.preload();
 
@@ -1609,11 +1835,21 @@ function getMeltdown() {
     reducedMotion: settings.reducedMotion,
     // One set of sphere types and serums for every level.
     arsenal,
+    charge,
+    // The roof's shoulder camera turns at the Settings' sensitivity.
+    lookSpeed: () => (padMode ? (settings.padAimSpeed ?? 100) : (settings.sensitivity ?? 100)) / 100,
+    // A touch screen can't hold the pointer: the roof from above, aimed with a finger.
+    topView: PHONE,
+    reactionLayer: story,
   });
-  meltdown.setBloom(resolvedQuality() !== "low");
+  meltdown.setBloom(resolvedQuality() !== "low" && gpuReport().halfFloat !== false);
   meltdownQuality();
   // Level 3's body: the chosen skin tone and hair (its stage is set per stage, below).
   meltdown.avatar?.setSkinTone(savedSkinTone());
+  meltdown.avatar?.setOutfit(savedOutfit());
+  meltdown.avatar?.setHeadwear(savedHeadwear());
+  meltdown.avatar?.setShoes(savedShoes());
+  meltdown.setLauncherSkin(savedLauncherSkin());
   meltdown.avatar?.setHairColour(savedHairColour());
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
@@ -1728,12 +1964,14 @@ async function enterMeltdown() {
   game.show();
   updateUI();
   try {
-    await (prepared ?? game.load({ balls }));
+    // (Endless: a new layout every run.)
+    await (prepared ?? game.load({ balls, seed: runKind === "endless" ? 1 + Math.floor(Math.random() * 1e6) : 0 }));
   } finally {
     meltdownEntering = false;
   }
   if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return; // quit while loading
-  await releaseLoading([game.scene, game.camera]);
+  // (Its first full frame - post-processing, shadows - drawn behind the screen too.)
+  await releaseLoading([game.scene, game.camera, () => game.render()]);
   if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return;
   state = "playing";
   run.fadeOut = 1;
@@ -1787,6 +2025,7 @@ const MELTDOWN_ENDINGS = {
   "LEFT BEHIND": "The helicopter could not wait. When it hangs off the east ledge, get to the edge and jump (SPACE) for the ladder.",
   "YOU FELL": "Off the edge. The east side and the middle of the west are open, and so is the deck's - watch your footing when they knock you back.",
   "DOWN A HATCH": "Down an open hatch. The railed, striped openings on the deck go straight down into the building - mind their open side when they knock you back.",
+  "YOU WERE CAPTURED!": "Carried away by a winged patient. Move out of the red circle, or tap SPACE rapidly to break free and recover your bazooka.",
 };
 
 /** Level 3 finished: its numbers into the game's score, and the end screen. */
@@ -1797,7 +2036,13 @@ function finishMeltdown(escaped, result) {
   health = s.vitality;
   ammo = s.balls;
   updateUI();
-  if (runKind === "endless") { endRun(false, null, endlessResult()); return; }
+  if (runKind === "endless") {
+    const detail = endlessResult();
+    if (result.deathScene === "capture") Object.assign(detail, { title: result.title, scene: "capture", text: MELTDOWN_ENDINGS[result.title] });
+    endRun(false, null, detail);
+    return;
+  }
+  if (escaped && runKind === "story") storyEscaped();
   // The whole run, timed: from the Foundry to the helicopter.
   const timed = escaped && runKind === "story" && runFromStart;
   const record = timed ? recordStoryTime(runClock) : 0;
@@ -1825,6 +2070,7 @@ const projectileGeometry = SPHERE_GEOMETRY;
 const projectileMaterials = Object.fromEntries(Object.values(BALLS).map((b) => [b.key, sphereMaterial(b.key)]));
 const legacyProjectileMaterial = sphereMaterial("glass");
 const _aim = new THREE.Vector3();
+const _flyTo = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _segment = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
@@ -1843,11 +2089,6 @@ const _sv = new THREE.Vector3();
 const targetMotion = new WeakMap();
 
 /** A mesh's bounding sphere in world space. */
-function worldSphere(mesh, out = _sphere) {
-  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-  mesh.updateWorldMatrix(true, false);
-  return out.copy(mesh.geometry.boundingSphere).applyMatrix4(mesh.matrixWorld);
-}
 
 /**
  * Remember where each target is and how fast it is moving (falling glass,
@@ -1925,19 +2166,22 @@ function leadTarget(target, point, origin, speed, out) {
   return out;
 }
 
-function fire() {
+/** A throw or a shot; `charged`: the launcher's charged shot - its charge, 0 none (systems/charge.js). */
+function fire({ charged = 0 } = {}) {
   if (state !== "playing" || paused || photoActive) return;
   const inCauseway = currentLevel === 1 && causeway;
   // Level 1's throw physics (a glass sphere on a gravity arc) in the Foundry too.
   const physical = inCauseway || (currentLevel === 2 && !!foundry);
   // The Skyline's sphere types and serums in the Foundry too.
   const ball = physical ? arsenal.current : null;
-  const cost = physical ? arsenal.cost() : 1;
+  const cost = (physical ? arsenal.cost() : 1) * (charged ? CHARGE.cost : 1);
   if (!canAffordThrow(ammo, cost)) {
     showMessage(ammo <= 0 ? "NO SPHERES // RECHARGING — USE GLASS (Q/E)" : `${ball.name.toUpperCase()} NEEDS ${cost} // SWITCH TO GLASS (Q/E)`);
     return;
   }
   ammo -= cost;
+  achievements.add("thrown");
+  if (ball) achievements.add(`thrown_${ball.key}`);
 
   const speed = ball?.speed ?? 34;
   _origin.copy(camera.position);
@@ -1964,7 +2208,8 @@ function fire() {
     pendingThrows.push({ delay: THROW_RELEASE, target: aim.target, point: aim.point.clone(), ball, count });
     return;
   }
-  launchSpheres(_origin, aim.target, aim.point, ball, count, physical);
+  launchSpheres(_origin, aim.target, aim.point, ball, count, physical, false, charged);
+  if (charged) { triggerShake(0.3 * charged); skyLauncher.recoil = 1 + 0.6 * charged; }
 }
 
 /* ---- The launcher in the Skyline ------------------------------------------ */
@@ -1995,6 +2240,8 @@ loadMeltdownAssets(MELTDOWN_ASSET_BASE, { names: ["launcher"] }).then((assets) =
   model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.layers.enable(LAYERS.FX); } });
   skyLauncher.model = model;
   skyLauncher.rig.add(model);
+  // The player's chosen finish (Customise > Launcher).
+  applyLauncherSkin(model, savedLauncherSkin());
 });
 
 /** Where it is this frame: on the camera (first person) or the shoulder. */
@@ -2016,8 +2263,8 @@ function placeSkyLauncher(dt) {
     skyLauncher.rig.rotation.set(0.05 + r * 0.2, 0.05, bob * 0.02);
   } else {
     if (skyLauncher.rig.parent !== playerBody.shoulder) playerBody.shoulder.add(skyLauncher.rig);
-    skyLauncher.rig.position.set(-0.04, -0.07, -0.18 + r * 0.1);
-    skyLauncher.rig.rotation.set(r * 0.15, 0, 0);
+    skyLauncher.rig.position.copy(LAUNCHER_HELD.position).z += r * 0.1;
+    skyLauncher.rig.rotation.set(LAUNCHER_HELD.pitch + r * 0.15, 0, 0);
   }
 }
 
@@ -2038,10 +2285,12 @@ function updatePendingThrows(dt) {
 }
 
 /** Spheres away from `origin` toward an aim point (leading a moving target). */
-function launchSpheres(origin, target, point, ball, count, physical, hand = false) {
+function launchSpheres(origin, target, point, ball, count, physical, hand = false, charged = 0) {
   // By hand: slower, and a real arc (the launcher fires them flat and fast).
-  const speed = (ball?.speed ?? 34) * (hand ? SPHERE_FLIGHT.handSpeed : 1);
-  const gravity = physical ? (ball?.gravity ?? 3.2) * (hand ? SPHERE_FLIGHT.handGravity : 1) : 0;
+  // Charged: faster, flatter and bigger still, the more the charge (systems/charge.js).
+  const boost = charged ? chargedShot(charged) : null;
+  const speed = (ball?.speed ?? 34) * (hand ? SPHERE_FLIGHT.handSpeed : 1) * (boost?.speed ?? 1);
+  const gravity = physical ? (ball?.gravity ?? 3.2) * (hand ? SPHERE_FLIGHT.handGravity : 1) * (boost?.gravity ?? 1) : 0;
   if (target) leadTarget(target, point, origin, speed, _aim);
   else _aim.copy(point);
   for (let i = 0; i < count; i += 1) {
@@ -2050,18 +2299,19 @@ function launchSpheres(origin, target, point, ball, count, physical, hand = fals
     dir.normalize();
     if (count > 1) dir.applyAxisAngle(_up, (i - 1) * 0.07);
     // Ballistic compensation: aim high by exactly the drop over the flight
-    // time, so the sphere arcs onto the reticle.
-    const t = distance / speed;
-    const velocity = dir.multiplyScalar(speed).addScaledVector(_up, 0.5 * gravity * t);
+    // time, so the sphere arcs onto the reticle (spheres.js launchVelocity).
+    const velocity = launchVelocity(origin, _flyTo.copy(origin).addScaledVector(dir, distance), speed, gravity);
     const mesh = new THREE.Mesh(projectileGeometry, ball ? projectileMaterials[ball.key] : legacyProjectileMaterial);
-    mesh.scale.setScalar(ball?.radius ?? 0.18);
+    mesh.scale.setScalar((ball?.radius ?? 0.18) * (boost?.radius ?? 1));
     const halo = sphereHalo(ball?.key ?? "glass");
     halo.layers.set(LAYERS.FX);
     mesh.add(halo);
     mesh.position.copy(origin);
     mesh.layers.set(LAYERS.FX);
     scene.add(mesh);
-    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
+    projectiles.push({ mesh, velocity, life: 3, gravity, ball: ball?.key ?? "glass", charged, scored: false, bounces: 0, wallBounces: 0, ceilingBounces: 0 });
+    // Air stripes round it, as strong as the charge, in the launcher's colours.
+    if (charged) chargeTrails.add(mesh, velocity, charged, trailColours(savedLauncherSkin()), () => !!mesh.parent);
   }
   if (physical) level1Audio.throwBall();
 }
@@ -2073,17 +2323,21 @@ function launchSpheres(origin, target, point, ball, count, physical, hand = fals
  * (cryo only frosts the floor then).
  */
 function detonate(p, point, ground = false) {
-  if (p.ball === "glass") return;
+  if (p.ball === "glass" && !p.charged) return;
   if (currentLevel === 2 && foundry) { detonateFoundry(p, point, ground); return; }
   if (!causeway) return;
   const def = BALLS[p.ball];
-  causeway.splash(point, def.splash, p.ball);
+  // A charged one (systems/charge.js): further, and glass bursts like shock.
+  const reach = p.charged ? Math.max(def.splash ?? 0, chargedShot(p.charged).splash) : def.splash;
+  const kind = p.charged && p.ball === "glass" ? "shock" : p.ball;
+  causeway.splash(point, reach, kind);
   // (The Skyline draws shock's burst itself; cryo's ice and gravity's black hole are the shared ones.)
-  if (p.ball === "cryo" || p.ball === "gravity") sphereImpact.splash(point, p.ball, def.splash, null, { ground });
-  if (p.ball === "gravity") {
+  if (kind === "cryo" || kind === "gravity") sphereImpact.splash(point, kind, reach, null, { ground });
+  if (p.charged) { triggerShake(0.2 + 0.25 * p.charged); showMessage(p.charged >= 1 ? "OVERCHARGED" : "CHARGED"); }
+  if (kind === "gravity") {
     // It breaks nothing: it drags in every cache and serum in reach, yours.
     let pulled = 0;
-    for (const target of causeway.targetsNear(point, def.splash)) {
+    for (const target of causeway.targetsNear(point, reach)) {
       const type = target.userData.record?.entry.type;
       if (type !== "cache" && type !== "serum") continue;
       const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: "glass" });
@@ -2094,14 +2348,14 @@ function detonate(p, point, ground = false) {
     level1Audio.whoosh?.();
     return;
   }
-  for (const target of causeway.targetsNear(point, def.splash)) {
+  for (const target of causeway.targetsNear(point, reach)) {
     // Power-ups take a direct hit, never a splash.
     if (target.userData.kind === "serum" || target.userData.serum) continue;
-    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: p.ball });
+    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind });
     if (r && !r.rejected) p.scored = true;
   }
-  triggerShake(p.ball === "shock" ? 0.25 : 0.18);
-  if (p.ball === "cryo") p.scored = true;
+  triggerShake(kind === "shock" ? 0.25 : 0.18);
+  if (kind === "cryo") p.scored = true;
 }
 
 /**
@@ -2138,101 +2392,53 @@ function detonateFoundry(p, point, ground = false) {
   if (p.ball === "cryo") {
     const frozen = foundry.freezeNear(point, def.splash, 4);
     if (frozen) { showMessage(`CRYO // ${frozen} MACHINE${frozen > 1 ? "S" : ""} FROZEN`); p.scored = true; }
+    if (frozen >= 3) achievements.earn("cold");
   }
   level1Audio.glassBreak();
 }
 
-const _seg = new THREE.Line3();
-const _closest = new THREE.Vector3();
-/** Nearest small target the segment a->b passes within `tolerance` of. */
-function grazeTarget(targets, a, b, tolerance) {
-  _seg.set(a, b);
-  let best = null;
-  let bestDistance = Infinity;
-  for (const t of targets) {
-    const sphere = worldSphere(t);
-    if (sphere.radius > 1.1) continue;                    // panes and doors are big enough already
-    _seg.closestPointToPoint(sphere.center, true, _closest);
-    const d = _closest.distanceTo(sphere.center) - sphere.radius;
-    if (d < tolerance && d < bestDistance) {
-      bestDistance = d;
-      best = { object: t, point: _closest.clone(), distance: a.distanceTo(_closest) };
-    }
-  }
-  return best;
-}
-
-/** A sphere hit something: it slows from now on, and is spent within SPHERE_FLIGHT.afterHit seconds. */
-function touchSphere(p) {
-  if (p.touched) return;
-  p.touched = true;
-  p.life = Math.min(p.life, SPHERE_FLIGHT.afterHit);
-}
-
+/** Every sphere in flight: the shared flight (spheres.js), and what the story does with what it meets. */
 function updateProjectiles(dt) {
   const targets = aliveTargets();
   const solids = currentLevel === 1 && causeway ? causeway.solids : currentLevel === 2 && foundry ? foundry.obstacles : [];
   const physical = currentLevel === 1 || currentLevel === 2;
+  // The corridor's walls and ceiling: a clean ricochet (the Skyline's, in the Foundry too).
+  const surfaceHit = currentLevel === 1 && causeway ? (a, b, r) => causeway.corridorSurfaceHit(a, b, r)
+    : currentLevel === 2 && foundry ? (a, b, r) => foundry.surfaceHit(a, b, r) : null;
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
-    const old = p.mesh.position.clone();
-    p.velocity.y -= p.gravity * dt;
-    if (p.touched) p.velocity.multiplyScalar(Math.exp(-SPHERE_FLIGHT.drag * dt));
-    p.mesh.position.addScaledVector(p.velocity, dt);
-    p.life -= dt;
-    _segment.copy(p.mesh.position).sub(old);
-    const length = _segment.length();
-    if (length > 1e-5) {
-      raycaster.set(old, _segment.divideScalar(length));
-      raycaster.far = length + p.mesh.scale.x;
-      let hit = raycaster.intersectObjects(targets, false)[0];
-      const solid = solids.length ? raycaster.intersectObjects(solids, false)[0] : null;
-      // The corridor's walls and ceiling: a clean ricochet (the Skyline's, in the Foundry too).
-      const surface = currentLevel === 1 && causeway ? causeway.corridorSurfaceHit(old, p.mesh.position, p.mesh.scale.x)
-        : currentLevel === 2 && foundry ? foundry.surfaceHit(old, p.mesh.position, p.mesh.scale.x) : null;
-      raycaster.far = Infinity;
-      // Near miss on a small target counts: a sphere passing within its own
-      // radius plus 0.25 m of a small target's bounding sphere hits it.
-      if (!hit && physical) hit = grazeTarget(targets, old, p.mesh.position, p.mesh.scale.x + 0.25);
-      if (hit && (!solid || hit.distance <= solid.distance) && (!surface || hit.distance <= surface.distance)) {
-        const result = shatter(hit.object, { point: hit.point, direction: p.velocity, ball: p.ball });
-        if (result && !result.rejected) { p.scored = true; run.hits += 1; }
-        if (p.ball !== "glass") { detonate(p, hit.point); p.life = 0; }
-        else if (!result || result.cracked || result.rejected || !(currentLevel === 1 ? ["pane", "blade", "falling", "tank", "door"] : currentLevel === 2 ? ["cell"] : []).includes(result.kind)) p.life = 0;
-        else { p.velocity.multiplyScalar(SPHERE_FLIGHT.punch); touchSphere(p); } // glass spheres punch through, slower
-      } else if (surface && (!solid || surface.distance <= solid.distance)) {
-        const speed = p.velocity.length();
-        p.velocity.reflect(surface.normal).normalize().multiplyScalar(speed * BALL_CORRIDOR_RESTITUTION);
-        p.mesh.position.copy(surface.position);
-        if (surface.surface === "ceiling") p.ceilingBounces += 1;
-        else p.wallBounces += 1;
-        touchSphere(p);
-        level1Audio.surfaceRicochet();
-        if (causeway && currentLevel === 1) causeway.ricochet(surface.point);
-        else shatterFX.chunks(surface.point, 8, { tint: 0xffd9a0, speed: 3, radius: 0.05, size: 0.04, life: 0.9 });
-      } else if (solid) {
-        if (p.ball !== "glass") { detonate(p, solid.point); p.life = 0; }
-        else {
-          // Ricochet off solid hazards: reflect about the face normal.
-          const n = solid.face ? solid.face.normal.clone().transformDirection(solid.object.matrixWorld) : _forward.clone().negate();
-          p.velocity.reflect(n).multiplyScalar(SPHERE_FLIGHT.solid);
-          touchSphere(p);
-          p.mesh.position.copy(solid.point).addScaledVector(n, 0.2);
-          if (causeway && currentLevel === 1) causeway.ricochet(solid.point);
-          else { shatterFX.chunks(solid.point, 5, { tint: 0xffd9a0, speed: 2.5, radius: 0.05, size: 0.04, life: 0.9 }); level1Audio.surfaceRicochet(); }
-          if (++p.bounces > 2) p.life = 0;
-        }
+    // The flight itself is shared with the Race (src/systems/spheres.js flySphere).
+    const met = flySphere(p, dt, { targets, solids, surfaceHit, graze: physical });
+    if (met?.type === "target") {
+      const hit = met.hit;
+      const result = shatter(hit.object, { point: hit.point, direction: p.velocity, ball: p.ball });
+      if (result && !result.rejected) {
+        p.scored = true;
+        run.hits += 1;
+        achievements.add("broken");
+        // Off a wall or the ceiling (or a solid thing) first.
+        if (p.wallBounces + p.ceilingBounces + p.bounces > 0) { achievements.add("bankShots"); achievements.earn("bank"); }
+      }
+      if (p.ball !== "glass" || p.charged) { detonate(p, hit.point); p.life = 0; }
+      else if (!result || result.cracked || result.rejected || !(currentLevel === 1 ? ["pane", "blade", "falling", "tank", "door"] : currentLevel === 2 ? ["cell"] : []).includes(result.kind)) p.life = 0;
+      // (It breaks, it's gone: in the burst of what it broke.)
+      else p.life = 0;
+    } else if (met?.type === "surface") {
+      if (met.surface.surface === "ceiling") p.ceilingBounces += 1;
+      else p.wallBounces += 1;
+      level1Audio.surfaceRicochet();
+      if (causeway && currentLevel === 1) causeway.ricochet(met.surface.point);
+      else shatterFX.chunks(met.surface.point, 8, { tint: 0xffd9a0, speed: 3, radius: 0.05, size: 0.04, life: 0.9 });
+    } else if (met?.type === "solid") {
+      if (met.detonate) { detonate(p, met.solid.point); p.life = 0; }
+      else {
+        if (causeway && currentLevel === 1) causeway.ricochet(met.solid.point);
+        else { shatterFX.chunks(met.solid.point, 5, { tint: 0xffd9a0, speed: 2.5, radius: 0.05, size: 0.04, life: 0.9 }); level1Audio.surfaceRicochet(); }
+        if (met.spent) p.life = 0;
       }
     }
     // Floor bounce in Level 1 and the Foundry.
-    if (physical && p.life > 0 && p.mesh.position.y < p.mesh.scale.x && p.velocity.y < 0) {
-      if (p.ball !== "glass") { detonate(p, p.mesh.position, true); p.life = 0; }
-      else {
-        p.velocity.y *= -SPHERE_FLIGHT.floor; p.velocity.x *= SPHERE_FLIGHT.floorFriction; p.velocity.z *= SPHERE_FLIGHT.floorFriction;
-        p.mesh.position.y = p.mesh.scale.x;
-        touchSphere(p);
-      }
-    }
+    if (physical && floorSphere(p) === "detonate") { detonate(p, p.mesh.position, true); p.life = 0; }
     if (p.life <= 0) {
       if (!p.scored && (currentLevel === 2 || currentLevel === 1)) { combo = 1; comboTimer = 0; }
       scene.remove(p.mesh);
@@ -2284,7 +2490,7 @@ function startGravityLift({ boarded = false } = {}) {
     // The same character as in the Foundry (null while it is still loading),
     // as they left it: dusty.
     character: playerBodyTemplate,
-    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone(), hairColour: savedHairColour() },
+    figure: { ...figureStage(sectorNumber()), skinTone: savedSkinTone(), hairColour: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear(), shoes: savedShoes() },
     // Level 3's launcher crashes into the lift (and stays with the player).
     assetBase: MELTDOWN_ASSET_BASE,
     // The story's version: Okoro drops the launcher, the clamps are reaction hits.
@@ -2533,6 +2739,7 @@ function resetRunner() {
 /** Start pressed: the story, from the basement up. */
 function startCampaign() {
   deathFx.clear();
+  unlocksShown.clear();
   storyRun = true;
   // Played at the menu's difficulty (set before resetStats builds the Foundry).
   runDifficulty = difficultyKey;
@@ -2812,7 +3019,7 @@ function buildSkylineStory() {
   hands.visible = false;
   group.add(hands);
   // The tower that's demolished floor by floor (stages/demolition-tower.js).
-  const tower = new DemolitionTower({ floors: 24, width: 22, quality: resolvedQuality() });
+  const tower = new DemolitionTower({ floors: 24, width: 22 });
   tower.root.position.set(SKYLINE_TOWER.x, SKYLINE_TOWER.base, CAUSEWAY_ORIGIN_Z - SKYLINE_TOWER.d);
   group.add(tower.root);
   // The sky over it all once the tower goes: smoke lit from below, embers,
@@ -2857,8 +3064,6 @@ function beginSkylineBlast() {
   tower.onWhole = () => {
     s.flash = 1;
     s.sky.setVisible(true);
-    // Glass and debris raining past you, its dust blowing across the bridge.
-    tower.fallout(camera);
     // The whole tower going: the sound of it arrives with the dust.
     level1Audio.buildingCollapse(1);
     level1Audio.impact(1);
@@ -3031,7 +3236,7 @@ function updateMainCutscene(dt, time, frame) {
     scene.background.copy(causeway.hazeColor);
     if (skylineStory) {
       hideRampProps();
-      skylineStory.tower.update(dt, camera);
+      skylineStory.tower.update(dt);
       skylineStory.sky.update(dt, time);
       skylineStory.flash = Math.max(0, skylineStory.flash - dt * 1.2);
       postfx.uniforms.uFlash.value = skylineStory.flash * 0.35;
@@ -3163,7 +3368,8 @@ async function enterRoof() {
     meltdownEntering = false;
   }
   if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return; // quit while loading
-  await releaseLoading([game.scene, game.camera]);
+  // (Its first full frame - post-processing, shadows - drawn behind the screen too.)
+  await releaseLoading([game.scene, game.camera, () => game.render()]);
   if (currentLevel !== 3 || state !== "lift" || meltdown !== game) return;
   state = "playing";
   run.fadeOut = 1;
@@ -3174,7 +3380,8 @@ async function enterRoof() {
 function startEndless(env) {
   deathFx.clear();
   storyRun = false;
-  runDifficulty = "normal";
+  // Endless has a difficulty of its own (its screen); every run a new layout.
+  runDifficulty = endlessDifficulty;
   runReport = null;
   runClock = 0;
   runFromStart = false;
@@ -3182,6 +3389,7 @@ function startEndless(env) {
   resetStats(env === "skyline" ? "endless" : "story");
   missions.active = [];
   runKind = "endless"; endlessEnv = env; storyBalls = null;
+  achievements.add("endlessRuns");
   endlessRun.laps = 0; endlessRun.distance = 0; foundrySpeedScale = 1;
   ui.start.classList.remove("active");
   ui.endless.classList.remove("active");
@@ -3196,8 +3404,11 @@ function startEndless(env) {
     return;
   }
   setCausewayActive(false);
-  if (env === "foundry") enterFoundry();
-  else if (env === "labs") enterMeltdown();
+  if (env === "foundry") {
+    // A new Foundry each run: its hazards and cells reshuffled.
+    buildFoundry(1 + Math.floor(Math.random() * 9973));
+    enterFoundry();
+  } else if (env === "labs") enterMeltdown();
   else if (env === "roof") enterRoof();
 }
 
@@ -3566,10 +3777,12 @@ function recordStoryTime(seconds) {
   const key = runDifficulty;
   const best = storyBest(key);
   if (!runRecordable || !runFromStart) return best;
+  submitBoard("story_time", seconds, { difficulty: key });
   if (!best || seconds < best) {
     if (key === "normal") runTimes.story = seconds;
     else (runTimes.storyBy ??= {})[key] = seconds;
     saveRunTimes();
+    if (best) noteRecord("time", "NEW BEST TIME", hms(seconds), `The story${difficultyNote(key)} - ${hms(best)} before`);
     return seconds;
   }
   return best;
@@ -3580,16 +3793,84 @@ function recordStoryTime(seconds) {
  * is its time.) Returns { distance, time } of the record.
  */
 function recordEndlessRun(env, distance, seconds) {
+  if (ghostRun.rec?.key === ghostKey("endless", env)) {
+    if (saveGhostIfBetter(ghostRun.rec, { distance })) showGhostNote("Your furthest run", "It runs beside you next time");
+    ghostRun.rec = null;
+  }
+  if (env !== "roof" && distance >= 1000) achievements.earn("endless");
   if (runRecordable) {
     const before = endlessBest[env] ?? 0;
     const value = env === "roof" ? seconds : distance;
+    submitBoard(`endless_${env}`, value);
     if (value > before || (value === before && !runTimes.endless[env])) {
       recordEndless(env, value);
       runTimes.endless[env] = seconds;
       saveRunTimes();
+      if (value > before && before > 0) {
+        if (env === "roof") noteRecord("time", "NEW BEST TIME", `Survived ${hms(value)}`, `Endless, the Roof - ${hms(before)} before`);
+        else noteRecord("time", "NEW RECORD", `${value} m in ${hms(seconds)}`, `Endless, ${ENDLESS_NAMES[env].replace(/^The /, "the ")} - ${before} m before`);
+      }
     }
   }
   return { distance: endlessBest[env] ?? 0, time: runTimes.endless[env] ?? (env === "roof" ? endlessBest.roof ?? 0 : 0) };
+}
+
+/* ---- Best scores, and the records' notifications ------------------------ */
+
+function loadBestScores() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("fractureRunBestScores"));
+    return { story: saved?.story ?? {}, endless: saved?.endless ?? {} };
+  } catch (error) {
+    return { story: {}, endless: {} };
+  }
+}
+/** The highest score: the story's at each difficulty (whole runs only), Endless's in each level. */
+const bestScores = loadBestScores();
+/** A run's final score against the best: saved (and noted) if it beats it. */
+function recordScore(value) {
+  value = Math.floor(value);
+  if (!runRecordable || value <= 0) return;
+  const [group, key] = runKind === "endless" ? ["endless", endlessEnv] : runFromStart ? ["story", runDifficulty] : [];
+  if (!group || !key) return;
+  if (group === "story") submitBoard("story_score", value, { difficulty: key });
+  const before = bestScores[group][key] ?? 0;
+  if (value <= before) return;
+  bestScores[group][key] = value;
+  try { localStorage.setItem("fractureRunBestScores", JSON.stringify(bestScores)); } catch (error) {}
+  // (Beaten, not the first: a first run's score isn't news.)
+  if (before > 0) {
+    const where = group === "story" ? `The story${difficultyNote(key)}` : `Endless, ${ENDLESS_NAMES[key].replace(/^The /, "the ")}`;
+    noteRecord("score", "NEW HIGH SCORE", value.toLocaleString("en-US"), `${where} - ${before.toLocaleString("en-US")} before`);
+  }
+}
+function difficultyNote(key) {
+  return key === "normal" ? "" : ` on ${DIFFICULTIES[key].name}`;
+}
+
+/**
+ * A record beaten: a notification at the top (the trophies' card,
+ * trophy-toast.js) - held until the end screen is up, so it lands with it,
+ * and past any loading screen (quitting to the menu brings one up: under it
+ * the card came and went unseen).
+ */
+const recordNotes = [];
+const RECORD_ART = {
+  score: '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M12 2.8l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 16.8l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>',
+  time: '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M12 13.5l2.8 1.8M9.8 2.8h4.4M12 2.8V6M18.4 6.8l1.4-1.4"/></svg>',
+};
+function noteRecord(kind, label, title, text) {
+  recordNotes.push({ label, title, text, colour: kind === "score" ? "#ffcf4a" : "#8fe6ff", art: `<span class="tt-glyph">${RECORD_ART[kind]}</span>` });
+}
+let recordNotesDue = false;
+function flushRecordNotes() {
+  recordNotesDue = recordNotes.length > 0;
+}
+/** Once a frame: the notes out, when they are due and nothing covers the screen. */
+function updateRecordNotes() {
+  if (!recordNotesDue || loadingHold || loadingScreen.visible) return;
+  recordNotesDue = false;
+  for (const note of recordNotes.splice(0)) trophyToast.note(note);
 }
 
 /** How far this endless run got, for the end screen and the records. */
@@ -3699,6 +3980,7 @@ const failReasons = {
  * @param {object} [detail]  overrides from the level: { eyebrow, title, text, stats }
  */
 function endRun(won, reason = null, detail = null) {
+  if (!won) padRumble({ strong: 0.9, weak: 0.6, ms: 450 });
   if (state === "ended") return;
   ammoHint.hide();
   meltdown?.ammoHint?.hide();
@@ -3716,6 +3998,7 @@ function endRun(won, reason = null, detail = null) {
   if (!won && currentLevel !== 3) level1Audio.gameOver();
   causewayHud.warning(null);
   if (runKind === "endless" && endlessEnv && !detail && endlessEnv !== "skyline") detail = endlessResult();
+  recordScore(score);
   ui.endEyebrow.textContent = won ? "RUN COMPLETE" : `RUN TERMINATED // SECTOR 0${sectorNumber()}`;
   ui.endTitle.textContent = won ? "YOU GOT OUT" : `THE ${sectorNames[currentLevel]} CLAIMED YOU`;
   ui.endText.textContent = won
@@ -3730,7 +4013,12 @@ function endRun(won, reason = null, detail = null) {
     if (detail.stats) ui.endStats.textContent = detail.stats;
   }
   // The run report: this death (its cause is the title just set), or the whole run on the win.
-  if (!won) reportDeath();
+  if (!won) {
+    reportDeath();
+    achievements.add("deaths");
+    // (A death restarts the sector: a fresh try at it, hit-free or not.)
+    sectorRun.stage = null;
+  }
   showRunReport(won);
   if (currentLevel === 1 && causeway) {
     const distance = Math.max(0, Math.floor(causewayDistance()));
@@ -3745,16 +4033,18 @@ function endRun(won, reason = null, detail = null) {
     missions.commit({ mode: causewayMode, score: Math.floor(score), distance, files: s.files });
     refreshMenuProgress();
   }
-  // A death: the last moment held as a freeze frame (src/ui/death-fx.js,
-  // `still`), with the place's touch, and the end screen surfaces over it.
+  // A death plays out first (src/ui/death-fx.js), made of the last frame.
   const kind = won ? null : deathKind(reason, detail);
   const reveal = () => {
     if (state !== "ended") return;
     dressEndScreen(won);
     ui.end.classList.add("active");
+    flushRecordNotes();
   };
   if (kind) {
     renderFrame();
+    // The last moment held as a freeze frame (death-fx.js `still`), with the
+    // place's touch, and the end screen surfaces over it.
     deathFx.play("still", renderer.domElement, reveal, { accent: kind });
   } else reveal();
 }
@@ -3781,14 +4071,14 @@ function deathKind(reason, detail) {
 }
 
 /**
- * The end screen's look: the last moment held behind it, a quiet title; the
- * stats line as a row of numbers; the score counting up.
+ * The end screen's look: red and broken on a death, gold on a way out; the
+ * stats line as cards; the score counting up.
  */
 function dressEndScreen(won) {
   ui.end.classList.toggle("is-win", !!won);
   ui.end.classList.toggle("is-death", !won);
   // Levels write "RUN TERMINATED // SECTOR 02": shown with a quieter mark.
-  ui.endEyebrow.textContent = ui.endEyebrow.textContent.replace(/\s*\/\/\s*/g, " \u00b7 ");
+  ui.endEyebrow.textContent = ui.endEyebrow.textContent.replace(/\s*\/\/\s*/g, " · ");
   // Replay the entrance.
   ui.end.classList.remove("enter");
   void ui.end.offsetWidth;
@@ -3905,11 +4195,6 @@ function clearPostLooks() {
 }
 
 function updateGame(dt, time) {
-  // Versus: its lobby over the menu, or a match that owns the frame.
-  if (versus.active) {
-    versus.update(dt, time);
-    if (versus.running) return;
-  }
   // Hide independently of the early returns for pause, menus and cutscenes.
   ammoHint.hide();
   if (paused || photoActive || state !== "playing" || currentLevel !== 3) meltdown?.ammoHint?.hide();
@@ -3920,6 +4205,8 @@ function updateGame(dt, time) {
   level1Audio.duckForVoice(speaking);
   const inCauseway = currentLevel === 1 && causeway && causeway.root.visible;
   document.body.classList.toggle("pregame", state === "intro" || state === "launch");
+  // The menus over the live 3D stage (src/menu/): lighter shading, glass cards.
+  document.body.classList.toggle("menu-live", state === "intro" && menuBackdrop.showing);
   document.body.classList.toggle("paused", paused);
   document.body.classList.toggle("riding-lift", state === "lift");
   document.body.classList.toggle("cw-active", !!inCauseway && (state === "playing" || state === "lift" || state === "ended"));
@@ -3957,8 +4244,8 @@ function updateGame(dt, time) {
   // The briefing film has the screen while it plays.
   if (prologue?.active) { prologue.update(dt, time); return; }
   if (state === "intro") {
-    // The live 3D stage when it is in (the Versus lobby gets its own shot)...
-    if (menuBackdrop.update(dt, { versus: versus.active })) return;
+    // The live 3D stage when it is in (nothing at all while it streams in)...
+    if (menuBackdrop.update(dt, { versus: false }) || menuBackdrop.waiting) return;
     // ...until then, the Skyline's corridor with a drifting camera.
     if (causeway) {
       const d = causeway.menuCamera(time, camera, settings.reducedMotion);
@@ -4134,9 +4421,16 @@ function updateGame(dt, time) {
 /* ---- Rendering and performance ---------------------------------------- */
 
 const perf = { ema: 16, slowFor: 0, fastFor: 0, frames: 0, acc: 0, fps: 60, level: 0, settle: 0, seen: "" };
+/** On a phone or tablet: at most 60 fps, a steady 30 when it can't keep that. */
+const pacer = new FramePacer({ enabled: PHONE });
+/** ?fps on the address: a frame-rate readout (updatePerformance). */
+const SHOW_FPS = new URLSearchParams(location.search).has("fps");
+// (Up in the top bar's middle, clear of the titles and the subtitles.)
+if (SHOW_FPS) Object.assign(causewayHud.perfEl.style, { top: "8px", zIndex: "40", padding: "4px 10px", borderRadius: "4px", background: "rgba(0, 0, 0, .62)", fontSize: "12px" });
 
 function updatePerformance(rawDt) {
-  const ms = rawDt * 1000;
+  // (At a steady 30, judged as if at 60: the same "too slow" either way.)
+  const ms = pacer.budgetMs(rawDt);
   perf.ema = perf.ema * 0.94 + ms * 0.06;
   perf.frames += 1;
   perf.acc += rawDt;
@@ -4159,7 +4453,7 @@ function updatePerformance(rawDt) {
       perf.slowFor = 0;
       if (perf.level === 0) { perf.level = 1; if (causeway) causeway.probe.interval = 2; }
       else if (perf.level === 1) { perf.level = 2; postfx.setLite(true); }
-      else if (postfx.scale > 0.86) postfx.setScale(postfx.scale - 0.075);
+      else if (postfx.scale > (PHONE ? 0.61 : 0.86)) postfx.setScale(postfx.scale - 0.075);
       // Said in the settings, not across the middle of a run.
       else if (!autoLow && perf.ema > 34) { autoLow = true; applyQuality(); ui.qualityNote.textContent = "Auto lowered detail to keep the frame rate up."; }
     }
@@ -4176,17 +4470,35 @@ function updatePerformance(rawDt) {
     perf.slowFor = perf.ema > 21 ? perf.slowFor + rawDt : 0;
     perf.fastFor = perf.ema < 14 ? perf.fastFor + rawDt : 0;
     const before = labsScale;
-    if (perf.slowFor > 1.5 && labsScale > 0.76) { perf.slowFor = 0; labsScale = Math.max(0.75, labsScale - 0.125); }
+    if (perf.slowFor > 1.5 && labsScale > (PHONE ? 0.61 : 0.76)) { perf.slowFor = 0; labsScale = Math.max(PHONE ? 0.6 : 0.75, labsScale - 0.125); }
     if (perf.fastFor > 5 && labsScale < 1) { perf.fastFor = 0; labsScale = Math.min(1, labsScale + 0.125); }
     if (labsScale !== before) applyQuality();
+  }
+  // A phone: down to a steady 30 if it can't keep 60, back up when it can.
+  pacer.update(rawDt, {
+    judging: state === "playing" && !paused && document.visibilityState === "visible" && perf.settle > 6,
+    easy: currentLevel === 3 ? labsScale >= 1 : postfx.scale >= 1 && perf.level === 0,
+  });
+  // ?fps on the address: the frame rate and what the automatic quality has
+  // chosen, top centre - for testing on a phone (no keyboard, no console).
+  if (SHOW_FPS && perf.frames === 0) {
+    const res = Math.round((currentLevel === 3 ? labsScale : postfx.enabled ? postfx.scale : 1) * renderer.getPixelRatio() * 100);
+    const gpu = `${gpuReport().halfFloat === false ? " · 8-bit fx" : ""}${graphicsResets ? ` · graphics reset ×${graphicsResets}` : ""}`;
+    causewayHud.perf(`${perf.fps} fps${pacer.steady ? " (steady 30)" : ""} · ${resolvedQuality()} · ${res}% · ${PHONE ? "phone" : "computer"}${gpu}`);
   }
 }
 
 function renderFrame() {
-  if (versus.running) { versus.render(); return; }
   if (prologue?.active) { prologue.render(); return; }
-  // The menus: the 3D stage (src/menu/backdrop.js) through the post chain.
+  // The menus: the 3D stage (src/menu/backdrop.js) through the post chain -
+  // dark while it streams in, the old corridor only if it can't be had.
   if (state === "intro" && menuBackdrop.render(postfx)) return;
+  if (state === "intro" && menuBackdrop.waiting) {
+    renderer.setRenderTarget(null);
+    renderer.setClearColor(0x000000, 1);
+    renderer.clear();
+    return;
+  }
   if (gravityLift?.visible) { gravityLift.render(); return; }
   if (currentLevel === 3 && meltdown?.visible) { meltdown.render(); return; }
   const glass = causeway && causeway.root.visible ? causeway.glassShared : null;
@@ -4215,7 +4527,7 @@ const sphereWheel = new SphereWheel();
 function updateSphereWheel() {
   const visible = state === "playing" && !paused && !gravityLift && !photoActive && [1, 2, 3].includes(currentLevel)
     && !(currentLevel === 2 && awaitingBag);
-  sphereWheel.update({ ball: arsenal.ball, spheres: ammo, cost: arsenal.cost(), visible });
+  sphereWheel.update({ ball: arsenal.ball, spheres: ammo, cost: arsenal.cost(), visible, allowed: arsenal.allowed });
 }
 const loads = { loaded: 0, total: 0 };
 THREE.DefaultLoadingManager.onStart = (url, loaded, total) => { loads.loaded = loaded; loads.total = total; };
@@ -4266,10 +4578,13 @@ function updateLoadingScreen(dt) {
  * through its first seconds. Meanwhile the game holds still.
  */
 let loadingHold = null;
+/** (releaseLoading's own early way out of its warm-up.) */
+const RELEASE_EARLY = Symbol("release early");
 let pendingTransition = null;
 function holdLoading(label) {
   if (!loadingHold || loadingHold.menu) loadingHold = { since: performance.now() };
-  loadingScreen.show(...label, { instant: true });
+  // (Booting, or resuming after a refresh: the boot screen is up - index.html.)
+  if (!document.documentElement.classList.contains("booting")) loadingScreen.show(...label, { instant: true });
   // (Nothing under it can be clicked while it is held.)
   loadingScreen.root.style.pointerEvents = "auto";
 }
@@ -4298,30 +4613,41 @@ const nextFrames = (n = 2) => new Promise((resolve) => {
  * The next level is in: compile and upload it behind the screen, then let it
  * be seen. `targets`: [scene, camera] pairs (a ride and the level after it).
  */
+/** Whether a scene is drawn through post-processing (so into a render target): what its programs are compiled for. */
+function drawnThroughTarget(target) {
+  if (target === meltdown?.scene || target === arena?.scene) return true;
+  if (target === scene || target === menuBackdrop.stage?.scene) return postfx.enabled;
+  return false;
+}
+
 async function releaseLoading(...targets) {
   const hold = loadingHold;
   if (!hold) return;
+  // ({ shadersOnly }: compile, but no textures and no frame - for a scene that
+  // isn't about to be seen, whose programs are worth having ready.)
+  const options = targets[0] && !Array.isArray(targets[0]) ? targets.shift() : {};
   if (!targets.length) targets = [[scene, camera]];
   try {
-    // (Synchronous on purpose: three's compileAsync polls programs that a
-    // swapped-out scene can dispose under it, and throws from a timer.)
+    // Linked on the driver's threads, waited on without blocking (three's
+    // own compileAsync waits forever on a program disposed under it):
+    // src/systems/warm-up.js. The loading screen keeps moving meanwhile.
     for (const [targetScene, targetCamera] of targets) {
-      renderer.compile(targetScene, targetCamera);
+      await compileReady(renderer, targetScene, targetCamera, { throughTarget: drawnThroughTarget(targetScene) });
+      if (loadingHold !== hold) return;
+    }
+    if (options.shadersOnly) throw RELEASE_EARLY;
+    for (const [targetScene] of targets) await uploadTextures(renderer, targetScene, { batch: 6 });
+    // One real frame of it, drawn under the loading screen: the driver only
+    // finishes the shaders on their first draw, and that wait (seconds, on a
+    // slow GPU) belongs here, not in the first frame you see.
+    for (const [targetScene, targetCamera, draw] of targets) {
+      if (loadingHold !== hold) return;
+      if (draw) draw();
+      else renderer.render(targetScene, targetCamera);
       await nextFrames(1);
     }
-    const textures = new Set();
-    for (const [targetScene] of targets) targetScene.traverse((o) => {
-      for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) {
-        for (const key of ["map", "normalMap", "emissiveMap", "roughnessMap", "metalnessMap", "alphaMap"]) if (m[key]) textures.add(m[key]);
-      }
-    });
-    let n = 0;
-    for (const t of textures) {
-      renderer.initTexture(t);
-      if (++n % 6 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-    }
   } catch (error) {
-    console.warn("[loading] warm-up failed", error);
+    if (error !== RELEASE_EARLY) console.warn("[loading] warm-up failed", error);
   }
   await nextFrames(2);
   const left = 650 - (performance.now() - hold.since);
@@ -4341,26 +4667,53 @@ function cancelLoadingHold() {
 
 function animate() {
   requestAnimationFrame(animate);
+  if (pacer.skip(performance.now())) return;
   const rawDt = clock.getDelta();
-  // Controllers first (behind a loading screen too: menus, a pad plugged in).
-  // Versus reads every pad itself (src/versus/active.js): pad 1 must not also drive the game.
-  if (!versus.active) padInput.update(Math.min(0.05, rawDt));
+  // Controllers: read once a frame, turned into the game's own input.
+  padBridge.update(Math.min(0.1, rawDt));
+  if (PHONE) updateTouch(Math.min(0.1, rawDt));
   updateLoadingScreen(Math.min(0.1, rawDt));
+  updateRecordNotes();
+  updateProgression();
+  updateFocusRow();
+  // The pointer lock goes with the roof's shoulder camera (a pause, the end, a menu: let go).
+  if (document.pointerLockElement && !(meltdown?.wantsPointerLock && state === "playing" && !paused && !unlockCard.open)) document.exitPointerLock?.();
+  // (Real time, a hitch's worth: a slow frame doesn't slow the charge.)
+  updateCharge(Math.min(0.25, rawDt));
+  chargeTrails.update(paused ? 0 : Math.min(0.1, rawDt));
   // A level change behind the loading screen: the switch, then the world
   // holds still (nothing to see, the GPU busy warming the next level).
   if (runPendingTransition() || loadingHold) {
     updatePerformance(0.016);
     return;
   }
-  // Trailer mode's slow motion scales the whole simulation.
-  const dt = Math.min(.033, rawDt) * (trailer.enabled ? trailer.timeScale : 1);
+  // The Arena or the Race has the screen (src/modes/).
+  const mode = arena?.active ? arena : race?.active ? race : locker?.active ? locker : null;
+  if (mode) {
+    if (mode.state === "playing" || mode.state === "racing") achievements.add("multiTime", Math.min(0.1, rawDt));
+    mode.update(Math.min(0.1, rawDt));
+    // Customise on the menu's 3D stage: the stage draws the frame.
+    if (mode === locker && locker.onStage) {
+      menuBackdrop.update(Math.min(0.1, rawDt));
+      menuBackdrop.render(postfx);
+    } else mode.render();
+    updatePerformance(Math.min(0.1, rawDt));
+    return;
+  }
+  // Trailer mode's slow motion scales the whole simulation. (Below 30 fps the
+  // world would slow down with it: the Labs and the Roof take steps up to
+  // 1/20 s - their own limit - so walking the Roof on a laptop's graphics
+  // isn't wading through treacle.)
+  const step = currentLevel === 3 ? 0.05 : 0.033;
+  const dt = Math.min(step, rawDt) * (trailer.enabled ? trailer.timeScale : 1);
   renderer.info.reset();
   if (!manualStep) trailerBeforeUpdate(dt);
   // Checks that step the game themselves (__dbg.manual) stop the real clock.
   // The restart countdown: the world holds still (rendered, not simulated).
   if (countdownLeft > 0) tickCountdown(rawDt);
-  else if (!manualStep) { trailerTime += dt; updateGame(dt, trailer.enabled ? trailerTime : clock.elapsedTime); trackRunReport(dt); trackCheckpoint(); }
+  else if (!manualStep) { trailerTime += dt; updateGame(dt, trailer.enabled ? trailerTime : clock.elapsedTime); trackRunReport(dt); trackSector(dt); trackGhost(dt); trackCheckpoint(); }
   if (countdownPending) maybeStartCountdown();
+  maybeShowUnlocks();
   updateCursor();
   updateSphereWheel();
   if (!manualStep) trailerAfterUpdate(dt);
@@ -4599,6 +4952,110 @@ function pilotRoof(dt) {
 }
 
 /** In control of a level again after a restart? Then start counting in. */
+/* ---- What Subject 07 can do: earned sector by sector (the story) -------- */
+
+/**
+ * The story's sector being played (systems/progression.js): it decides the
+ * sphere types and abilities there are. Elsewhere (Endless, the multiplayer
+ * modes) everything is there.
+ */
+function storyStage() {
+  return runKind === "story" ? reportLevel() : null;
+}
+let progressionStage = null;
+function hasAbility(key) {
+  const stage = runKind === "story" ? reportLevel() ?? progressionStage : null;
+  return !stage || abilitiesAt(stage).has(key);
+}
+/** Each frame: the sphere types this sector has, on the wheel and in the pause menu's picker. */
+let allowedKey = "";
+function updateProgression() {
+  const stage = storyStage();
+  if (stage) progressionStage = stage;
+  else if (runKind !== "story") progressionStage = null;
+  const list = progressionStage ? spheresAt(progressionStage) : null;
+  const key = list ? list.join() : "all";
+  if (key === allowedKey) return;
+  allowedKey = key;
+  arsenal.allow(list);
+  ballPickers.lock(list);
+}
+/** (Its HUD row too: no focus meter before the story earns it.) */
+let focusShown = null;
+function updateFocusRow() {
+  const has = hasAbility("focus");
+  if (has === focusShown) return;
+  focusShown = has;
+  document.body.classList.toggle("no-focus", !has);
+}
+
+/** The charged shot's bar and picture, each frame (systems/charge.js). */
+function updateCharge(dt) {
+  const skyline = currentLevel === 1 && !!causeway;
+  const labs = currentLevel === 3 && !!meltdown && (meltdown.phase === "run" || meltdown.phase === "roof") && meltdown.runner.alive;
+  const allowed = state === "playing" && !paused && !photoActive && !loadingHold && countdownLeft <= 0 && !unlockCard.open && (skyline || labs) && hasAbility("charge");
+  const need = arsenal.cost() * CHARGE.cost;
+  const have = labs ? meltdown.runner.balls : ammo;
+  charge.update(dt, { allowed, affordable: have >= need, need, reticle: labs ? meltdown.ui.reticle : ui.reticle });
+}
+
+/**
+ * A sector's card (src/ui/unlock-card.js): the first time a story run has
+ * control there - after its cutscenes, the Foundry's once Okoro's bag is
+ * yours - the world holds, the card says what is new, and Continue counts
+ * 3, 2, 1. A death and a retry don't show it again.
+ */
+const unlockCard = new UnlockCard();
+const unlocksShown = new Set();
+function maybeShowUnlocks() {
+  if (unlockCard.open || manualStep || trailer.enabled) return;
+  if (runKind === "endless") { maybeShowTips(); return; }
+  if (runKind !== "story") return;
+  if (state !== "playing" || paused || story.player.active || storyPlaying || countdownLeft > 0 || loadingHold) return;
+  const stage = storyStage();
+  if (!stage || unlocksShown.has(stage)) return;
+  const inControl =
+    (stage === "foundry" && !awaitingBag) ||
+    stage === "skyline" ||
+    (stage === "labs" && meltdown?.phase === "run") ||
+    (stage === "roof" && meltdown?.phase === "roof");
+  if (!inControl) return;
+  unlocksShown.add(stage);
+  paused = true; run.focusing = false;
+  charge.cancel();
+  story.setPaused(true);
+  music.pauseDuck();
+  level1Audio.setPaused(true);
+  if (currentLevel === 3) meltdown?.setPaused(true);
+  unlockCard.show(stage, () => {
+    closePause();
+    countdownLeft = 3;
+    showCountdown(3);
+  });
+}
+
+/**
+ * Endless earns nothing, but the Skyline's hazards (its vents and sprinklers)
+ * are worth knowing: their card, the first time in this browser, then 3, 2, 1.
+ */
+const TIPS_SEEN_KEY = "fractureRun.tipsSeen";
+function maybeShowTips() {
+  if (endlessEnv !== "skyline" || state !== "playing" || paused || countdownLeft > 0 || loadingHold || !causeway) return;
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem(TIPS_SEEN_KEY)) ?? []; } catch {}
+  if (seen.includes("skyline")) return;
+  try { localStorage.setItem(TIPS_SEEN_KEY, JSON.stringify([...seen, "skyline"])); } catch {}
+  paused = true; run.focusing = false;
+  charge.cancel();
+  music.pauseDuck();
+  level1Audio.setPaused(true);
+  unlockCard.show("skyline", () => {
+    closePause();
+    countdownLeft = 3;
+    showCountdown(3);
+  }, { tipsOnly: true });
+}
+
 function maybeStartCountdown() {
   if (state !== "playing" || paused || story.player.active || storyPlaying) return;
   const inControl =
@@ -4642,7 +5099,7 @@ function showCountdown(n) {
  * leaving a level by any path can never leave it hidden.
  */
 function updateCursor() {
-  const overlay = !!document.querySelector(".screen.active") || powerups.open || !!prologue?.active ||
+  const overlay = !!document.querySelector(".screen.active") || powerups.open || unlockCard.open || !!prologue?.active ||
     story.player.active || paused || photoActive || storyPlaying;
   const aimingNow = !overlay && (state === "playing" || (state === "lift" && !!gravityLift?.wantsAim));
   document.body.classList.toggle("aiming", aimingNow);
@@ -4650,8 +5107,13 @@ function updateCursor() {
 
 /* ---- Menus -------------------------------------------------------------- */
 
+/** Settings and the Credits: tabs, as the Trophies & Stats screen (src/ui/tabbed-screen.js). */
+let settingsTabs = null;
+let creditsRoom = null;
 function openSettings(from) {
   settingsFrom = from;
+  settingsTabs ??= new TabbedScreen(ui.settings);
+  settingsTabs.open();
   ui.settingsBackButton.textContent = from === "pause" ? "BACK TO PAUSE" : "BACK";
   if (from === "intro") ui.start.classList.remove("active");
   if (from === "pause") ui.pause.classList.remove("active");
@@ -4671,6 +5133,7 @@ function closeSettings() {
  */
 function startChapter(name) {
   ui.chapters.classList.remove("active");
+  unlocksShown.clear();
   saveProgress = false;
   // A chapter is not a whole run: no run report.
   runReport = null;
@@ -4715,6 +5178,7 @@ function openPause() {
   ui.pauseScore.textContent = String(Math.floor(score)).padStart(6, "0");
   ui.pauseAmmo.textContent = ammo;
   ui.pauseHealth.textContent = Math.max(0, Math.round(health));
+  ui.pauseHealth.style.color = CausewayHud.integrityColour(Math.max(0, Math.min(100, health)));
   ui.pauseMissions.innerHTML = currentLevel === 1 && missions.active.length
     ? missions.active.map((m) => `<li class="${m.done ? "done" : ""}">${m.def.text}${m.def.goal > 1 ? ` <b>${m.value}/${m.def.goal}</b>` : ""}</li>`).join("")
     : "";
@@ -4769,11 +5233,16 @@ function togglePhoto() {
 function quitToMenu() {
   cancelLoadingHold();
   deathFx.clear();
+  unlockCard.dismiss();
+  charge.cancel();
   // Leaving an Endless run part-way still sets the records it earned.
   if (runKind === "endless" && endlessEnv && (state === "playing" || state === "lift")) {
     if (endlessEnv === "skyline") recordEndlessRun("skyline", causeway ? Math.max(0, Math.floor(causewayDistance())) : 0, runClock);
     else endlessResult();
+    recordScore(score);
   }
+  // (Notes waiting on an end screen that won't come: now, over the menu.)
+  flushRecordNotes();
   closePause(); cancelStory();
   leaveGravityLift();
   countdownPending = false; countdownLeft = 0; if (ui.countdown) ui.countdown.hidden = true;
@@ -4857,8 +5326,8 @@ $("#restartSectorButton").addEventListener("click", () => { level1Audio.uiClick(
 let creditsFrom = null;
 function openCredits(from) {
   creditsFrom = from;
-  const body = $("#creditsBody");
-  if (!body.childElementCount) body.innerHTML = creditsHTML().replace(/<div class="gap"><\/div>/g, "");
+  creditsRoom ??= new CreditsRoom($("#creditsScreen"));
+  creditsRoom.open("team");
   if (from === "intro") ui.start.classList.remove("active");
   if (from === "settings") ui.settings.classList.remove("active");
   $("#creditsScreen").classList.add("active");
@@ -4884,11 +5353,6 @@ $("#creditsBackButton").addEventListener("click", () => {
   else ui.start.classList.add("active");
 });
 
-/** Tell the menu's 3D stage (src/menu/backdrop.js) who Subject 07 is now. */
-function announceLoadout() {
-  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour() } }));
-}
-
 // Character choice: who you play as (Level 3 shows them; saved for next time).
 const characterButtons = [...document.querySelectorAll("[data-character]")];
 function showCharacterChoice() {
@@ -4907,11 +5371,10 @@ for (const button of characterButtons) {
     loadPlayerBody(button.dataset.character);
     meltdown?.setCharacter(button.dataset.character);
     showCharacterChoice();
-    announceLoadout();
   });
 }
 showCharacterChoice();
-loadPlayerBody();
+const playerBodyLoaded = loadPlayerBody().catch(() => {});
 
 // Difficulty (the story and chapters): picked here, kept for next time.
 const difficultyButtons = [...document.querySelectorAll("[data-difficulty]")];
@@ -4949,7 +5412,8 @@ const valeReady = loadStoryCharacter(MELTDOWN_ASSET_BASE, "scientistEvil")
   .catch((error) => console.warn("[story] Vale's model failed to load", error));
 
 // Skin tone: one swatch per tone (src/figure/look.js), remembered.
-const skinPick = $("#skinPick");
+// (The loadout's pickers moved to Customise - src/modes/locker/; stand-ins.)
+const skinPick = $("#skinPick") ?? document.createElement("div");
 function showSkinChoice() {
   const chosen = savedSkinTone();
   for (const button of skinPick.querySelectorAll("[data-skin]")) {
@@ -4971,57 +5435,57 @@ for (const [key, tone] of Object.entries(SKIN_TONES)) {
     playerBody.setSkinTone(key);
     meltdown?.avatar?.setSkinTone(key);
     showSkinChoice();
-    announceLoadout();
   });
   skinPick.appendChild(button);
 }
 showSkinChoice();
 
-// Hair colour: one swatch per colour (src/figure/look.js), remembered - the
-// same markup as the skin swatches, so the two pickers are styled together.
-const hairPick = $("#hairPick");
-function showHairChoice() {
-  const chosen = savedHairColour();
-  for (const button of hairPick.querySelectorAll("[data-hair]")) {
-    const on = button.dataset.hair === chosen;
-    button.classList.toggle("picked", on);
-    button.setAttribute("aria-pressed", String(on));
+// The outfit (the scrubs' colour) and headwear, remembered (src/figure/outfit.js).
+const outfitPick = $("#outfitPick") ?? document.createElement("div");
+const headPick = $("#headPick") ?? document.createElement("div");
+function showOutfitChoice() {
+  const outfit = savedOutfit();
+  const head = savedHeadwear();
+  for (const b of outfitPick.querySelectorAll("[data-outfit]")) {
+    b.classList.toggle("picked", b.dataset.outfit === outfit);
+    b.setAttribute("aria-pressed", String(b.dataset.outfit === outfit));
+  }
+  for (const b of headPick.querySelectorAll("[data-head]")) {
+    b.classList.toggle("picked", b.dataset.head === head);
+    b.setAttribute("aria-pressed", String(b.dataset.head === head));
   }
 }
-for (const [key, hair] of Object.entries(HAIR_COLOURS)) {
+for (const [key, outfit] of Object.entries(OUTFITS)) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "skin-button hair-button";
-  button.dataset.hair = key;
-  button.title = hair.label;
-  button.setAttribute("aria-label", `${hair.label} hair`);
-  button.style.setProperty("--swatch", hair.swatch);
+  button.className = "skin-button";
+  button.dataset.outfit = key;
+  button.title = outfit.label;
+  button.setAttribute("aria-label", `${outfit.label} outfit`);
+  button.style.setProperty("--swatch", outfit.swatch);
   button.addEventListener("click", () => {
-    saveHairColour(key);
-    playerBody.setHairColour(key);
-    meltdown?.avatar?.setHairColour(key);
-    showHairChoice();
-    announceLoadout();
+    saveOutfit(key);
+    playerBody.setOutfit(key);
+    meltdown?.avatar?.setOutfit(key);
+    showOutfitChoice();
   });
-  hairPick.appendChild(button);
+  outfitPick.appendChild(button);
 }
-showHairChoice();
-
-// The line under Subject 07 on the main menu, and the names beside the
-// swatches: who you will play as, in words.
-const appearanceScreen = $("#appearanceScreen");
-function updateSubjectLine() {
-  const body = CHARACTERS[savedCharacter()] ?? "Female";
-  const skin = SKIN_TONES[savedSkinTone()]?.label ?? "Light";
-  const hair = HAIR_COLOURS[savedHairColour()]?.label ?? "Natural";
-  $("#subjectSummary").textContent = `${body}, ${skin.toLowerCase()} skin, ${hair.toLowerCase()} hair`;
-  $("#skinName").textContent = skin;
-  $("#hairName").textContent = hair;
+for (const [key, head] of Object.entries(HEADWEAR)) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "head-button";
+  button.dataset.head = key;
+  button.textContent = head.label;
+  button.addEventListener("click", () => {
+    saveHeadwear(key);
+    playerBody.setHeadwear(key);
+    meltdown?.avatar?.setHeadwear(key);
+    showOutfitChoice();
+  });
+  headPick.appendChild(button);
 }
-// After the buttons' own handlers (they run first, on the button itself).
-appearanceScreen.addEventListener("click", () => queueMicrotask(updateSubjectLine));
-updateSubjectLine();
-installMenuNav();
+showOutfitChoice();
 
 // The sphere you start with (the loadout card; the pause menu changes it mid-run).
 const ballPickers = buildBallPickers((key) => {
@@ -5032,8 +5496,8 @@ buildTabs();
 
 // A new story from the menu plays every scene again ("Run again" after a death does not).
 // New game: the difficulty first, on its own screen; then from the ward.
-$("#startButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.newGame.classList.add("active"); });
-$("#newGameBackButton").addEventListener("click", () => { ui.newGame.classList.remove("active"); ui.start.classList.add("active"); });
+$("#startButton").addEventListener("click", () => showScreen(ui.newGame));
+$("#newGameBackButton").addEventListener("click", () => showScreen(ui.single));
 for (const card of document.querySelectorAll("[data-new-game]")) {
   card.addEventListener("click", () => {
     if (!DIFFICULTIES[card.dataset.newGame]) return;
@@ -5052,27 +5516,474 @@ for (const card of document.querySelectorAll("[data-new-game]")) {
 $("#continueButton").addEventListener("click", () => continueStory());
 // Every quick-time event's outcome, for the run report.
 story.reactions.onResult = (result) => {
+  if (result === "success") achievements.add("qtePassed");
+  else if (result === "fail") achievements.add("qteFailed");
   if (!runReport || runKind !== "story") return;
   if (result === "success") runReport.qtePassed += 1;
   else if (result === "fail") runReport.qteFailed += 1;
 };
-ui.endlessButton.addEventListener("click", () => { ui.start.classList.remove("active"); refreshEndlessMenu(); ui.endless.classList.add("active"); });
-$("#versusButton").addEventListener("click", () => { ui.start.classList.remove("active"); versus.openLobby(); });
+ui.endlessButton.addEventListener("click", () => { refreshEndlessMenu(); showScreen(ui.endless); });
+
+/* ---- The Arena: 2-4 players on the roof (src/modes/arena/) ------------------ */
+
+let arena = null;
+async function startArena(mode = "koth") {
+  for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
+  holdLoading(["THE ROOF", "ARENA"]);
+  arena ??= new Arena({ renderer, pads, assetBase: MELTDOWN_ASSET_BASE, audio: level1Audio, onExit: () => exitArena(), onMatchEnd: (a) => arenaEnded(a) });
+  try {
+    await arena.open(mode);
+  } catch (error) {
+    console.warn("[arena] could not open", error);
+    cancelLoadingHold();
+    exitArena();
+    return;
+  }
+  document.body.classList.add("in-arena");
+  arena.resize(innerWidth, innerHeight);
+  music.playStage("roof");
+  await releaseLoading([arena.scene, arena.camera, () => arena.render()]);
+}
+function exitArena() {
+  arena?.close();
+  document.body.classList.remove("in-arena");
+  ui.start.classList.add("active");
+  music.showMenu();
+  refreshMenuProgress();
+  warmMenu();
+}
+// The Arena: first, which game.
+ui.arenaMode = $("#arenaModeScreen");
+$("#arenaButton").addEventListener("click", () => { level1Audio.uiClick(); showScreen(ui.arenaMode); });
+$("#arenaModeBackButton").addEventListener("click", () => showScreen(ui.multi));
+for (const b of document.querySelectorAll("[data-arena-mode]")) b.addEventListener("click", () => startArena(b.dataset.arenaMode));
+
+/* ---- The Race: 2 players, split screen (src/modes/race/) -------------------- */
+
+let race = null;
+async function startRace() {
+  for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
+  holdLoading(["HEAD TO HEAD", "RACE"]);
+  race ??= new Race({
+    renderer, pads, assetBase: MELTDOWN_ASSET_BASE, audio: level1Audio,
+    // Building a course goes behind the game's own loading screen.
+    loading: {
+      hold: (label) => holdLoading(label),
+      release: (targets) => releaseLoading(...targets),
+      cancel: () => cancelLoadingHold(),
+    },
+    onExit: () => exitRace(),
+    onEnd: (r) => raceEnded(r),
+  });
+  try {
+    await race.open();
+  } catch (error) {
+    console.warn("[race] could not open", error);
+    cancelLoadingHold();
+    exitRace();
+    return;
+  }
+  document.body.classList.add("in-arena");
+  music.playStage("skyline");
+  cancelLoadingHold();
+}
+function exitRace() {
+  race?.close();
+  document.body.classList.remove("in-arena");
+  ui.start.classList.add("active");
+  music.showMenu();
+  refreshMenuProgress();
+  warmMenu();
+}
+$("#raceButton").addEventListener("click", () => startRace());
 for (const button of document.querySelectorAll("[data-endless]")) {
   button.addEventListener("click", () => startEndless(button.dataset.endless));
 }
-$("#endlessBackButton").addEventListener("click", () => { ui.endless.classList.remove("active"); ui.start.classList.add("active"); });
-$("#manualButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.manual.classList.add("active"); });
-$("#manualBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
-$("#chaptersButton").addEventListener("click", () => { ui.start.classList.remove("active"); ui.chapters.classList.add("active"); });
-$("#chaptersBackButton").addEventListener("click", () => { ui.chapters.classList.remove("active"); ui.start.classList.add("active"); });
-// Appearance: Subject 07 up close (the menu's 3D stage turns to them), with
-// the body, skin, hair and starting sphere beside them.
-function openAppearance() { ui.start.classList.remove("active"); appearanceScreen.classList.add("active"); }
-function closeAppearance() { appearanceScreen.classList.remove("active"); ui.start.classList.add("active"); }
-$("#appearanceButton").addEventListener("click", openAppearance);
-$("#subjectLine").addEventListener("click", openAppearance);
-$("#appearanceBackButton").addEventListener("click", closeAppearance);
+$("#endlessBackButton").addEventListener("click", () => showScreen(ui.single));
+// The Field Manual (src/ui/field-manual.js): the moves first.
+const fieldManual = new FieldManual(ui.manual);
+$("#manualButton").addEventListener("click", () => { fieldManual.open("moves"); ui.start.classList.remove("active"); ui.manual.classList.add("active"); });
+$("#chaptersButton").addEventListener("click", () => showScreen(ui.chapters));
+$("#chaptersBackButton").addEventListener("click", () => showScreen(ui.single));
+
+/* ---- The main menu: single player and multiplayer --------------------------- */
+
+ui.single = $("#singleScreen");
+ui.multi = $("#multiScreen");
+/** One menu page up, the rest down. */
+function showScreen(screen) {
+  for (const s of document.querySelectorAll(".screen.active")) s.classList.remove("active");
+  screen.classList.add("active");
+}
+$("#singleButton").addEventListener("click", () => { refreshDossier(); showScreen(ui.single); });
+$("#multiButton").addEventListener("click", () => { padUI.refresh(); showScreen(ui.multi); });
+$("#singleBackButton").addEventListener("click", () => showScreen(ui.start));
+
+/* ---- Trophies & stats (src/systems/trophies.js, src/ui/trophy-room.js) ------- */
+
+ui.trophies = $("#trophiesScreen");
+const trophyToast = new TrophyToast();
+const trophyRoom = new TrophyRoom(ui.trophies, { stats: () => statsModel() });
+
+/* ---- The global leaderboards: your name, and your bests going up ---------- */
+
+const nameCard = new NameCard({ leaderboard });
+ui.leaderboards = $("#leaderboardsScreen");
+const leaderboardView = new LeaderboardView(ui.leaderboards, { leaderboard, onChangeName: (done) => askName(done) });
+/** Choose (or change) your name; `done` after, whatever came of it. */
+function askName(done = null) {
+  nameCard.show({
+    mode: leaderboard.name ? "change" : "new",
+    done: (result) => {
+      if (result?.name) {
+        uploadLocalBests();
+        trophyToast.note({ label: "NAME SAVED", title: result.name, text: result.offline ? "Taken as soon as the leaderboards answer" : "Your name on every leaderboard", colour: "#7fe3ff", art: '<span class="tt-glyph">' + RECORD_ART.score + "</span>" });
+      }
+      refreshDossier();
+      done?.(result);
+    },
+  });
+}
+/** Boards whose new result is worth a notification (this run's, not the boot's upload). */
+const announceBoards = new Set();
+function submitBoard(board, value, meta = null) {
+  if (!runRecordable && board !== "trophies") return;
+  announceBoards.add(board);
+  leaderboard.submit(board, value, meta);
+}
+/** What this browser already holds, up to the boards (the server keeps only bests). */
+function uploadLocalBests() {
+  if (runTimes.story) leaderboard.submit("story_time", runTimes.story, { difficulty: "normal" });
+  for (const key of ["easy", "hard"]) if (runTimes.storyBy?.[key]) leaderboard.submit("story_time", runTimes.storyBy[key], { difficulty: key });
+  for (const [key, value] of Object.entries(bestScores.story)) leaderboard.submit("story_score", value, { difficulty: key });
+  for (const env of ["foundry", "labs", "skyline", "roof"]) if (endlessBest[env]) leaderboard.submit(`endless_${env}`, endlessBest[env]);
+  const earned = achievements.summary().earned;
+  if (earned) leaderboard.submit("trophies", earned);
+}
+leaderboard.onResults = (results) => {
+  for (const [board, r] of Object.entries(results)) {
+    if (!announceBoards.delete(board) || !r.improved || !BOARD[board]) continue;
+    // Which board, and where on it.
+    trophyToast.note({ label: `LEADERBOARD · ${BOARD[board].label.toUpperCase()}`, title: `#${r.rank} on ${BOARD[board].label}`, text: `${formatValue(board, r.best)} - your best there`, colour: "#7fe3ff", art: '<span class="tt-glyph">' + RECORD_ART.score + "</span>" });
+  }
+};
+leaderboard.onNameTaken = (name, message) => {
+  trophyToast.note({ label: "NAME TAKEN", title: name, text: `${message} Choose another in Customise.`, colour: "#ff8a7a", art: '<span class="tt-glyph">' + RECORD_ART.score + "</span>" });
+};
+$("#leaderboardsButton").addEventListener("click", () => { leaderboardView.open(); showScreen(ui.leaderboards); });
+$("#leaderboardsBackButton").addEventListener("click", () => showScreen(ui.start));
+achievements.onEarn((t) => {
+  trophyToast.show(t);
+  submitBoard("trophies", achievements.summary().earned);
+  // A kit comes with it (src/figure/kits.js): its token, right after.
+  if (KIT_FOR_TROPHY[t.id]) { trophyToast.showKit(KIT_FOR_TROPHY[t.id]); refreshDossier(); }
+  refreshTrophiesNote();
+  if (ui.trophies.classList.contains("active")) trophyRoom.open();
+});
+$("#trophiesButton").addEventListener("click", () => { trophyRoom.open("trophies"); showScreen(ui.trophies); });
+$("#trophiesBackButton").addEventListener("click", () => showScreen(ui.start));
+function refreshTrophiesNote() {
+  const s = achievements.summary();
+  const note = $("#trophiesNote");
+  if (note) note.textContent = s.earned ? `${s.earned} of ${s.total} trophies - ${s.percent}%${achievements.has("platinum") ? " - platinum" : ""}` : `${s.total} trophies to earn, and your records`;
+}
+refreshTrophiesNote();
+
+function trackSector(dt) {
+  if (state !== "playing" || paused) return;
+  achievements.add("playTime", dt);
+  // The Labs and the Roof keep their own throws and breaks: into the statistics as they happen.
+  if (currentLevel === 3 && meltdown?.runner) {
+    const r = meltdown.runner;
+    if (r.shots < sectorRun.shots || r.breaks < sectorRun.breaks) { sectorRun.shots = r.shots; sectorRun.breaks = r.breaks; }
+    achievements.add("thrown", r.shots - sectorRun.shots);
+    achievements.add("broken", r.breaks - sectorRun.breaks);
+    sectorRun.shots = r.shots;
+    sectorRun.breaks = r.breaks;
+  } else { sectorRun.shots = 0; sectorRun.breaks = 0; }
+  if (runKind !== "story") return;
+  const key = reportLevel();
+  if (!key) return;
+  if (key !== sectorRun.stage) Object.assign(sectorRun, { stage: key, time: 0, hits: 0, lastHits: meltdown?.runner?.hits ?? 0, lastHealth: null });
+  sectorRun.time += dt;
+  if (currentLevel === 3 && meltdown) {
+    const h = meltdown.runner.hits;
+    if (h > sectorRun.lastHits) sectorRun.hits += h - sectorRun.lastHits;
+    sectorRun.lastHits = h;
+  } else {
+    if (sectorRun.lastHealth !== null && sectorRun.lastHealth - health >= 5) sectorRun.hits += 1;
+    sectorRun.lastHealth = health;
+  }
+}
+/** A sector of the story behind you. */
+function sectorCleared(stage) {
+  // The run through it, kept if it's the fastest (a ghost for next time).
+  if (ghostRun.rec?.key === ghostKey("story", stage)) {
+    if (saveGhostIfBetter(ghostRun.rec, { time: ghostRun.t })) showGhostNote("Your fastest run through here", "It runs beside you next time");
+    ghostRun.rec = null;
+  }
+  const played = sectorRun.stage === stage && sectorRun.time > 10;
+  if (!played) return;
+  achievements.add("sectors");
+  if (stage === "foundry") achievements.earn("wake");
+  else if (stage === "labs") achievements.earn("fire");
+  else if (stage === "skyline") achievements.earn("heights");
+  if (stage !== "roof" && sectorRun.hits === 0) achievements.earn("scratch");
+}
+/** Out of the tower. */
+function storyEscaped() {
+  achievements.add("escapes");
+  achievements.add(`escapes_${runDifficulty}`);
+  achievements.earn("roof");
+  if (runDifficulty === "hard") achievements.earn("hard");
+}
+/** Multiplayer trophies are Player 1's: the first controller in (the lowest slot). */
+function playerOne(players) {
+  return [...players].sort((a, b) => a.slot - b.slot)[0] ?? null;
+}
+function arenaEnded(a) {
+  achievements.add("arenaMatches");
+  achievements.earn("arena");
+  const me = playerOne(a.players);
+  if (!me) return;
+  achievements.add("arenaKOs", me.kos ?? 0);
+  achievements.add("arenaKnockOffs", me.stats?.ledge ?? 0);
+  if (a.mode !== "ctf") achievements.add("arenaPadTime", me.score ?? 0);
+  else achievements.add("arenaCaptures", me.score ?? 0);
+  if ((me.stats?.ledge ?? 0) >= 3) achievements.earn("ledge");
+  // (Capture the flag: Player 1's team won.)
+  if (a.mode === "ctf" ? me.team === a.winningTeam : a.winner === me) {
+    achievements.add("arenaWins");
+    achievements.earn("king");
+    if (!me.outs) achievements.earn("reign");
+  }
+}
+function raceEnded(r) {
+  achievements.add("races");
+  const me = playerOne(r.players);
+  if (!me) return;
+  achievements.max("raceBest", Math.floor(me.stats?.best ?? 0));
+  achievements.add("raceDistance", Math.floor(me.distance ?? 0));
+  if (r.winner === me) {
+    achievements.add("raceWins");
+    achievements.earn("race");
+    if (!me.launcher) achievements.earn("bare");
+    if (r.tierKey === "insane") achievements.earn("insane");
+  }
+}
+
+/** A length of time, as a person would say it. */
+function spanOf(seconds) {
+  const t = Math.floor(seconds);
+  if (t < 60) return `${t} s`;
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  return h ? `${h} h ${String(m).padStart(2, "0")} m` : `${m} m ${String(t % 60).padStart(2, "0")} s`;
+}
+/** The Statistics tab: the big four, then the sections, most telling first. */
+function statsModel() {
+  const st = (k) => achievements.stat(k);
+  const num = (v) => Math.floor(v).toLocaleString();
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "-");
+  const s = achievements.summary();
+  const bests = ["easy", "normal", "hard"].map((k) => [k, storyBest(k)]).filter(([, t]) => t);
+  const fastest = bests.sort((a, b) => a[1] - b[1])[0];
+  const played = st("playTime") + st("multiTime");
+  const balls = BALL_ORDER.map((k) => [k, st(`thrown_${k}`)]);
+  const fav = [...balls].sort((a, b) => b[1] - a[1])[0];
+  const thrownTyped = balls.reduce((n, [, v]) => n + v, 0);
+  const colourOf = (k) => `#${BALLS[k].colour.toString(16).padStart(6, "0")}`;
+  const p = missions.progress;
+  const qte = st("qtePassed") + st("qteFailed");
+  return {
+    hero: [
+      { label: "Trophies", value: `${s.earned} / ${s.total}`, note: `${s.percent}% complete`, colour: "#bdeeff" },
+      { label: "Escapes", value: num(st("escapes")), note: st("escapes") ? "Out of Ascension Tower" : "Not out yet", colour: "#ff8a42" },
+      { label: "Best escape", value: fastest ? hms(fastest[1]) : "--:--", note: fastest ? `On ${DIFFICULTIES[fastest[0]].name}` : "A whole story run, from the start", colour: "#ffcf4a" },
+      { label: "Time played", value: spanOf(played), note: st("multiTime") >= 60 ? `${spanOf(st("multiTime"))} of it multiplayer` : "Every run and match", colour: "#7ef4f1" },
+    ],
+    sections: [
+      {
+        title: "The story",
+        rows: [
+          ...["easy", "normal", "hard"].map((k) => ({ label: `Escapes on ${DIFFICULTIES[k].name}`, value: num(st(`escapes_${k}`)), note: storyBest(k) ? `best ${hms(storyBest(k))}` : "" })),
+          { label: "Sectors cleared", value: num(st("sectors")) },
+          { label: "Case files", value: `${p.files.length} / 5`, bar: p.files.length / 5 },
+          { label: "Missions", value: `${p.completed.length} / 13`, bar: p.completed.length / 13 },
+        ],
+      },
+      {
+        title: "Spheres",
+        rows: [
+          { label: "Thrown and fired", value: num(st("thrown")) },
+          { label: "Things broken", value: num(st("broken")) },
+          { label: "Hit rate", value: pct(Math.min(st("broken"), st("thrown")), st("thrown")), bar: st("thrown") ? Math.min(1, st("broken") / st("thrown")) : 0 },
+          { label: "Favourite sphere", value: fav && fav[1] ? BALLS[fav[0]].name : "-", colour: fav && fav[1] ? colourOf(fav[0]) : undefined },
+          ...balls.map(([k, v]) => ({ label: BALLS[k].name, value: num(v), colour: colourOf(k), bar: thrownTyped ? v / thrownTyped : 0 })),
+          { label: "Bank shots", value: num(st("bankShots")), note: "off a wall first" },
+        ],
+      },
+      {
+        title: "Survival",
+        rows: [
+          { label: "Times down", value: num(st("deaths")) },
+          { label: "Timed events passed", value: num(st("qtePassed")) },
+          { label: "Timed events missed", value: num(st("qteFailed")) },
+          { label: "Success rate", value: pct(st("qtePassed"), qte), bar: qte ? st("qtePassed") / qte : 0 },
+        ],
+      },
+      {
+        title: "Endless",
+        rows: [
+          { label: "Runs", value: num(st("endlessRuns")) },
+          ...["foundry", "labs", "skyline", "roof"].map((env) => ({ label: `Best in ${ENDLESS_NAMES[env]}`, value: endlessRecordText(env) || "-" })),
+        ],
+      },
+      {
+        title: "The Arena",
+        note: "as Player 1",
+        rows: [
+          { label: "Matches", value: num(st("arenaMatches")) },
+          { label: "Wins", value: num(st("arenaWins")), note: st("arenaMatches") ? pct(st("arenaWins"), st("arenaMatches")) : "", bar: st("arenaMatches") ? st("arenaWins") / st("arenaMatches") : 0 },
+          { label: "Taken out", value: num(st("arenaKOs")), note: "rivals" },
+          { label: "Knocked off the roof", value: num(st("arenaKnockOffs")) },
+          { label: "Time on the pad", value: spanOf(st("arenaPadTime")) },
+        ],
+      },
+      {
+        title: "The Race",
+        note: "as Player 1",
+        rows: [
+          { label: "Races", value: num(st("races")) },
+          { label: "Wins", value: num(st("raceWins")), note: st("races") ? pct(st("raceWins"), st("races")) : "", bar: st("races") ? st("raceWins") / st("races") : 0 },
+          { label: "Furthest", value: `${num(st("raceBest"))} m` },
+          { label: "Distance raced", value: `${num(st("raceDistance"))} m` },
+        ],
+      },
+    ],
+  };
+}
+$("#multiBackButton").addEventListener("click", () => showScreen(ui.start));
+
+/* ---- Endless: its difficulty ------------------------------------------------- */
+
+const ENDLESS_DIFFICULTY_KEY = "fractureRun.endlessDifficulty";
+let endlessDifficulty = (() => {
+  try { const v = localStorage.getItem(ENDLESS_DIFFICULTY_KEY); return DIFFICULTIES[v] ? v : "normal"; } catch { return "normal"; }
+})();
+function showEndlessDifficulty() {
+  for (const b of document.querySelectorAll("[data-endless-difficulty]")) {
+    const on = b.dataset.endlessDifficulty === endlessDifficulty;
+    b.classList.toggle("picked", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+}
+for (const b of document.querySelectorAll("[data-endless-difficulty]")) {
+  b.addEventListener("click", () => {
+    endlessDifficulty = b.dataset.endlessDifficulty;
+    try { localStorage.setItem(ENDLESS_DIFFICULTY_KEY, endlessDifficulty); } catch {}
+    level1Audio.uiClick();
+    showEndlessDifficulty();
+  });
+}
+showEndlessDifficulty();
+
+/* ---- Customise (single player): src/modes/locker/ ---------------------------- */
+
+/** The single-player look, as saved. */
+function savedLook() {
+  return { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), headwear: savedHeadwear(), shoes: savedShoes(), launcherSkin: savedLauncherSkin(), ball: savedBall() };
+}
+/** Save one choice and put it on the game's own figure and launchers. */
+function applyLook(patch) {
+  if (patch.character && CHARACTERS[patch.character]) {
+    saveCharacter(patch.character);
+    level1Audio.setCharacter(patch.character);
+    loadPlayerBody(patch.character);
+    meltdown?.setCharacter(patch.character);
+  }
+  if (patch.skin) { saveSkinTone(patch.skin); playerBody.setSkinTone(patch.skin); meltdown?.avatar?.setSkinTone(patch.skin); }
+  if (patch.hair) { saveHairColour(patch.hair); playerBody.setHairColour(patch.hair); meltdown?.avatar?.setHairColour(patch.hair); }
+  if (patch.outfit) { saveOutfit(patch.outfit); playerBody.setOutfit(patch.outfit); meltdown?.avatar?.setOutfit(patch.outfit); }
+  if (patch.headwear) { saveHeadwear(patch.headwear); playerBody.setHeadwear(patch.headwear); meltdown?.avatar?.setHeadwear(patch.headwear); }
+  if (patch.shoes) { saveShoes(patch.shoes); playerBody.setShoes(patch.shoes); meltdown?.avatar?.setShoes(patch.shoes); }
+  if (patch.launcherSkin) {
+    saveLauncherSkin(patch.launcherSkin);
+    if (skyLauncher.model) applyLauncherSkin(skyLauncher.model, patch.launcherSkin);
+    meltdown?.setLauncherSkin(patch.launcherSkin);
+  }
+  if (patch.ball) { saveBall(patch.ball); arsenal.prefer(patch.ball); ballPickers.show(patch.ball); }
+  refreshDossier();
+  // Subject 07 on the menu's roof (src/menu/backdrop.js) too.
+  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes() } }));
+}
+let locker = null;
+async function openCustomise(tab = "character") {
+  for (const screen of document.querySelectorAll(".screen.active")) screen.classList.remove("active");
+  locker ??= new Locker({ renderer, pads, assetBase: MELTDOWN_ASSET_BASE, audio: level1Audio, look: savedLook, apply: applyLook, onExit: () => closeCustomise(), backdrop: menuBackdrop,
+    // Your leaderboard name, changed from the top of the panel.
+    name: { get: () => leaderboard.name, change: (done) => askName(done) } });
+  holdLoading(["SUBJECT 07", "CUSTOMISE"]);
+  try {
+    await locker.open(tab);
+  } catch (error) {
+    console.warn("[customise] could not open", error);
+    cancelLoadingHold();
+    showScreen(ui.single);
+    return;
+  }
+  document.body.classList.add("in-arena");
+  // (On the menu's stage: nothing new to compile but the figure, drawn with the stage.)
+  if (locker.onStage) await releaseLoading(...menuBackdrop.warmTargets());
+  else await releaseLoading([locker.studio.scene, locker.studio.camera, () => locker.render()]);
+}
+function closeCustomise() {
+  locker?.close();
+  document.body.classList.remove("in-arena");
+  refreshDossier();
+  showScreen(ui.single);
+  warmMenu();
+}
+for (const b of document.querySelectorAll("[data-customise]")) b.addEventListener("click", () => openCustomise());
+
+/** The "on file" card: Subject 07 in their idle, the look, the launcher, the sphere, the records. */
+let portrait = null;
+function refreshDossier() {
+  const figure = $("#dossierFigure");
+  // (With the menu's 3D stage up, Subject 07 is on the roof: no second picture of them.)
+  if (figure && !menuBackdrop.live) {
+    portrait ??= new Portrait(figure, { assetBase: MELTDOWN_ASSET_BASE });
+    portrait.show(savedLook());
+  }
+  const l = savedLook();
+  const chip = (label, value, swatch = null) => `<div class="dossier-row"><span>${label}</span><b>${swatch ? `<i style="--sw:${swatch}"></i>` : ""}${value}</b></div>`;
+  const p = missions.progress;
+  const records = [];
+  if (leaderboard.name) records.push(["Name", leaderboard.name.replace(/[&<>"']/g, "")]);
+  if (runTimes.story) records.push(["Best run", hms(runTimes.story)]);
+  for (const key of ["easy", "hard"]) if (storyBest(key)) records.push([`Best on ${DIFFICULTIES[key].name}`, hms(storyBest(key))]);
+  const topScore = Math.max(0, ...Object.values(bestScores.story), ...Object.values(bestScores.endless));
+  if (topScore) records.push(["High score", topScore.toLocaleString("en-US")]);
+  for (const env of ["foundry", "labs", "skyline", "roof"]) {
+    const best = endlessRecordText(env);
+    if (best) records.push([ENDLESS_NAMES[env], best]);
+  }
+  records.push(["Case files", `${p.files.length} / 5`]);
+  records.push(["Missions", `${p.completed.length} / 13`]);
+  const html = `
+    <div class="dossier-id"><em>07</em><div><b>SUBJECT 07</b><small>${l.character === "playerMale" ? "Male" : "Female"} test subject</small></div></div>
+    ${chip("Complexion", SKIN_TONES[l.skin]?.label ?? "", SKIN_TONES[l.skin]?.swatch)}
+    ${chip("Hair", HAIR_COLOURS[l.hair]?.label ?? "", HAIR_COLOURS[l.hair]?.swatch)}
+    ${chip("Outfit", OUTFITS[l.outfit]?.label ?? "", OUTFITS[l.outfit]?.swatch)}
+    ${chip("Headwear", HEADWEAR[l.headwear]?.label ?? "")}
+    ${chip("Shoes", SHOES[l.shoes]?.label ?? "")}
+    ${chip("Launcher", LAUNCHER_SKINS[l.launcherSkin]?.label ?? "", LAUNCHER_SKINS[l.launcherSkin]?.swatch)}
+    ${chip("Sphere", BALLS[l.ball]?.name ?? "", `#${(BALLS[l.ball]?.colour ?? 0xffffff).toString(16).padStart(6, "0")}`)}`;
+  for (const body of document.querySelectorAll(".dossier-body")) body.innerHTML = html;
+  for (const dl of document.querySelectorAll(".dossier-records")) dl.innerHTML = records.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+
+refreshDossier();
 for (const button of document.querySelectorAll("[data-chapter]")) {
   button.addEventListener("click", () => startChapter(button.dataset.chapter));
 }
@@ -5113,6 +6024,16 @@ ui.voicesToggle?.addEventListener("change", (event) => {
   story.voice.characterVoices = settings.voices;
   // Off mid-line: that line stops too (unless it is the intercom).
   if (!settings.voices && story.voice.speakingWho !== "halcyon") story.voice.stop();
+});
+ui.ghostsToggle?.addEventListener("change", (event) => {
+  settings.ghosts = event.target.checked;
+  saveSettings();
+  if (!settings.ghosts) ghostRun.ghost && (ghostRun.ghost.root.visible = false);
+});
+ui.gruntsToggle?.addEventListener("change", (event) => {
+  settings.grunts = event.target.checked;
+  saveSettings();
+  level1Audio.playerVoice = settings.grunts;
 });
 ui.longReactionsToggle.addEventListener("change", (event) => { settings.longReactions = event.target.checked; saveSettings(); story.setOptions({ longWindows: settings.longReactions }); });
 ui.holdInsteadOfMashToggle.addEventListener("change", (event) => { settings.holdInsteadOfMash = event.target.checked; saveSettings(); story.setOptions({ holdInsteadOfMash: settings.holdInsteadOfMash }); });
@@ -5156,12 +6077,11 @@ causewayHud.photoEl.querySelector("[data-fov]").addEventListener("input", (event
 /* ---- Input ---------------------------------------------------------------- */
 
 addEventListener("pointermove", (event) => {
-  if (versus.active) return;
   const factor = settings.sensitivity / 100;
   pointer.x = THREE.MathUtils.clamp(((event.clientX / innerWidth) * 2 - 1) * factor, -1, 1);
   pointer.y = THREE.MathUtils.clamp((-(event.clientY / innerHeight) * 2 + 1) * factor, -1, 1);
   placeReticle();
-  meltdown?.onPointerMove(event.clientX, event.clientY);
+  meltdown?.onPointerMove(event.clientX, event.clientY, event);
   gravityLift?.onPointerMove(pointer.x, pointer.y);
 });
 
@@ -5175,15 +6095,17 @@ function placeReticle() {
   ui.reticle.style.top = `${((1 - pointer.y) / 2) * innerHeight}px`;
 }
 addEventListener("pointerdown", (event) => {
-  if (versus.active) return;
+  if (arena?.active || race?.active || locker?.active) return;
   if (powerups.open) return; // the serum card takes the click
   if (state === "launch" && causeway) { skipLaunch(); return; }
   if (state === "cutscene" || story.player.active) return;
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
+    // The roof over the shoulder: the mouse is held to the game, so it turns the view freely.
+    if (meltdown?.wantsPointerLock && state === "playing" && !paused && !document.pointerLockElement) canvas.requestPointerLock?.()?.catch?.(() => {});
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
-    // Focus (bullet time) is every level's, as in the Skyline.
-    if (event.button === 2 && state === "playing") run.focusing = true;
+    // Focus (bullet time): the story earns it in the Skyline (systems/progression.js).
+    if (event.button === 2 && state === "playing" && hasAbility("focus")) run.focusing = true;
     return;
   }
   // The lift ride: shoot the brake clamps.
@@ -5191,8 +6113,13 @@ addEventListener("pointerdown", (event) => {
     if (event.button === 0 && !paused) gravityLift.fire();
     return;
   }
-  if (event.button === 0) fire();
-  if (event.button === 2 && state === "playing") run.focusing = true;
+  if (event.button === 0) {
+    // The Skyline's launcher fires when the trigger comes up - held, it
+    // charges first (systems/charge.js). (The Labs and the Roof: their game.)
+    if (currentLevel === 1 && causeway && state === "playing" && !paused && hasAbility("charge")) charge.press(arsenal.current.colour);
+    else fire();
+  }
+  if (event.button === 2 && state === "playing" && hasAbility("focus")) run.focusing = true;
 });
 
 /** The sphere types are every level's now (the Skyline's rules everywhere). */
@@ -5204,21 +6131,34 @@ function cycleSphere(step) {
   showMessage(`${ball.name.toUpperCase()} SPHERE // ${ball.cost} PER ${verb}`);
   meltdown?.hud?.toast?.(`${ball.name.toUpperCase()} SPHERE`, `${ball.cost} PER SHOT`, "", 1200);
 }
+// Esc lets go of the roof's held mouse (the browser does that itself): a pause, as anywhere.
+document.addEventListener("pointerlockchange", () => {
+  if (!document.pointerLockElement && currentLevel === 3 && state === "playing" && !paused && meltdown?.wantsPointerLock && !unlockCard.open) openPause();
+});
 addEventListener("pointerup", (event) => {
   if (event.button === 2) run.focusing = false;
+  if (event.button === 0 && currentLevel === 1 && charge.holding) {
+    const level = charge.release();
+    fire(level ? { charged: level } : {});
+  }
   meltdown?.onPointerUp(event);
 });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 addEventListener("wheel", (event) => {
-  if (gravityLift || versus.active) return;
+  if (gravityLift || arena?.active || race?.active) return;
   cycleSphere(event.deltaY > 0 ? 1 : -1);
 }, { passive: true });
 
 addEventListener("keydown", (event) => {
-  // Versus reads the keyboard itself (src/versus/controls.js).
-  if (versus.active) return;
+  // The Arena, the Race and Customise read their own keys.
+  if (arena?.active || race?.active || locker?.active) return;
   // Trailer mode keys (only with ?trailer).
   if (trailer.onKey(event)) return;
+  // A sector's unlock card: Space, Enter or Esc carries on; nothing else.
+  if (unlockCard.open) {
+    if (["Space", "Enter", "NumpadEnter", "Escape"].includes(event.code) && !event.repeat) { event.preventDefault(); unlockCard.close(); }
+    return;
+  }
   // The serum card: Space or Enter carries on (Esc too, below); nothing else.
   if (powerups.open && event.code !== "Escape") {
     if (event.code === "Space" || event.code === "Enter" || event.code === "NumpadEnter") { event.preventDefault(); closePowerupIntro(); }
@@ -5229,10 +6169,9 @@ addEventListener("keydown", (event) => {
     level1Audio.uiClick();
     if (photoActive) togglePhoto();
     else if (ui.manual.classList.contains("active")) { ui.manual.classList.remove("active"); ui.start.classList.add("active"); }
-    else if (appearanceScreen.classList.contains("active")) closeAppearance();
-    else if (ui.chapters.classList.contains("active")) { ui.chapters.classList.remove("active"); ui.start.classList.add("active"); }
-    else if (ui.newGame.classList.contains("active")) { ui.newGame.classList.remove("active"); ui.start.classList.add("active"); }
-    else if (ui.endless.classList.contains("active")) { ui.endless.classList.remove("active"); ui.start.classList.add("active"); }
+    else if (ui.arenaMode?.classList.contains("active")) showScreen(ui.multi);
+    else if (ui.single.classList.contains("active") || ui.multi.classList.contains("active") || ui.trophies.classList.contains("active") || ui.leaderboards.classList.contains("active")) showScreen(ui.start);
+    else if (ui.chapters.classList.contains("active") || ui.newGame.classList.contains("active") || ui.endless.classList.contains("active")) showScreen(ui.single);
     else if (ui.settings.classList.contains("active")) closeSettings();
     else if ($("#creditsScreen").classList.contains("active")) $("#creditsBackButton").click();
     else if ($("#reportScreen").classList.contains("active")) $("#reportBackButton").click();
@@ -5290,6 +6229,135 @@ addEventListener("keyup", (event) => {
   if (event.code === "KeyS" || event.code === "ArrowDown") keysDown.delete("down");
 });
 addEventListener("blur", () => { keysDown.clear(); run.focusing = false; meltdown?.onBlur(); });
+// A phone turned upright mid-run: it pauses under the "turn it sideways" screen.
+setUpPhone({ onPortrait: () => { if (!paused) openPause(); } });
+
+/* ---- Controllers (src/systems/gamepads.js) --------------------------------- */
+
+const pads = new Gamepads();
+const padUI = new PadUI(pads, { lists: [$("#padMenuList"), $("#padSettingsList"), $("#padMultiList")] });
+/** A controller is what is being played with (the hints, the quick-time hits, no cursor). */
+let padMode = false;
+function setPadMode(on) {
+  if (on === padMode) return;
+  padMode = on;
+  document.body.classList.toggle("pad-mode", on);
+  // Every key named on screen: the controller's names (L1 / R1, OPTIONS...) or the keyboard's.
+  setPadActive(on);
+  applyInputNames();
+  // The next quick-time hit is asked for in stick flicks and triggers (on a
+  // touch screen always: swipes and taps on the two halves of the screen).
+  story.reactions.options.pad = on || PHONE;
+}
+/** The control names in the hints follow the controller in use. */
+function refreshPadGlyphs() {
+  for (const k of document.querySelectorAll("kbd[data-pad]")) k.textContent = padLabel(k.dataset.pad);
+  const list = $("#padControls");
+  if (list) list.innerHTML = padControlsHTML();
+}
+refreshPadGlyphs();
+watchInputNames();
+function padRumble(effect) {
+  if (!padMode || !settings.padVibration) return;
+  pads.rumble(pads.pads.get(pads.active), effect);
+}
+story.reactions.onStart = () => padRumble({ strong: 0.25, weak: 0.5, ms: 140 });
+
+const padBridge = new PadBridge(pads, {
+  canvas: renderer.domElement,
+  mode() {
+    // (The Arena reads every controller itself.)
+    if (loadingHold || pendingTransition || arena?.active || race?.active || locker?.active) return "off";
+    if (story.reactions?.state === "running") return "reaction";
+    if (powerups.open || paused || document.querySelector(".screen.active")) return "menu";
+    return "play";
+  },
+  menuRoot: () => [...document.querySelectorAll(".screen.active")].pop() ?? null,
+  // L1 / R1 in a menu: the Trophies & Stats screen's tabs.
+  onBumper(step) {
+    if (ui.trophies.classList.contains("active")) trophyRoom.cycleTab(step);
+    else if (ui.manual.classList.contains("active")) fieldManual.cycleTab(step);
+    else if (ui.settings.classList.contains("active")) settingsTabs?.cycleTab(step);
+    else if ($("#creditsScreen").classList.contains("active")) creditsRoom?.cycleTab(step);
+  },
+  // A on a serum's card: carry on (as Space does).
+  confirmCard() {
+    if (unlockCard.open) { unlockCard.close(); return true; }
+    if (!powerups.open) return false;
+    closePowerupIntro();
+    return true;
+  },
+  aimSpeed: () => (settings.padAimSpeed ?? 100) / 100,
+  // The right stick turns the roof's shoulder camera (else it moves the cursor).
+  lookStick: (x, y, dt) => (currentLevel === 3 && state === "playing" && !paused && meltdown?.lookStick(x, y, dt)) || false,
+  onActive(rec) {
+    if (rec.family !== padFamilyNow) { padFamilyNow = rec.family; setPadFamily(rec.family); refreshPadGlyphs(); applyInputNames(); }
+    setPadMode(true);
+  },
+});
+let padFamilyNow = null;
+
+/* ---- Touch screens (src/systems/touch-controls.js) ------------------------- */
+
+/** A phone or tablet: swipes, taps and holds played as the keys and clicks the game hears. */
+const touchControls = new TouchControls({
+  canvas: renderer.domElement,
+  enabled: () => PHONE && !padMode,
+  mode() {
+    if (loadingHold || pendingTransition) return "off";
+    if (arena?.active || race?.active || locker?.active) return "off";
+    if (story.reactions?.state === "running" && !paused) return "reaction";
+    if (unlockCard.open || powerups.open || paused || photoActive || document.querySelector(".screen.active")) return "off";
+    if (state === "cutscene" || story.player.active) return "cutscene";
+    // The lift ride: a tap aims at the clamp there and fires (as in a run).
+    if (gravityLift) return "run";
+    if (state !== "playing") return "off";
+    if (currentLevel === 3) return meltdown?.phase === "roof" ? "roof" : meltdown?.phase === "run" ? "run" : "off";
+    return "run";
+  },
+  wants: () => story.reactions?.wants ?? null,
+  skipProgress: () => story.player.skipProgress ?? 0,
+  // The bazooka a flying patient made you drop, at your feet (flying-zombies.js).
+  pickup: () => !!meltdown?._flying?.pickupPrompt,
+  canFocus: () => hasAbility("focus"),
+  skyline: () => currentLevel === 1,
+});
+let touchPlace = null;
+function updateTouch(dt) {
+  touchControls.update(dt);
+  touchControls.attachWheel(document.querySelector(".sphere-wheel"), () => cycleSphere(1));
+  // The roof's names ("DODGE", "THE STICK") or the run's ("SWIPE UP").
+  const place = currentLevel === 3 && /^roof/.test(meltdown?.phase ?? "") ? "roof" : "run";
+  if (place !== touchPlace) { touchPlace = place; setTouchPlace(place); applyInputNames(); }
+}
+if (PHONE) {
+  setTouchActive(true);
+  story.reactions.options.pad = true;
+  applyInputNames();
+}
+pads.on("connect", (rec) => {
+  padUI.connected(rec);
+  level1Audio.uiClick?.();
+}).on("disconnect", (rec) => {
+  padUI.disconnected(rec);
+  // Like a console: the controller in use drops out mid-run - pause.
+  if (arena?.active) arena.padLost(rec.index);
+  else if (race?.active) race.padLost(rec.index);
+  else if (padMode && (state === "playing" || state === "lift") && !paused) openPause();
+  if (!pads.count) setPadMode(false);
+});
+// The keyboard or the mouse in use again: their hints, and the cursor back.
+addEventListener("keydown", (e) => { if (e.isTrusted) setPadMode(false); }, true);
+addEventListener("pointerdown", (e) => { if (e.isTrusted) setPadMode(false); }, true);
+addEventListener("pointermove", (e) => {
+  if (e.isTrusted && padMode && Math.abs(e.movementX) + Math.abs(e.movementY) > 8) setPadMode(false);
+}, true);
+ui.padAimSlider = $("#padAimSlider");
+ui.padVibrationToggle = $("#padVibrationToggle");
+ui.padAimSlider.value = settings.padAimSpeed;
+ui.padVibrationToggle.checked = settings.padVibration;
+ui.padAimSlider.addEventListener("input", (event) => { settings.padAimSpeed = Number(event.target.value); saveSettings(); });
+ui.padVibrationToggle.addEventListener("change", (event) => { settings.padVibration = event.target.checked; saveSettings(); });
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
@@ -5297,40 +6365,8 @@ addEventListener("resize", () => {
   postfx.resize();
   placeReticle();
   meltdown?.resize(innerWidth, innerHeight);
-  versus.resize();
+  arena?.resize(innerWidth, innerHeight);
 });
-
-/*
- * Controllers - PlayStation and Xbox pads (src/systems/pad-input.js). The
- * pad plays through the handlers above: its buttons arrive as these keys,
- * its right stick as the mouse on the canvas, and over a menu it moves a
- * focus ring. This is what it needs to know about the game.
- */
-const padInput = new PadInput({
-  gamepads: new Gamepads(),
-  canvas,
-  game: {
-    get state() { return state; },
-    get paused() { return paused; },
-    /** The mouse's aim is scaled by its sensitivity outside Level 3 (pointermove above). */
-    get aimScale() { return currentLevel === 3 ? 1 : settings.sensitivity / 100; },
-    get aimAssist() { return settings.aimAssist; },
-    get aimTargets() {
-      if (gravityLift) return null;
-      if (currentLevel === 3) return meltdown?.level && !meltdown.roof ? { camera: meltdown.camera, targets: meltdown.level.breakables } : null;
-      return { camera, targets: aliveTargets() };
-    },
-    /** Level 3's module while the roof fight is on (it takes the stick as an analog vector). */
-    get roof() { return currentLevel === 3 && meltdown?.roof && meltdown.phase === "roof" ? meltdown : null; },
-    get photo() { return photoActive ? photo : null; },
-    get serumCard() { return powerups.open ? powerups.card : null; },
-    get reactionKeys() { return story.reactions.running ? story.reactions.keys : null; },
-    toast: showMessage,
-    unlockAudio: () => unlockMusic({}),
-  },
-});
-// Felt as well as heard: every glass break, hit, blast and death in every level plays one of these.
-padInput.feel(level1Audio, { glassBreak: "glass", hurt: "hit", explosion: "blast", gameOver: "death" });
 
 
 /* ---- A refresh: back where you were ------------------------------------- */
@@ -5345,6 +6381,11 @@ padInput.feel(level1Audio, { glassBreak: "glass", hurt: "hit", explosion: "blast
 const SESSION_KEY = "fractureRun.session";
 const SESSION_SCREENS = {
   startScreen: null,
+  singleScreen: "#singleButton",
+  multiScreen: "#multiButton",
+  trophiesScreen: "#trophiesButton",
+  leaderboardsScreen: "#leaderboardsButton",
+  arenaModeScreen: "#arenaButton",
   chaptersScreen: "#chaptersButton",
   newGameScreen: "#startButton",
   endlessScreen: "#endlessButton",
@@ -5352,7 +6393,6 @@ const SESSION_SCREENS = {
   settingsScreen: "#settingsButton",
   creditsScreen: "#creditsButton",
   reportScreen: "#lastReportButton",
-  appearanceScreen: "#appearanceButton",
 };
 /** (Not for the checks driving the page, nor the trailer capture.) */
 const sessionKept = !navigator.webdriver && !trailer.enabled;
@@ -5383,8 +6423,20 @@ function sessionSnapshot() {
     // What you carried into the sector (headed for the next: what you carry now).
     const cp = storyCheckpoint?.stage === stage ? storyCheckpoint : { stage, score: Math.floor(score), ammo, balls: storyBalls };
     const mid = levelCheckpoint && levelCheckpoint.key === stage ? { ...levelCheckpoint } : null;
+    // Where you are in it, exactly (the runner levels; the roof starts over).
+    let at = null;
+    const d = stage === reportLevel() && (state === "playing" || state === "ended") ? levelDistance(stage) : null;
+    if (d !== null && d > 1) {
+      const labs = stage === "labs" && meltdown;
+      at = {
+        key: stage, distance: Math.max(0, d - 2), name: "",
+        ammo: labs ? meltdown.runner.balls : ammo,
+        health: labs ? meltdown.runner.vitality : health,
+        score: Math.floor(score),
+      };
+    }
     return {
-      where: "run", kind, stage, difficulty: runDifficulty, checkpoint: { ...cp }, mid,
+      where: "run", kind, stage, difficulty: runDifficulty, checkpoint: { ...cp }, mid, at,
       bag: !awaitingBag, seen: [...story.seen], report: runReport,
     };
   }
@@ -5405,7 +6457,9 @@ addEventListener("pagehide", writeSession);
 addEventListener("beforeunload", writeSession);
 
 /** Once the run is up (out of the loading screen), open the pause menu over it. */
-function pauseWhenReady({ mid = null, bag = false } = {}) {
+function pauseWhenReady({ mid = null, at = null, bag = false } = {}) {
+  // The spot to go back to: exactly where you were, else the checkpoint you had reached.
+  const target = at ?? mid;
   const until = performance.now() + 60000;
   let calm = 0;
   const tick = () => {
@@ -5413,19 +6467,34 @@ function pauseWhenReady({ mid = null, bag = false } = {}) {
     // (Settled for a couple of checks: the level's first frames have run.)
     calm = !loadingHold && !pendingTransition && !meltdownEntering ? calm + 1 : 0;
     const settled = calm >= 3;
-    if (mid) {
-      // Back to the checkpoint you had reached: once the sector is playing.
-      const ready = settled && state === "playing" && reportLevel() === mid.key &&
-        (mid.key !== "labs" || meltdown?.phase === "run") && !story.player.active;
+    if (target) {
+      // Back to that spot: once the sector is playing.
+      const ready = settled && state === "playing" && reportLevel() === target.key &&
+        (target.key !== "labs" || meltdown?.phase === "run") && !story.player.active;
       if (!ready) { setTimeout(tick, 100); return; }
-      levelCheckpoint = mid;
-      checkpointLevel = mid.key;
-      if (mid.key === "foundry" && bag && awaitingBag) {
+      levelCheckpoint = target;
+      checkpointLevel = target.key;
+      if (target.key === "foundry" && bag && awaitingBag) {
         bagToss = null;
         wearSphereBag(true);
         awaitingBag = false;
       }
       resumeFromCheckpoint();
+      // Okoro runs on ahead of you from there, not from the Foundry's start.
+      if (target.key === "foundry" && foundryGuide) foundryGuide.start(target.distance);
+      // What you had there (the checkpoint's own retry stays the real one).
+      if (at) {
+        score = at.score ?? score;
+        if (at.key === "labs" && meltdown) {
+          meltdown.runner.balls = at.ammo;
+          meltdown.runner.vitality = Math.max(1, at.health ?? meltdown.runner.vitality);
+        } else {
+          ammo = at.ammo;
+          health = Math.max(1, at.health ?? health);
+        }
+        updateUI();
+      }
+      levelCheckpoint = mid;
     } else if (!settled || !["playing", "lift", "cutscene"].includes(state)) {
       setTimeout(tick, 100);
       return;
@@ -5468,8 +6537,8 @@ function restoreRun(snap) {
   runReport = story_ ? (snap.report ?? null) : null;
   if (story_ && !runReport) newRunReport();
   // A sector you were part-way through: its opening scenes stay seen.
-  if (snap.mid) for (const id of seen) story.markSeen(id);
-  pauseWhenReady({ mid: snap.mid, bag: snap.bag });
+  if (snap.mid || snap.at) for (const id of seen) story.markSeen(id);
+  pauseWhenReady({ mid: snap.mid, at: snap.at, bag: snap.bag });
 }
 
 /** Back on the menu page the tab was on. */
@@ -5480,6 +6549,12 @@ function restoreMenu(snap) {
   if (!button) return;
   const el = $(button);
   if (el && !el.hidden) el.click();
+}
+
+/** A refresh that is coming back into a run. */
+function pendingRunRestore() {
+  if (!sessionKept) return false;
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "null")?.where === "run"; } catch { return false; }
 }
 
 function restoreSession() {
@@ -5504,8 +6579,9 @@ function restoreSession() {
  * buttons answer the moment it is seen (at the start, and after a quit).
  */
 async function warmMenu() {
-  if (loadingHold) return;
-  holdLoading(["ASCENSION TOWER", "LOADING"]);
+  // (A level's own hold: it releases itself. The menu's own, from the boot: kept.)
+  if (loadingHold && !loadingHold.menu) return;
+  if (!loadingHold) holdLoading(["ASCENSION TOWER", "LOADING"]);
   const hold = loadingHold;
   hold.menu = true;
   await nextFrames(2);
@@ -5514,12 +6590,34 @@ async function warmMenu() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (loadingHold !== hold) return;
-  await releaseLoading([scene, camera]);
+  // With the 3D stage behind the menus the levels' scene isn't seen from
+  // here, and every run rebuilds the Foundry and the Skyline (new textures):
+  // their programs compiled now (cached for later), their textures not.
+  if (menuBackdrop.live) await releaseLoading({ shadersOnly: true }, [scene, camera]);
+  else await releaseLoading([scene, camera]);
 }
 
 async function bootMenu() {
+  // Back into a run: the characters' models first (Okoro, Vale, you), or the
+  // level is built with their stand-ins - behind the loading screen.
+  if (pendingRunRestore()) {
+    holdLoading(["ASCENSION TOWER", "RESUMING"]);
+    loadingHold.menu = true;
+    await Promise.race([
+      Promise.all([okoroReady, valeReady, playerBodyLoaded]),
+      new Promise((resolve) => setTimeout(resolve, 20000)),
+    ]);
+  }
   restoreSession();
+  // The first screen is Subject 07 on the roof: wait for the stage (or give up on it).
+  if (state === "intro") await menuBackdrop.settled(30000);
   await warmMenu();
+  // Loaded: the opening screen's buttons, in place of "Loading".
+  document.documentElement.classList.remove("booting");
+  // The leaderboards: what's waiting goes up; the first time, your name is asked.
+  // (Not over the checks, which drive the menus themselves: ?askname shows it there.)
+  if (leaderboard.name) { uploadLocalBests(); leaderboard.flush(); }
+  else if (!leaderboard.asked && (!navigator.webdriver || /[?&]askname/.test(location.search))) askName();
 }
 
 applyQuality();
@@ -5546,7 +6644,16 @@ globalThis.__dbg = {
   openPause,
   closePause,
   get state() { return state; },
+  /** How hard it's working (the phone checks): quality, pixels, rate. */
+  get speed() {
+    const gl = renderer.getContext();
+    return { phone: PHONE, quality: resolvedQuality(), pixelRatio: renderer.getPixelRatio(), antialias: gl.getContextAttributes().antialias, postfxScale: postfx.scale, labsScale, steady30: pacer.steady, fps: perf.fps, level: perf.level, autoLow };
+  },
   get currentLevel() { return currentLevel; },
+  get lane() { return lane; },
+  get moves() { return { jumpHeight, sliding, focusing: !!run.focusing }; },
+  /** The touch controls (src/systems/touch-controls.js): mode, keys held. */
+  get touch() { return { phone: PHONE, mode: touchControls.mode, keys: [...touchControls.keys.keys()], mouse: touchControls.mouse }; },
   get runZ() { return runZ; },
   get health() { return health; },
   get ammo() { return ammo; },
@@ -5556,10 +6663,6 @@ globalThis.__dbg = {
   get causeway() { return causeway; },
   get meltdown() { return meltdown; },
   enterMeltdown,
-  /** Versus (src/versus/index.js): openLobby(), quickStart(), state, match. */
-  get versus() { return versus; },
-  /** The menus' 3D stage (src/menu/backdrop.js): .live, .shot, .stage. */
-  get menuStage() { return menuBackdrop; },
   get gravityLift() { return gravityLift; },
   get loadingScreen() { return loadingScreen; },
   get deathFx() { return deathFx; },
@@ -5567,6 +6670,13 @@ globalThis.__dbg = {
   sphereFlight: SPHERE_FLIGHT,
   get playerBodyTemplate() { return playerBodyTemplate; },
   get playerBody() { return playerBody; },
+  /** The menus' 3D stage (src/menu/backdrop.js): .live, .shot, .stage. */
+  get menuStage() { return menuBackdrop; },
+  get charge() { return charge; },
+  /** The main scene's camera (the Foundry, the Skyline): staged pictures place it. */
+  get camera() { return camera; },
+  get unlockCard() { return unlockCard; },
+  THREE,
   demoGravityLift,
   demoQuietRide,
   startFoundryLift,
@@ -5577,8 +6687,6 @@ globalThis.__dbg = {
   get projectiles() { return projectiles; },
   get arsenal() { return arsenal; },
   get powerups() { return powerups; },
-  /** The controller driver (src/systems/pad-input.js): the checks call update() themselves. */
-  pad: padInput,
   get runReport() { return runReport; },
   newRunReport, showRunReport,
   get skyLauncher() { return { rig: skyLauncher.rig, loaded: !!skyLauncher.model, cameraThird, avatarVisible: avatar.visible, level: currentLevel, photoActive }; },
@@ -5599,15 +6707,6 @@ globalThis.__dbg = {
   resetGame,
   setRunZ(z) { runZ = z; },
   setCausewayDistance(d) { runZ = CAUSEWAY_ORIGIN_Z - d; },
-  /**
-   * A demolition now (src/fx/demolition.js): on the Roof the next tower, or
-   * "crash" for the police helicopter; on the Skyline, Tower C.
-   */
-  demolish(what = "collapse") {
-    if (currentLevel === 3) return meltdown?.demolitions?.trigger(what) ?? false;
-    if (currentLevel === 1) return causeway?.demolish?.(what) ?? false;
-    return false;
-  },
   setLane(index) { lane = index; playerX = lanes[index]; },
   setHealth(v) { health = v; },
   /**
@@ -5641,6 +6740,13 @@ globalThis.__dbg = {
   setAmmo(v) { ammo = v; },
   get playerX() { return playerX; },
   renderer, scene, camera, THREE,
+  /** Controllers: the reader and the bridge (a check can poll them by hand). */
+  pads, padBridge, get padMode() { return padMode; },
+  get arena() { return arena; },
+  get race() { return race; },
+  get portrait() { return portrait; },
+  applyLook: (patch) => applyLook(patch),
+  achievements,
   /** The story: the layer, Okoro, and a jump to any scene (story runs only). */
   story: {
     layer: story,

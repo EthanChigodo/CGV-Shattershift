@@ -29,7 +29,11 @@
  * Phases (PHASES below has the lengths):
  *   board     doors close behind Subject 07, the Foundry glowing through them
  *             (skipped when the player boarded in Level 2's Calibration Lift)
- *   climb     launch up the outside of Ascension Tower
+ *   climb     launch up the outside of Ascension Tower. The story's version
+ *             then cuts to the lift's own security camera, high in the
+ *             corner: Okoro and Subject 07, quiet, in a grainy few frames
+ *             a second, until the feed breaks up - and the tremor opens
+ *             outside, on the lift shuddering on its rails
  *   tremor    the building shakes, the lights flicker, the lift stalls; the
  *             left pane cracks, the cracks spread, and it blows out
  *   freefall  the cable snaps: blackout, red emergency light, two seconds
@@ -100,10 +104,13 @@ export const CLAMP_TIME = 12;
 /** Camera for the clamps, by how many are locked: 0, 1, 2, then all three. */
 const CLAMP_SHOTS = ["interior", "front", "diagnostic", "front"];
 
+/** The climb, seen from outside. */
+const CLIMB_TIME = 2.8;
+
 /** Phase lengths in seconds, in order. */
 export const PHASES = [
   ["board", 1.8],
-  ["climb", 2.8],
+  ["climb", CLIMB_TIME],
   ["tremor", 3.6],
   ["freefall", 2.0],
   ["brake", 1.6],
@@ -121,6 +128,27 @@ const SHOTS = {
   brake: [[0, "interior"], [0.8, "close"]],
   launcher: [[0, "close"], [0.55, "roof"], [1.35, "pickup"]],
   resume: [[0, "rising"]],
+};
+
+/** The story's security-camera shot at the end of the climb: its length. */
+export const CCTV_TIME = 2.5;
+/** Its last seconds, the feed breaking up. */
+const CCTV_GLITCH = 0.6;
+/** The feed's frames per second: the picture is held in between. */
+const CCTV_FPS = 12;
+/** The camera's lens, high in the corner by the doors (cabin space). */
+const CCTV_AT = new THREE.Vector3(1.72, 2.92, 1.72);
+/** A tired security camera's colour: washed out, a little green. */
+const CCTV_FILTER = "grayscale(0.75) sepia(0.35) hue-rotate(55deg) saturate(1.3) contrast(1.2) brightness(1.08)";
+
+/**
+ * The story's shots: after the climb outside, the security camera; the
+ * tremor opens outside, the lift shuddering on its rails, before going in.
+ */
+const STORY_SHOTS = {
+  ...SHOTS,
+  climb: [[0, "exterior"], [CLIMB_TIME, "cctv"]],
+  tremor: [[0, "exterior"], [1.2, "interior"], [1.9, "close"]],
 };
 
 const FADE_IN = 0.6;
@@ -239,8 +267,11 @@ export class GravityFaultRide {
     this.hud.show();
 
     this.phases = boarded ? PHASES.filter(([name]) => name !== "board") : PHASES.slice();
-    // The story's clamps end when the last reaction lands, not on a clock.
-    if (story) this.phases = this.phases.map(([name, length]) => [name, name === "clamps" ? 600 : length]);
+    // The story's clamps end when the last reaction lands, not on a clock;
+    // its climb holds on the security camera before the tremor.
+    if (story) this.phases = this.phases.map(([name, length]) => [name, name === "clamps" ? 600 : name === "climb" ? length + CCTV_TIME : length]);
+    this.shots = story ? STORY_SHOTS : SHOTS;
+    if (story) this._securityCamera();
     this.state = {
       phaseIndex: 0,
       /** Seconds into the current phase. */
@@ -727,13 +758,17 @@ export class GravityFaultRide {
       avatar.setWear(this.figureState.wear);
       avatar.setGear(this.figureState.gear);
       if (this.figureState.skinTone) avatar.setSkinTone(this.figureState.skinTone);
+      if (this.figureState.outfit) avatar.setOutfit(this.figureState.outfit);
+      if (this.figureState.headwear) avatar.setHeadwear(this.figureState.headwear);
+      if (this.figureState.shoes) avatar.setShoes(this.figureState.shoes);
       if (this.figureState.hairColour) avatar.setHairColour(this.figureState.hairColour);
     }
     avatar.setModel(template);
     this._avatar = avatar;
     return {
       root: avatar.root,
-      pose: (float, time, dt = 0) => avatar.update(dt, { speed: 0 }),
+      // (No idle while it floats.)
+      pose: (float, time, dt = 0) => { avatar.idleOff = float > 0.05; avatar.update(dt, { speed: 0 }); },
     };
   }
 
@@ -746,7 +781,7 @@ export class GravityFaultRide {
     // For the check harness and screenshots: hold one shot.
     if (this.forceShot) return this.forceShot;
     if (this.phase === "clamps") return CLAMP_SHOTS[this.clamps.locked];
-    const list = SHOTS[this.phase] ?? SHOTS.climb;
+    const list = this.shots[this.phase] ?? this.shots.climb;
     let shot = list[0][1];
     for (const [at, name] of list) if (this.state.pt >= at) shot = name;
     return shot;
@@ -815,6 +850,16 @@ export class GravityFaultRide {
       cam.position.set(Math.sin(angle) * radius, camY, -Math.cos(angle) * radius);
       _look.set(0, (shot === "rising" ? y : y - (1 - u) * 1.2) + 1.3, 0.8);
       cam.fov = 58;
+    } else if (shot === "cctv") {
+      // The lift's own security camera: wide, fixed, looking down past
+      // Subject 07 to Okoro. At the end the feed breaks up and the picture
+      // jumps.
+      const who = this.figure.root.position;
+      const other = this.director?.okoro.root.position ?? who;
+      cam.position.set(CCTV_AT.x, y + CCTV_AT.y, CCTV_AT.z);
+      _look.set((who.x + other.x) / 2, y + 1.15, (who.z + other.z) / 2);
+      if (this._feedGlitch() && !this.reducedMotion && Math.random() < 0.35) _look.x += (Math.random() - 0.5) * 0.6;
+      cam.fov = 78;
     } else if (shot === "falling") {
       // Fixed below and to the side: the cabin drops toward the camera and
       // past it, throwing sparks.
@@ -838,6 +883,7 @@ export class GravityFaultRide {
 
     cam.lookAt(_look);
     this.shake.apply(cam);
+    this._updateFeed(shot);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
 
@@ -855,6 +901,13 @@ export class GravityFaultRide {
     this.camera.updateProjectionMatrix();
     this.sparks.setViewportHeight(size.y * renderer.getPixelRatio());
     renderer.setRenderTarget(null);
+    if (this.currentShot() === "cctv") {
+      // A security camera's few frames a second: in between, draw nothing
+      // and the last frame stays on screen.
+      const frame = Math.floor(this.state.shotT * CCTV_FPS);
+      if (frame === this._feedFrame) return;
+      this._feedFrame = frame;
+    } else this._feedFrame = -1;
     if (this.currentShot() === "diagnostic") {
       this.diag.render(renderer, this.scene);
       this.hud.monitor(null, true);
@@ -870,8 +923,49 @@ export class GravityFaultRide {
     } else this.hud.monitor(null, false);
   }
 
+  /** The last moments of the security-camera shot, as the feed breaks up. */
+  _feedGlitch() {
+    const s = this.state;
+    return this.phase === "climb" && this.phases[s.phaseIndex][1] - s.pt < CCTV_GLITCH;
+  }
+
+  /** The security camera's look: the colour on the picture, the feed's overlay. */
+  _updateFeed(shot) {
+    const on = shot === "cctv";
+    if (on !== !!this._feedOn) {
+      this._feedOn = on;
+      this.renderer.domElement.style.filter = on ? CCTV_FILTER : "";
+    }
+    if (!on) {
+      this.hud.feed(null);
+      return;
+    }
+    const s = this.state;
+    this.hud.feed({ floor: START_FLOOR + s.cabinY / STOREY, seconds: s.age, glitch: this._feedGlitch() });
+  }
+
+  /** The dome camera the shot comes from, up in the cabin's corner. */
+  _securityCamera() {
+    const owned = this.owned;
+    const root = new THREE.Group();
+    root.name = "SecurityCamera";
+    const housing = owned.add(new THREE.MeshStandardMaterial({ color: 0x2a2e36, roughness: 0.5, metalness: 0.6 }));
+    const dome = owned.add(new THREE.MeshStandardMaterial({ color: 0x07080b, roughness: 0.08, metalness: 0.2 }));
+    const led = owned.add(new THREE.MeshBasicMaterial({ color: 0xff2a2a }));
+    const plate = new THREE.Mesh(owned.add(new THREE.CylinderGeometry(0.15, 0.15, 0.04, 20)), housing);
+    const ball = new THREE.Mesh(owned.add(new THREE.SphereGeometry(0.11, 18, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2)), dome);
+    const lamp = new THREE.Mesh(owned.add(new THREE.SphereGeometry(0.014, 8, 6)), led);
+    ball.position.y = -0.02;
+    lamp.position.set(0.1, -0.03, -0.06);
+    root.add(plate, ball, lamp);
+    // Just behind and above the lens, so the shot is not taken through it.
+    root.position.set(CCTV_AT.x + 0.1, CCTV_AT.y + 0.16, CCTV_AT.z + 0.1);
+    this.cabin.root.add(root);
+  }
+
   dispose() {
     this.visible = false;
+    if (this._feedOn) this.renderer.domElement.style.filter = "";
     this.director?.dispose();
     disposeAvatar(this._avatar);
     this._avatar = null;

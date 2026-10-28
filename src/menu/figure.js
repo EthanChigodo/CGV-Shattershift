@@ -33,6 +33,8 @@ import * as THREE from "../three.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
 import { cloneCharacter, rigPlayerMesh, PLAYER_RIG_VERTEX, PLAYER_RIG_MAIN } from "../levels/meltdown/characters.js";
 import { applyFigureLook } from "../figure/look.js";
+import { OUTFITS } from "../figure/outfit.js";
+import { buildShoes, disposeShoes } from "../figure/shoes.js";
 
 /** Head turn, breath and wind, run in the rest pose before the rig poses the body. */
 const MENU_VERTEX_HEAD = /* glsl */ `
@@ -134,7 +136,7 @@ function contactTexture() {
 const smooth = (t) => t * t * (3 - 2 * t);
 
 class MenuFigure {
-  constructor(template, { skin, hair, shadows = true }) {
+  constructor(template, { skin, hair, outfit, shoes, shadows = true }) {
     this.root = new THREE.Group();
     this.root.name = "Subject07";
     this.pelvis = new THREE.Group();
@@ -190,7 +192,7 @@ class MenuFigure {
     contact.renderOrder = 1;
     this.root.add(contact);
 
-    this.setLook({ skin, hair });
+    this.setLook({ skin, hair, outfit, shoes });
     // The idle's state.
     this.weight = 0; // -1 on the left leg .. +1 on the right
     this.weightTarget = 0.7;
@@ -202,9 +204,20 @@ class MenuFigure {
     this._m = new THREE.Matrix4();
   }
 
-  setLook({ skin, hair } = {}) {
+  setLook({ skin, hair, outfit, shoes } = {}) {
     if (skin) this.look.setSkinTone(skin);
     if (hair) this.look.setHairColour(hair);
+    if (outfit) this.look.setOutfit(OUTFITS[outfit]?.color ?? null);
+    if (shoes && shoes !== this.shoeKind) {
+      // On the same rig as the body (src/figure/shoes.js).
+      this.shoeKind = shoes;
+      if (this.shoes) { this.shoes.removeFromParent(); disposeShoes(this.shoes); }
+      this.shoes = buildShoes(shoes, this.mesh, this.uniforms);
+      if (this.shoes) {
+        this.mesh.parent.add(this.shoes);
+        this.shoes.userData.onReady = () => this.look.setFeetHidden(true);
+      } else this.look.setFeetHidden(false);
+    }
   }
 
   /** The head, in world space (for the camera's framing). */
@@ -333,9 +346,9 @@ class MenuFigure {
  * @param {boolean} [o.shadows]  cast a real shadow (the stage's key light)
  * @returns {Promise<MenuFigure|null>}
  */
-export async function createFigure({ character, skin, hair, assetBase, shadows = true }) {
+export async function createFigure({ character, skin, hair, outfit, shoes, assetBase, shadows = true }) {
   const assets = await loadMeltdownAssets(assetBase, { names: [character] });
   const asset = assets.get(character);
   if (!asset) return null;
-  return new MenuFigure(asset.template, { skin, hair, shadows });
+  return new MenuFigure(asset.template, { skin, hair, outfit, shoes, shadows });
 }

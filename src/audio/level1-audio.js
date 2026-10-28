@@ -119,7 +119,7 @@ const STAGE_SETS = {
   lift: ["cable-snap", "brake", "clatter", "lift-chime", "lift-doors", "metal-groan", "spark", "breath-scared", "breath-recover"],
   labs: ["patient-growl", "patient-moan", "patient-speech", "patient-shriek", "patient-pain", "patient-death", "patient-horde", "pistol", "body-hit", "breath-scared", "monitor-beep"],
   skyline: ["demolition-charges", "building-collapse", "metal-groan", "sprinkler-burst", "breath-recover"],
-  roof: ["patient-growl", "patient-moan", "patient-shriek", "patient-pain", "patient-death", "patient-roar", "patient-horde", "building-collapse", "demolition-charges", "metal-groan"],
+  roof: ["patient-growl", "patient-moan", "patient-shriek", "patient-pain", "patient-death", "patient-roar", "patient-horde", "building-collapse", "scream", "grunt", "hurt", "breath-scared", "body-hit"],
 };
 
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
@@ -235,6 +235,7 @@ export class Level1Audio {
   async _play(name, {
     volume = LEVEL1_SFX_VOLUME[name], bus = "sfx", cooldown = 0, cooldownKey = name,
     playbackRate = 1, offset = 0, gameplay = true, pan = 0, lowpass = 0, delay = 0,
+    duration = 0, isCurrent = null,
   } = {}) {
     if (!this.context || !this.buses) return null;
     const now = this.context.currentTime;
@@ -243,7 +244,7 @@ export class Level1Audio {
     this.cooldowns.set(cooldownKey, now);
     const generation = gameplay ? this.generation : null;
     const buffer = await this._load(name);
-    if (!buffer || (gameplay && generation !== this.generation)) return null;
+    if (!buffer || (gameplay && generation !== this.generation) || (isCurrent && !isCurrent())) return null;
     const ctx = this.context;
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
@@ -271,7 +272,15 @@ export class Level1Audio {
       gain.disconnect();
       if (this.gameOverChannel === channel) this.gameOverChannel = null;
     };
-    source.start(ctx.currentTime + delay, Math.min(offset, Math.max(0, buffer.duration - 0.02)));
+    const start = ctx.currentTime + delay;
+    const at = Math.min(offset, Math.max(0, buffer.duration - 0.02));
+    if (duration > 0) {
+      const clip = Math.min(duration, buffer.duration - at);
+      const end = start + clip / playbackRate;
+      gain.gain.setValueAtTime(volume ?? 0.5, Math.max(start, end - 0.07));
+      gain.gain.linearRampToValueAtTime(0, end);
+      source.start(start, at, clip);
+    } else source.start(start, at);
     return channel;
   }
 
@@ -318,24 +327,177 @@ export class Level1Audio {
 
   /* ---- The player --------------------------------------------------- */
 
+  /** The player's own voice - grunts, pain, screams, breathing (Settings > Sound). */
+  get playerVoice() {
+    return this._playerVoice ?? true;
+  }
+
+  set playerVoice(on) {
+    this._playerVoice = Boolean(on);
+    if (!on) this.stopAbductionVoice();
+  }
+
   /** Hit: a grunt of pain (the character's own voice). */
   hurt(strength = 1) {
+    if (!this.playerVoice) return;
     this._play(this._pick(`hurt-${this.gender}`), { volume: LEVEL1_SFX_VOLUME.player * clamp(strength, 0.5, 1.2), cooldown: 0.45, cooldownKey: "hurt" });
   }
 
   /** Effort: a jump, a climb, pulling yourself up. */
   grunt() {
+    if (!this.playerVoice) return;
     this._play(`grunt-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 0.6 });
   }
 
   /** Over the edge. */
   fallScream() {
+    if (!this.playerVoice) return;
     this._play(`scream-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 2 });
   }
 
   /** A breath one-shot: "pant" (out of breath), "scared" (hiding), "recover" (slowing down). */
   breath(kind) {
+    if (!this.playerVoice) return;
     this._play(`breath-${kind}-${this.gender}`, { volume: LEVEL1_SFX_VOLUME.player, cooldown: 1.5, cooldownKey: `breath-${kind}` });
+  }
+
+  /** One owned, non-looping human voice for rooftop abduction only. */
+  async playAbductionVoice(kind, { intensity = 0, replace = false } = {}) {
+    if (!this.context || !this.buses || !this.playerVoice || this.paused) return null;
+    const old = this.abductionVoice;
+    const busy = old && (old.pending || this.gameplayChannels.has(old.channel));
+    if (busy && !replace) return null;
+    this.stopAbductionVoice(0.05);
+    const token = this._abductionVoiceToken;
+    const level = clamp(intensity);
+    const gender = this.gender;
+    let name, volume, rate = 1, duration = 0;
+    if (kind === "grab" || kind === "capture") {
+      name = `scream-${gender}`;
+      volume = LEVEL1_SFX_VOLUME.player * (kind === "capture" ? 1.25 : 0.85);
+      rate = kind === "capture" ? 0.98 : 1.04;
+      // A short panic cry leaves room for the struggle. The escape failure
+      // uses the full recording, with additional distance attenuation below.
+      if (kind === "grab") duration = 0.85;
+    } else if (kind === "escape") {
+      name = `grunt-${gender}`; volume = LEVEL1_SFX_VOLUME.player; duration = 0.7;
+    } else if (kind === "struggle") {
+      const choices = [`grunt-${gender}`, `hurt-1-${gender}`, `breath-scared-${gender}`, `hurt-2-${gender}`, `hurt-3-${gender}`];
+      const previous = this.lastPick.get("abduction-effort") ?? -1;
+      let pick = Math.floor(Math.random() * choices.length);
+      if (pick === previous) pick = (pick + 1) % choices.length;
+      this.lastPick.set("abduction-effort", pick);
+      name = choices[pick];
+      volume = LEVEL1_SFX_VOLUME.player * (0.55 + level * 0.3);
+      rate = 0.98 + level * 0.06;
+      duration = name.startsWith("breath-") ? 0.7 : 0.55;
+    } else return null;
+    const slot = { kind, pending: true, channel: null, volume };
+    this.abductionVoice = slot;
+    const current = () => token === this._abductionVoiceToken && this.abductionVoice === slot && this.playerVoice && !this.paused;
+    const channel = await this._play(name, { volume, playbackRate: rate, duration, delay: busy ? 0.08 : 0, isCurrent: current });
+    if (channel && !current()) {
+      this._stop(channel);
+      return null;
+    }
+    if (!channel) {
+      if (this.abductionVoice === slot) this.abductionVoice = null;
+      return null;
+    }
+    slot.pending = false; slot.channel = channel;
+    const ended = channel.source.onended;
+    channel.source.onended = () => {
+      ended?.();
+      if (this.abductionVoice === slot) this.abductionVoice = null;
+    };
+    return channel;
+  }
+
+  /** Fade the failed-capture scream as its attached character recedes. */
+  updateAbductionVoice(distance) {
+    const voice = this.abductionVoice;
+    if (voice?.kind !== "capture" || !voice.channel || !this.context) return;
+    if (!this.playerVoice) { this.stopAbductionVoice(); return; }
+    this._ramp(voice.channel.gain.gain, voice.volume * (1 - smoothstep(10, 75, distance)), 0.1);
+  }
+
+  stopAbductionVoice(seconds = 0.06) {
+    this._abductionVoiceToken = (this._abductionVoiceToken ?? 0) + 1;
+    const voice = this.abductionVoice;
+    this.abductionVoice = null;
+    if (voice?.channel) {
+      if (seconds > 0) this._fadeAndStop(voice.channel, seconds);
+      else this._stop(voice.channel);
+    }
+  }
+
+  /* ---- The weather (synthesized) ------------------------------------ */
+
+  /** A second of noise, made once. */
+  _noise() {
+    if (this._noiseBuffer || !this.context) return this._noiseBuffer;
+    const ctx = this.context;
+    const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i += 1) d[i] = Math.random() * 2 - 1;
+    this._noiseBuffer = b;
+    return b;
+  }
+
+  /** Rain, 0..1 (0 stops it): a hiss of filtered noise, looped. */
+  rain(level = 0) {
+    if (!this.context) this.unlock();
+    const ctx = this.context;
+    if (!ctx) return;
+    this._ensureBuses();
+    if (!this._rain && level > 0) {
+      const src = ctx.createBufferSource();
+      src.buffer = this._noise();
+      src.loop = true;
+      const hi = ctx.createBiquadFilter();
+      hi.type = "highpass";
+      hi.frequency.value = 900;
+      const lo = ctx.createBiquadFilter();
+      lo.type = "lowpass";
+      lo.frequency.value = 6500;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(hi).connect(lo).connect(gain).connect(this.buses.ambient);
+      src.start();
+      this._rain = { src, gain };
+    }
+    if (this._rain) {
+      this._rain.gain.gain.setTargetAtTime(level * 0.16, ctx.currentTime, 0.8);
+      if (level <= 0) {
+        const r = this._rain;
+        this._rain = null;
+        setTimeout(() => { try { r.src.stop(); } catch {} }, 3000);
+      }
+    }
+  }
+
+  /** Thunder, 0..1 (nearer is louder and sharper): a crack, then the rumble rolling away. */
+  thunder(power = 1) {
+    const ctx = this.context;
+    if (!ctx) return;
+    this._ensureBuses();
+    const t = ctx.currentTime;
+    const p = Math.max(0.2, Math.min(1, power));
+    const src = ctx.createBufferSource();
+    src.buffer = this._noise();
+    src.playbackRate.value = 0.5 + Math.random() * 0.2;
+    const lo = ctx.createBiquadFilter();
+    lo.type = "lowpass";
+    lo.frequency.setValueAtTime(900 * p + 200, t);
+    lo.frequency.exponentialRampToValueAtTime(90, t + 3.5);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.55 * p, t + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.18 * p, t + 0.6);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 4.2);
+    src.connect(lo).connect(gain).connect(this.buses.sfx);
+    src.start(t);
+    src.stop(t + 4.4);
   }
 
   /* ---- The building ------------------------------------------------- */
@@ -540,6 +702,7 @@ export class Level1Audio {
 
   setPaused(paused) {
     this.paused = paused;
+    if (paused) this.stopAbductionVoice();
     if (this.buses) this._ramp(this.buses.sfx.gain, paused ? 0 : 0.9, 0.12);
     this._applyAmbientTargets();
   }
@@ -551,6 +714,7 @@ export class Level1Audio {
   }
 
   cleanupLevel() {
+    this.stopAbductionVoice(0);
     this.generation += 1;
     this.paused = false;
     this.ended = false;

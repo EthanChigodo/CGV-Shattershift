@@ -23,6 +23,29 @@
 
 import * as THREE from "../../three.js";
 import { PoliceHelicopters } from "../../fx/police-helicopters.js";
+import { GRID_GLSL } from "./load-shedding.js";
+import { ROOMS_GLSL } from "./rooms.js";
+
+/** The grid when there's no load-shedding: always on (load-shedding.js). */
+const NO_GRID = { uGrid: { value: new THREE.Vector4(0, 0, -1, -1) }, uGridTime: { value: 0 } };
+
+/**
+ * Instanced unlit lights (crown bands, billboards) that go dark with the
+ * grid where their instance stands.
+ */
+function gridInstanced(material, grid, key) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uGrid = grid.uGrid;
+    shader.uniforms.uGridTime = grid.uGridTime;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vGridXZ;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\n#ifdef USE_INSTANCING\n  vGridXZ = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;\n#else\n  vGridXZ = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;\n#endif");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", `#include <common>\nvarying vec2 vGridXZ;\n${GRID_GLSL}`)
+      .replace("#include <color_fragment>", "#include <color_fragment>\n  diffuseColor.rgb *= mix(0.03, 1.0, gridPower(vGridXZ));");
+  };
+  material.customProgramCacheKey = () => `gridInstanced-${key}`;
+}
 
 function rng(seed) {
   let s = seed * 9301 + 49297;
@@ -56,11 +79,62 @@ function windowTile(seed, { lit = 0.3, warm = 0.8, cool = "160,200,255" } = {}) 
   return t;
 }
 
-/** World-space window mapping (and dark roofs) for an instanced tower material. */
-function worldWindows(material, tileW = 18, tileH = 52) {
+/**
+ * World-space window mapping (and dark roofs) for an instanced tower material.
+ * And demolition: per instance, aFall = (metres fallen, lights out 0..1,
+ * lean, heading). Everything above the street drops by aFall.x; a point that
+ * reaches the heap stops at a tenth of its old height above the street - the
+ * building crushed into a pile, its lowest floors at the bottom - and spreads
+ * out. A toppling one also turns aFall.z radians toward aFall.w about the foot
+ * of that wall. `war` (0..1): how many of the towers are burning (war.js).
+ */
+function worldWindows(material, tileW = 18, tileH = 52, streetY = -160, grid = NO_GRID, war = { value: 0 }) {
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.uGrid = grid.uGrid;
+    shader.uniforms.uGridTime = grid.uGridTime;
+    shader.uniforms.uWar = war;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;\n#ifdef USE_INSTANCING\nattribute vec4 aFall;\n#endif")
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+        vCityFall = 0.0;
+        vCityRubble = 0.0;
+        vCityDusty = 0.0;
+        #ifdef USE_INSTANCING
+          if (aFall.x > 0.0) {
+            float citySy = length(instanceMatrix[1].xyz);
+            float cityBaseY = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
+            float cityY = cityBaseY + transformed.y * citySy;
+            float cityGround = ${(streetY + 1.5).toFixed(1)};
+            if (cityY > cityGround) {
+              float heap = cityGround + (cityY - cityGround) * 0.1;
+              float fell = cityY - aFall.x;
+              vCityRubble = clamp((heap - fell) / 12.0, 0.0, 1.0);
+              // The facade buckles as it goes, floor by floor.
+              transformed.x += sin(cityY * 0.31 + instanceMatrix[3].x) * 0.012 * min(aFall.x / 25.0, 1.0);
+              transformed.xz *= 1.0 + vCityRubble * 0.45;
+              transformed.y = (max(fell, heap) - cityBaseY) / citySy;
+            }
+            vCityFall = aFall.y;
+            vCityDusty = step(1.0, aFall.x) * aFall.y;   // greyed only once it's moving
+          }
+        #endif`)
+      .replace("#include <project_vertex>", `
+        vec4 mvPosition = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          mvPosition = instanceMatrix * mvPosition;
+          // Toppling (aFall.z radians, toward the heading aFall.w): the whole
+          // tower turned about the foot of its wall on that side.
+          if (aFall.z != 0.0) {
+            vec3 cityDir = vec3(cos(aFall.w), 0.0, sin(aFall.w));
+            vec3 cityPivot = vec3(instanceMatrix[3].x, ${streetY.toFixed(1)}, instanceMatrix[3].z) + cityDir * length(instanceMatrix[0].xyz) * 0.5;
+            vec3 cityK = vec3(cityDir.z, 0.0, -cityDir.x);
+            vec3 cityV = mvPosition.xyz - cityPivot;
+            float cityC = cos(aFall.z), cityS = sin(aFall.z);
+            mvPosition.xyz = cityPivot + cityV * cityC + cross(cityK, cityV) * cityS + cityK * dot(cityK, cityV) * (1.0 - cityC);
+          }
+        #endif
+        mvPosition = modelViewMatrix * mvPosition;
+        gl_Position = projectionMatrix * mvPosition;`)
       .replace("#include <fog_vertex>", `#include <fog_vertex>
         mat4 cityM = modelMatrix;
         #ifdef USE_INSTANCING
@@ -70,18 +144,66 @@ function worldWindows(material, tileW = 18, tileH = 52) {
           vCityHash = 0.0;
         #endif
         vCityPos = (cityM * vec4(position, 1.0)).xyz;
+        vCityTop = (cityM * vec4(0.0, 1.0, 0.0, 1.0)).y;   // the unit box's top
         vCityNormal = normalize(mat3(cityM) * normal);`);
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;")
+      .replace("#include <common>", `#include <common>\nvarying vec3 vCityPos;\nvarying vec3 vCityNormal;\nvarying float vCityHash;\nvarying float vCityTop;\nvarying float vCityFall;\nvarying float vCityRubble;\nvarying float vCityDusty;\nuniform float uWar;\n${GRID_GLSL}\n${ROOMS_GLSL}`)
       .replace("#include <emissivemap_fragment>", `
         vec2 cuv = abs(vCityNormal.x) > 0.5 ? vec2(vCityPos.z, vCityPos.y) : vec2(vCityPos.x, vCityPos.y);
         cuv = cuv / vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)}) + vec2(vCityHash * 7.0, vCityHash * 3.0);
         vec4 cityWindows = texture2D(emissiveMap, cuv);
         // Roofs have no windows; the lowest floors fade into the haze.
         cityWindows.rgb *= step(abs(vCityNormal.y), 0.5);
-        totalEmissiveRadiance *= cityWindows.rgb;`);
+        // Rooms behind the glass (rooms.js): the eye's ray carried on into a
+        // box 3 m deep behind each window - ceiling, floor, walls, a desk, now
+        // and then someone standing there - fading out where a window is only
+        // a few pixels across.
+        vec3 cityAxis = normalize(vec3(vCityNormal.x, 0.0, vCityNormal.z) + 1e-5);   // depth along the wall's own normal (towers can be turned)
+        vec2 cityOff = vec2(vCityHash * 7.0 * ${tileW.toFixed(1)}, vCityHash * 3.0 * ${tileH.toFixed(1)});
+        vec3 cityEye = abs(vCityNormal.x) > 0.5 ? cameraPosition.zyx : cameraPosition;
+        vec2 cityCell = vec2(${(tileW / 8).toFixed(3)}, ${(tileH / 16).toFixed(3)});
+        vec2 cityAB = cuv * vec2(${tileW.toFixed(1)}, ${tileH.toFixed(1)});
+        vec2 cityF = fract(cityAB / cityCell);
+        float cityPane = step(0.1875, cityF.x) * step(cityF.x, 0.8125) * step(0.25, cityF.y) * step(cityF.y, 0.75);
+        vec2 cityLo = floor(cityAB / cityCell) * cityCell;
+        float cityRoomId = fract(sin(dot(cityLo, vec2(7.13, 3.71)) + vCityHash * 91.0) * 43758.5453);
+        float cityRoom = roomShade(vec3(cityAB, dot(vCityPos, cityAxis)), vec3(cityEye.xy + cityOff, dot(cameraPosition, cityAxis)), cityLo, cityCell, 3.0, cityRoomId);
+        float cityNear = clamp(1.6 - length(fwidth(cityAB / cityCell)) * 3.0, 0.0, 1.0);
+        cityWindows.rgb *= mix(1.0, cityRoom, cityNear * cityPane);
+        totalEmissiveRadiance *= cityWindows.rgb;
+        // Floodlit crowns: most towers have lamps along the parapet washing
+        // the top floors - warm sodium or cool white - in pools between the
+        // lamps, fading down the facade. Lit stone, not just a dark box.
+        float cityWall = step(abs(vCityNormal.y), 0.5);
+        float cityBelow = max(vCityTop - vCityPos.y, 0.0);
+        float cityFloodOn = step(0.3, fract(vCityHash * 7.13));
+        vec3 cityFlood = mix(vec3(1.0, 0.7, 0.42), vec3(0.72, 0.84, 1.0), step(0.72, fract(vCityHash * 3.7)));
+        float cityPools = 0.55 + 0.45 * cos(cuv.x * 6.2831853 * 2.0);
+        vec3 cityStone = mix(diffuseColor.rgb * 3.0, vec3(0.42, 0.37, 0.31), 0.55);
+        totalEmissiveRadiance += cityStone * cityFlood * exp(-cityBelow / 20.0) * cityPools * cityFloodOn * cityWall * 1.7;
+        // Load-shedding: windows and crown floods out where the grid is down.
+        float cityPower = gridPower(vCityPos.xz);
+        totalEmissiveRadiance *= mix(0.02, 1.0, cityPower);
+        // ... but for a candle or a phone torch in a room here and there.
+        totalEmissiveRadiance += vec3(1.0, 0.6, 0.28) * (1.0 - cityPower) * cityPane * step(0.95, cityRoomId) * mix(0.25, cityRoom * 0.3, cityNear) * cityWall;
+        // The war (war.js): more and more towers burning, a few floors each -
+        // fire behind every window of them, the wall lit, soot above.
+        float cityBurn = step(fract(vCityHash * 5.31), uWar * 0.4) * cityWall * (1.0 - vCityFall);
+        float cityBurnAt = ${streetY.toFixed(1)} + 30.0 + fract(vCityHash * 11.7) * 130.0;
+        float cityBurnSpan = 5.0 + fract(vCityHash * 2.9) * 12.0;
+        float cityAbove = vCityPos.y - cityBurnAt;
+        float cityBand = 1.0 - smoothstep(cityBurnSpan * 0.6, cityBurnSpan, abs(cityAbove));
+        float cityFlicker = 0.65 + 0.35 * sin(uGridTime * 9.0 + cityAB.x * 1.7) * sin(uGridTime * 5.3 + cityAB.y * 0.9 + vCityHash * 20.0);
+        vec3 cityFire = vec3(1.0, 0.4, 0.09) * cityFlicker;
+        totalEmissiveRadiance = mix(totalEmissiveRadiance, cityFire * (0.35 + 1.4 * cityPane), cityBand * cityBurn);
+        diffuseColor.rgb *= 1.0 - 0.75 * cityBurn * step(0.0, cityAbove - cityBurnSpan) * exp(-max(cityAbove - cityBurnSpan, 0.0) / 35.0);
+        // Coming down: the lights go out (but for a glow off the fires), the
+        // falling block greys with its own dust, and the heap is broken concrete.
+        totalEmissiveRadiance *= 1.0 - vCityFall * 0.85;
+        totalEmissiveRadiance += vec3(0.03, 0.022, 0.016) * vCityFall;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.18, 0.16), max(vCityRubble, vCityDusty * 0.5));`);
   };
-  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}`;
+  material.customProgramCacheKey = () => `cityWindows${tileW}x${tileH}+flood+fall+grid+rooms+war`;
 }
 
 const STREETS_VERTEX = /* glsl */ `
@@ -94,17 +216,19 @@ const STREETS_VERTEX = /* glsl */ `
 `;
 
 const STREETS_FRAGMENT = /* glsl */ `
+  ${GRID_GLSL}
   uniform float uTime;
   uniform vec3 uHaze;
   uniform vec3 uCentre;
   varying vec3 vWorld;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
   // A street of width w along one axis: its lamps, and traffic both ways.
-  vec3 street(float across, float along, float w, float period, float speed, float lane) {
+  vec3 street(float across, float along, float w, float period, float speed, float lane, float power) {
     float road = 1.0 - smoothstep(w * 0.5, w * 0.5 + 1.5, abs(across));
     vec3 c = vec3(1.0, 0.55, 0.18) * road * 0.22;                        // sodium on the tarmac
     float lamps = (1.0 - smoothstep(0.0, 1.2, abs(mod(along, 24.0) - 12.0))) * (1.0 - smoothstep(w * 0.5, w * 0.5 + 2.5, abs(abs(across) - w * 0.5)));
     c += vec3(1.0, 0.7, 0.35) * lamps * 0.9;
+    c *= power;                                                         // (no lamps in load-shedding; the cars still have theirs)
     // Cars: white heading one way on one side, red going away on the other.
     float cellA = floor((along + uTime * speed) / period);
     float carA = step(0.55, hash(vec2(cellA, lane))) * (1.0 - smoothstep(0.0, 2.0, abs(mod(along + uTime * speed, period) - period * 0.5)));
@@ -124,11 +248,12 @@ const STREETS_FRAGMENT = /* glsl */ `
     vec2 id = floor(cell);
     bool avenueX = mod(id.y, 3.0) < 0.5;
     bool avenueZ = mod(id.x, 3.0) < 0.5;
-    col += street(local.y, p.x, avenueX ? 18.0 : 10.0, avenueX ? 26.0 : 40.0, avenueX ? 14.0 : 8.0, id.y);
-    col += street(local.x, p.y, avenueZ ? 18.0 : 10.0, avenueZ ? 26.0 : 40.0, avenueZ ? 14.0 : 8.0, id.x + 50.0);
+    float power = gridPower(p);
+    col += street(local.y, p.x, avenueX ? 18.0 : 10.0, avenueX ? 26.0 : 40.0, avenueX ? 14.0 : 8.0, id.y, power);
+    col += street(local.x, p.y, avenueZ ? 18.0 : 10.0, avenueZ ? 26.0 : 40.0, avenueZ ? 14.0 : 8.0, id.x + 50.0, power);
     // The blocks between: dark, a few lit windows and courtyards.
     vec2 b = floor(p / 6.0);
-    col += vec3(1.0, 0.8, 0.5) * step(0.985, hash(b)) * 0.5;
+    col += vec3(1.0, 0.8, 0.5) * step(0.985, hash(b)) * 0.5 * power;
     // Haze: the further, the more it melts into the night's glow.
     float d = length(vWorld - cameraPosition);
     float haze = 1.0 - exp(-d * 0.0042);
@@ -146,8 +271,17 @@ export class CityAtNight {
    * @param {number} [o.streetY]   how far down the streets are
    * @param {THREE.Vector3} [o.centre]  the tower you're standing on
    * @param {boolean} [o.towers]  false: just the streets (a city model stands on them)
+   * @param {{x:number, z:number, r:number}[]} [o.clear]  spots (from the centre) left
+   *   empty, for the downtown buildings to stand in (cbd.js)
+   * @param {{x:number, z:number, top:number, w:number, d:number, yaw?:number, finish?:number}[]} [o.condemned]
+   *   towers like all the others, but placed (from the centre) where they
+   *   can be seen, to be brought down (`demolitions`; demolition.js, with
+   *   setFall()). Clear their spots of the others with `clear`.
    */
-  constructor({ seed = 41, streetY = -160, centre = new THREE.Vector3(), towers: withTowers = true, neighbours = 0 } = {}) {
+  constructor({ seed = 41, streetY = -160, centre = new THREE.Vector3(), towers: withTowers = true, neighbours = 0, clear = [], condemned = [], grid = NO_GRID } = {}) {
+    this.grid = grid;
+    /** The war's escalation (war.js), 0..1: how many of the towers are burning. */
+    this.war = { uWar: { value: 0 } };
     this.root = new THREE.Group();
     this.root.name = "CityAtNight";
     this.owned = [];
@@ -158,13 +292,11 @@ export class CityAtNight {
 
     // Three finishes.
     const finishes = [
-      { colour: 0x16181d, metal: 0.25, rough: 0.8, tile: own(windowTile(seed + 1, { lit: 0.3, warm: 0.85 })), glow: 0.62, count: 70 },
+      { colour: 0x37332e, metal: 0.25, rough: 0.8, tile: own(windowTile(seed + 1, { lit: 0.3, warm: 0.85 })), glow: 0.62, count: 70 },
       { colour: 0x1b2633, metal: 0.75, rough: 0.22, tile: own(windowTile(seed + 2, { lit: 0.22, warm: 0.3, cool: "150,210,255" })), glow: 0.5, count: 50 },
-      { colour: 0x231d1a, metal: 0.1, rough: 0.92, tile: own(windowTile(seed + 3, { lit: 0.15, warm: 0.95 })), glow: 0.55, count: 60 },
+      { colour: 0x5a3326, metal: 0.1, rough: 0.92, tile: own(windowTile(seed + 3, { lit: 0.15, warm: 0.95 })), glow: 0.55, count: 60 },
     ];
     const towers = [];
-    /** What stands where, for clearAround(): { mesh, index, x, z, r, sprite? }. */
-    this.placed = [];
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const p = new THREE.Vector3();
@@ -172,12 +304,22 @@ export class CityAtNight {
     const up = new THREE.Vector3(0, 1, 0);
     const crowns = [];
     const masts = [];
+    /** Tops of towers, for the rooftop clutter: [x, y, z, w, d, yaw, distance]. */
+    const roofs = [];
+    /** Where the towers stand, for whatever goes on the streets: {x, z, r, top} from the centre. */
+    this.footprints = [];
+    /** Every tower: where, how tall, and its instances (for demolition). */
+    const records = [];
+    /** The towers to be brought down (`condemned`), in their order. */
+    this.demolitions = [];
+    this.streetY = streetY;
     for (const f of withTowers ? finishes : []) {
+      const fi = finishes.indexOf(f);
       // Lambert, not standard: the towers are a night backdrop (dark facades,
       // lit windows), and the physically-based shading of every one of the
       // scene's lights on every distant pixel was most of the roof's frame.
       const material = own(new THREE.MeshLambertMaterial({ color: f.colour, emissive: 0xffffff, emissiveMap: f.tile, emissiveIntensity: f.glow }));
-      worldWindows(material);
+      worldWindows(material, 18, 52, streetY, grid, this.war.uWar);
       const pieces = [];
       for (let i = 0; i < f.count; i += 1) {
         const a = r() * Math.PI * 2;
@@ -194,11 +336,28 @@ export class CityAtNight {
         // narrower block on that.
         const setback = r() < 0.35 ? 12 + r() * 30 : 0;
         const base = streetY - 260;
-        pieces.push([cx, base, cz, w, top - setback - base, depth, yaw]);
-        if (setback) pieces.push([cx, top - setback, cz, w * 0.68, setback, depth * 0.68, yaw]);
+        // Inside a landmark's spot: drawn from the same random numbers (so
+        // the rest of the skyline doesn't change), just not built.
+        const open = !clear.some((c) => Math.hypot(cx - centre.x - c.x, cz - centre.z - c.z) < c.r + w * 0.7);
+        const rec = { x: cx, z: cz, top, w, d: depth, yaw, dist: d, pieces: [], crown: -1, mast: -1 };
+        if (open) records.push(rec);
+        if (open) rec.pieces.push([fi, pieces.length]);
+        if (open) pieces.push([cx, base, cz, w, top - setback - base, depth, yaw]);
+        if (setback && open) rec.pieces.push([fi, pieces.length]);
+        if (setback && open) pieces.push([cx, top - setback, cz, w * 0.68, setback, depth * 0.68, yaw]);
         const topW = setback ? w * 0.68 : w;
-        if (r() < 0.3) crowns.push([cx, top - 2.2, cz, topW + 0.3, 2.0, (setback ? depth * 0.68 : depth) + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff]);
-        if (top > -40 && r() < 0.7) masts.push([cx, top, cz, 8 + r() * 18]);
+        if (open) roofs.push([cx, top, cz, topW, setback ? depth * 0.68 : depth, yaw, d, rec]);
+        if (open) this.footprints.push({ x: cx - centre.x, z: cz - centre.z, r: Math.hypot(w, depth) / 2, top });
+        if (r() < 0.3) {
+          const crown = [cx, top - 2.2, cz, topW + 0.3, 2.0, (setback ? depth * 0.68 : depth) + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff];
+          if (open) rec.crown = crowns.length;
+          if (open) crowns.push(crown);
+        }
+        if (top > -40 && r() < 0.7) {
+          const mast = [cx, top, cz, 8 + r() * 18];
+          if (open) rec.mast = masts.length;
+          if (open) masts.push(mast);
+        }
       }
       // Neighbours: a few towers close by (45-85 m) that come up to about
       // your height, so from the roof the city stands round you rather than
@@ -213,38 +372,72 @@ export class CityAtNight {
         const cx = Math.cos(a) * d + centre.x;
         const cz = Math.sin(a) * d + centre.z;
         const base = streetY - 260;
-        pieces.push([cx, base, cz, w, top - base, depth, yaw]);
-        crowns.push([cx, top - 2.2, cz, w + 0.3, 2.0, depth + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff]);
-        masts.push([cx, top, cz, 6 + r() * 10]);
+        const open = !clear.some((c) => Math.hypot(cx - centre.x - c.x, cz - centre.z - c.z) < c.r + w * 0.7);
+        const crown = [cx, top - 2.2, cz, w + 0.3, 2.0, depth + 0.3, yaw, r() < 0.6 ? 0xffe2a8 : 0x9fe8ff];
+        const mast = [cx, top, cz, 6 + r() * 10];
+        if (open) {
+          const rec = { x: cx, z: cz, top, w, d: depth, yaw, dist: d, pieces: [[fi, pieces.length]], crown: crowns.length, mast: masts.length };
+          records.push(rec);
+          roofs.push([cx, top, cz, w, depth, yaw, d, rec]);
+          this.footprints.push({ x: cx - centre.x, z: cz - centre.z, r: Math.hypot(w, depth) / 2, top });
+          pieces.push([cx, base, cz, w, top - base, depth, yaw]);
+          crowns.push(crown);
+          masts.push(mast);
+        }
       }
-      const mesh = new THREE.InstancedMesh(unit, material, pieces.length);
+      // The condemned: like the rest, in this finish, but placed by hand (and
+      // drawing no random numbers, so the rest of the skyline stays put).
+      for (const c of condemned) {
+        if ((c.finish ?? 0) !== fi) continue;
+        const cx = centre.x + c.x;
+        const cz = centre.z + c.z;
+        const base = streetY - 260;
+        const yaw = c.yaw ?? 0;
+        const rec = { x: cx, z: cz, top: c.top, w: c.w, d: c.d, yaw, dist: Math.hypot(c.x, c.z), pieces: [[fi, pieces.length]], crown: crowns.length, mast: masts.length, demolish: true };
+        pieces.push([cx, base, cz, c.w, c.top - base, c.d, yaw]);
+        crowns.push([cx, c.top - 2.2, cz, c.w + 0.3, 2.0, c.d + 0.3, yaw, 0xffe2a8]);
+        masts.push([cx, c.top, cz, 14]);
+        this.footprints.push({ x: c.x, z: c.z, r: Math.hypot(c.w, c.d) / 2, top: c.top });
+        records.push(rec);
+        this.demolitions.push(rec);
+      }
+      // Its own box: the per-instance aFall lives on the geometry.
+      const box = own(unit.clone());
+      box.setAttribute("aFall", new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, pieces.length) * 4), 4).setUsage(THREE.DynamicDrawUsage));
+      const mesh = new THREE.InstancedMesh(box, material, pieces.length);
       pieces.forEach(([x, y, z, sx, sy, sz, yaw], i) => {
         q.setFromAxisAngle(up, yaw);
         m.compose(p.set(x, y, z), q, s.set(sx, sy, sz));
         mesh.setMatrixAt(i, m);
-        this.placed.push({ mesh, index: i, x, z, r: Math.hypot(sx, sz) / 2 });
       });
       mesh.frustumCulled = false;
       this.root.add(mesh);
       towers.push(mesh);
     }
     this.towers = towers;
+    // In the order they were given.
+    this.demolitions.sort((a, b) => condemned.findIndex((c) => c.x === a.x - centre.x && c.z === a.z - centre.z) - condemned.findIndex((c) => c.x === b.x - centre.x && c.z === b.z - centre.z));
+    if (withTowers) this._buildRooftops(roofs.filter((roof) => !roof[7]?.demolish), seed, own, centre);
 
     // Lit crowns: a glowing band round some of the tops.
     if (crowns.length) {
       const crownMat = own(new THREE.MeshBasicMaterial({ color: 0xffffff, fog: true }));
+      gridInstanced(crownMat, grid, "crowns");
       const crownMesh = new THREE.InstancedMesh(unit, crownMat, crowns.length);
       const colour = new THREE.Color();
       crowns.forEach(([x, y, z, sx, sy, sz, yaw, c], i) => {
         q.setFromAxisAngle(up, yaw);
         m.compose(p.set(x, y, z), q, s.set(sx, sy, sz));
         crownMesh.setMatrixAt(i, m);
-        this.placed.push({ mesh: crownMesh, index: i, x, z, r: Math.hypot(sx, sz) / 2 });
         crownMesh.setColorAt(i, colour.set(c).multiplyScalar(0.8));
       });
       crownMesh.frustumCulled = false;
       this.root.add(crownMesh);
+      this._crownMesh = crownMesh;
     }
+    this._crowns = crowns;
+    this._masts = masts;
+    this._mastLights = [];
 
     // Masts, and the red aircraft lights on them (blinking together, as they do).
     const glow = (() => {
@@ -272,13 +465,14 @@ export class CityAtNight {
         light.position.set(x, y + h + 0.6, z);
         light.scale.setScalar(5);
         this.root.add(light);
-        this.placed.push({ mesh: mastMesh, index: i, x, z, r: 0.5, sprite: light });
+        this._mastLights.push(light);
       });
       this.root.add(mastMesh);
+      this._mastMesh = mastMesh;
     }
 
     // The streets far below.
-    this.streetUniforms = { uTime: { value: 0 }, uHaze: { value: new THREE.Color(0.11, 0.06, 0.035) }, uCentre: { value: centre.clone() } };
+    this.streetUniforms = { uTime: { value: 0 }, uHaze: { value: new THREE.Color(0.11, 0.06, 0.035) }, uCentre: { value: centre.clone() }, uGrid: grid.uGrid, uGridTime: grid.uGridTime };
     const streets = new THREE.Mesh(own(new THREE.PlaneGeometry(900, 900, 1, 1)), own(new THREE.ShaderMaterial({
       uniforms: this.streetUniforms, vertexShader: STREETS_VERTEX, fragmentShader: STREETS_FRAGMENT, fog: false, depthWrite: true,
     })));
@@ -292,16 +486,140 @@ export class CityAtNight {
   }
 
   /**
-   * Take down whatever stands within `radius` of (x, z) - somewhere else
-   * puts a tower of its own there (roof-demolitions.js).
+   * Life on the roofs you look down on: water tanks on stands, air-con
+   * units, and now and then a painted billboard for a made-up company,
+   * turned to face the tower. A random stream of its own, so the towers
+   * themselves don't move. A few instanced meshes in all.
    */
-  clearAround(x, z, radius) {
-    const none = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (const item of this.placed) {
-      if (Math.hypot(item.x - x, item.z - z) > radius + item.r) continue;
-      item.mesh.setMatrixAt(item.index, none);
-      item.mesh.instanceMatrix.needsUpdate = true;
-      if (item.sprite) item.sprite.visible = false;
+  _buildRooftops(roofs, seed, own, centre) {
+    const r = rng(seed + 500);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const p = new THREE.Vector3();
+    const s = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const tanks = [];
+    const stands = [];
+    const units = [];
+    const boards = [[], [], []];
+    const posts = [];
+    const near = roofs.filter(([, y, , , , , d]) => d < 260 && y > -120);
+    for (const [x, y, z, w, d, yaw] of near) {
+      const spot = (fx, fz) => {
+        const ox = (fx - 0.5) * (w - 4);
+        const oz = (fz - 0.5) * (d - 4);
+        return [x + Math.cos(yaw) * ox + Math.sin(yaw) * oz, z - Math.sin(yaw) * ox + Math.cos(yaw) * oz];
+      };
+      if (r() < 0.6) {
+        const [tx, tz] = spot(r() < 0.5 ? 0.15 : 0.85, r());
+        const radius = 1.4 + r() * 1.2;
+        stands.push([tx, y, tz, radius * 1.4, 2.2, radius * 1.4, 0]);
+        tanks.push([tx, y + 2.2, tz, radius, 3 + r() * 1.5, radius, 0]);
+      }
+      const count = r() < 0.7 ? 1 + Math.floor(r() * 3) : 0;
+      for (let i = 0; i < count; i += 1) {
+        const [ux, uz] = spot(r(), r());
+        units.push([ux, y, uz, 2.4, 1.4, 1.6, yaw]);
+      }
+      // Billboards on some of the nearer, lower roofs, facing the tower.
+      if (y > -75 && y < 15 && r() < 0.16) {
+        const [bx, bz] = spot(0.5, 0.5);
+        const face = Math.atan2(centre.x - bx, centre.z - bz);
+        const kind = Math.floor(r() * boards.length);
+        boards[kind].push([bx, y + 4.5, bz, face]);
+        for (const side of [-1, 1]) posts.push([bx + Math.cos(face) * side * 5, y, bz - Math.sin(face) * side * 5, 0.35, 4.2, 0.35, face]);
+      }
+    }
+    const unit = own(new THREE.BoxGeometry(1, 1, 1));
+    unit.translate(0, 0.5, 0);
+    const drum = own(new THREE.CylinderGeometry(1, 1, 1, 12));
+    drum.translate(0, 0.5, 0);
+    const steel = own(new THREE.MeshLambertMaterial({ color: 0x6a6c70 }));
+    const tankMat = own(new THREE.MeshLambertMaterial({ color: 0x8b8f92 }));
+    const instanced = (geometry, material, list) => {
+      if (!list.length) return;
+      const mesh = new THREE.InstancedMesh(geometry, material, list.length);
+      list.forEach(([x, y, z, sx, sy, sz, yaw], i) => {
+        q.setFromAxisAngle(up, yaw);
+        mesh.setMatrixAt(i, m.compose(p.set(x, y, z), q, s.set(sx, sy, sz)));
+      });
+      mesh.frustumCulled = false;
+      this.root.add(mesh);
+    };
+    instanced(unit, steel, stands);
+    instanced(drum, tankMat, tanks);
+    instanced(unit, steel, units);
+    instanced(unit, steel, posts);
+    const ads = [
+      ["UMNANDI COLA", "ICE COLD, EVERY DAY", "#c8231d", "#ffffff", "#ffe36b"],
+      ["IGOLIDE FM 101.6", "THE SOUND OF THE CITY", "#13306b", "#ffd23f", "#ffffff"],
+      ["SIYAKHA CEMENT", "BUILT TO LAST", "#e9e1cf", "#2b2b2b", "#b8321e"],
+    ];
+    const board = own(new THREE.PlaneGeometry(13, 4.9));
+    boards.forEach((list, k) => {
+      if (!list.length) return;
+      const [title, line, ground, ink, accent] = ads[k];
+      const c = document.createElement("canvas");
+      c.width = 512;
+      c.height = 192;
+      const g = c.getContext("2d");
+      g.fillStyle = ground;
+      g.fillRect(0, 0, 512, 192);
+      g.fillStyle = accent;
+      g.fillRect(0, 150, 512, 42);
+      g.fillStyle = ink;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.font = "bold 64px Impact, Arial Black, sans-serif";
+      g.fillText(title, 256, 78, 488);
+      g.fillStyle = ground;
+      g.font = "bold 26px Arial, sans-serif";
+      g.fillText(line, 256, 171, 480);
+      const t = own(new THREE.CanvasTexture(c));
+      t.colorSpace = THREE.SRGBColorSpace;
+      // Lit by its own lamps: a little brighter than the night round it.
+      const mat = own(new THREE.MeshBasicMaterial({ map: t, color: 0xb8aa96, fog: true }));
+      gridInstanced(mat, this.grid, `board${k}`);
+      const mesh = new THREE.InstancedMesh(board, mat, list.length);
+      list.forEach(([x, y, z, face], i) => {
+        q.setFromAxisAngle(up, face);
+        mesh.setMatrixAt(i, m.compose(p.set(x, y + 2.45, z), q, s.set(1, 1, 1)));
+      });
+      mesh.frustumCulled = false;
+      this.root.add(mesh);
+    });
+  }
+
+  /**
+   * Bring a tower (one of `demolitions`) down: `drop` metres fallen, `dark`
+   * its lights going out (0..1). Its crown band and mast ride down with it
+   * until they reach the heap.
+   */
+  setFall(tower, drop, dark, lean = 0, heading = 0) {
+    for (const [fi, index] of tower.pieces) {
+      const attribute = this.towers[fi].geometry.attributes.aFall;
+      attribute.setXYZW(index, drop, dark, lean, heading);
+      attribute.needsUpdate = true;
+    }
+    const heap = this.streetY + 1.5 + (tower.top - this.streetY) * 0.1;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    if (tower.crown >= 0 && this._crownMesh) {
+      const [x, y, z, sx, sy, sz, yaw] = this._crowns[tower.crown];
+      const gone = y - drop < heap || lean !== 0;   // (a toppling tower's crown: lost in the dust)
+      m.compose(new THREE.Vector3(x, y - drop, z), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, yaw), new THREE.Vector3(sx, sy, sz).multiplyScalar(gone ? 0 : 1));
+      this._crownMesh.setMatrixAt(tower.crown, m);
+      this._crownMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (tower.mast >= 0 && this._mastMesh) {
+      const [x, y, z, h] = this._masts[tower.mast];
+      const gone = y - drop < heap || lean !== 0;
+      m.compose(new THREE.Vector3(x, y - drop, z), q.identity(), new THREE.Vector3(0.6, h, 0.6).multiplyScalar(gone ? 0 : 1));
+      this._mastMesh.setMatrixAt(tower.mast, m);
+      this._mastMesh.instanceMatrix.needsUpdate = true;
+      const light = this._mastLights[tower.mast];
+      light.position.y = y + h + 0.6 - drop;
+      light.visible = !gone && dark < 0.9;
     }
   }
 

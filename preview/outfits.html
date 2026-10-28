@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Outfits preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0f14; overflow: hidden; }
+    canvas { display: block; }
+    nav { position: fixed; left: 16px; top: 16px; display: flex; flex-wrap: wrap; gap: 6px; font: 12px Inter, sans-serif; max-width: 92vw; }
+    nav button { padding: 6px 10px; }
+  </style>
+</head>
+<body>
+  <!-- The four player colours and every headwear, side by side.
+       ?character=playerFemale|playerMale  ?wear=0..1  ?back (from behind) -->
+  <nav>
+    <button data-c="playerFemale">Female</button><button data-c="playerMale">Male</button>
+    <button data-w="0">Clean</button><button data-w="0.33">Dusty</button><button data-w="0.66">Bloodied</button>
+    <button data-v="front">Front</button><button data-v="back">Back</button>
+  </nav>
+  <script type="importmap">{ "imports": { "three": "../lib/three/build/three.module.js", "three/addons/": "../lib/three/examples/jsm/" } }</script>
+  <script type="module">
+    import * as THREE from "../src/three.js";
+    import { loadMeltdownAssets } from "../src/levels/meltdown/assets.js";
+    import { PlayerAvatar } from "../src/levels/meltdown/player.js";
+
+    const q = new URLSearchParams(location.search);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x10161c);
+    scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2420, 1.4));
+    const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+    sun.position.set(-3, 6, -5);
+    scene.add(sun);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 20), new THREE.MeshStandardMaterial({ color: 0x1b2229, roughness: 0.9 }));
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 100);
+
+    const LOOKS = [
+      ["scrubs", "none"], ["blue", "cap"], ["red", "beanie"], ["green", "bandana"], ["yellow", "headband"],
+    ];
+    const base = new URL("../assets/meltdown/", import.meta.url).href;
+    let character = q.get("character") ?? "playerFemale";
+    let wear = Number(q.get("wear") ?? 0);
+    let view = q.has("back") ? "back" : "front";
+    const figures = [];
+
+    async function build() {
+      for (const f of figures) scene.remove(f.root);
+      figures.length = 0;
+      const assets = await loadMeltdownAssets(base, { names: [character] });
+      const template = assets.get(character).template;
+      LOOKS.forEach(([outfit, head], i) => {
+        const a = new PlayerAvatar();
+        a.hold = 0;
+        a.setModel(template);
+        a.setOutfit(outfit);
+        a.setHeadwear(head);
+        a.setWear(wear);
+        a.root.position.x = (i - (LOOKS.length - 1) / 2) * 1.05;
+        scene.add(a.root);
+        figures.push(a);
+        window.figures = figures;
+      });
+      window.ready = true;
+    }
+
+    function place() {
+      // The figures run down -Z (they face -Z): the front view looks back up +Z at them.
+      const z = view === "front" ? -6.2 : 6.2;
+      camera.position.set(0, 1.55, z);
+      camera.lookAt(0, 1.05, 0);
+    }
+    place();
+
+    for (const b of document.querySelectorAll("[data-c]")) b.onclick = () => { character = b.dataset.c; build(); };
+    for (const b of document.querySelectorAll("[data-w]")) b.onclick = () => { wear = Number(b.dataset.w); figures.forEach((f) => f.setWear(wear)); };
+    for (const b of document.querySelectorAll("[data-v]")) b.onclick = () => { view = b.dataset.v; place(); };
+    addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const dt = Math.min(0.05, clock.getDelta());
+      for (const f of figures) f.update(dt, { speed: 0 });
+      renderer.render(scene, camera);
+    });
+    build();
+  </script>
+</body>
+</html>

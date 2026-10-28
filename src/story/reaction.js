@@ -24,16 +24,14 @@
  * or sequence: no mashing every key to get through.
  *
  * Options (the settings menu): `longWindows` gives every window 1.6x the
- * time; `holdInsteadOfMash` turns every mash into a hold. `difficulty` (a
+ * time; `holdInsteadOfMash` turns every mash into a hold. `pad` (a
+ * controller is in use): the keys become flicks of the sticks and the
+ * triggers, the same on every controller - see toPadKeys. `difficulty` (a
  * DIFFICULTIES key, or a function returning the run's) scales the mash
  * meters - see MASH.
- *
- * A controller answers with the button each key is mapped to
- * (src/systems/key-glyphs.js KEY_BUTTON); while one is in use the prompt
- * names those buttons, and redraws if the player switches device mid-prompt.
  */
 
-import { padGlyph, onGlyphChange } from "../systems/key-glyphs.js";
+import { PAD_FLICKS, padLabel, touchActive, padActive } from "../systems/input-glyphs.js";
 
 /**
  * Keys reactions draw from - clear of WASD/Space movement, Esc, and the
@@ -43,6 +41,30 @@ import { padGlyph, onGlyphChange } from "../systems/key-glyphs.js";
 export const REACTION_KEYS = ["KeyR", "KeyF", "KeyZ", "KeyX", "KeyG", "KeyT"];
 
 const LONG_WINDOW_SCALE = 1.6;
+
+/**
+ * A reaction played on a controller. Each reaction key is a flick of a
+ * stick (R F Z X on the left stick, G T on the right); tapping Space is the
+ * right trigger; alternating A D is the two triggers in turn. Two keys at
+ * once ("PRESS BOTH") are always one on each stick, so both can be pushed.
+ */
+const PAD_FOR = {
+  KeyR: "PadLUp", KeyF: "PadLDown", KeyZ: "PadLLeft", KeyX: "PadLRight",
+  KeyG: "PadRLeft", KeyT: "PadRRight", KeyQ: "PadRUp", KeyE: "PadRDown",
+  Space: "PadRT", KeyA: "PadLT", KeyD: "PadRT", ShiftLeft: "PadLT",
+};
+const OTHER_STICK = { L: "R", R: "L" };
+export function toPadKeys(kind, keys) {
+  const out = keys.map((k) => PAD_FOR[k] ?? k);
+  if (kind === "combo") {
+    for (let i = 1; i < out.length; i += 1) {
+      const a = out[i - 1];
+      const b = out[i];
+      if (PAD_FLICKS.includes(a) && PAD_FLICKS.includes(b) && a[3] === b[3]) out[i] = `Pad${OTHER_STICK[b[3]]}${b.slice(4)}`;
+    }
+  }
+  return out;
+}
 
 /**
  * The mash meters ("fill the bar"), retuned from beta feedback: "you have
@@ -82,36 +104,41 @@ function pickKeys(count, rng, pool = REACTION_KEYS) {
 }
 
 /**
- * The elevator's break points: harder each time.
- *   0  one key, 2 s
- *   1  two keys together, 1.7 s
- *   2  three in sequence, 1.15 s each
- *   3+ four in sequence, 0.85 s each, then mash
+ * The elevator's break points: harder each time. (Round 4 playtest: every
+ * timed event slowed down again - about 1.4x the time it had.)
+ *   0  one key, 2.8 s
+ *   1  two keys together, 2.4 s
+ *   2  three in sequence, 1.6 s each
+ *   3+ four in sequence, 1.2 s each, then mash
  */
 export function reactionLadder(step, rng = Math.random) {
-  if (step <= 0) return { kind: "press", keys: pickKeys(1, rng), window: 2.0 };
-  if (step === 1) return { kind: "combo", keys: pickKeys(2, rng), window: 1.7 };
-  if (step === 2) return { kind: "sequence", keys: pickKeys(3, rng), window: 1.15 };
+  if (step <= 0) return { kind: "press", keys: pickKeys(1, rng), window: 2.8 };
+  if (step === 1) return { kind: "combo", keys: pickKeys(2, rng), window: 2.4 };
+  if (step === 2) return { kind: "sequence", keys: pickKeys(3, rng), window: 1.6 };
   return {
     kind: "sequence",
     keys: pickKeys(4, rng),
-    window: Math.max(0.6, 0.85 - (step - 3) * 0.08),
-    then: { kind: "mash", keys: ["Space"], time: 3.2, ...MASH.lockIt, label: "LOCK IT" },
+    window: Math.max(0.85, 1.2 - (step - 3) * 0.1),
+    then: { kind: "mash", keys: ["Space"], time: 4.5, ...MASH.lockIt, label: "LOCK IT" },
   };
 }
 
-/** Grabbing a ledge (the bridge, the helicopter ladder): two keys, fast. */
+/** Grabbing a ledge (the bridge, the helicopter ladder): two keys, quick. */
 export function latchReaction(rng = Math.random) {
-  return { kind: "sequence", keys: pickKeys(2, rng), window: 0.95, label: "GRAB" };
+  return { kind: "sequence", keys: pickKeys(2, rng), window: 1.35, label: "GRAB" };
 }
 
-/** Sprinting off a falling bridge: alternate two keys. */
+/**
+ * Sprinting off a falling bridge: alternate two keys. (Its time is the
+ * scene's - the bridge falls when it falls - so it is made slower to fill
+ * instead: more per press, and it drains more gently.)
+ */
 export function sprintReaction({ time = 4.5 } = {}) {
   return { kind: "mash", keys: ["KeyA", "KeyD"], alternate: true, time, ...MASH.sprint, label: "SPRINT" };
 }
 
 /** Pushing something off you. */
-export function struggleReaction({ time = 3.5 } = {}) {
+export function struggleReaction({ time = 5 } = {}) {
   return { kind: "mash", keys: ["Space"], time, ...MASH.struggle, label: "PUSH IT OFF" };
 }
 
@@ -124,7 +151,10 @@ const LABELS = { press: "PRESS", combo: "PRESS BOTH", sequence: "IN ORDER", mash
  * FAST", or (with "Hold instead of mash") "HOLD SPACE".
  */
 function howTo(kind, spec, keys) {
-  const names = keys.map((k) => padGlyph(k) ?? (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
+  // On a touch screen the triggers are taps on a side: "TAP RIGHT FAST", "ALTERNATE LEFT RIGHT FAST".
+  const side = { PadLT: "LEFT", PadRT: "RIGHT" };
+  const touch = touchActive() && !padActive();
+  const names = keys.map((k) => (touch && side[k]) || padLabel(k) || (k === "Space" ? "SPACE" : k.replace(/^Key/, ""))).join(" ");
   if (kind === "hold") return `HOLD ${names}`;
   if (kind === "mash") return spec.alternate ? `ALTERNATE ${names} FAST` : `TAP ${names} FAST`;
   return null;
@@ -135,9 +165,11 @@ export class ReactionHits {
    * @param {import("./story-ui.js").StoryUI|null} ui  (null: headless)
    * @param {object} [options]
    */
-  constructor(ui, { longWindows = false, holdInsteadOfMash = false, difficulty = "normal" } = {}) {
+  constructor(ui, { longWindows = false, holdInsteadOfMash = false, pad = false, difficulty = "normal" } = {}) {
     this.ui = ui;
-    this.options = { longWindows, holdInsteadOfMash, difficulty };
+    this.options = { longWindows, holdInsteadOfMash, pad, difficulty };
+    /** Told when a reaction begins (the controller's rumble). */
+    this.onStart = null;
     this.state = "idle";
     this.failReason = null;
     this.onResult = null;
@@ -178,18 +210,21 @@ export class ReactionHits {
     return this.state === "running";
   }
 
-  /** The keys the running prompt asks for (none when idle) - a controller maps its buttons onto them. */
-  get keys() {
-    return this.state === "running" ? this._s?.keys ?? [] : [];
+  /** The keys the reaction on screen wants, and how ({ kind, keys, alternate }); null when none. */
+  get wants() {
+    const s = this._s;
+    if (this.state !== "running" || !s) return null;
+    return { kind: s.kind, keys: s.keys, alternate: !!s.spec.alternate, index: s.index };
   }
 
   /** Begin a reaction (see the header for specs). */
   start(spec) {
     const o = this.options;
     let kind = spec.kind;
-    const keys = [...(spec.keys ?? ["Space"])];
+    let keys = [...(spec.keys ?? ["Space"])];
     // Accessibility: a mash becomes a hold of one key.
     if (kind === "mash" && o.holdInsteadOfMash) kind = "hold";
+    if (o.pad) keys = toPadKeys(kind, keys);
     const scale = o.longWindows ? LONG_WINDOW_SCALE : 1;
     // The run's difficulty scales a mash's press and drain (not a hold's).
     const level = typeof o.difficulty === "function" ? o.difficulty() : o.difficulty;
@@ -215,12 +250,11 @@ export class ReactionHits {
     this.state = "running";
     this.failReason = null;
     const s = this._s;
-    // Keyboard to pad (or back) mid-prompt: the same prompt, renamed.
-    this._offGlyphs ??= onGlyphChange(() => {
-      if (this.state === "running") this.ui?.relabelReaction?.(this._label());
-    });
+    // The story's verb ("LOCK IT", "SPRINT") and, for the bars, how: "LOCK IT - TAP SPACE FAST".
+    const how = howTo(kind, spec, s.keys);
+    const label = spec.label ? (how ? `${spec.label} - ${how}` : spec.label) : how ?? LABELS[kind];
     this.ui?.showReaction({
-      label: this._label(),
+      label,
       keys: s.keys,
       layout: kind === "combo" ? "together" : kind === "sequence" ? "sequence" : "single",
       bar: kind === "mash" || kind === "hold",
@@ -229,6 +263,7 @@ export class ReactionHits {
       step: kind === "mash" ? s.gain : 0,
     });
     this._draw();
+    this.onStart?.(s);
     return this;
   }
 
@@ -240,7 +275,7 @@ export class ReactionHits {
     const s = this._s;
     if (this.state !== "running" || !s) return false;
     const mine = s.keys.includes(code);
-    const pool = mine || REACTION_KEYS.includes(code);
+    const pool = mine || REACTION_KEYS.includes(code) || PAD_FLICKS.includes(code);
     if (!pool) return false;
     if (repeat) return true;
     s.held.add(code);
@@ -320,20 +355,7 @@ export class ReactionHits {
   cancel() {
     this.state = "idle";
     this._s = null;
-    this._unlistenGlyphs();
     this.ui?.hideReaction();
-  }
-
-  /** The story's verb ("LOCK IT", "SPRINT") and, for the bars, how: "LOCK IT - TAP SPACE FAST". */
-  _label() {
-    const s = this._s;
-    const how = howTo(s.kind, s.spec, s.keys);
-    return s.spec.label ? (how ? `${s.spec.label} - ${how}` : s.spec.label) : how ?? LABELS[s.kind];
-  }
-
-  _unlistenGlyphs() {
-    this._offGlyphs?.();
-    this._offGlyphs = null;
   }
 
   _draw() {
@@ -365,7 +387,6 @@ export class ReactionHits {
       return;
     }
     this.state = result;
-    this._unlistenGlyphs();
     this.ui?.endReaction(result);
     this.onResult?.(result, this.failReason);
   }

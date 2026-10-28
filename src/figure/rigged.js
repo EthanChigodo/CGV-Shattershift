@@ -1320,7 +1320,7 @@ export class RiggedBody {
     return {
       speed: u.uStride.value > 0.05 ? 1 + u.uStride.value * 6 : 0,
       airborne: u.uTuck.value > 0.5,
-      sliding: u.uCrouch.value > 0.6,
+      sliding: u.uCrouch.value > 0.6 || (u.uSlide?.value ?? 0) > 0.6,
       hold: u.uHold.value,
       reachUp: u.uReachUp.value,
       rest: u.uRest.value,

@@ -23,19 +23,11 @@ export function savedBall() {
   return "glass";
 }
 
-function saveBall(key) {
+export function saveBall(key) {
   try { localStorage.setItem(BALL_KEY, key); } catch (error) {}
 }
 
 const hex = (n) => `#${n.toString(16).padStart(6, "0")}`;
-
-/** One line on what each sphere is for, under the loadout's picker. */
-const BLURBS = {
-  glass: "The everyday throw: punches through glass and keeps going, and ricochets off walls.",
-  cryo: "An ice burst: shatters everything within 4.8 m, puts fires out and freezes falling debris.",
-  shock: "A shockwave: shatters all glass within 5 m - reinforced glass too, in one hit.",
-  gravity: "A black hole for a second: drags every supply within 7 m to you and pulls enemies in.",
-};
 
 /**
  * Every [data-ball-pick] on the page becomes a sphere picker.
@@ -47,7 +39,7 @@ export function buildBallPickers(onPick) {
   for (const picker of pickers) {
     picker.innerHTML = BALL_ORDER.map((k) => {
       const b = BALLS[k];
-      return `<button type="button" class="ball-card" data-ball="${k}" style="--c:${hex(b.colour)}" aria-pressed="false" title="${b.name}: ${b.text}">
+      return `<button type="button" class="ball-card" data-ball="${k}" style="--c:${hex(b.colour)}" aria-pressed="false">
         <i class="orb" aria-hidden="true"></i>
         <span><b>${b.name}</b><small>${b.text}</small></span>
         <em>costs ${b.cost} sphere${b.cost > 1 ? "s" : ""}</em>
@@ -67,18 +59,18 @@ export function buildBallPickers(onPick) {
       button.classList.toggle("picked", on);
       button.setAttribute("aria-pressed", String(on));
     }
-    // The loadout says what the one picked does (testers asked what the
-    // picker is for): you start the run holding it.
-    const b = BALLS[key];
-    for (const line of document.querySelectorAll("[data-ball-desc]")) {
-      line.innerHTML = b ? `<b>${b.name}</b> <span>${b.cost} per throw</span><br />${BLURBS[key] ?? b.text}` : "";
+  }
+  /** The types there are (the story earns them: progression.js); null, all. */
+  function lock(list) {
+    for (const button of document.querySelectorAll("[data-ball-pick] [data-ball]")) {
+      const locked = !!list && !list.includes(button.dataset.ball);
+      button.classList.toggle("locked", locked);
+      button.disabled = locked;
+      button.title = locked ? "Earned later in the story" : "";
     }
-    // The main menu's line under Subject 07.
-    const start = document.querySelector("#subjectSphere");
-    if (start && b) start.textContent = `Starts with the ${b.name.toLowerCase()} sphere`;
   }
   show(savedBall());
-  return { show };
+  return { show, lock };
 }
 
 /* ------------------------------------------------------------------ */
