@@ -694,6 +694,11 @@ export function createFoundryKit({ shadows = false } = {}) {
       if (typeof action === "function") action();
       return true;
     };
+    // (Whole again: a checkpoint restart - its action's undo is the level's.)
+    group.userData.restore = () => {
+      glass.userData.alive = true;
+      glass.visible = true;
+    };
 
     return group;
   }
@@ -759,6 +764,11 @@ export function createFoundryKit({ shadows = false } = {}) {
       cage.visible = false;
       return true;
     };
+    group.userData.restore = () => {
+      glass.userData.alive = true;
+      glass.visible = true;
+      cage.visible = true;
+    };
 
     return group;
   }
@@ -779,6 +789,10 @@ export function createFoundryKit({ shadows = false } = {}) {
       hit.userData.alive = false;
       pickup.hide();
       return true;
+    };
+    group.userData.restore = () => {
+      hit.userData.alive = true;
+      pickup.show();
     };
     return group;
   }
@@ -1059,6 +1073,15 @@ export function createFoundryKit({ shadows = false } = {}) {
      * guide asks: src/story/foundry-guide.js).
      */
     hammer.userData.clearFor = (seconds) => state.jammed || (state.cycle < 0.5 && (0.5 - state.cycle) * period >= seconds);
+    /** Working again, its valve whole (a checkpoint restart). */
+    group.userData.unjam = () => {
+      state.jammed = false;
+      hammer.userData.disabled = false;
+      glass.userData.alive = true;
+      glass.visible = true;
+      steam.visible = false;
+      group.userData.tick(0, 0);
+    };
     /** The valve broken: the hammer stays up, venting steam. */
     group.userData.jam = () => {
       state.jammed = true;

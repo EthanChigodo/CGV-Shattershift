@@ -31,13 +31,16 @@ const ASH_NOISE = /* glsl */ `
  * the head down, through noise, the surface is gone; just ahead of the cut
  * it glows like embers, and the rest chars as it goes.
  *   uAsh 0 (whole) .. 1.2 (gone)
- * Returns { uniforms, dispose }.
+ * Returns { uniforms, dispose, restore } - restore() puts the model's own
+ * materials back (a patient stood up again: a checkpoint restart).
  */
 export function ashify(model, height) {
   const uniforms = { uAsh: { value: 0 }, uAshBase: { value: 0 }, uAshHeight: { value: height } };
   const copies = [];
+  const originals = [];
   model.traverse((node) => {
     if (!node.isMesh) return;
+    originals.push([node, node.material]);
     const list = Array.isArray(node.material) ? node.material : [node.material];
     const next = list.map((m) => {
       if (!m) return m;
@@ -81,6 +84,14 @@ ${ASH_NOISE}`)
     c.customProgramCacheKey = () => `${key}+ash`;
     c.needsUpdate = true;
   }
-  return { uniforms, dispose: () => copies.forEach((c) => c.dispose()) };
+  const dispose = () => copies.forEach((c) => c.dispose());
+  return {
+    uniforms,
+    dispose,
+    restore() {
+      for (const [node, material] of originals) node.material = material;
+      dispose();
+    },
+  };
 }
 

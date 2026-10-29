@@ -157,6 +157,21 @@ export function placeLabsProblems(level) {
   }
   return {
     list,
+    /** Jammed again, every one from `from` m on (a checkpoint restart, index.js resetFrom). */
+    reset(from) {
+      for (const p of list) {
+        if (p.distance < from) continue;
+        Object.assign(p.state, { dent: 0, heat: 0, shake: 0, blast: null });
+        p.slab.visible = true;
+        p.slab.position.set(0, -0.1, 0);
+        p.slab.rotation.set(0, 0, 0.035);
+        p.collider.userData.disabled = false;
+        p.target.userData.alive = true;
+        for (const m of p.marks) fadeMark(m, 1);
+        p.solved = false;
+        p.contact = false;
+      }
+    },
     dispose() {
       for (const p of list) {
         for (const m of p.owned) m.dispose?.();

@@ -289,6 +289,8 @@ export class MeltdownLevel {
     this._buildFireFront();
     this._bakeCorridor();
     this._registerEmitters();
+    // Everything a sphere can hit, as built (resetFrom puts the broken back).
+    this._allBreakables = [...this.breakables];
 
     this._playerWorld = new THREE.Vector3();
     this._spill = new THREE.Color(0x8fa6c8);
@@ -1528,6 +1530,42 @@ export class MeltdownLevel {
   /** A fire wall still burning within `radius` m ahead (the HUD says: cryo). */
   fireWallAhead(playerDistance, radius = 24) {
     return (this._fireWalls ?? []).some((w) => !w.group.userData.out && w.distance - playerDistance > 1 && w.distance - playerDistance < radius);
+  }
+
+  /**
+   * Back to `distance` (a restart from the checkpoint, game.js resumeAt):
+   * everything from just before it on as it was the first time - the glass
+   * whole, the caches and serums back, the patients up against the walls,
+   * the ducts and shelves hung again, the fire walls and fires burning, the
+   * vents thawed, the shutter jammed - so nothing broken on the last attempt
+   * is a free way through.
+   */
+  resetFrom(distance) {
+    const from = distance - 4;
+    const ahead = (d) => d !== undefined && d >= from;
+    for (const group of Object.values(this.groups)) {
+      for (const piece of group.children) {
+        if (ahead(piece.userData.routeDistance)) piece.traverse((o) => o.userData.restore?.());
+      }
+    }
+    for (const e of this._fallingHazards) {
+      if (!ahead(e.distance)) continue;
+      Object.assign(e, { triggered: false, landed: false, elapsed: 0 });
+      e.group.userData.blocking = false;
+      e.group.userData.setFallen(0);
+    }
+    for (const e of this._lurchers) {
+      if (!ahead(e.distance)) continue;
+      Object.assign(e, { triggered: false, elapsed: 0 });
+      this._moveLurcher(e, 0);
+    }
+    for (const s of this._signs ?? []) if (ahead(s.distance)) s.shown = false;
+    this.problemSet?.reset(from);
+    // What a sphere can hit, and what can hit you, again.
+    for (const m of this._allBreakables) {
+      if (ahead(m.userData.routeDistance) && m.userData.alive && !this.breakables.includes(m)) this.breakables.push(m);
+    }
+    for (const h of this._hazardIndex) if (ahead(h.distance) && !this.obstacles.includes(h.mesh)) this.obstacles.push(h.mesh);
   }
 
   /**

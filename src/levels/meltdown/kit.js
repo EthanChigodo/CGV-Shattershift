@@ -499,6 +499,13 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       target.userData.alive = false;
       group.userData.out = true;
     };
+    // (A checkpoint restart: burning across the corridor again.)
+    group.userData.restore = () => {
+      flames.visible = true;
+      hit.userData.disabled = false;
+      target.userData.alive = true;
+      group.userData.out = false;
+    };
     return group;
   }
 
@@ -867,11 +874,18 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     group.userData.hazardMeshes = hits;
     // A cryo sphere in reach of any column (index.js putOutFires) puts the whole vent out.
     group.userData.firePoints = columns;
+    const grateGlow = grateMat.emissive.clone();
     group.userData.extinguish = () => {
       group.userData.out = true;
       for (const column of columns) column.traverse((o) => o !== column && o.userData.extinguish?.());
       grateMat.emissive.setHex(0x7fe9ff);
       group.userData.tick(0, 0);
+    };
+    // (A checkpoint restart: thawed, erupting on its cycle again.)
+    group.userData.restore = () => {
+      group.userData.out = false;
+      for (const column of columns) column.traverse((o) => o !== column && o.userData.restore?.());
+      grateMat.emissive.copy(grateGlow);
     };
     return group;
   }
@@ -1038,6 +1052,7 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       hits.push(hit);
 
       const pane = { glass, crack, hit, material: glassMat };
+      const clear = glassMat.opacity;
       glass.userData = {
         kind: "glass", breakable: true, alive: true, hp, maxHp: hp, label: "GLASS", node: group, pane,
       };
@@ -1057,10 +1072,19 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
         hit.userData.disabled = true;
         return true;
       };
+      pane.restore = () => {
+        Object.assign(glass.userData, { alive: true, hp: glass.userData.maxHp });
+        glass.visible = true;
+        crack.visible = false;
+        glassMat.opacity = clear;
+        hit.userData.disabled = false;
+      };
       panes.push(pane);
     }
 
     group.userData.panes = panes;
+    /** Whole again (a checkpoint restart, index.js resetFrom). */
+    group.userData.restore = () => panes.forEach((p) => p.restore());
     group.userData.hazardMeshes = hits;
     group.userData.breakableMeshes = panes.map((p) => p.glass);
     return group;
@@ -1115,6 +1139,10 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       cache.hide();
       return true;
     };
+    group.userData.restore = () => {
+      Object.assign(glass.userData, { alive: true, hp: glass.userData.maxHp });
+      cache.show();
+    };
     return group;
   }
 
@@ -1146,6 +1174,10 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       hit.userData.alive = false;
       pickup.hide();
       return true;
+    };
+    group.userData.restore = () => {
+      hit.userData.alive = true;
+      pickup.show();
     };
     return group;
   }
@@ -1839,8 +1871,9 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     body.add(slot);
     let rig = null;
     let model = null;
-    /** Burning away once down (ash.js, as on the roof). */
+    /** Burning away once down (ash.js, as on the roof); and how to undo it. */
     let ash = null;
+    let unAsh = null;
     // Eyes that catch the light: a lurcher reads in the dark beats before it
     // commits (the damage audit: they hit you unseen). They ride the head bone.
     const eyes = new THREE.Group();
@@ -1909,7 +1942,28 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
       state = "down";
       fall = 0;
       ash = model ? ashify(model, 1.74) : null;
+      unAsh = ash ? ash.restore : null;
       return true;
+    };
+    /** Up again, against the wall where they started (a checkpoint restart). */
+    group.userData.restore = () => {
+      unAsh?.();
+      unAsh = null;
+      ash = null;
+      collapse = null;
+      state = "idle";
+      t = 0;
+      fall = 0;
+      stagger = 0;
+      chaseX = null;
+      chaseVel = 0;
+      mover.position.x = startX;
+      body.visible = true;
+      body.scale.setScalar(1);
+      body.position.set(0, 0, 0);
+      body.rotation.set(0, 0, 0);
+      Object.assign(hurt.userData, { alive: true, hp: hurt.userData.maxHp });
+      hit.userData.disabled = false;
     };
     group.userData.state = () => state;
     /**

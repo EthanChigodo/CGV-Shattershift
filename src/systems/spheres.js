@@ -376,7 +376,9 @@ export function serumPickup(type, { scale = 1 } = {}) {
     cradle2.rotation.z += dt * 0.6;
   };
   const hide = () => { bob.visible = false; };
-  return { root, capsule, hit, tick, hide, materials: [material, hit.material] };
+  // (Back, as it was: a level restarted from its checkpoint.)
+  const show = () => { bob.visible = true; };
+  return { root, capsule, hit, tick, hide, show, materials: [material, hit.material] };
 }
 
 /**
@@ -405,5 +407,6 @@ export function sphereCachePickup({ scale = 1 } = {}) {
     ring.rotation.x = Math.PI / 2 + Math.sin(t * 1.3) * 0.3;
   };
   const hide = () => { crystal.visible = false; ring.visible = false; };
-  return { root, crystal, tick, hide, materials: [material, ring.material] };
+  const show = () => { crystal.visible = true; ring.visible = true; };
+  return { root, crystal, tick, hide, show, materials: [material, ring.material] };
 }

@@ -415,6 +415,8 @@ const SKY_FRAGMENT = /* glsl */ `
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _ray = new THREE.Ray();
+const _rayHit = new THREE.Vector3();
 const _lure = new THREE.Vector3();
 const _skyB = new THREE.Vector3();
 const _skyC = new THREE.Vector3();
@@ -1170,7 +1172,8 @@ export class RoofLevel {
    * lift housing, the housing fades to a ghost instead of filling the bottom
    * of the frame. Off (solid) for the cutscenes.
    */
-  updateOcclusion(cameraPosition, dt, enabled = true) {
+  updateOcclusion(cameraPosition, dt, enabled = true, focus = null) {
+    this._clearCrate(cameraPosition, enabled, focus);
     if (!this._hutBox) return;
     const near = enabled && this._hutBox.distanceToPoint(cameraPosition) < 8;
     const target = near ? 0.18 : 1;
@@ -1180,6 +1183,39 @@ export class RoofLevel {
       if (m.transparent === solid) { m.transparent = !solid; m.needsUpdate = true; }
       m.opacity = solid ? 1 : this._hutFade;
       m.depthWrite = solid;
+    }
+  }
+
+  /**
+   * The stranded supplies (problems.js) out of the camera's way: the
+   * davit, the cradle and the crate hang right where the shoulder camera
+   * swings out over the west ledge - inside them, or with them between it
+   * and you, they filled the screen ("blocked from looking that way"). Then
+   * they hide; what a sphere hits stays (the gravity well still finds it).
+   */
+  _clearCrate(cameraPosition, enabled, focus) {
+    for (const p of this.problems ?? []) {
+      if (p.key !== "stranded") continue;
+      if (!p.box) {
+        p.group.updateMatrixWorld(true);
+        p.box = new THREE.Box3();
+        // (The rig only: not its target, and not the stripes on the roof.)
+        for (const part of p.group.children) if (part !== p.target && !p.marks.includes(part)) p.box.expandByObject(part);
+        p.box.expandByScalar(0.6);
+        p.parts = p.group.children.filter((part) => part !== p.target && !p.marks.includes(part));
+      }
+      let block = enabled && p.box.containsPoint(cameraPosition);
+      if (enabled && !block && focus) {
+        _ray.origin.copy(cameraPosition);
+        _ray.direction.copy(focus).setY(focus.y + 1.2).sub(cameraPosition);
+        const reach = _ray.direction.length();
+        _ray.direction.divideScalar(Math.max(reach, 1e-4));
+        const at = _ray.intersectBox(p.box, _rayHit);
+        block = !!at && at.distanceTo(cameraPosition) < reach;
+      }
+      // (Not while it's on its way in: the pull moves the crate itself.)
+      if (p.state.pull) block = false;
+      for (const part of p.parts) part.visible = !block && (part !== p.crate || !p.state.pull?.done);
     }
   }
 

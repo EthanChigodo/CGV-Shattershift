@@ -194,6 +194,8 @@ export class CausewayLevel {
     const layout = mode === "endless" ? [] : hard ? hardenLayout(authoredLayout()) : authoredLayout();
     this.entries = layout.filter((e) => e.type !== "event");
     this.pendingEvents = layout.filter((e) => e.type === "event");
+    // (All of them, for a restart from the checkpoint: resetFrom.)
+    this._events = [...this.pendingEvents];
     this.generator = mode === "endless" ? new EndlessGenerator(seed ?? Date.now(), { problems }) : null;
     this.nextEntry = 0;
     this.live = [];
@@ -387,6 +389,36 @@ export class CausewayLevel {
     }
   }
 
+  /**
+   * Back to `distance` (a restart from the checkpoint, main.js): everything
+   * from just behind it on rebuilt from the layout - what was broken, put
+   * out, opened or used up on the last attempt is back - the drones' and
+   * the scripted events' schedules from there, the vents past it whole (and
+   * their smoke), and the lift gate sealed again with its full clock: a
+   * failed gate is not lost again the moment you get back to it. (The
+   * story's run: Endless has no checkpoint.)
+   */
+  resetFrom(distance) {
+    const from = distance - DESPAWN_BEHIND;
+    for (let i = this.live.length - 1; i >= 0; i -= 1) {
+      const rec = this.live[i];
+      if (rec.entry.d < from) continue;
+      this._despawn(rec);
+      this.live.splice(i, 1);
+    }
+    if (this.gate && !this.live.includes(this.gate)) this.gate = null;
+    if (this.lift && !this.live.includes(this.lift)) this.lift = null;
+    const next = this.entries.findIndex((e) => e.d >= from);
+    this.nextEntry = next < 0 ? this.entries.length : next;
+    for (const e of this.entries) if (e.type === "vent" && e.id && e.d >= from) this.vents.delete(e.id);
+    this.pendingEvents = this._events.filter((e) => e.d > distance);
+    Object.assign(this.state.finale, { armed: false, nextLock: 0, open: false, opening: 0, sealed: false, sealedTime: 0 });
+    Object.assign(this.state.lift, { active: false, t: 0, cabinY: 0, entered: false, blasted: false });
+    this.drones.reset(distance);
+    this._highlighted = null;
+    this._stream(distance);
+  }
+
   _place(object, entry) {
     object.position.set(entry.x ?? 0, entry.y ?? 0, -entry.d);
     this.groups.props.add(object);
@@ -418,8 +450,8 @@ export class CausewayLevel {
         break;
       }
       case "laser": {
-        // A laser grid and its junction box (problems.js): shock the box.
-        const built = laserGrid(k, { mode: entry.mode ?? "low", side: entry.side ?? 1, box: entry.box ?? 8 });
+        // A laser grid and its junction box, hung in its middle (problems.js): shock the box.
+        const built = laserGrid(k, { mode: entry.mode ?? "low" });
         rec.root = built.root; own(built.target); rec.colliders.push(built.collider); rec.parts = built;
         rec.problem = "junction";
         mark("hazard", 11, 0.4);

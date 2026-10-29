@@ -87,11 +87,13 @@ export function authoredLayout() {
   pane(164, R); add(166, "cache", { x: C, y: 3.3 });
   add(170, "sprinkler", { x: 0 }); fire(178, C, 3.6);
   add(186, "file", { x: L, y: 1.7, index: 1 });
-  add(192, "hazard", { x: R, kind: "cart" }); pane(192, C);
+  // (The pane on the left, not the centre: the grid's junction box hangs over
+  // the centre lane, and a pane in front of it took every shot meant for it.)
+  add(192, "hazard", { x: R, kind: "cart" }); pane(192, L);
   radio(198, "vale", "Every floor is wired, Seven. I signed the order myself.");
   // The right-tool problems (src/systems/problems.js): a laser grid you can
   // jump - or kill at its junction box with shock - then the sealed door.
-  add(204, "laser", { mode: "low", side: 1, box: 8 });
+  add(204, "laser", { mode: "low" });
   add(210, "collapse", { x: C, kind: "beam" });
   pane(218, L); pane(218, R, { reinforced: true });
   add(228, "cache", { x: C, y: 2.0 });
@@ -140,8 +142,9 @@ export function authoredLayout() {
   add(568, "sculpture", { x: C, speed: 1.4 });
   add(578, "sprinkler", { x: 0, ceiling: 6.0 });
   fire(586, L, 3.2, { height: 3.6 }); fire(586, R, 3.2, { height: 3.6 });
-  add(596, "cache", { x: C, y: 3.0 });
-  add(600, "laser", { mode: "high", side: -1, box: 9 });
+  // (The cache to the side: in the centre it stood in the line of fire to the junction box.)
+  add(596, "cache", { x: L, y: 3.0 });
+  add(600, "laser", { mode: "high" });
   add(606, "serum", { x: R, y: 1.6, serum: "overdrive" });
   add(616, "hazard", { x: L, kind: "rack" }); pane(616, C); pane(616, R, { mirror: true });
   add(626, "cache", { x: R, y: 2.4 });
@@ -294,7 +297,7 @@ export class EndlessGenerator {
         // A right-tool problem (src/systems/problems.js): a sealed door, or a
         // laser grid and its junction box - shock's.
         if (this.rand() < 0.4) out.push({ d: d + 6, type: "door", x: 0, sealed: true });
-        else out.push({ d: d + 10, type: "laser", mode: this.rand() < 0.5 ? "low" : "high", side: this.rand() < 0.5 ? -1 : 1, box: 8 });
+        else out.push({ d: d + 10, type: "laser", mode: this.rand() < 0.5 ? "low" : "high" });
         this.sinceProblem = 0;
         length = 22;
       } else if (r < 0.26) {

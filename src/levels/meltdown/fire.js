@@ -270,6 +270,11 @@ export function createFire(materials, { width = 2, depth = 2, height = 2.2, coun
     group.userData.out = true;
     flames.visible = false;
   };
+  // (Burning again: a checkpoint restart, index.js resetFrom.)
+  group.userData.restore = () => {
+    group.userData.out = false;
+    flames.visible = true;
+  };
 
   return group;
 }

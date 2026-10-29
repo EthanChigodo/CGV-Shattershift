@@ -81,7 +81,9 @@ Violet seal bars run across the ward's security door, at 238 m: between the firs
 | --- | --- |
 | ![Laser grid with its junction box](problem-solving/skyline-junction-box.jpg) | ![Junction overloaded, grid down](problem-solving/skyline-grid-down.jpg) |
 
-A laser grid crosses all three lanes. A low grid you jump; a high one you slide under. A violet junction box on a pylon just before it feeds it. There are two in the story, at 204 m and 600 m.
+A laser grid crosses all three lanes. A low grid you jump; a high one you slide under. A violet junction box hung in the middle of it, on a gantry between its posts, feeds it. There are two in the story, at 204 m and 600 m.
+
+*Playtest change:* the box first stood on a pylon off to the side, 8 m before the grid. At running speed, far away and off-centre, most players couldn't hit it. It now hangs over the centre lane, where you're already looking, like the sealed door's seal, and a shock bursting near it (the floor under it will do) counts. (The pictures below show the first version.)
 
 - **The solve.** Shock the box and the grid dies: **+450**, and the spheres back.
 - **The alternative.** Jump or slide the grid if you trust your timing. This is the one problem where solving is a choice, not the only way.

@@ -73,3 +73,13 @@ The full design is in [problem-solving.md](problem-solving.md). In short:
 4. **Escalating.** One tool and a timing question in the Foundry, up to a placement question with four tools on the Roof.
 5. **Rewarded.** A bonus, the spheres back, and the count in the run report.
 6. **Backed by the damage audit.** The hits that annoyed players were the ones where the game hid information, and those were fixed without making anything easier.
+
+## After the team's playtest
+
+| # | What came up | Change |
+| --- | --- | --- |
+| 7 | The Skyline's junction box was too hard to hit at speed: far away, off to the side, high on a pylon | It hangs in the middle of the grid now, over the centre lane, on a gantry between the posts (like the sealed door's seal), and a shock bursting near it counts (`causeway/problems.js`). |
+| 8 | A restart from the checkpoint kept what you broke on the last attempt, so you could walk through | Each level puts everything past its checkpoint back as it was (`resetFrom`):<br>• **The Foundry:** switches, cells and serums whole, the piston banks and walls running again, the forges unjammed, the escape reset.<br>• **The Labs:** glass whole, caches and serums back, patients up, ducts and shelves hung, fire walls, fires and vents burning, the shutter jammed.<br>• **The Skyline:** rebuilt from its layout, the drones' and scripted events' schedules from there. |
+| 9 | Failing the Skyline's gate on its clock and retrying: you lost again at once | The gate is sealed again with its full clock on a restart from the checkpoint (it was left at 0 s). |
+| 10 | The Roof's stranded supplies seemed to block looking one way | Near the west ledge, looking back east, the over-the-shoulder camera swung right into the crate's cradle and davit. They now step out of the camera's way, like the lift housing does; the gravity well still finds the crate. |
+| 11 | Pop-ups for the new things | Each sector's card is two pages now: **New abilities**, then **Watch out for** (its hazards and right-tool problems). New cards: the drop forge, the jammed shutter, the sealed door, the laser grid's junction box and the stranded supplies. |

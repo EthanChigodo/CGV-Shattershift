@@ -26,10 +26,10 @@ export const STAGE_NAMES = {
 
 /** What each sector adds. */
 export const GAINS = {
-  foundry: { spheres: ["glass"], abilities: ["throw"] },
-  labs: { spheres: ["cryo"], abilities: ["launcher", "charge"], tips: ["firewall"] },
-  skyline: { spheres: ["shock"], abilities: ["focus"], tips: ["drone", "vent", "sprinkler"] },
-  roof: { spheres: ["gravity"], abilities: ["dodge"], tips: ["brute"] },
+  foundry: { spheres: ["glass"], abilities: ["throw"], tips: ["forge"] },
+  labs: { spheres: ["cryo"], abilities: ["launcher", "charge"], tips: ["firewall", "shutter"] },
+  skyline: { spheres: ["shock"], abilities: ["focus"], tips: ["drone", "sealed", "junction", "vent", "sprinkler"] },
+  roof: { spheres: ["gravity"], abilities: ["dodge"], tips: ["brute", "stranded"] },
 };
 
 /**
@@ -87,6 +87,32 @@ export const TIPS = {
     name: "Security drones",
     text: "HALCYON sends drones after you: one keeps pace ahead and sweeps your lane with a red scan, then locks on and fires down it - change lane when the beam holds still. Its armour shrugs off glass, cryo and gravity: only a shock sphere's EMP brings it down.",
     how: [{ kb: ["Q", "E"], pad: ["PadLB", "PadRB"], does: "change to shock" }, { kb: ["Click"], pad: ["PadRT"], does: "shoot the drone" }],
+  },
+  // The right-tool problems (src/systems/problems.js), one card each.
+  forge: {
+    name: "Drop forges",
+    text: "A hammer as wide as the corridor slams down on a beat. Its glass valve only opens while the hammer is held up - break it then and the hammer jams up for good, your sphere back. Too early or too late and it glances off. Or time your run underneath.",
+    how: [{ kb: ["Click"], pad: ["PadRT"], does: "the valve, while the hammer is up" }],
+  },
+  shutter: {
+    name: "The jammed shutter",
+    text: "A blast shutter jammed across the corridor at the archive's exit. Plain shots only dent it - the gold meter. Hold the trigger for one full charged shot and it blows out of its frame, its two spheres back. Run into it and you shoulder through, hurt.",
+    how: [{ kb: ["Hold", "Click"], pad: ["Hold", "PadRT"], does: "a full charged shot, then let go" }],
+  },
+  sealed: {
+    name: "Sealed doors",
+    text: "Violet seal bars across a security door: glass and cryo bounce off. One shock sphere overloads the seal and the door shatters - its three spheres back. Out of shock? You can shoulder through it, for a lot of integrity.",
+    how: [{ kb: ["Q", "E"], pad: ["PadLB", "PadRB"], does: "change to shock" }, { kb: ["Click"], pad: ["PadRT"], does: "the door's seal" }],
+  },
+  junction: {
+    name: "Laser grids",
+    text: "A red laser grid across all three lanes: jump a low one, slide under a high one. The violet junction box hung in the middle of it powers it - shock it, or burst a shock sphere by it, and the whole grid dies.",
+    how: [{ kb: ["Space"], pad: ["PadA"], touch: ["Swipe up"], does: "jump a low grid" }, { kb: ["Shift"], pad: ["PadB"], touch: ["Swipe down"], does: "slide a high one" }, { kb: ["Click"], pad: ["PadRT"], does: "shock its junction box" }],
+  },
+  stranded: {
+    name: "Stranded supplies",
+    text: "A crate left on the window-cleaner's cradle off the west ledge, out over the drop: spheres and a serum, out of reach of anything but a gravity well. Open one right by it and it drags the crate in over the ledge.",
+    how: [{ kb: ["Q", "E"], pad: ["PadLB", "PadRB"], does: "change to gravity" }, { kb: ["Click"], pad: ["PadRT"], does: "shoot right by the crate" }],
   },
   brute: {
     name: "The brute",

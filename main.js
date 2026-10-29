@@ -2068,6 +2068,8 @@ function leaveMeltdown(nextLevel) {
 let pendingSkyline = false;
 function updateMeltdownFrame(dt, time) {
   if (!meltdown) return;
+  // Focus's look, in the Labs' and the Roof's own grading pass (the world is already slowed: dt).
+  if (meltdown.grade?.uniforms.uFocus) meltdown.grade.uniforms.uFocus.value = 1 - run.timeScale;
   meltdown.update(dt, time);
   const liftCut = meltdown.cut;
   const insideElevator = Boolean(liftCut?.elevatorInside);
@@ -3720,13 +3722,17 @@ function resumeFromCheckpoint() {
     foundryInvulnerable = 2;
     foundrySlow = 0;
     ammo = Math.max(ammo, cp.ammo);
-    foundry.resetEscape();
+    // Everything past the checkpoint as it was (the escape too).
+    foundry.resetFrom(cp.distance);
   } else if (cp.key === "skyline") {
     runZ = CAUSEWAY_ORIGIN_Z - cp.distance;
     lane = 1;
     run.finished = false;
     run.invulnerable = 2;
     ammo = Math.max(ammo, cp.ammo);
+    // Everything past it rebuilt, the gate sealed again with its full clock.
+    causeway.resetFrom(cp.distance);
+    causewayHud.warning(null);
   } else if (cp.key === "labs") {
     meltdown.resumeAt(cp.distance, cp.ammo, life);
   }
@@ -6281,6 +6287,16 @@ function cycleSphere(step) {
 // Esc lets go of the roof's held mouse (the browser does that itself): a pause, as anywhere.
 document.addEventListener("pointerlockchange", () => {
   if (!document.pointerLockElement && currentLevel === 3 && state === "playing" && !paused && meltdown?.wantsPointerLock && !unlockCard.open) openPause();
+});
+// Focus held with another button down (holding fire on the Roof, charging in
+// the Labs): the browser sends no second pointerdown or pointerup for a chord,
+// only a move with the new buttons - so the right button is read from that too.
+addEventListener("pointermove", (event) => {
+  if (arena?.active || race?.active || locker?.active || event.pointerType !== "mouse") return;
+  const right = (event.buttons & 2) !== 0;
+  if (right && !run.focusing && state === "playing" && !paused && hasAbility("focus")) run.focusing = true;
+  else if (!right && run.focusing && run.focusByMouse) run.focusing = false;
+  run.focusByMouse = right;
 });
 addEventListener("pointerup", (event) => {
   if (event.button === 2) run.focusing = false;

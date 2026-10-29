@@ -26,6 +26,8 @@ const GradeShader = {
     uDark: { value: 0 },
     uHeat: { value: 0 },
     uHit: { value: 0 },
+    // Focus (bullet time, the host's): the Skyline's look - cool, desaturated, darker edges.
+    uFocus: { value: 0 },
     uGrain: { value: 0.045 },
     uResolution: { value: new THREE.Vector2(1, 1) },
     // The charged shot's (systems/charge.js): the same objects as the Skyline's.
@@ -45,6 +47,7 @@ const GradeShader = {
     uniform float uDark;
     uniform float uHeat;
     uniform float uHit;
+    uniform float uFocus;
     uniform float uGrain;
     uniform vec2 uResolution;
     varying vec2 vUv;
@@ -82,6 +85,10 @@ const GradeShader = {
       float vig = 1.0 - smoothstep(inner, outer, r);
       col *= mix(0.42 - uDark * 0.25, 1.0, vig);
       col = mix(col, col * vec3(1.14, 0.88, 0.82), uDanger * 0.55);
+      // Focus: as in the Skyline (fx/postfx.js) - toward a cool grey, and tunnel vision.
+      float luma = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(col, vec3(luma) * vec3(0.8, 0.95, 1.1), uFocus * 0.55);
+      col *= 1.0 - smoothstep(0.3, 0.85, r) * uFocus * 0.4;
 
       col = chargeColour(col, vUv, uTime);
       col += (hash(vUv * uResolution + fract(uTime * 7.31) * 311.0) - 0.5) * uGrain;

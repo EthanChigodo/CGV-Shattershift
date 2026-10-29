@@ -219,6 +219,8 @@ export class FoundryLevel {
     this._animated = [];
     this._culled = [];
     this._switchNodes = [];
+    /** What a checkpoint restart puts back: { distance, reset } (resetFrom). */
+    this._resets = [];
     this._escapeGates = [];
     this._pendingEmitters = [];
     /** Hazards with their route distance and a reusable world-space box. */
@@ -726,9 +728,20 @@ export class FoundryLevel {
     }
   }
 
-  /** Register a switch and wire its break action. */
-  _switch({ distance, lane, label, action, system = false, points = 200, height = 2.3, spheres = 3 }) {
+  /** Register a switch and wire its break action (`undo`: what un-does it, for a checkpoint restart). */
+  _switch({ distance, lane, label, action, undo = null, system = false, points = 200, height = 2.3, spheres = 3 }) {
     const node = this.kit.switchNode({ x: 0, y: height, label, action, points });
+    this._resets.push({
+      distance,
+      reset: () => {
+        const glass = node.userData.glass;
+        if (glass.userData.alive) return;
+        node.userData.restore();
+        if (!this.breakables.includes(glass)) this.breakables.push(glass);
+        if (system) this.state.systemsOnline = Math.max(0, this.state.systemsOnline - 1);
+        undo?.();
+      },
+    });
     this._add(this.groups.switches, node, distance, lane);
     node.userData.glass.userData.system = system;
     // (A switch: the gravity sphere leaves these to you.)
@@ -774,7 +787,18 @@ export class FoundryLevel {
     piece.add(line);
     marks.push(line);
     this._problemMarks.push(...marks);
-    this._forges.push({ piece, distance, glass, marks, sighted: false, solved: false });
+    const forge = { piece, distance, glass, marks, sighted: false, solved: false };
+    this._forges.push(forge);
+    this._resets.push({
+      distance,
+      reset: () => {
+        if (!forge.solved) return;
+        forge.solved = false;
+        piece.userData.unjam();
+        for (const m of marks) fadeMark(m, 1);
+        if (!this.breakables.includes(glass)) this.breakables.push(glass);
+      },
+    });
     return piece;
   }
 
@@ -1026,12 +1050,24 @@ export class FoundryLevel {
 
     const disableBank = (bank) => {
       for (const piston of bank) {
+        piston.userData.running ??= piston.userData.tick;
         piston.userData.tick = null;
         const head = piston.userData.hazardMesh;
         head.userData.disabled = true;
         head.visible = false;
         const index = this.obstacles.indexOf(head);
         if (index >= 0) this.obstacles.splice(index, 1);
+      }
+    };
+
+    // (Back on: a checkpoint restart.)
+    const enableBank = (bank) => {
+      for (const piston of bank) {
+        if (piston.userData.running) piston.userData.tick = piston.userData.running;
+        const head = piston.userData.hazardMesh;
+        head.userData.disabled = false;
+        head.visible = true;
+        if (!this.obstacles.includes(head)) this.obstacles.push(head);
       }
     };
 
@@ -1052,6 +1088,7 @@ export class FoundryLevel {
         disableBank(bankA);
         this._restoreSystem("PISTON LOCK");
       },
+      undo: () => enableBank(bankA),
     });
 
     this._switch({
@@ -1064,6 +1101,7 @@ export class FoundryLevel {
         for (const pair of walls) for (const slab of pair) slab.userData.setProgress(0);
         this.events.emit("switch-bonus", { label: "WALL RETRACT" });
       },
+      undo: () => { wallsLive = true; },
     });
 
     this._switch({
@@ -1075,6 +1113,7 @@ export class FoundryLevel {
         disableBank(bankB);
         this.events.emit("switch-bonus", { label: "PRESSURE BLEED" });
       },
+      undo: () => enableBank(bankB),
     });
 
     // --- Filler ---------------------------------------------------------
@@ -1266,6 +1305,15 @@ export class FoundryLevel {
         this._add(this.groups.targets, cell, at, lateral, height);
         cell.userData.glass.userData.routeDistance = at;
         this.breakables.push(cell.userData.glass);
+        this._resets.push({
+          distance: at,
+          reset: () => {
+            const glass = cell.userData.glass;
+            if (glass.userData.alive) return;
+            cell.userData.restore();
+            if (!this.breakables.includes(glass)) this.breakables.push(glass);
+          },
+        });
       }
 
       distance += CELL_SPACING * (0.85 + random() * 0.4);
@@ -1589,6 +1637,18 @@ export class FoundryLevel {
    * Back before the escape (a checkpoint resume after a death in it): the
    * gates open, the clock reset, ready to trigger again as you come through.
    */
+  /**
+   * Back to `distance` (a restart from the checkpoint, main.js): everything
+   * past it as it was - the switches and cells whole again and the systems
+   * they shut down running (the piston banks, the walls), the forges
+   * unjammed, the escape's gates open and its clock unstarted - so nothing
+   * broken on the last attempt is a free way through.
+   */
+  resetFrom(distance) {
+    for (const r of this._resets) if (r.distance >= distance - 2) r.reset();
+    this.resetEscape();
+  }
+
   resetEscape() {
     Object.assign(this.state.escape, { active: false, armed: false, remaining: 0, failed: false });
     for (const gate of this._escapeGates) {

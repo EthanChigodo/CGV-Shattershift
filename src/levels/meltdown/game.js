@@ -2417,6 +2417,8 @@ export class MeltdownGame {
       invulnerable: 2.5, fireDistance: distance - 45, speed: this.level.speedAt(distance),
     });
     this.projectiles.clear?.();
+    // Everything past the checkpoint as it was (nothing broken last time is a free way through).
+    this.level.resetFrom?.(distance);
     this.phase = "run";
     this.fade.override = null;
     this.fade.target = 0;
@@ -2963,7 +2965,7 @@ export class MeltdownGame {
     }
     this._shake(dt, 0.4, 0.3, 0);
     this.snapCamera = false;
-    this.roof?.updateOcclusion(camera.position, dt, true);
+    this.roof?.updateOcclusion(camera.position, dt, true, hero.position);
   }
 
   _roofHit(hit) {
