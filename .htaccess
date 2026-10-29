@@ -1,0 +1,27 @@
+# Fracture Run on Apache (the LAMP deploy, tools/build-deploy.py).
+#
+# The game's code - the page, its scripts, styles and the leaderboard API -
+# is checked with the server on every load ("no-cache": a quick "not
+# modified" when nothing changed), so an upload is picked up at once instead
+# of browsers running yesterday's scripts. The big files (models, textures,
+# sounds) are kept for a week.
+
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|mjs|css|json|webmanifest|php)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.(glb|gltf|bin|png|jpe?g|webp|ktx2|mp3|ogg|wav|m4a|woff2?)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+</IfModule>
+
+# (Without mod_headers: the same through mod_expires, where it's on.)
+<IfModule !mod_headers.c>
+  <IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/html "access plus 0 seconds"
+    ExpiresByType text/javascript "access plus 0 seconds"
+    ExpiresByType application/javascript "access plus 0 seconds"
+    ExpiresByType text/css "access plus 0 seconds"
+  </IfModule>
+</IfModule>
