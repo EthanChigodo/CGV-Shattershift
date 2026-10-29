@@ -25,7 +25,8 @@ export const BOT_SOURCE = `
   const size = new THREE.Vector3();
   const p = new THREE.Vector3();
   const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0, solved: [] };
-  const answered = new Set();
+  /** Each problem's shots: how many, and when the last went (a player throws again if one was blocked). */
+  const tries = new Map();
   const answeredList = [];
   let t = 0;
   let lastHits = 0;
@@ -95,8 +96,9 @@ export const BOT_SOURCE = `
         }
       }
       // A fire wall or the jammed shutter coming (problems.js): save two
-      // spheres for it, then the right tool, once, from its clear run-up
-      // (the last ~20 m: nothing in the line of fire).
+      // spheres for it, then the right tool from its clear run-up (the last
+      // ~20 m: nothing in the line of fire) - again, up to three times, if a
+      // patient or a sack stepped into the line and took the shot.
       const problem = (g.level.problemSet?.list ?? []).find((q) => !q.solved && q.distance - r.distance > 7 && q.distance - r.distance < 60);
       // Shoot glass, sacks, vials and patients ahead: aim by projecting them.
       let target = null;
@@ -111,8 +113,9 @@ export const BOT_SOURCE = `
         target.b.getWorldPosition(p).project(g.camera);
         g.pointer.set(p.x, p.y);
       } else g.pointer.set(0, -0.1);
-      if (problem && !answered.has(problem) && problem.distance - r.distance < 21 && r.balls >= 2) {
-        answered.add(problem);
+      const tried = problem ? tries.get(problem) ?? { n: 0, at: -9 } : null;
+      if (problem && tried.n < 3 && t - tried.at > 0.7 && problem.distance - r.distance < 21 && r.balls >= 2) {
+        tries.set(problem, { n: tried.n + 1, at: t });
         r.firing = false;
         problem.target.getWorldPosition(p).project(g.camera);
         g.pointer.set(p.x, p.y);
@@ -120,7 +123,7 @@ export const BOT_SOURCE = `
         g._shoot(problem.key === "shutter" ? { charged: 1 } : {});
         g.arsenal.select("glass");
         log.solved.push(problem.key + "@" + Math.round(r.distance));
-        answeredList.push(problem);
+        if (!answeredList.includes(problem)) answeredList.push(problem);
       }
     } else r.firing = false;
 

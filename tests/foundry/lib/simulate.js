@@ -105,6 +105,8 @@ window.__sim = function (options) {
       if (!mesh.userData.alive || d <= distance || d - distance > 20) continue;
       if (mesh.userData.kind === "cell" && !shootCells) continue;
       if (mesh.userData.kind === "switch" && !shootSwitches) continue;
+      // A drop forge's valve: a player waits for the hammer to be up (open).
+      if (mesh.userData.kind === "valve" && (!shootSwitches || !mesh.userData.open)) continue;
       if (spheres <= 0) break;
       spheres -= 1; shots += 1;
       minSpheres = Math.min(minSpheres, spheres);
@@ -148,7 +150,7 @@ window.__sim = function (options) {
         at: Math.round(distance),
         kind: mesh.userData.barrier
           ? "barrier-" + mesh.userData.barrier
-          : mesh.userData.piston ? "piston" : "gate",
+          : mesh.userData.piston ? "piston" : mesh.userData.forge ? "forge" : "gate",
         duringEscape: distance >= escapeFrom,
       });
       integrity -= 18; invuln = 1.1; slow = 0.55; combo = 1; comboTimer = 0;

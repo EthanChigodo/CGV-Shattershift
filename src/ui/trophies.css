@@ -186,6 +186,7 @@
 .fm-act[data-act="collect"] { --act: var(--warn); }
 .fm-act[data-act="tool"] { --act: var(--text-2); }
 .fm-act[data-act="rules"] { --act: #c9a7ff; }
+.fm-act[data-act="solve"] { --act: var(--ok); }
 .fm-card { grid-template-columns: 52px 1fr; align-items: start; }
 .fm-badge {
   position: relative; display: grid; place-items: center; width: 52px; height: 52px; color: var(--tc);

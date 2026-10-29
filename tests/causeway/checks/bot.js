@@ -7,6 +7,11 @@
  * sprinkler bulbs, sphere caches, doors, then glass in its own lane - holding
  * back optional shots when spheres run low. It does not cheat: it uses the
  * same fire() and lane controls as the keyboard and mouse.
+ *
+ * The right-tool problems (src/systems/problems.js) it answers as a player
+ * should: shock (Q/E) at a sealed door and at a laser grid's junction box,
+ * then back to glass - and a grid still live as it arrives, it jumps (low)
+ * or slides under (high), with the same Space and Shift as the keyboard.
  */
 window.__bot = async function (opts = {}) {
   const d = __dbg, T = d.THREE;
@@ -41,20 +46,35 @@ window.__bot = async function (opts = {}) {
       // Shoot: nearest alive target 8-40 m ahead, every ~0.25 s.
       if (frames % 8 === 0 && d.ammo > 0) {
         const cam = d.camera; let target = null, bestGap = 1e9;
-        const priority = { lock: 0, sprinkler: 1, vent: 2, cache: 1, door: 1, pane: 3, blade: 3, falling: 2, serum: 2, file: 2, tank: 5 };
+        const priority = { lock: 0, junction: 0, sprinkler: 1, vent: 2, cache: 1, door: 1, pane: 3, blade: 3, falling: 2, serum: 2, file: 2, tank: 5 };
         for (const t of L.breakables) {
           const p = t.getWorldPosition(new T.Vector3()); const gap = cam.position.z - p.z;
           if (gap < 6 || gap > 40) continue;
           if (t.userData.kind === "lock" && t.userData.order !== L.state.finale.nextLock) continue;
           if ((claimed.get(t) ?? -1) > frames) continue;
-          if (d.ammo < 6 && !["cache","lock","door","sprinkler"].includes(t.userData.kind) && !(t.userData.kind==="pane" && Math.abs(p.x - d.playerX) < 1.5)) continue;
+          if (d.ammo < 6 && !["cache","lock","door","sprinkler","junction"].includes(t.userData.kind) && !(t.userData.kind==="pane" && Math.abs(p.x - d.playerX) < 1.5)) continue;
           const score = gap + (priority[t.userData.kind] ?? 4) * 3;
           if (score < bestGap) { bestGap = score; target = p; target.__mesh = t; }
         }
         if (target) {
           const ndc = target.clone().project(cam);
-          if (Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1) { d.setPointer(ndc.x, ndc.y); d.fire(); shotsFired++; claimed.set(target.__mesh, frames + 40); }
+          if (Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1) {
+            // The right tool: shock for a sealed door or a junction box.
+            const data = target.__mesh.userData;
+            const shock = data.kind === "junction" || (data.kind === "door" && data.sealed);
+            if (shock && d.arsenal.has("shock") && d.ammo >= 3) d.arsenal.select("shock");
+            d.setPointer(ndc.x, ndc.y); d.fire(); shotsFired++; claimed.set(target.__mesh, frames + 40);
+            d.arsenal.select("glass");
+          }
         }
+      }
+    }
+    // A laser grid still live as it arrives: over it or under it.
+    if (opts.bot) {
+      for (const rec of lv().live) {
+        const gap = rec.entry.d - dist;
+        if (rec.kind !== "laser" || rec.solved || gap < 0.5 || gap > 2.6) continue;
+        dispatchEvent(new KeyboardEvent("keydown", { code: rec.entry.mode === "high" ? "ShiftLeft" : "Space" }));
       }
     }
     if (frames % 300 === 0) log.push(`f${frames} d=${dist.toFixed(0)} hp=${d.health.toFixed(0)} ammo=${d.ammo} score=${Math.floor(d.score)} live=${L.live.length} debris=${L.debris.length}`);

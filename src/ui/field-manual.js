@@ -68,17 +68,21 @@ const TONES = {
   white: "#e9f6ff", cyan: "#5ef0ff", violet: "#c77dff", indigo: "#8f7cff", amber: "#ffd23f", fire: "#ff8a1f",
   hazard: "#ff5a4e", green: "#7dff9a", serum: "#ff5ad0", blue: "#4d8dff", glass: "#9ff3ff", pink: "#ff2f8e",
 };
-const ACTS = { break: "Break it", avoid: "Avoid it", collect: "Collect it", tool: "Your tool", rules: "How it works" };
-/** The legend's four (the rules cards explain themselves). */
-const LEGEND = ["break", "avoid", "collect", "tool"];
+const ACTS = { break: "Break it", avoid: "Avoid it", collect: "Collect it", tool: "Your tool", solve: "Solve it", rules: "How it works" };
+/**
+ * The legend's five (the rules cards explain themselves). "Solve it": the
+ * right-tool problems (src/systems/problems.js) - only the right sphere, or
+ * the right moment, gets you past for free.
+ */
+const LEGEND = ["solve", "break", "avoid", "collect", "tool"];
 
 /** [tone, act, icon, title, text]. data-keys texts are renamed for a controller (key-names.js). */
 const CARDS = {
   tools: [
     ["white", "tool", "glass", "Glass sphere // 1", "Standard throw. Breaks what it hits, and is gone in the burst; ricochets off walls and ceilings on the way."],
-    ["cyan", "tool", "cryo", "Cryo sphere // 2", "Goes off like shock, in ice: shatters what's within 4.8 m, puts out fires, freezes falling debris and machinery, knocks people down. Frosts the floor where it lands on it."],
-    ["violet", "tool", "shock", "Shock sphere // 3", "Shatters all glass within 5 m. One-hit reinforced glass."],
-    ["indigo", "tool", "gravity", "Gravity sphere // 2", "Opens a black hole for a second where it bursts. It breaks nothing: it drags in every sphere cache, sack and serum within 7 m and they're yours, and it yanks patients and scientists toward it and stuns them."],
+    ["cyan", "tool", "cryo", "Cryo sphere // 2", "Goes off like shock, in ice: shatters what's within 4.8 m, puts out fires - fire walls too - freezes falling debris and machinery, knocks people down. Frosts the floor where it lands on it."],
+    ["violet", "tool", "shock", "Shock sphere // 3", "Shatters all glass within 5 m. One-hit reinforced glass. The only thing that opens a sealed door or overloads a laser grid's junction box."],
+    ["indigo", "tool", "gravity", "Gravity sphere // 2", "Opens a black hole for a second where it bursts. It breaks nothing: it drags in every sphere cache, sack and serum within 7 m and they're yours - stranded supplies too - and it yanks patients and scientists toward it and stuns them (by an open ledge: over it)."],
     ["cyan", "collect", "sack", "Sphere caches and sacks", "Shoot cyan caches in the Foundry and the Skyline. In the Labs and on the Roof, shoot sacks or run through them to collect once, without spending ammunition."],
     ["cyan", "tool", "recharge", "Emergency recovery", "At zero spheres, 2.5 seconds of active play (1.6 on Easy, 3.5 on Hard) restores one sphere. It stops at one: use Glass (Q/E) to shoot a supply. Pause, cutscenes and death do not charge it. While empty, a yellow wireframe marks the nearest unobstructed supply.", true],
     ["amber", "collect", "prism", "Prism split", "Gold capsule. Every throw splits into three spheres. 10 s."],
@@ -90,6 +94,7 @@ const CARDS = {
     ["amber", "collect", "file", "Records", "Gold holograms in light beams, in every sector: plant logs, patient records, case files, flight records. Run through one to read it."],
   ],
   foundry: [
+    ["white", "solve", "piston", "Drop forge", "A hammer as wide as the corridor, slamming on a rhythm. Its glass valve opens only while the hammer is held up: break it then and the hammer jams up for good (+500). Too early or too late and the guard plates turn the sphere away. Or time your run underneath."],
     ["glass", "break", "cell", "Switch cells", "Glass cells on stems. Break one and the gate it holds opens - three stand between you and the lift."],
     ["cyan", "break", "cell", "Pressure cells", "Small glass cells everywhere: score, and three spheres back each."],
     ["cyan", "tool", "recharge", "Out of spheres?", "Keep avoiding machinery. Emergency recharge restores one sphere after 2.5 seconds empty; switch to Glass with Q/E and shoot a pressure cell for +3.", true],
@@ -99,6 +104,8 @@ const CARDS = {
     ["fire", "break", "charge", "Plant charges", "Near the end Vale's charges arm and the shutters start sealing: a clock to the lift. Break the extraction valve."],
   ],
   labs: [
+    ["cyan", "solve", "fire", "Fire walls", "A doorway full of flame at a hall's exit, banded in cryo cyan. Glass only fizzles in it: one cryo sphere (Q/E) puts the whole wall out (+600). Run through it and it burns you badly."],
+    ["amber", "solve", "charge", "Jammed shutter", "A blast shutter stuck across the corridor, with a gold meter. Plain shots only dent it; hold the throw for a full charged shot and it blows out (+700). Dent it full and it gives too - eight spheres, no bonus. Run into it and you shoulder through, hurt.", true],
     ["fire", "avoid", "fire", "The fire front", "It's behind you the whole way. Slow down and it catches you."],
     ["cyan", "collect", "sack", "Sphere sacks", "Run through the floating cyan crystal to collect without shooting, or break it with projectiles. At zero, recharge restores one sphere after 2.5 seconds of play. Use Glass (Q/E); a yellow wireframe marks a nearby unobstructed sack ahead.", true],
     ["hazard", "avoid", "duct", "Fallen ducts", "Jump onto them and off the far side - running into one is a hit. At the fire crossings, the duct is the only bridge."],
@@ -108,6 +115,8 @@ const CARDS = {
     ["hazard", "avoid", "wave", "Fire waves (Hard)", "Three floor vents erupting one after another, so the fire rolls across the corridor. Be in the lane it has just left."],
   ],
   skyline: [
+    ["violet", "solve", "shock", "Sealed security door", "Violet seal bars across the door. Glass and cryo bounce off: one shock sphere (Q/E) overloads the seal (+600). Out of shock, you can shoulder through it - for 34 integrity.", true],
+    ["violet", "solve", "laser", "Laser grid and junction box", "A laser grid across all three lanes, fed by a violet junction box on a pylon just before it. Shock the box and the grid dies (+450) - or jump or slide it."],
     ["glass", "break", "pane", "Glass pane", "Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity."],
     ["glass", "break", "reinforced", "Reinforced glass and doors", "Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one."],
     ["cyan", "collect", "sack", "Sphere cache", "Floating crystal. Shoot it for +3 spheres. At zero, emergency recharge restores one sphere after 2.5 seconds of play; use Glass (Q/E). The sealed gate keeps its seven-second aiming budget but holds that clock while you are empty. Overdrive throws are free even at zero.", true],
@@ -124,6 +133,8 @@ const CARDS = {
     ["cyan", "tool", "sprint", "Sprint, brake, focus", "W sprints, S brakes (the bridge collapses behind you, so do not brake long). Hold right mouse to slow time.", true],
   ],
   roof: [
+    ["indigo", "solve", "gravity", "Stranded supplies", "A crate on the window-cleaner's cradle off the west ledge, out of reach. Open a gravity well close to it and it's dragged in over the ledge, spheres and all (+500)."],
+    ["indigo", "solve", "gravity", "Over the edge", "A gravity well by an open ledge drags the patients it catches over it (+350)."],
     ["hazard", "break", "patient", "Patients", "Climb out of the hatches, stalk, wind up and charge in a straight line. Sidestep one near an open ledge and it goes over."],
     ["hazard", "avoid", "hatch", "Open hatches", "The square holes the patients climb out of go straight down into the building. Step into one and you fall."],
     ["serum", "break", "scientist", "Scientists", "Fire slow orbs from their gadgets - dodge them (Space). Three hits each.", true],

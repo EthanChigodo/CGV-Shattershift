@@ -933,6 +933,140 @@ export function createFoundryKit({ shadows = false } = {}) {
     return jet;
   }
 
+  /**
+   * The drop forge (a right-tool problem: src/systems/problems.js "forge"). A
+   * hammer as wide as the corridor drops on a frame in a steady rhythm: held
+   * up for half of every `period`, a fast drop, a slam, a slower lift. Run
+   * under it while it is up - or break the glass release valve on its face,
+   * which is only open while the hammer is held up (its guard plates close
+   * while it moves), and it jams up for good, venting steam.
+   */
+  function dropForge({ halfWidth = 5.6, period = 2.8, phase = 0 } = {}) {
+    const group = new THREE.Group();
+    group.name = "DropForge";
+    const span = halfWidth * 2 - 1.6;
+    // The hammer's underside when up: clear of a jump (the top of a jump is 3.5 m).
+    const UP = 3.75;
+    const H = 1.3;
+    const geo = (g) => (tracked.geometries.push(g), g);
+
+    // The frame: two columns, the crosshead, the steam cylinder on top.
+    const columnGeo = geo(bevelledBox(0.7, 7.2, 1.1, 0.06));
+    for (const side of [-1, 1]) {
+      const column = mesh(columnGeo, materials.trim);
+      column.position.set(side * (halfWidth - 0.45), 3.6, 0);
+      group.add(column);
+    }
+    const crosshead = mesh(geo(bevelledBox(halfWidth * 2 - 0.2, 0.7, 1.3, 0.06)), materials.plating);
+    crosshead.position.y = 6.75;
+    group.add(crosshead);
+    const cylinder = mesh(geo(new THREE.CylinderGeometry(0.62, 0.62, 0.7, 14)), materials.trim);
+    cylinder.position.y = 7.1;
+    group.add(cylinder);
+    // The anvil plate it slams onto (flush with the floor: not in the way).
+    const anvil = mesh(geo(new THREE.BoxGeometry(span, 0.05, 1.8)), materials.trim, { cast: false });
+    anvil.position.y = 0.025;
+    group.add(anvil);
+
+    // The ram: the hammer, and the valve on its face, rising and falling together.
+    const ram = new THREE.Group();
+    group.add(ram);
+    const hammer = mesh(geo(bevelledBox(span, H, 1.5, 0.08)), materials.hazard);
+    hammer.position.y = H / 2;
+    hammer.userData = { kind: "hazard", solid: true, forge: true };
+    ram.add(hammer);
+    const rodGeo = geo(new THREE.CylinderGeometry(0.16, 0.16, 1, 8));
+    const rods = [-2.4, 2.4].map((x) => {
+      const rod = mesh(rodGeo, materials.plating);
+      rod.position.x = x;
+      group.add(rod);
+      return rod;
+    });
+
+    // The valve: a disc of the game's breakable cyan glass in a steel ring.
+    const glassMaterial = materials.switchGlass.clone();
+    tracked.materials.push(glassMaterial);
+    const glass = mesh(geo(new THREE.CylinderGeometry(0.55, 0.55, 0.2, 20)), glassMaterial);
+    glass.rotation.x = Math.PI / 2;
+    glass.position.set(0, H / 2, 0.82);
+    glass.name = "ForgeValve";
+    glass.userData = { kind: "valve", problem: "forge", breakable: true, alive: true, open: false, points: 150, label: "FORGE VALVE", node: group };
+    ram.add(glass);
+    const ring = mesh(geometries.cellCage, materials.trim);
+    ring.position.copy(glass.position);
+    ring.scale.setScalar(1.22);
+    ram.add(ring);
+    const plateGeo = geo(new THREE.BoxGeometry(0.62, 1.2, 0.06));
+    const plates = [-1, 1].map((side) => {
+      const plate = mesh(plateGeo, materials.trim);
+      plate.position.set(side * 0.31, H / 2, 0.97);
+      ram.add(plate);
+      return plate;
+    });
+    // Steam out of the broken valve.
+    const steam = particleJet({ count: 22, material: materials.steam, spread: 0.3, rise: 1.8, life: 1.0 });
+    steam.position.set(0, H / 2, 0.9);
+    steam.visible = false;
+    ram.add(steam);
+
+    const anchor = new THREE.Object3D();
+    anchor.position.set(0, UP + H / 2, 1.2);
+    group.add(anchor);
+    const state = { jammed: false, open: false, guard: 0, cycle: 0 };
+    group.userData.emitter = {
+      kind: "point", anchor, color: 0x7ef4f1, base: 4, distance: 11,
+      intensityAt: (time) => (state.jammed ? 0 : state.guard * (3 + Math.sin(time * 6) * 0.8)),
+    };
+
+    /** Where it is in its cycle (0..1) at `time`, and the hammer's height there. */
+    const cycleAt = (time) => (((time / period + phase) % 1) + 1) % 1;
+    const heightAt = (c) => {
+      if (c < 0.5) return UP;
+      if (c < 0.58) { const k = (c - 0.5) / 0.08; return UP * (1 - k * k); }
+      if (c < 0.78) return 0;
+      const k = (c - 0.78) / 0.22;
+      return UP * k * k * (3 - 2 * k);
+    };
+
+    group.userData.tick = (dt, time) => {
+      const c = state.jammed ? 0.25 : cycleAt(time);
+      state.cycle = c;
+      const y = heightAt(c);
+      ram.position.y = y;
+      // The rods from the crosshead's underside down to the hammer.
+      const top = 6.4;
+      const bottom = y + H;
+      for (const rod of rods) {
+        rod.scale.y = Math.max(0.05, top - bottom);
+        rod.position.y = (top + bottom) / 2;
+      }
+      // Open while held up, with a margin either side of the move.
+      state.open = !state.jammed && c > 0.03 && c < 0.46;
+      glass.userData.open = state.open;
+      state.guard += ((state.open ? 1 : 0) - state.guard) * Math.min(1, dt * 14);
+      plates[0].position.x = -0.31 - 0.62 * state.guard;
+      plates[1].position.x = 0.31 + 0.62 * state.guard;
+      glassMaterial.emissiveIntensity = 0.12 + state.guard * (1.1 + Math.sin(time * 6) * 0.3);
+      if (state.jammed) steam.userData.tick(dt);
+    };
+    group.userData.tick(0, 0);
+
+    /** Cryo holds it where it is - only while it is up (frozen down, it would be a wall). */
+    group.userData.canFreeze = () => !state.jammed && state.cycle < 0.5;
+    /** The valve broken: the hammer stays up, venting steam. */
+    group.userData.jam = () => {
+      state.jammed = true;
+      glass.userData.alive = false;
+      glass.visible = false;
+      steam.visible = true;
+      group.userData.tick(0, 0);
+    };
+    group.userData.state = state;
+    group.userData.glass = glass;
+    group.userData.hazardMesh = hammer;
+    return group;
+  }
+
   /* -------------------------------------------------------------- */
 
   function dispose() {
@@ -960,6 +1094,7 @@ export function createFoundryKit({ shadows = false } = {}) {
     warningStrobe,
     turnChevrons,
     sparkBurst,
+    dropForge,
     dispose,
   };
 }

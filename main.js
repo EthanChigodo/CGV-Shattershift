@@ -852,6 +852,8 @@ function buildFoundry(variant = 0) {
   }
 
   foundryHud.bind(foundry);
+  // The drop forges (src/systems/problems.js): the hint, the wrong moment, the solve.
+  wireProblems(foundry);
   foundry.events.on("complete", () => {
     if (currentLevel !== 2 || state !== "playing") return;
     score += Math.max(0, foundry.state.systemsOnline * 500 + health * 10);
@@ -997,7 +999,7 @@ function updateFoundry(dt, time) {
     level1Audio.hurt();
     foundryHud.setIntegrity(Math.max(0, health));
     triggerShake(0.45);
-    showMessage(hazard.userData.barrier === "high" ? "LOW CLEARANCE" : "INTEGRITY DAMAGED");
+    showMessage(hazard.userData.forge ? "CRUSHED // BREAK ITS VALVE WHILE IT'S UP" : hazard.userData.barrier === "high" ? "LOW CLEARANCE" : "INTEGRITY DAMAGED");
     updateUI();
     if (health <= 0) endRun(false);
   }
@@ -1325,8 +1327,19 @@ function wireProblems(level) {
   problemLog.reset();
   const on = (name, fn) => level.events.on(name, (p) => { if (level === causeway || level === foundry) fn(p); });
   on("problem-sighted", (p) => problemLog.sighted(p.key, p));
-  on("problem-wrong", (p) => { problemLog.wrong(p.key, p.used); level1Audio.surfaceRicochet(); });
-  on("problem-solved", (p) => { problemLog.solve(p.key, p); level1Audio.impact(0.7); level1Audio.serumCollected(); triggerShake(0.2); });
+  on("problem-wrong", (p) => {
+    problemLog.wrong(p.key, p.used);
+    level1Audio.surfaceRicochet();
+    // (Off a forge valve's guard: sparks where it glanced off.)
+    if (p.position) shatterFX.chunks(p.position, 10, { tint: 0xffd9a0, speed: 3, radius: 0.1, size: 0.05, life: 0.8 });
+  });
+  on("problem-solved", (p) => {
+    problemLog.solve(p.key, p);
+    // The right tool's cost back (problems.js `refund`).
+    const refund = PROBLEMS[p.key]?.refund ?? 0;
+    if (refund) { ammo += refund; ammoRecovery.reset(); level1Audio.sphereCollected(); updateUI(); }
+    level1Audio.impact(0.7); level1Audio.serumCollected(); triggerShake(0.2);
+  });
 }
 
 const _forward = new THREE.Vector3(0, 0, -1);
@@ -3962,12 +3975,12 @@ function shatter(target, hit = {}) {
   // Foundry targets must go through the level, because breaking a switch is
   // what opens a gate or restores a system - hiding the mesh here would break
   // the glass and leave the route shut.
-  const isFoundry = target.userData.kind === "switch" || target.userData.kind === "cell";
+  const isFoundry = target.userData.kind === "switch" || target.userData.kind === "cell" || target.userData.kind === "valve";
   let gainedSpheres = 0;
   let result = { kind: target.userData.kind };
 
   if (isFoundry) {
-    const foundryResult = foundry?.breakTarget(target);
+    const foundryResult = foundry?.breakTarget(target, { ball: hit.ball });
     if (!foundryResult) return null;
     result = foundryResult;
     score += foundryResult.points * combo;

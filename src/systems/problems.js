@@ -6,7 +6,7 @@
  * gravity - and every level asks a new question in it:
  *
  *   The Foundry  glass     a drop forge's release valve, open only while the
- *                          hammer is up: read the rhythm, throw on the beat
+ *                          hammer is held up: read the rhythm, throw on the beat
  *   The Labs     cryo      a fire wall across the corridor: freeze it
  *                charge    a jammed blast shutter: plain shots only dent it;
  *                          one full charged shot blows it out
@@ -49,14 +49,17 @@ export const TOOLS = {
  * first sighting says (keyboard words; key-names.js padText renames them for
  * a controller), what the wrong tool is told, and the bonus for solving it.
  * `mandatory`: it stands in the way (passable without the tool only at a cost).
+ * `refund`: spheres back on a solve - the right tool's cost, so answering a
+ * problem never leaves you poorer than walking into it (the Skyline's shock
+ * costs three; the Foundry's valve gives its sphere back as a cell does).
  */
 export const PROBLEMS = {
   forge: {
     level: "foundry", tool: "glass", mandatory: true, bonus: 500,
     name: "Drop forge",
-    hint: "Drop forge: its valve opens as the hammer lifts - throw then (CLICK)",
-    needs: "VALVE SHUT // THROW AS THE HAMMER LIFTS",
-    solved: "FORGE JAMMED OPEN",
+    hint: "Drop forge: break its valve while the hammer is up (CLICK) - or time your run under it",
+    needs: "VALVE SHUT // THROW WHILE THE HAMMER IS UP",
+    solved: "HAMMER JAMMED UP",
   },
   firewall: {
     level: "labs", tool: "cryo", mandatory: true, bonus: 600,
@@ -73,14 +76,14 @@ export const PROBLEMS = {
     solved: "SHUTTER BLASTED",
   },
   sealed: {
-    level: "skyline", tool: "shock", mandatory: true, bonus: 600,
+    level: "skyline", tool: "shock", mandatory: true, bonus: 600, refund: 3,
     name: "Sealed door",
     hint: "Sealed security door: glass bounces off - shock (Q/E)",
     needs: "NEEDS SHOCK",
     solved: "SEAL OVERLOADED",
   },
   junction: {
-    level: "skyline", tool: "shock", mandatory: false, bonus: 450,
+    level: "skyline", tool: "shock", mandatory: false, bonus: 450, refund: 3,
     name: "Junction box",
     hint: "Laser grid: overload its junction box - shock (Q/E). Or jump it",
     needs: "NEEDS SHOCK",

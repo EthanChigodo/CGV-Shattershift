@@ -37,6 +37,7 @@ import { createFoundryKit } from "./kit.js";
 import { createRoute, straightSegments } from "./route.js";
 import { routeSurfaceHit } from "../../systems/spheres.js";
 import { LightPool, createFoundryAmbience } from "./lighting.js";
+import { toolBadge, floorStripes, fadeMark, disposeMark } from "../../fx/problem-marks.js";
 
 const TURN_RADIUS = 9;
 const QUARTER = Math.PI / 2;
@@ -100,6 +101,8 @@ const FOUNDRY_SERUMS = [{ key: "prism" }, { key: "restore" }, { key: "shield" },
 const HAZARD_SPACING = 14;
 /** Roughly one pressure cell every this many metres. */
 const CELL_SPACING = 17;
+/** How far ahead a drop forge says what it wants (src/systems/problems.js). */
+const FORGE_LEAD = 48;
 
 /** Tiny event emitter - the level announces, the UI listens. */
 function createEmitter() {
@@ -139,6 +142,8 @@ export class FoundryLevel {
    * @param {number} [options.density]         filler obstacles per metre, x1 =
    *                                           as designed (the story's difficulty)
    * @param {boolean} [options.extras]         Hard: slag carts among the filler
+   * @param {boolean} [options.problems]       the drop forges, a right-tool
+   *                                           problem (not in the Race)
    */
   constructor({
     origin = new THREE.Vector3(0, 0, -146),
@@ -157,13 +162,14 @@ export class FoundryLevel {
     // Dynamic lights bound to the nearest emitters; fewer is cheaper on every lit pixel.
     lightBudget = { points: 8, spots: 3 },
     length = 1,
+    problems = true,
   } = {}) {
     // First, the beats at this difficulty's length (everything below reads them).
     setRouteScale(length);
     // The escape timer is derived from how far the player actually has to run,
     // not hard-coded. At 194m the old fixed 26s could never expire, which made
     // the countdown decoration rather than a loss condition.
-    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness, variant, gentleStart, density, extras };
+    this.options = { halfWidth, lanes, shadows, runSpeed, escapeSeconds, brightness, variant, gentleStart, density, extras, problems };
     this.events = createEmitter();
 
     this.root = new THREE.Group();
@@ -218,6 +224,9 @@ export class FoundryLevel {
     /** Hazards with their route distance and a reusable world-space box. */
     this._hazardIndex = [];
     this._escapeSeconds = 0;
+    /** The drop forges (the right-tool problem down here), and their marks. */
+    this._forges = [];
+    this._problemMarks = [];
 
     this.state = {
       beatIndex: -1,
@@ -742,6 +751,34 @@ export class FoundryLevel {
   }
 
   /**
+   * A drop forge across the corridor (kit.dropForge; src/systems/problems.js):
+   * time the run under its hammer, or break its valve while the hammer is up
+   * and it jams. Drawn in glass white: the valve's mark on both columns and
+   * stripes on the floor before it.
+   */
+  _forge(distance, phase) {
+    const { halfWidth } = this.options;
+    const piece = this._hazard(this.kit.dropForge({ halfWidth, phase }), distance, 0);
+    const glass = piece.userData.glass;
+    glass.userData.routeDistance = distance;
+    this.breakables.push(glass);
+    const marks = [];
+    for (const side of [-1, 1]) {
+      const badge = toolBadge("glass", 0.8);
+      badge.position.set(side * (halfWidth - 0.45), 2.4, 0.57);
+      piece.add(badge);
+      marks.push(badge);
+    }
+    const line = floorStripes("glass", halfWidth * 2 - 1.6, 0.9);
+    line.position.z = 3.2;
+    piece.add(line);
+    marks.push(line);
+    this._problemMarks.push(...marks);
+    this._forges.push({ piece, distance, glass, marks, sighted: false, solved: false });
+    return piece;
+  }
+
+  /**
    * Record a hazard for collision testing. Its bounding box is computed once
    * in local space and transformed per test, so a moving piston head or a
    * closing gate is always tested where it actually is this frame.
@@ -885,6 +922,8 @@ export class FoundryLevel {
     const switchAt = at(0.155);
     const halfGateAt = at(0.42);
     const bypassAt = at(0.385);
+    // The first drop forge, on the way out of the intake.
+    const forgeAt = this.options.problems ? at(0.7) : null;
 
     // The teaching piston, alone, before anything else competes for attention.
     this._hazard(this.kit.pistonBank({ speed: 1.3, phase: 0, reach: 5.2 }), at(0.1), 0);
@@ -924,13 +963,16 @@ export class FoundryLevel {
       },
     });
 
+    if (forgeAt !== null) this._forge(forgeAt, 0.1);
+
     // --- Filler ---------------------------------------------------------
     // The opening 24m stays deliberately clear so the player can look around
-    // (the story keeps more of it clear - `gentleStart`).
+    // (the story keeps more of it clear - `gentleStart`). The forge gets a
+    // clear run-up: nothing in the line of fire to its valve.
     const gentle = this.options.gentleStart * this.route.totalLength;
     this._fillHazards(Math.max(at(0.1) + 14, gentle), L - 10, {
       seed: 1301,
-      avoid: [at(0.1), gateAt, switchAt, halfGateAt, bypassAt],
+      avoid: [at(0.1), gateAt, switchAt, halfGateAt, bypassAt, ...(forgeAt !== null ? [forgeAt, forgeAt + 9] : [])],
     });
     this._fillDressing(0, L, { seed: 2801 });
 
@@ -996,6 +1038,9 @@ export class FoundryLevel {
     const switchA = at(0.22);
     const switchB = at(0.36);
     const switchC = at(0.66);
+    // The second drop forge, between the walls and the second piston bank.
+    const forgeAt = this.options.problems ? at(0.46) : null;
+    if (forgeAt !== null) this._forge(forgeAt, 0.3);
 
     this._switch({
       distance: switchA,
@@ -1038,6 +1083,7 @@ export class FoundryLevel {
       switchA,
       switchB,
       switchC,
+      ...(forgeAt !== null ? [forgeAt, forgeAt + 9] : []),
     ];
     this._fillHazards(base + 18, base + L - 12, { seed: 5507, avoid: setPieces });
     this._fillDressing(base, base + L, { seed: 6203 });
@@ -1288,8 +1334,9 @@ export class FoundryLevel {
     return routeSurfaceHit(this.route, start, end, radius, this._spaceAt);
   }
 
-  breakTarget(mesh) {
+  breakTarget(mesh, { ball = "glass" } = {}) {
     const data = mesh?.userData;
+    if (data?.kind === "valve") return this._breakValve(mesh, ball);
     if (!data?.alive || (data.kind !== "switch" && data.kind !== "cell")) return null;
 
     const node = data.node;
@@ -1318,6 +1365,30 @@ export class FoundryLevel {
 
     this.events.emit(data.kind === "switch" ? "switch-broken" : "cell-broken", result);
     return result;
+  }
+
+  /**
+   * A sphere on a drop forge's valve: shut (the hammer moving or down), it
+   * glances off the guard and says when to throw; open, it breaks and the
+   * hammer jams up - solved.
+   */
+  _breakValve(mesh, ball) {
+    const data = mesh.userData;
+    const forge = this._forges.find((f) => f.glass === mesh);
+    if (!data.alive || !forge) return null;
+    const position = new THREE.Vector3();
+    mesh.getWorldPosition(position);
+    if (!data.open) {
+      this.events.emit("problem-wrong", { key: "forge", used: null, ball, position });
+      return null;
+    }
+    forge.solved = true;
+    forge.piece.userData.jam();
+    for (const m of forge.marks) fadeMark(m, 0);
+    const index = this.breakables.indexOf(mesh);
+    if (index >= 0) this.breakables.splice(index, 1);
+    this.events.emit("problem-solved", { key: "forge", position });
+    return { points: data.points, label: data.label, kind: "valve", spheres: 1, serum: null, position };
   }
 
   /**
@@ -1416,6 +1487,8 @@ export class FoundryLevel {
       if (!piece.isObject3D) continue;
       piece.getWorldPosition(at);
       if (Math.hypot(at.x - point.x, at.z - point.z) > radius) continue;
+      // (A drop forge only freezes up: frozen down it would be a wall.)
+      if (piece.userData.canFreeze && !piece.userData.canFreeze()) continue;
       entry.frozen = seconds;
       if (piece.userData.hazardMesh) count += 1;
     }
@@ -1466,6 +1539,15 @@ export class FoundryLevel {
     this.lights.alarm = this.state.alarm;
 
     this._updateEscape(dt, distance);
+
+    // The drop forges say what they want as they come into view (the host
+    // shows the first of a kind: src/systems/problems.js).
+    for (const forge of this._forges) {
+      const gap = forge.distance - distance;
+      if (forge.sighted || forge.solved || gap <= 0 || gap > FORGE_LEAD) continue;
+      forge.sighted = true;
+      this.events.emit("problem-sighted", { key: "forge", lead: gap });
+    }
 
     // Tick and cull. Anything far from the player is skipped entirely and
     // hidden, which keeps the draw call count flat as the level grows.
@@ -1585,6 +1667,9 @@ export class FoundryLevel {
 
     this.lights.dispose();
     for (const x of this._dressingOwned ?? []) x.dispose();
+    for (const m of this._problemMarks) disposeMark(m);
+    this._problemMarks.length = 0;
+    this._forges.length = 0;
     this.ambience.userData.dispose?.();
     this.kit.dispose();
     this.root.parent?.remove(this.root);
