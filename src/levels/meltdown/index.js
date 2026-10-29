@@ -60,6 +60,7 @@ import { routeSurfaceHit, locateOnRoute } from "../../systems/spheres.js";
 import { cloneCharacter } from "./characters.js";
 import { ashify } from "./ash.js";
 import { compileReady } from "../../systems/warm-up.js";
+import { placeLabsProblems } from "./problems.js";
 
 const _liftCam = new THREE.Vector3();
 const _liftFwd = new THREE.Vector3();
@@ -183,6 +184,8 @@ export class MeltdownLevel {
    *   designed (the story's difficulty)
    * @param {boolean} [options.extras]  Hard: fire waves among the patterns,
    *   and patients that stalk you in every section, not only the dark
+   * @param {boolean} [options.problems]  the right-tool problems (problems.js):
+   *   fire walls and the jammed shutter (not in the Race)
    */
   constructor({
     origin = new THREE.Vector3(0, 0, 0),
@@ -200,6 +203,7 @@ export class MeltdownLevel {
     density = 1,
     extras = false,
     length = 1,
+    problems = true,
   } = {}) {
     // First, the beats at this difficulty's length (everything below reads them).
     setRouteScale(length);
@@ -275,6 +279,9 @@ export class MeltdownLevel {
     this._buildBeatCorridor();
     this._buildBeatBlackout();
     this._buildBeatStairwell();
+    // The right-tool problems (problems.js): fire walls to freeze, a jammed
+    // shutter to blast - before the filler, which keeps clear of them.
+    this.problemSet = problems ? placeLabsProblems(this) : null;
     this._buildLifts();
     this._buildPatterns();
     this._buildCorridorDressing();
@@ -1783,6 +1790,7 @@ export class MeltdownLevel {
     this.endLift?.dispose();
     this.lights.dispose();
     this.ambience.userData.dispose?.();
+    this.problemSet?.dispose();
     this.kit.dispose();
     this.fire.dispose();
     this._frontFire?.dispose();

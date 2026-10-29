@@ -95,6 +95,7 @@ function foundryCourse({ scene, renderer, tier, seed }) {
     variant: seed,
     density: 1.1 * tier.density,
     extras: tier.extras,
+    problems: false,
   });
   level.addTo(scene);
   const env = environment(renderer, scene, { fog: 0x141d23, density: 0.0115, background: 0x121a20 });
@@ -141,7 +142,7 @@ function foundryCourse({ scene, renderer, tier, seed }) {
 function skylineCourse({ scene, renderer, tier, seed }) {
   const ORIGIN_Z = 4000;
   // Its endless generator: a new bridge for every seed.
-  const level = new CausewayLevel({ origin: new THREE.Vector3(0, 0, ORIGIN_Z), mode: "endless", quality: "medium", seed });
+  const level = new CausewayLevel({ origin: new THREE.Vector3(0, 0, ORIGIN_Z), mode: "endless", quality: "medium", seed, problems: false });
   level.addTo(scene);
   // Lit as the story lights it: by its own moonlight, lamps and fires, and its
   // own haze (thin on the bridge, thick in smoke) - no extra sun or fill, and
@@ -185,7 +186,8 @@ function skylineCourse({ scene, renderer, tier, seed }) {
 /* ---- Sector 02: the Labs ------------------------------------------------- */
 
 async function labsCourse({ scene, renderer, assetBase, tier, seed }) {
-  const level = new MeltdownLevel({ origin: new THREE.Vector3(0, 0, 0), straightRoute: true, lightPoints: 6, length: 1.2, seed, density: tier.density, extras: tier.extras });
+  // (No right-tool problems: a race is about the line, not the tool.)
+  const level = new MeltdownLevel({ origin: new THREE.Vector3(0, 0, 0), straightRoute: true, lightPoints: 6, length: 1.2, seed, density: tier.density, extras: tier.extras, problems: false });
   level.addTo(scene);
   const env = environment(renderer, scene, { fog: 0x1a120d, density: 0.012, background: 0x1a120d });
   const fill = new THREE.HemisphereLight(0xffd8b8, 0x24140c, 0.5);

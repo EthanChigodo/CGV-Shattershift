@@ -6,6 +6,8 @@
  * slide, the trigger, and mashing at ducts. It sees what a careful player
  * sees - it tests where its body will be over the next second against the
  * level's own collide() - and aims at glass by projecting it to the screen.
+ * The right-tool problems (problems.js) it answers as a player should: a
+ * cryo sphere at a fire wall, a full charged shot at the jammed shutter.
  *
  * Returns a log of every hit (what, where) and why the run ended.
  *
@@ -22,7 +24,9 @@ export const BOT_SOURCE = `
   const centre = new THREE.Vector3();
   const size = new THREE.Vector3();
   const p = new THREE.Vector3();
-  const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0 };
+  const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0, solved: [] };
+  const answered = new Set();
+  const answeredList = [];
   let t = 0;
   let lastHits = 0;
   let lastCollide = [];
@@ -90,11 +94,16 @@ export const BOT_SOURCE = `
           }
         }
       }
+      // A fire wall or the jammed shutter coming (problems.js): save two
+      // spheres for it, then the right tool, once, from its clear run-up
+      // (the last ~20 m: nothing in the line of fire).
+      const problem = (g.level.problemSet?.list ?? []).find((q) => !q.solved && q.distance - r.distance > 7 && q.distance - r.distance < 60);
       // Shoot glass, sacks, vials and patients ahead: aim by projecting them.
       let target = null;
       for (const b of g.level.breakables) {
         const d = (b.userData.routeDistance ?? 0) - r.distance;
-        if (!b.visible || d < 6 || d > 34) continue;
+        if (!b.visible || d < 6 || d > 34 || b.userData.problem) continue;
+        if (problem && b.userData.kind !== "sack" && r.balls < 6) continue;
         if (!target || d < target.d) target = { b, d };
       }
       r.firing = Boolean(target) && (r.lockout ?? 0) <= 0;
@@ -102,6 +111,17 @@ export const BOT_SOURCE = `
         target.b.getWorldPosition(p).project(g.camera);
         g.pointer.set(p.x, p.y);
       } else g.pointer.set(0, -0.1);
+      if (problem && !answered.has(problem) && problem.distance - r.distance < 21 && r.balls >= 2) {
+        answered.add(problem);
+        r.firing = false;
+        problem.target.getWorldPosition(p).project(g.camera);
+        g.pointer.set(p.x, p.y);
+        g.arsenal.select(problem.key === "firewall" ? "cryo" : "glass");
+        g._shoot(problem.key === "shutter" ? { charged: 1 } : {});
+        g.arsenal.select("glass");
+        log.solved.push(problem.key + "@" + Math.round(r.distance));
+        answeredList.push(problem);
+      }
     } else r.firing = false;
 
     g.update(dt, 100 + t);
@@ -115,6 +135,7 @@ export const BOT_SOURCE = `
     if (g.phase === "over") { log.end = { phase: g.phase, t: +t.toFixed(1), d: +r.distance.toFixed(1), vitality: r.vitality, timer: g.level.state.timeRemaining }; break; }
     if (g.phase === "depart" || g.phase === "fade" || g.roof) { log.end = { phase: g.phase, t: +t.toFixed(1), d: +r.distance.toFixed(1), vitality: +r.vitality.toFixed(1), timer: +g.level.state.timeRemaining.toFixed(1), shots: r.shots, breaks: r.breaks }; break; }
   }
+  log.unsolved = answeredList.filter((q) => !q.solved).map((q) => q.key + "@" + Math.round(q.distance));
   return log;
 })
 `;

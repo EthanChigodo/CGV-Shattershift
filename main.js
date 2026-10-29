@@ -71,6 +71,8 @@ import { NameCard } from "./src/ui/name-card.js";
 import { LeaderboardView } from "./src/ui/leaderboard-view.js";
 import { TrophyRoom } from "./src/ui/trophy-room.js";
 import { FieldManual } from "./src/ui/field-manual.js";
+import { ProblemLog, PROBLEMS } from "./src/systems/problems.js";
+import { ProblemCue } from "./src/ui/problem-cue.js";
 import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
 import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/systems/ghosts.js";
 import { TabbedScreen } from "./src/ui/tabbed-screen.js";
@@ -1182,6 +1184,7 @@ function buildCauseway(mode = "story") {
   });
   causeway.builtFor = runDifficulty;
   causeway.addTo(scene);
+  wireProblems(causeway);
   // The Skyline is reached by lift now, not woken into: no containment pod.
   // (Level 1 streams its props and resets their roots' visibility, so hide the parts.)
   causeway.pod?.root?.traverse((o) => { if (o !== causeway.pod.root) o.visible = false; });
@@ -1300,6 +1303,32 @@ function activateSerum(type) {
   run.flash = Math.max(run.flash, 0.25);
 }
 
+/*
+ * The right-tool problems (src/systems/problems.js): a fire wall only cryo
+ * puts out, a door only shock opens, supplies only gravity reaches... The
+ * levels report what they meet, solve and get wrong to one log; the cue says
+ * it (src/ui/problem-cue.js), and a solve scores and goes in the run report.
+ * (The Labs and the Roof take the log itself: getMeltdown.)
+ */
+const problemLog = new ProblemLog();
+new ProblemCue().bind(problemLog);
+problemLog.on("solved", ({ key, bonus }) => {
+  score += bonus;
+  if (runReport && runKind === "story") {
+    const at = reportLevel() ?? PROBLEMS[key].level;
+    runReport.solved = { ...runReport.solved, [at]: (runReport.solved?.[at] ?? 0) + 1 };
+  }
+  updateUI();
+});
+/** The Skyline's and the Foundry's problems, from their events (a new level: a new log). */
+function wireProblems(level) {
+  problemLog.reset();
+  const on = (name, fn) => level.events.on(name, (p) => { if (level === causeway || level === foundry) fn(p); });
+  on("problem-sighted", (p) => problemLog.sighted(p.key, p));
+  on("problem-wrong", (p) => { problemLog.wrong(p.key, p.used); level1Audio.surfaceRicochet(); });
+  on("problem-solved", (p) => { problemLog.solve(p.key, p); level1Audio.impact(0.7); level1Audio.serumCollected(); triggerShake(0.2); });
+}
+
 const _forward = new THREE.Vector3(0, 0, -1);
 
 function updateCauseway(dt, time) {
@@ -1356,7 +1385,8 @@ function updateCauseway(dt, time) {
   for (const pane of panes) {
     const result = causeway.breakTarget(pane, { body: true, direction: _forward });
     if (!result) continue;
-    if (!absorbWithShield(_forward)) damage(result.kind === "door" ? 24 : 15, result.kind === "door" ? "CRASHED THROUGH THE DOOR" : "GLASS IMPACT");
+    // A sealed door (problems.js) gives to a body too - at a heavy cost.
+    if (!absorbWithShield(_forward)) damage(result.sealed ? 34 : result.kind === "door" ? 24 : 15, result.sealed ? "SHOULDERED THROUGH THE SEAL // SHOCK OPENS IT" : result.kind === "door" ? "CRASHED THROUGH THE DOOR" : "GLASS IMPACT");
     if (state !== "playing") return;
   }
   if (hits.length && run.invulnerable <= 0) {
@@ -1844,6 +1874,8 @@ function getMeltdown() {
     // A touch screen can't hold the pointer: the roof from above, aimed with a finger.
     topView: PHONE,
     reactionLayer: story,
+    // The right-tool problems' log (the cue, the score and the report listen).
+    problems: problemLog,
   });
   meltdown.setBloom(resolvedQuality() !== "low" && gpuReport().halfFloat !== false);
   meltdownQuality();
@@ -2357,7 +2389,8 @@ function detonate(p, point, ground = false) {
   for (const target of causeway.targetsNear(point, reach)) {
     // Power-ups take a direct hit, never a splash.
     if (target.userData.kind === "serum" || target.userData.serum) continue;
-    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind });
+    // (`source`: a charged glass sphere bursts like shock but is no shock to a sealed door.)
+    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind, splash: true, source: p.ball });
     if (r && !r.rejected) p.scored = true;
   }
   triggerShake(kind === "shock" ? 0.25 : 0.18);
@@ -6695,6 +6728,7 @@ globalThis.__dbg = {
   get foundry() { return foundry; },
   get causeway() { return causeway; },
   get meltdown() { return meltdown; },
+  get problems() { return problemLog; },
   enterMeltdown,
   get gravityLift() { return gravityLift; },
   get loadingScreen() { return loadingScreen; },

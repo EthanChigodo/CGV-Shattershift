@@ -61,6 +61,7 @@ import { CityWar } from "./war.js";
 import { createPropKit } from "../../story/stages/props.js";
 import { buildHatchGuards } from "./hatch-guard.js";
 import { compileReady } from "../../systems/warm-up.js";
+import { buildStrandedCrate } from "./problems.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -900,6 +901,7 @@ export class RoofLevel {
     this._buildEdges();
     this._buildPickups();
     this._buildCanisters();
+    this._buildProblems();
     this._buildOrbs();
     this._buildHelicopter();
     this._buildChaos();
@@ -1438,6 +1440,33 @@ export class RoofLevel {
       this.groups.pickups.add(sack);
       this._ticking.push(sack);
       this.breakables.push(sack.userData.glass);
+    }
+  }
+
+  /**
+   * The right-tool problem up here (problems.js): a supply crate stranded on
+   * the window-cleaner's cradle off the open west ledge - out of reach of
+   * anything but a gravity well. The game's ProblemPlay pulls it in.
+   */
+  _buildProblems() {
+    const piece = buildStrandedCrate(this.kit, { edge: EDGE, z: 4 });
+    this.groups.set.add(piece);
+    const p = { ...piece.userData.problem, group: piece, solved: false };
+    p.target.userData.problemRef = p;
+    this.breakables.push(p.target);
+    this.problems = [p];
+  }
+
+  /** What the stranded crate held, where it came down: a big sphere cache and a serum. */
+  addSupplies(at) {
+    const cache = this.kit.sack({ hp: 1, spheres: 12 });
+    cache.position.copy(at).add(new THREE.Vector3(0.9, 0, -0.9));
+    const serum = this.kit.powerup({ kind: ["restore", "barrier", "overcharge"][Math.floor(this.random() * 3)] });
+    serum.position.copy(at).add(new THREE.Vector3(0.9, 0, 0.9));
+    for (const piece of [cache, serum]) {
+      this.groups.pickups.add(piece);
+      this._ticking.push(piece);
+      this.breakables.push(piece.userData.glass);
     }
   }
 
@@ -2730,6 +2759,7 @@ export class RoofLevel {
     for (const m of this.owned.materials) m.dispose();
     for (const t of this.owned.textures) t.dispose();
     for (const g of this.owned.geometries) g.dispose();
+    for (const p of this.problems ?? []) p.group.userData.dispose?.();
     this.kit.dispose();
     this.fire.dispose();
     this.root.parent?.remove(this.root);
