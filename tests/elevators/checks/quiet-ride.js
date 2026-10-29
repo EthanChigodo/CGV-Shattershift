@@ -72,7 +72,17 @@ export const quietRide = {
       let lastCaption = "";
       let doorsOpen = 0;
       const start = performance.now();
+      // The ride's prompts (the bag, the radio, the launcher) answered as a
+      // player does: Space held for each.
+      const prompts = [];
+      const answer = () => {
+        const g = d.gravityLift;
+        if (!g?.gate) return;
+        if (!prompts.includes(g.gate)) prompts.push(g.gate);
+        d.story.layer.reactions.keyDown("Space");
+      };
       for (let i = 0; i < 60 * 40 && d.gravityLift; i += 1) {
+        answer();
         d.step(1, 1 / 60);
         const caption = document.querySelector(".elv-caption")?.textContent ?? "";
         if (caption && caption !== lastCaption) seen.captions.push(caption);
@@ -95,6 +105,7 @@ export const quietRide = {
       }
       return {
         seen,
+        prompts,
         figure,
         slid: maxSit > 0.9,
         launcherAtEnd,
@@ -110,6 +121,7 @@ export const quietRide = {
     for (const shot of ["doors", "city", "radio", "launcher", "arrival"]) if (!r.seen.shots.includes(shot)) failures.push(`shot "${shot}" never played`);
     for (const event of ["depart", "radio", "tremor", "chime", "doors", "arrive"]) if (!r.seen.events.includes(event)) failures.push(`"${event}" never happened`);
     if (r.seen.captions.filter((c) => /RADIO/.test(c)).length < 2) failures.push(`the pilot's two radio lines were not captioned (${JSON.stringify(r.seen.captions)})`);
+    if (r.prompts.join() !== "open,take,tune,away,launcher") failures.push(`the ride's prompts: ${r.prompts.join()} (want the bag, the radio out, tune, away, the launcher)`);
     if (!r.figure.firstPerson) failures.push("the cutscene is not seen through Subject 07's eyes");
     if (!r.figure.glass || !r.figure.hung) failures.push("not the glass cabin on its hoist ropes (the Gravity Fault's)");
     if (r.figure.launcherAtStart !== "resting") failures.push(`the launcher does not start leaning on the wall (${r.figure.launcherAtStart})`);

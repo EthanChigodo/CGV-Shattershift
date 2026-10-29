@@ -20,6 +20,7 @@ import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCha
 import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { FoundryAmbience } from "./src/audio/foundry-ambience.js";
+import { setVolumes } from "./src/audio/output.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 import { QuietRide, LINES as RADIO_LINES } from "./src/elevators/quiet-ride.js";
 import { ShatterFX } from "./src/fx/shatter.js";
@@ -282,9 +283,6 @@ let labsScale = 1;
 /** "3, 2, 1, GO" after a restart: pending until the player is in control, then counting. */
 let countdownPending = false;
 let countdownLeft = 0;
-/** How fast the numbers go: 1 for a restart, quicker coming back from a hit or a scene. */
-let countdownRate = 1;
-let countdownQuick = false;
 /**
  * The story's checkpoint: the sector the player is in and what they carried
  * into it. A death in a story run restarts that sector - with its cutscenes -
@@ -410,6 +408,8 @@ const settingsDefaults = {
   // Subtitle size (there are no voiceovers, so they must be easy to read):
   // "normal", "large" or "xl" - see --sub-scale in styles.css.
   subtitleSize: "large",
+  // The volumes (%): the whole game, its music and its sound effects (src/audio/output.js).
+  masterVolume: 100, musicVolume: 100, effectsVolume: 100,
   // The characters' recorded voices (off: only HALCYON, the intercom, speaks).
   voices: true,
   // The player's own grunts, pain, breathing and screams.
@@ -418,6 +418,8 @@ const settingsDefaults = {
   ghosts: true,
   // Controllers: the right stick's aim speed (%), and rumble.
   padAimSpeed: 100, padVibration: true,
+  // The roof's touch stick: fixed in its corner, or floating to the thumb (touch-controls.js).
+  fixedStick: false,
   // Which HUD panels are shown. See HUD_PANELS in src/ui/causeway-hud.js.
   hud: Object.fromEntries(HUD_PANELS.map((p) => [p.key, p.on])),
 };
@@ -535,6 +537,13 @@ function applySettingsToControls() {
   ui.resolutionSelect.value = String(settings.resolution);
   ui.subtitleSizeSelect.value = settings.subtitleSize;
   applySubtitleSize();
+  for (const [id, key] of [["#masterVolumeSlider", "masterVolume"], ["#musicVolumeSlider", "musicVolume"], ["#effectsVolumeSlider", "effectsVolume"]]) {
+    const slider = $(id);
+    if (!slider) continue;
+    slider.value = settings[key];
+    slider.nextElementSibling.textContent = `${settings[key]}%`;
+  }
+  applyVolumes();
   if (ui.voicesToggle) ui.voicesToggle.checked = settings.voices;
   story.voice.characterVoices = settings.voices;
   if (ui.gruntsToggle) ui.gruntsToggle.checked = settings.grunts;
@@ -542,6 +551,11 @@ function applySettingsToControls() {
   level1Audio.playerVoice = settings.grunts;
   for (const input of document.querySelectorAll("[data-hud-key]")) input.checked = !!settings.hud[input.dataset.hudKey];
   applyHudPanels(settings.hud);
+}
+
+/** The Settings' volumes, on every sound in the game (src/audio/output.js). */
+function applyVolumes() {
+  setVolumes({ master: (settings.masterVolume ?? 100) / 100, music: (settings.musicVolume ?? 100) / 100, effects: (settings.effectsVolume ?? 100) / 100 });
 }
 
 /** Every subtitle in the game (cutscenes, the intercom, the lift rides) scales with this. */
@@ -1215,6 +1229,18 @@ function wireCausewayEvents(level) {
   on("collapse-warning", () => causewayHud.hint("Ceiling giving way: watch the red ring"));
   on("collapse-start", (p) => level1Audio.startFalling(p.id));
   on("collapse-landed", (p) => { level1Audio.stopFalling(p.id); level1Audio.impact(0.9); level1Audio.debrisFall(0.8); triggerShake(0.25); });
+  // HALCYON's security drones (causeway/drones.js): only shock brings one down.
+  on("drone-in", (p) => showMessage(p.first ? "SECURITY DRONE // ONLY SHOCK (Q/E) FRIES IT - CHANGE LANE WHEN IT LOCKS" : "SECURITY DRONE"));
+  on("drone-lock", () => level1Audio.uiClick?.());
+  on("drone-fire", () => level1Audio.surfaceRicochet?.());
+  on("drone-hit", (p) => {
+    if (state !== "playing" || run.invulnerable > 0 || trailer.god) return;
+    if (absorbWithShield(_dv.subVectors(_playerPos, p.position).normalize())) return;
+    damage(p.damage, "DRONE // HIT - CHANGE LANE WHEN IT LOCKS");
+    run.invulnerable = 0.8;
+  });
+  on("drone-down", () => { level1Audio.glassBreak?.(); triggerShake(0.15); });
+  on("drone-blast", () => { level1Audio.explosion?.(0.5); triggerShake(0.35); });
   on("glass-break", (p) => { level1Audio.glassBreak(); level1Audio.addGlassDebris(p.position, p.radius); });
   on("pod-break", () => level1Audio.podBreak());
   on("explosion", (p) => {
@@ -1306,11 +1332,12 @@ function activateSerum(type) {
 }
 
 /*
- * The right-tool problems (src/systems/problems.js): a fire wall only cryo
- * puts out, a door only shock opens, supplies only gravity reaches... The
- * levels report what they meet, solve and get wrong to one log; the cue says
- * it (src/ui/problem-cue.js), and a solve scores and goes in the run report.
- * (The Labs and the Roof take the log itself: getMeltdown.)
+ * The right-tool problems (src/systems/problems.js): a forge valve broken on
+ * the beat, a shutter only a charged shot blows out, a door only shock
+ * opens, supplies only gravity reaches. The levels report what they meet,
+ * solve and get wrong to one log; the cue says it (src/ui/problem-cue.js),
+ * and a solve scores and goes in the run report. (The Labs and the Roof
+ * take the log itself: getMeltdown.)
  */
 const problemLog = new ProblemLog();
 new ProblemCue().bind(problemLog);
@@ -1343,6 +1370,7 @@ function wireProblems(level) {
 }
 
 const _forward = new THREE.Vector3(0, 0, -1);
+const _dv = new THREE.Vector3();
 
 function updateCauseway(dt, time) {
   const distance = causewayDistance();
@@ -1884,8 +1912,8 @@ function getMeltdown() {
     charge,
     // The roof's shoulder camera turns at the Settings' sensitivity.
     lookSpeed: () => (padMode ? (settings.padAimSpeed ?? 100) : (settings.sensitivity ?? 100)) / 100,
-    // A touch screen can't hold the pointer: the roof from above, aimed with a finger.
-    topView: PHONE,
+    // (A touch screen plays the roof over the shoulder too, as a phone shooter
+    // does: the stick, the right side dragged to look, SHOOT - touch-controls.js.)
     reactionLayer: story,
     // The right-tool problems' log (the cue, the score and the report listen).
     problems: problemLog,
@@ -1900,6 +1928,7 @@ function getMeltdown() {
   meltdown.setLauncherSkin(savedLauncherSkin());
   meltdown.avatar?.setHairColour(savedHairColour());
   meltdown.events.on("complete", (result) => finishMeltdown(true, result));
+  // The Labs' 3, 2, 1 before running on (after a hit, after the zombie).
   meltdown.events.on("failed", (result) => finishMeltdown(false, result));
   // The story: through the lift at the end of the Labs, up to the Skyline.
   meltdown.events.on("corridor-complete", ({ stats }) => {
@@ -1912,9 +1941,6 @@ function getMeltdown() {
     pendingSkyline = true;
   });
   meltdown.events.on("lap", ({ laps }) => showMessage(`LAP ${laps + 1} // NEW LAYOUT`));
-  // A hit in the Labs: you stop and look back at the fire; once you face
-  // forward again, 3, 2, 1 (lecturer's feedback: no running off mid-turn).
-  meltdown.events.on("stumble", () => requestResumeCountdown());
   meltdown.events.on("collectible", collectibleFound);
   meltdown.events.on("collectible-near", collectibleNear);
   // The ending (the helicopter, then the credits) plays over the main theme.
@@ -2076,7 +2102,7 @@ const MELTDOWN_ENDINGS = {
   "LEFT BEHIND": "The helicopter could not wait. When it hangs off the east ledge, get to the edge and jump (SPACE) for the ladder.",
   "YOU FELL": "Off the edge. The east side and the middle of the west are open, and so is the deck's - watch your footing when they knock you back.",
   "DOWN A HATCH": "Down an open hatch. The railed, striped openings on the deck go straight down into the building - mind their open side when they knock you back.",
-  "YOU WERE CAPTURED!": "Carried away by a winged patient. Move out of the red circle, or tap SPACE rapidly to break free and recover your bazooka.",
+  "YOU WERE CAPTURED!": "Carried away by a winged patient. Move out of the red circle (quick shift when it swoops fast), or tap SPACE rapidly to break free and shoot it off.",
 };
 
 /** Level 3 finished: its numbers into the game's score, and the end screen. */
@@ -2400,10 +2426,13 @@ function detonate(p, point, ground = false) {
     return;
   }
   for (const target of causeway.targetsNear(point, reach)) {
-    // Power-ups take a direct hit, never a splash.
-    if (target.userData.kind === "serum" || target.userData.serum) continue;
-    // (`source`: a charged glass sphere bursts like shock but is no shock to a sealed door.)
-    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind, splash: true, source: p.ball });
+    // Power-ups take a direct hit, never a splash - and so do the lift
+    // gate's locks, one at a time in order (a burst by the middle one was
+    // releasing all three at once, I-II-III, wherever it hit).
+    if (target.userData.kind === "serum" || target.userData.serum || target.userData.kind === "lock") continue;
+    // (`sphere`: what was thrown - a charged glass burst is shock's, but only a shock sphere downs a drone
+    // or overloads a sealed door; `splash`: a burst's reach, not a direct hit.)
+    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind, sphere: p.ball, splash: true });
     if (r && !r.rejected) p.scored = true;
   }
   triggerShake(kind === "shock" ? 0.25 : 0.18);
@@ -2597,6 +2626,8 @@ function startQuietRide() {
   gravityLift = new QuietRide({
     renderer, spheres: ammo, reducedMotion: settings.reducedMotion,
     assetBase: MELTDOWN_ASSET_BASE,
+    // Its prompts (the bag, the radio, the launcher): the story's.
+    layer: story,
   });
   bindRideSounds(gravityLift);
   ui.message.classList.remove("show"); messageTimer = 0;
@@ -2629,7 +2660,9 @@ function bindRideSounds(ride) {
   on("arrive", () => level1Audio.play("lift-chime"));
   on("chime", () => level1Audio.play("lift-chime"));
   on("doors", () => level1Audio.play("lift-doors"));
-  // The quiet ride's radio: Kestrel One, calling for the doctor.
+  // The quiet ride: the radio's static from the bag, then Kestrel One, calling for the doctor.
+  on("static", ({ volume }) => level1Audio.play("spark", { volume: volume * 0.6, cooldown: 0.3 }));
+  on("tuned", () => level1Audio.uiClick?.());
   on("radio", ({ line }) => {
     const entry = RADIO_LINES[`radio${line}`];
     if (entry) story.voice.say({ who: "pilot", text: entry[1] });
@@ -3485,7 +3518,8 @@ function restartRun({ fromTop = false, fromCheckpoint = true } = {}) {
 /** The end screen's main button: the sector again after a story death, else the run. */
 function restartButtonLabel() {
   const names = { foundry: "SECTOR 01", labs: "SECTOR 02", skyline: "SECTOR 03", roof: "THE ROOF" };
-  const atCheckpoint = storyDeath && levelCheckpoint && levelCheckpoint.key === reportLevel();
+  // (Used once already in this level: the level again, from its start.)
+  const atCheckpoint = storyDeath && levelCheckpoint && !levelCheckpoint.used && levelCheckpoint.key === reportLevel();
   $("#restartButton").textContent = atCheckpoint ? "RETRY FROM CHECKPOINT" : storyDeath ? `RETRY ${names[storyCheckpoint.stage]}` : "RUN AGAIN";
   // From the checkpoint is the main offer; the whole sector is still there.
   $("#restartSectorButton").hidden = !atCheckpoint;
@@ -3655,7 +3689,6 @@ function levelDistance(key) {
 function trackCheckpoint() {
   const key = reportLevel();
   if (key !== checkpointLevel) { checkpointLevel = key; levelCheckpoint = null; }
-  // Hard has none.
   if (!key || !CHECKPOINTS[key] || runKind !== "story" || !diff().checkpoint || state !== "playing" || levelCheckpoint) return;
   const d = levelDistance(key);
   const cp = CHECKPOINTS[key];
@@ -3665,14 +3698,21 @@ function trackCheckpoint() {
   else showMessage(`CHECKPOINT // ${cp.name}`);
 }
 
-/** Back into the level at its checkpoint, after a death. False if that is not possible. */
+/**
+ * Back into the level at its checkpoint, after a death - once a level, and
+ * with only some of your integrity back, less the harder it is (difficulty.js
+ * `checkpointLife`: 75 / 50 / 25). False if that is not possible: died again,
+ * it's the level from its start.
+ */
 function resumeFromCheckpoint() {
   const cp = levelCheckpoint;
-  if (!cp || reportLevel() !== cp.key) return false;
+  if (!cp || cp.used || reportLevel() !== cp.key) return false;
+  cp.used = true;
   ui.end.classList.remove("active");
   storyDeath = false;
   state = "playing";
-  health = 100;
+  const life = diff().checkpointLife ?? 100;
+  health = life;
   music.restore();
   if (cp.key === "foundry") {
     runZ = FOUNDRY_ORIGIN_Z - cp.distance;
@@ -3688,9 +3728,10 @@ function resumeFromCheckpoint() {
     run.invulnerable = 2;
     ammo = Math.max(ammo, cp.ammo);
   } else if (cp.key === "labs") {
-    meltdown.resumeAt(cp.distance, cp.ammo);
+    meltdown.resumeAt(cp.distance, cp.ammo, life);
   }
   combo = 1; comboTimer = 0;
+  showMessage(`CHECKPOINT // ${life} INTEGRITY - THE LAST ONE THIS LEVEL`);
   updateUI();
   // Counted back in once the world is up again.
   countdownPending = true;
@@ -4764,9 +4805,9 @@ function animate() {
   // The restart countdown: the world holds still (rendered, not simulated).
   if (countdownLeft > 0) tickCountdown(rawDt);
   else if (!manualStep) { trailerTime += dt; updateGame(dt, trailer.enabled ? trailerTime : clock.elapsedTime); trackRunReport(dt); trackSector(dt); trackGhost(dt); trackCheckpoint(); }
-  watchSceneHandback();
-  if (countdownPending) maybeStartCountdown();
+  watchCutscenes();
   maybeShowUnlocks();
+  if (countdownPending) maybeStartCountdown();
   updateCursor();
   updateSphereWheel();
   if (!manualStep) trailerAfterUpdate(dt);
@@ -5088,25 +5129,56 @@ function maybeShowUnlocks() {
 }
 
 /**
- * Endless earns nothing, but the Skyline's hazards (its vents and sprinklers)
- * are worth knowing: their card, the first time in this browser, then 3, 2, 1.
+ * Endless earns nothing, but a sector's obstacles (and which sphere beats
+ * each: progression.js TIPS) are worth knowing: their card, the first time
+ * in this browser, then 3, 2, 1.
  */
 const TIPS_SEEN_KEY = "fractureRun.tipsSeen";
+// (Bumped when a sector's card gains a tip: "skyline" was vents and sprinklers only.)
+const TIPS_VERSION = { labs: "labs", skyline: "skyline:2", roof: "roof" };
 function maybeShowTips() {
-  if (endlessEnv !== "skyline" || state !== "playing" || paused || countdownLeft > 0 || loadingHold || !causeway) return;
+  const env = endlessEnv;
+  const ready =
+    (env === "labs" && currentLevel === 3 && meltdown?.phase === "run") ||
+    (env === "roof" && currentLevel === 3 && meltdown?.phase === "roof") ||
+    (env === "skyline" && !!causeway);
+  if (!ready || !TIPS_VERSION[env] || state !== "playing" || paused || countdownLeft > 0 || loadingHold) return;
   let seen = [];
   try { seen = JSON.parse(localStorage.getItem(TIPS_SEEN_KEY)) ?? []; } catch {}
-  if (seen.includes("skyline")) return;
-  try { localStorage.setItem(TIPS_SEEN_KEY, JSON.stringify([...seen, "skyline"])); } catch {}
+  if (seen.includes(TIPS_VERSION[env])) return;
+  try { localStorage.setItem(TIPS_SEEN_KEY, JSON.stringify([...seen, TIPS_VERSION[env]])); } catch {}
   paused = true; run.focusing = false;
   charge.cancel();
   music.pauseDuck();
   level1Audio.setPaused(true);
-  unlockCard.show("skyline", () => {
+  if (currentLevel === 3) meltdown?.setPaused(true);
+  unlockCard.show(env, () => {
     closePause();
     countdownLeft = 3;
     showCountdown(3);
   }, { tipsOnly: true });
+}
+
+/**
+ * Counted back in (3, 2, 1) whenever play comes back to you after a
+ * cutscene: a story scene, one of the Labs' own (the bend's patient too), a
+ * cutaway on the roof. (Not after a hit - playtest: it broke the run up.)
+ */
+let cutsceneWas = false;
+function inCutscene() {
+  return state === "cutscene" || story.player.active || (currentLevel === 3 && !!meltdown && (meltdown.phase === "story" || meltdown.phase === "roofCut"));
+}
+function watchCutscenes() {
+  const now = inCutscene();
+  if (cutsceneWas && !now && state === "playing") countdownPending = true;
+  cutsceneWas = now;
+}
+
+/** Play again from the pause menu: 3, 2, 1 first (maybeStartCountdown: only with you in control). */
+function resumeFromPause() {
+  const menu = ui.pause.classList.contains("active");
+  closePause();
+  if (menu) countdownPending = true;
 }
 
 function maybeStartCountdown() {
@@ -5116,40 +5188,14 @@ function maybeStartCountdown() {
     (currentLevel === 1 && !!causeway) ||
     (currentLevel === 3 && !!meltdown && (meltdown.phase === "run" || meltdown.phase === "roof"));
   if (!inControl) return;
-  // Not while a hit's look-back is still turning the camera round.
-  if (currentLevel === 3 && meltdown.stumbling) return;
   countdownPending = false;
-  countdownRate = countdownQuick ? 1.45 : 1;
-  countdownQuick = false;
   countdownLeft = 3;
   showCountdown(3);
 }
 
-/**
- * Coming back into control after a hit that stopped you or after a scene (a
- * quick-time event, a cutscene): the world holds while the numbers count, so
- * you never start running before the camera is behind you again.
- */
-function requestResumeCountdown() {
-  if (manualStep || trailer.enabled || state !== "playing") return;
-  // The sector's first card counts you in itself.
-  if (runKind === "story" && storyStage() && !unlocksShown.has(storyStage())) return;
-  countdownPending = true;
-  countdownQuick = true;
-}
-
-/** Watches for control coming back from a scene, once a frame. */
-let sceneHeld = false;
-function watchSceneHandback() {
-  const scene = state === "cutscene" || story.player.active || storyPlaying
-    || (currentLevel === 3 && !!meltdown && (meltdown.phase === "story" || meltdown.phase === "arrive"));
-  if (sceneHeld && !scene && state === "playing" && !paused) requestResumeCountdown();
-  sceneHeld = scene;
-}
-
 function tickCountdown(dt) {
   const before = Math.ceil(countdownLeft);
-  countdownLeft = Math.max(0, countdownLeft - dt * countdownRate);
+  countdownLeft = Math.max(0, countdownLeft - dt);
   const now = Math.ceil(countdownLeft);
   if (now !== before) showCountdown(now);
   if (countdownLeft <= 0) {
@@ -5695,7 +5741,17 @@ function showScreen(screen) {
   screen.classList.add("active");
 }
 $("#singleButton").addEventListener("click", () => { refreshDossier(); showScreen(ui.single); });
-$("#multiButton").addEventListener("click", () => { padUI.refresh(); showScreen(ui.multi); });
+// Multiplayer is 2 - 4 players on controllers round one screen: a computer's, not a phone's.
+$("#multiButton").addEventListener("click", () => {
+  if (PHONE) {
+    trophyToast.note({ label: "MULTIPLAYER", title: "On a computer", text: "Arena and Race are 2 - 4 players on controllers round one screen - not on a phone or tablet", colour: "#8fe6ff", art: '<span class="tt-glyph">&#9783;</span>' });
+    return;
+  }
+  padUI.refresh();
+  showScreen(ui.multi);
+});
+// (And it says so on the menu.)
+if (PHONE) { const note = $("#multiButton small"); if (note) note.textContent = "On a computer, with controllers - not on a phone"; }
 $("#singleBackButton").addEventListener("click", () => showScreen(ui.start));
 
 /* ---- Trophies & stats (src/systems/trophies.js, src/ui/trophy-room.js) ------- */
@@ -6069,8 +6125,8 @@ for (const button of document.querySelectorAll("[data-chapter]")) {
 $("#manualTopBackButton").addEventListener("click", () => { ui.manual.classList.remove("active"); ui.start.classList.add("active"); });
 $("#settingsButton").addEventListener("click", () => openSettings("intro"));
 $("#settingsBackButton").addEventListener("click", closeSettings);
-$("#pauseButton").addEventListener("click", () => { paused ? closePause() : openPause(); });
-$("#resumeButton").addEventListener("click", closePause);
+$("#pauseButton").addEventListener("click", () => { paused ? resumeFromPause() : openPause(); });
+$("#resumeButton").addEventListener("click", resumeFromPause);
 $("#pauseSettingsButton").addEventListener("click", () => openSettings("pause"));
 $("#restartRunButton").addEventListener("click", () => { closePause(); restartRun({ fromTop: true }); });
 $("#quitButton").addEventListener("click", quitToMenu);
@@ -6088,6 +6144,16 @@ addEventListener("click", (event) => {
   if (!ui.viewMenu.hidden && !event.target.closest("#viewMenu, #viewButton")) ui.viewMenu.hidden = true;
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
+for (const [id, key] of [["#masterVolumeSlider", "masterVolume"], ["#musicVolumeSlider", "musicVolume"], ["#effectsVolumeSlider", "effectsVolume"]]) {
+  $(id)?.addEventListener("input", (event) => {
+    settings[key] = Number(event.target.value);
+    event.target.nextElementSibling.textContent = `${settings[key]}%`;
+    applyVolumes();
+    saveSettings();
+    // (Effects: a click to hear the new level by.)
+    if (key === "effectsVolume") level1Audio.uiClick?.();
+  });
+}
 ui.aimAssistToggle.addEventListener("change", (event) => { settings.aimAssist = event.target.checked; saveSettings(); });
 $("#resetPowerupTipsButton").addEventListener("click", (event) => {
   powerups.resetSeen();
@@ -6181,7 +6247,9 @@ addEventListener("pointerdown", (event) => {
   if (event.target.closest("button, input, select, label, .screen.active, .cw-photo, .view-menu, .mlt-credits")) return;
   if (currentLevel === 3) {
     // The roof over the shoulder: the mouse is held to the game, so it turns the view freely.
-    if (meltdown?.wantsPointerLock && state === "playing" && !paused && !document.pointerLockElement) canvas.requestPointerLock?.()?.catch?.(() => {});
+    // (Not on a touch screen: dragging looks there, and a locked pointer reads
+    // every finger after it as at 0,0 - the stick, the buttons, all in the corner.)
+    if (!PHONE && meltdown?.wantsPointerLock && state === "playing" && !paused && !document.pointerLockElement) canvas.requestPointerLock?.()?.catch?.(() => {});
     if (meltdown && state === "playing" && !paused) meltdown.onPointerDown(event);
     // Focus (bullet time): the story earns it in the Skyline (systems/progression.js).
     if (event.button === 2 && state === "playing" && hasAbility("focus")) run.focusing = true;
@@ -6256,7 +6324,7 @@ addEventListener("keydown", (event) => {
     else if ($("#reportScreen").classList.contains("active")) $("#reportBackButton").click();
     else if (ui.end.classList.contains("active")) quitToMenu();
     else if (storyPlaying) finishStory();
-    else if (paused) closePause();
+    else if (paused) resumeFromPause();
     else openPause();
     return;
   }
@@ -6396,9 +6464,14 @@ const touchControls = new TouchControls({
   },
   wants: () => story.reactions?.wants ?? null,
   skipProgress: () => story.player.skipProgress ?? 0,
-  // The bazooka a flying patient made you drop, at your feet (flying-zombies.js).
-  pickup: () => !!meltdown?._flying?.pickupPrompt,
   canFocus: () => hasAbility("focus"),
+  // The roof over the shoulder: drag to look, SHOOT, the sphere button.
+  roofLook: () => currentLevel === 3 && !!meltdown?.wantsPointerLock,
+  stickFixed: () => !!settings.fixedStick,
+  levelRun: () => state === "playing" && !gravityLift && !photoActive && [1, 2, 3].includes(currentLevel),
+  lookReset: () => { if (meltdown) meltdown.look.lastX = null; },
+  cycleSphere: () => cycleSphere(1),
+  sphere: () => (arsenal.current ? { name: arsenal.current.name, colour: arsenal.current.colour, count: currentLevel === 3 && meltdown ? meltdown.runner.balls : ammo } : null),
   skyline: () => currentLevel === 1,
 });
 let touchPlace = null;
@@ -6437,6 +6510,9 @@ ui.padAimSlider.value = settings.padAimSpeed;
 ui.padVibrationToggle.checked = settings.padVibration;
 ui.padAimSlider.addEventListener("input", (event) => { settings.padAimSpeed = Number(event.target.value); saveSettings(); });
 ui.padVibrationToggle.addEventListener("change", (event) => { settings.padVibration = event.target.checked; saveSettings(); });
+ui.fixedStickToggle = $("#fixedStickToggle");
+ui.fixedStickToggle.checked = !!settings.fixedStick;
+ui.fixedStickToggle.addEventListener("change", (event) => { settings.fixedStick = event.target.checked; saveSettings(); });
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
@@ -6756,6 +6832,8 @@ globalThis.__dbg = {
   /** The main scene's camera (the Foundry, the Skyline): staged pictures place it. */
   get camera() { return camera; },
   get unlockCard() { return unlockCard; },
+  /** The 3, 2, 1 running (or about to): the world held still (main.js watchCutscenes). */
+  get countingIn() { return countdownLeft > 0 || countdownPending; },
   THREE,
   demoGravityLift,
   demoQuietRide,
@@ -6804,6 +6882,7 @@ globalThis.__dbg = {
       trailerTime += sdt;
       if (countdownLeft > 0) tickCountdown(dt);
       else { updateGame(sdt, trailer.enabled ? trailerTime : clock.elapsedTime + stepTime); trackRunReport(sdt); trackCheckpoint(); }
+      watchCutscenes();
       if (countdownPending) maybeStartCountdown();
       updateCursor();
       trailerAfterUpdate(sdt);

@@ -185,7 +185,7 @@ export class MeltdownLevel {
    * @param {boolean} [options.extras]  Hard: fire waves among the patterns,
    *   and patients that stalk you in every section, not only the dark
    * @param {boolean} [options.problems]  the right-tool problems (problems.js):
-   *   fire walls and the jammed shutter (not in the Race)
+   *   the jammed shutter (not in the Race)
    */
   constructor({
     origin = new THREE.Vector3(0, 0, 0),
@@ -279,8 +279,8 @@ export class MeltdownLevel {
     this._buildBeatCorridor();
     this._buildBeatBlackout();
     this._buildBeatStairwell();
-    // The right-tool problems (problems.js): fire walls to freeze, a jammed
-    // shutter to blast - before the filler, which keeps clear of them.
+    // The right-tool problems (problems.js): a jammed shutter to blast -
+    // before the filler, which keeps clear of it.
     this.problemSet = problems ? placeLabsProblems(this) : null;
     this._buildLifts();
     this._buildPatterns();
@@ -1008,6 +1008,8 @@ export class MeltdownLevel {
         for (const lane of lanesExcept(open)) this._hazard(k.rubbleWall({ burning: r() < 0.4 }), d, lane);
       },
       laserLow: (d) => this._hazard(k.laserGrid({ mode: "low", span }), d, 0),
+      // Fire right across: put it out with a cryo sphere (or run through and burn).
+      fireWall: (d) => (this._fireWalls ??= []).push({ distance: d, group: this._hazard(k.fireWall({ span: hw * 2 - 0.6, seed: Math.round(d) }), d, 0) }),
       laserHigh: (d) => this._hazard(k.laserGrid({ mode: "high", span }), d, 0),
       laserSweep: (d, r) => this._hazard(k.laserGrid({ mode: "sweep", span, speed: 1.3 + r() * 0.8, phase: r() * 6 }), d, 0),
       concreteRow: (d, r) => {
@@ -1082,8 +1084,8 @@ export class MeltdownLevel {
 
     const TIERS = {
       1: ["rubblePair", "laserLow", "laserHigh", "concreteRow", "barrierMix", "glassWall", "cylinder", "rubblePair"],
-      2: ["rubblePair", "laserSweep", "vents", "cart", "shelf", "pendulumRubble", "fireGap", "glassGate", "barrierMix", "lurcher", "laserHigh"],
-      3: ["vents", "laserSweep", "shelf", "cart", "glassGate", "highAndGap", "fireGap", "pendulumRubble", "lurcher", "rubblePair", "glassWall"],
+      2: ["rubblePair", "laserSweep", "vents", "cart", "shelf", "pendulumRubble", "fireGap", "glassGate", "barrierMix", "lurcher", "laserHigh", "fireWall"],
+      3: ["vents", "laserSweep", "shelf", "cart", "glassGate", "highAndGap", "fireGap", "pendulumRubble", "lurcher", "rubblePair", "glassWall", "fireWall"],
       // In the dark: lasers and vents announce themselves; rubble, glass and
       // patients have to be found with the beam.
       blackout: ["rubblePair", "laserLow", "lurcher", "glassGate", "laserHigh", "barrierMix", "vents", "lurcher"],
@@ -1098,11 +1100,17 @@ export class MeltdownLevel {
       const random = this._rng(4001 + (beat.patterns ? 7 : beat.tier) * 977);
       const names = TIERS[set];
       let last = null;
+      // Every stretch that has fire walls gets one, whatever the difficulty's
+      // spacing does to the dice (Normal could come out with none): the cryo
+      // sphere's reason to be in the Labs.
+      let walled = !names.includes("fireWall");
       let d = beat.start + 14;
       while (d < beat.end - 10) {
         if (clear(d)) {
           let name = names[Math.floor(random() * names.length)];
           if (name === last) name = names[(names.indexOf(name) + 1) % names.length];
+          if (!walled && d >= beat.start + (beat.end - beat.start) * 0.4) name = "fireWall";
+          if (name === "fireWall") walled = true;
           PATTERNS[name](d, random, beat.tier);
           last = name;
           // Tier 3 sometimes stacks a second pattern right behind the first.
@@ -1517,6 +1525,11 @@ export class MeltdownLevel {
    * Is there a fallen duct just ahead to jump? (for the HUD prompt) A duct
    * lies across every lane, so it's jumped - over it, or onto it.
    */
+  /** A fire wall still burning within `radius` m ahead (the HUD says: cryo). */
+  fireWallAhead(playerDistance, radius = 24) {
+    return (this._fireWalls ?? []).some((w) => !w.group.userData.out && w.distance - playerDistance > 1 && w.distance - playerDistance < radius);
+  }
+
   ductAhead(playerDistance, radius = 6) {
     const bridge = (this._bridges ?? []).some((b) => {
       const gap = b.distance - b.depth / 2 - playerDistance;
@@ -1714,7 +1727,7 @@ export class MeltdownLevel {
       const ahead = entry.distance - distance;
       entry.piece.visible = Math.abs(ahead) < 110 + (entry.slack ?? 0)
         // Obstacles already behind you, between you and the chase camera,
-        // step out of its way (round 8 audit: a glass gate's posts or a
+        // step out of its way (the damage audit: a glass gate's posts or a
         // grid you had cleared filled the screen).
         && !(entry.piece.userData.hazardPiece && ahead < -1.6 && ahead > -9.5);
     }

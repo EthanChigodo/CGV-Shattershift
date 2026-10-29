@@ -1,27 +1,28 @@
 /**
  * "The right tool": obstacles that only the right sphere (or the right way
- * of firing one) gets you past.
+ * of firing one, or the right moment) gets you past for free.
  *
  * The spheres are one physical language - glass, ice, electricity and
- * gravity - and every level asks a new question in it:
+ * gravity. The team's sectors each give one sphere something only it does
+ * (progression.js: the Labs' fire walls, cryo's; the Skyline's security
+ * drones, shock's; the Roof's ledges, gravity's). These add a question
+ * of their own to each sector, in the same language:
  *
  *   The Foundry  glass     a drop forge's release valve, open only while the
  *                          hammer is held up: read the rhythm, throw on the beat
- *   The Labs     cryo      a fire wall across the corridor: freeze it
- *                charge    a jammed blast shutter: plain shots only dent it;
+ *   The Labs     charge    a jammed blast shutter: plain shots only dent it;
  *                          one full charged shot blows it out
  *   The Skyline  shock     a sealed security door that glass bounces off;
  *                          a laser grid's junction box - overload it
  *   The Roof     gravity   supplies stranded on the window-cleaner's cradle
- *                          off the ledge: pull them in; a black hole by an
- *                          open ledge drags patients over it
+ *                          off the ledge: pull them in
  *
- * Every problem is drawn in the colour of the sphere that solves it (cryo
- * cyan, shock violet, gravity indigo, glass white, the charge gold), carries
- * that sphere's mark, and says what it wants the first time you meet it.
- * The wrong sphere visibly fails and says what it needs. A mandatory one can
- * always be passed without the tool - at a real cost (a burn, a crash, a
- * hit) - so being out of the right spheres is never a soft-lock.
+ * Every problem is drawn in the colour of the sphere that solves it (shock
+ * violet, gravity indigo, glass white, the charge gold), carries that
+ * sphere's mark, and says what it wants the first time you meet it. The
+ * wrong sphere visibly fails and says what it needs. A mandatory one can
+ * always be passed without the tool - at a real cost (a crash, a hit, eight
+ * spheres) - so being out of the right spheres is never a soft-lock.
  *
  * This module is the shared part: the definitions, and a per-level log the
  * levels report to (first sightings, solves, wrong tools) and the host and
@@ -30,9 +31,9 @@
  *
  *   const log = new ProblemLog();
  *   log.on("solved", ({ key, bonus }) => (score += bonus));
- *   log.sighted("firewall");                 // the first time: the hint
- *   log.wrong("firewall", "glass");          // a fizzle and "Needs cryo"
- *   log.solve("firewall");                   // +600, "Solved"
+ *   log.sighted("sealed");                   // the first time: the hint
+ *   log.wrong("sealed", "glass");            // a fizzle and "Needs shock"
+ *   log.solve("sealed");                     // +600, "Solved"
  */
 
 /** The colours (CSS) and marks of the tools; the levels' 3D marks use the same. */
@@ -50,8 +51,8 @@ export const TOOLS = {
  * a controller), what the wrong tool is told, and the bonus for solving it.
  * `mandatory`: it stands in the way (passable without the tool only at a cost).
  * `refund`: spheres back on a solve - the right tool's cost, so answering a
- * problem never leaves you poorer than walking into it (cryo and a charged
- * shot cost two, shock three; the Foundry's valve gives its sphere back as a
+ * problem never leaves you poorer than walking into it (a charged shot
+ * costs two, shock three; the Foundry's valve gives its sphere back as a
  * cell does, and the stranded crate bursts into spheres).
  */
 export const PROBLEMS = {
@@ -61,13 +62,6 @@ export const PROBLEMS = {
     hint: "Drop forge: break its valve while the hammer is up (CLICK) - or time your run under it",
     needs: "VALVE SHUT // THROW WHILE THE HAMMER IS UP",
     solved: "HAMMER JAMMED UP",
-  },
-  firewall: {
-    level: "labs", tool: "cryo", mandatory: true, bonus: 600, refund: 2,
-    name: "Fire wall",
-    hint: "Fire wall: freeze it - cryo (Q/E)",
-    needs: "NEEDS CRYO",
-    solved: "FIRE WALL OUT",
   },
   shutter: {
     level: "labs", tool: "charge", mandatory: true, bonus: 700, refund: 2,
@@ -96,13 +90,6 @@ export const PROBLEMS = {
     hint: "Supplies off the ledge: pull them in - gravity (Q/E)",
     needs: "OUT OF REACH // NEEDS GRAVITY",
     solved: "SUPPLIES PULLED IN",
-  },
-  ledge: {
-    level: "roof", tool: "gravity", mandatory: false, bonus: 350,
-    name: "Over the edge",
-    hint: "Open ledge: a gravity well beside it drags them over",
-    needs: "",
-    solved: "CLEVER KILL // OVER THE EDGE",
   },
 };
 

@@ -137,7 +137,7 @@
       <span class="touch-only" data-keep-keys><kbd>SWIPE ← →</kbd> Change lane</span>
       <span class="touch-only" data-keep-keys><kbd>TAP</kbd> Aim and throw</span>
       <span class="touch-only" data-keep-keys><kbd>SWIPE ↑ ↓</kbd> Jump / slide - keep the finger down to sprint / brake</span>
-      <span class="touch-only" data-keep-keys><kbd>TAP THE WHEEL</kbd> Sphere type</span>
+      <span class="touch-only" data-keep-keys><kbd>TAP THE SPHERE</kbd> Sphere type</span>
       <span class="touch-only" data-keep-keys><kbd>HOLD FOCUS</kbd> Focus</span>
       <span class="pad-only"><kbd>L-STICK</kbd> Lane, sprint and brake</span>
       <span class="pad-only"><kbd>R-STICK</kbd> Aim</span>
@@ -272,9 +272,10 @@
     <section id="leaderboardsScreen" class="screen trophies-screen lb-screen" aria-label="Leaderboards">
       <div class="tr-wrap">
         <header class="tr-head">
-          <div><p class="eyebrow">GLOBAL // EVERYONE WHO PLAYED</p><h2>LEADERBOARDS</h2><p class="lb-me"></p></div>
+          <div><p class="eyebrow">GLOBAL // EVERYONE WHO PLAYED</p><h2>LEADERBOARDS</h2></div>
           <button id="leaderboardsBackButton" type="button" class="primary-button">BACK</button>
         </header>
+        <div class="lb-me"></div>
         <div class="lb-layout">
           <nav class="menu-list lb-boards" aria-label="Boards"></nav>
           <div class="lb-body" aria-live="polite"></div>
@@ -503,7 +504,21 @@
           </div>
 
           <div class="tr-panel" data-st-panel="sound" hidden>
-            <p class="fm-blurb">Who you hear. The subtitles always stay.</p>
+            <p class="fm-blurb">How loud, and who you hear. The subtitles always stay.</p>
+            <section class="tr-sec st-sec"><h3>Volume</h3>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Game volume</b><small>Everything - the music, the voices and the effects</small></span>
+              <span class="st-range"><input type="range" id="masterVolumeSlider" min="0" max="100" step="5" value="100" /><output for="masterVolumeSlider">100%</output></span>
+            </label>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Music</b><small>The score in every level, the menus and the lifts</small></span>
+              <span class="st-range"><input type="range" id="musicVolumeSlider" min="0" max="100" step="5" value="100" /><output for="musicVolumeSlider">100%</output></span>
+            </label>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Sound effects</b><small>Glass shattering, explosions, fire, machines, the HUD's blips</small></span>
+              <span class="st-range"><input type="range" id="effectsVolumeSlider" min="0" max="100" step="5" value="100" /><output for="effectsVolumeSlider">100%</output></span>
+            </label>
+            </section>
             <section class="tr-sec st-sec"><h3>Voices</h3>
             <label class="setting-row st-row toggle-row">
               <span class="st-label"><b>Character voices</b><small>Okoro, Vale, the pilot, 07 - the HALCYON intercom always speaks</small></span>
@@ -583,6 +598,12 @@
                 <span><kbd>P</kbd> Photo mode (Sectors 01, 03)</span>
                 <span><kbd>ESC</kbd> Pause</span>
               </div>
+            </section>
+            <section class="tr-sec st-sec touch-only"><h3>Touch screen</h3>
+              <label class="setting-row st-row toggle-row">
+                <span class="st-label"><b>Fixed joystick</b><small>The Roof's stick stays in the bottom-left corner. Off, it comes to your thumb wherever it lands</small></span>
+                <input type="checkbox" id="fixedStickToggle" />
+              </label>
             </section>
           </div>
 

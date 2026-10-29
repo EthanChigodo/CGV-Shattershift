@@ -116,8 +116,7 @@ export class Projectiles {
       // few cm in front of them; that one is ignored so the ball reaches
       // the glass rather than bouncing off an unseen box.
       const hitB = this._ray.intersectObjects(breakables, false)[0];
-      // (`pass`: a fire wall - in the body's way, not a sphere's.)
-      const hitS = this._ray.intersectObjects(solids, false).find((h) => !h.object.userData.glass && !h.object.userData.pass && !h.object.userData.disabled);
+      const hitS = this._ray.intersectObjects(solids, false).find((h) => !h.object.userData.glass && !h.object.userData.disabled);
       this._end.copy(p).add(this._next);
       const wall = surface?.(p, this._end, ball.radius) ?? null;
 

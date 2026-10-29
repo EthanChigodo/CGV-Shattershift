@@ -1,5 +1,5 @@
 /**
- * The end credits (Phase 6): the team, the cast, then every external asset
+ * The end credits (Phase 6): the team and its members, the cast, then every external asset
  * the game uses - the models from the Labs' credits data (the same list the
  * in-game K panel shows, CC-BY attribution included), and the music and
  * sound credited in docs/credits.md - then the libraries and the thanks.
@@ -50,7 +50,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 export function creditsHTML() {
   const c = STORY_CREDITS;
   const parts = [`<div class="gap"></div><h1>${esc(GAME_TITLE)}</h1><p><small>${esc(c.team)}</small></p>`];
-  for (const r of c.roles) parts.push(`<h2>${esc(r.role)}</h2><p>${r.names.length ? r.names.map(esc).join("<br>") : esc(c.team)}</p>`);
+  parts.push(`<h2>Made by</h2><p>${c.members.map(esc).join("<br>")}</p>`);
   parts.push(`<h2>Cast</h2>${c.cast.map(([who, as]) => `<p>${esc(who)}<small>${esc(as)}</small></p>`).join("")}`);
   parts.push(`<h2>Models</h2>${MELTDOWN_CREDITS.map((m) => `<p>${esc(m.title)}<small>${esc(m.author)} - ${esc(m.licence)}${m.url ? ` - ${esc(m.url.replace(/^https:\/\//, ""))}` : ""}<br>${esc(m.use)}</small></p>`).join("")}`);
   parts.push(`<h2>Music and sound</h2>${AUDIO_CREDITS.map(([what, who]) => `<p>${esc(what)}<small>${esc(who)}</small></p>`).join("")}`);

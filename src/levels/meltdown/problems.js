@@ -1,13 +1,8 @@
 /**
- * The Labs' and the Roof's right-tool problems (src/systems/problems.js).
+ * The Labs' and the Roof's right-tool problems (src/systems/problems.js),
+ * beside the team's own (the Labs' fire walls, cryo's; the Roof's ledges,
+ * gravity's - game.js, roof.js):
  *
- *   FIRE WALL (the Labs, cryo)      A doorway out of a hall, filled wall to
- *     wall with flame. Glass passes through it and fizzles; a cryo sphere -
- *     on it, or bursting close enough - puts it out, the flames dying back
- *     in a wave out from where it hit. Run into it and it burns you badly and
- *     knocks you about (Thermal Aegis: you walk through). Two in a run, the
- *     first after the containment hall, seen across the whole hall; Hard
- *     has a third.
  *   JAMMED SHUTTER (the Labs, the charged shot)  A blast shutter jammed
  *     across the corridor at the archive's exit. Plain shots only dent it
  *     (the gold meter fills a little each time); one full charged shot
@@ -16,8 +11,6 @@
  *   STRANDED SUPPLIES (the Roof, gravity)  A crate on the window-cleaner's
  *     cradle off the west ledge, out over the drop - only a gravity well
  *     close to it drags it in over the ledge, where it bursts open.
- *   OVER THE EDGE (the Roof, gravity)  A gravity well near an open ledge
- *     drags the patients it catches over it.
  *
  * The level (index.js, roof.js) places the pieces; the game (game.js) hands
  * every hit, burst and frame to a ProblemPlay, which decides what each tool
@@ -31,7 +24,6 @@ import { PROBLEMS } from "../../systems/problems.js";
 /** The most spheres a runner holds (game.js MAX_BALLS): a refund doesn't go past it. */
 const MAX_BALLS = 45;
 
-const FLAME_SPOTS = 6;
 const _box = new THREE.Box3();
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -51,95 +43,6 @@ function own(list, item) {
 /* ------------------------------------------------------------------ */
 /* The pieces                                                           */
 /* ------------------------------------------------------------------ */
-
-/**
- * A wall of flame across the corridor, posts either side banded in cryo
- * cyan with its mark, a cyan line on the floor before it.
- */
-export function buildFireWall(kit, fire, { halfWidth = 7, height = 5.4, seed = 1 } = {}) {
-  const owned = [];
-  const group = new THREE.Group();
-  group.name = "FireWall";
-  const span = halfWidth * 2 - 0.5;
-  const band = own(owned, new THREE.MeshBasicMaterial({ color: toolColour("cryo", 2.4), toneMapped: false }));
-  const marks = [];
-  for (const side of [-1, 1]) {
-    const x = side * (halfWidth - 0.3);
-    group.add(kit.box(0.42, 5.4, 0.42, kit.materials.darkMetal, 0, x, 0));
-    for (const y of [0.35, 0.95, 4.6]) group.add(kit.box(0.46, 0.14, 0.46, band, y, x, 0));
-    const badge = toolBadge("cryo", 0.95);
-    badge.position.set(x - side * 0.02, 2.7, 0.24);
-    group.add(badge);
-    marks.push(badge);
-  }
-  const top = toolBadge("cryo", 1.5);
-  top.position.set(0, height + 0.9, 0.4);
-  group.add(top);
-  marks.push(top);
-  const line = floorStripes("cryo", span, 0.9);
-  line.position.z = 3.4;
-  group.add(line);
-  marks.push(line);
-
-  // The flames: their own material each, so they can die back one by one.
-  const spots = [];
-  for (let i = 0; i < FLAME_SPOTS; i += 1) {
-    const x = -span / 2 + (span * (i + 0.5)) / FLAME_SPOTS;
-    const material = own(owned, fire.fire.clone());
-    material.uniforms.uTime = fire.fire.uniforms.uTime;
-    material.uniforms.uHeightScale = { value: 1 };
-    const flame = kit.fireSpot({
-      width: span / FLAME_SPOTS + 0.6, depth: 1.2, height, count: 17,
-      smoke: i % 2 === 0, light: false, seed: seed * 17 + i, materialSet: { ...fire, fire: material },
-    });
-    flame.position.x = x;
-    group.add(flame);
-    spots.push({ x, flame, material, k: 1, delay: -1 });
-  }
-
-  const state = { lit: 1 };
-  const anchor = new THREE.Object3D();
-  anchor.position.y = 2.2;
-  group.add(anchor);
-  group.userData.emitter = {
-    kind: "point", anchor, color: 0xff6a1c, base: 10, distance: 24,
-    intensityAt: (time) => (9 + Math.sin(time * 11) * 1.8 + Math.sin(time * 23) * 0.9) * state.lit,
-  };
-
-  // In the way of the body (Thermal Aegis lets you through, as a vent's
-  // flames: `fireVent`); not of a sphere (`pass`) - it reaches the target.
-  const collider = new THREE.Mesh(kit.geometries.unitBox, kit.materials.collider);
-  collider.scale.set(span, height + 1, 1.2);
-  collider.position.y = (height + 1) / 2;
-  collider.userData = { kind: "hazard", solid: true, fireVent: true, fireWall: true, pass: true, problem: "firewall" };
-  group.add(collider);
-  const target = new THREE.Mesh(kit.geometries.unitBox, kit.materials.collider);
-  target.scale.set(span, height, 0.5);
-  target.position.set(0, height / 2, 0.25);
-  target.name = "FireWallTarget";
-  target.userData = { kind: "firewall", problem: "firewall", breakable: true, alive: true, node: group };
-  group.add(target);
-
-  // Dying back: each spot, after its delay, shrinks to nothing.
-  group.userData.tick = (dt) => {
-    let lit = 0;
-    for (const s of spots) {
-      if (s.dying) {
-        if (s.delay > 0) s.delay -= dt;
-        else s.k = Math.max(0, s.k - dt * 3.2);
-      }
-      s.material.uniforms.uHeightScale.value = s.k;
-      s.flame.visible = s.k > 0.01;
-      lit += s.k / spots.length;
-    }
-    state.lit = lit;
-  };
-
-  group.userData.hazardMeshes = [collider];
-  group.userData.breakableMeshes = [target];
-  group.userData.problem = { key: "firewall", collider, target, spots, marks, state, owned };
-  return group;
-}
 
 /**
  * A heavy blast shutter jammed crooked in its frame, hazard-striped, with the
@@ -227,9 +130,8 @@ export function buildShutter(kit, { halfWidth = 7, height = 5.6 } = {}) {
 
 /**
  * Lay the Labs' problems out (from MeltdownLevel's constructor, before the
- * filler patterns, which keep clear of them): at the exits of the
- * containment hall, the substation and the archive - each seen across the
- * whole hall before it - and on Hard the boiler hall too.
+ * filler patterns, which keep clear of them): the shutter at the archive's
+ * exit, seen across the whole hall before it.
  */
 export function placeLabsProblems(level) {
   const list = [];
@@ -237,13 +139,12 @@ export function placeLabsProblems(level) {
     const hall = level.halls.find((h) => h.theme === theme);
     return hall ? hall.end + 3 : null;
   };
-  const plan = [["firewall", exit("containment")], ["firewall", exit("substation")], ["shutter", exit("archive")]];
-  if (level.options.extras) plan.push(["firewall", exit("boiler")]);
-  for (const [i, [key, at]] of plan.entries()) {
+  const plan = [["shutter", exit("archive")]];
+  for (const [key, at] of plan) {
     if (at === null) continue;
     let d = at;
     for (let k = 0; k < 8 && level._setPieces.some((s) => Math.abs(s - d) < 6); k += 1) d += 1.5;
-    const piece = key === "firewall" ? buildFireWall(level.kit, level.fire, { halfWidth: 7, seed: i + 1 }) : buildShutter(level.kit, { halfWidth: 7 });
+    const piece = buildShutter(level.kit, { halfWidth: 7 });
     level._hazard(piece, d, 0);
     // A clear run-up: the filler keeps 9 m off each mark, so nothing stands
     // in the line of fire for the last ~17 m.
@@ -364,18 +265,6 @@ export class ProblemPlay {
     const p = object.userData.problemRef;
     if (!p || p.solved) return ball.kind === "glass" && !ball.charged ? "through" : true;
     const g = this.game;
-    if (p.key === "firewall") {
-      if (ball.kind === "cryo") {
-        this._extinguish(p, point);
-        return true;
-      }
-      // Into the flames and gone: a hiss and a puff.
-      g.debris.dust(point, { size: 1.6, life: 0.7, color: 0x9a9690 });
-      g.debris.sparks(point, { count: 10, speed: 3 });
-      g.sfx?.surfaceRicochet();
-      this.log.wrong("firewall", this._used(ball));
-      return ball.kind === "glass" && !ball.charged ? "through" : true;
-    }
     if (p.key === "shutter") {
       // A charged one bursts on it (game.js _overcharge, then splash()).
       if (ball.charged) return true;
@@ -403,10 +292,7 @@ export class ProblemPlay {
       if (p.solved || !p.target) continue;
       _box.setFromObject(p.target);
       if (_box.distanceToPoint(point) > radius) continue;
-      if (p.key === "firewall") {
-        if (kind === "cryo") this._extinguish(p, point);
-        else if (kind !== "gravity") this.log.wrong("firewall", charged && kind === "glass" ? "charge" : kind);
-      } else if (p.key === "shutter") {
+      if (p.key === "shutter") {
         if (charged >= FULL_CHARGE) this._blast(p, point, true);
         else if (charged) {
           this._dent(p, point, charged * 0.6);
@@ -418,37 +304,9 @@ export class ProblemPlay {
     }
   }
 
-  /**
-   * A gravity well opening on the roof: the stranded crate if it's close,
-   * and patients dragged over an open ledge.
-   */
+  /** A gravity well opening on the roof: the stranded crate, if it's close. */
   well(point, radius) {
     this.splash(point, "gravity", radius);
-  }
-
-  /** Put a fire wall out: the flames die back in a wave out from `point`. */
-  _extinguish(p, point) {
-    const g = this.game;
-    p.solved = true;
-    p.collider.userData.disabled = true;
-    p.target.userData.alive = false;
-    this._removeTarget(p);
-    const local = p.group.worldToLocal(_v.copy(point));
-    for (const s of p.spots) {
-      s.delay = Math.abs(s.x - local.x) / 11;
-      s.dying = true;
-      // Steam and frost as each one goes.
-      const at = s.flame.getWorldPosition(new THREE.Vector3()).setY(1.6);
-      g._after(s.delay, () => {
-        g.debris.dust(at, { size: 3.4, life: 1.8, color: 0xdcecf2 });
-        g._chunks(at, 8, { tint: 0xbff4ff, speed: 3, radius: 0.6, size: 0.07 });
-      });
-    }
-    for (const m of p.marks) fadeMark(m, 0);
-    g.sfx?.sprinklerBurst();
-    g.audio.whoosh?.();
-    g.trauma = Math.min(1, g.trauma + 0.2);
-    this._solved(p);
   }
 
   /** A dent in the shutter: the meter fills; full, it gives (no bonus). */
@@ -516,7 +374,7 @@ export class ProblemPlay {
 
   /* ---- Each frame ------------------------------------------------- */
 
-  /** The Labs: sightings, the body against a fire wall or the shutter. */
+  /** The Labs: sightings, the body against the shutter. */
   update(dt, playing) {
     const g = this.game;
     const r = g.runner;
@@ -533,31 +391,7 @@ export class ProblemPlay {
       _box.copy(p.collider.geometry.boundingBox).applyMatrix4(p.collider.matrixWorld);
       if (!_box.intersectsBox(g.playerBox)) continue;
       p.contact = true;
-      if (p.key === "firewall") this._burn(p);
-      else if (p.key === "shutter") this._shoulder(p);
-    }
-  }
-
-  /** Ran into a fire wall: the hit (game.js) and a heavy burn on top - unless fireproof. */
-  _burn(p) {
-    const g = this.game;
-    const r = g.runner;
-    if (g.arsenal.isActive("thermal")) {
-      g.hud.toast("THERMAL AEGIS", "THROUGH THE FIRE", "power", 1500);
-      return;
-    }
-    const burn = 12 * (g.difficulty?.damage ?? 1);
-    r.vitality = Math.max(0, r.vitality - burn);
-    r.slow = Math.max(r.slow, 0.9);
-    g.hitFlash = 1;
-    g.hud.flashDamage?.();
-    g.hud.toast("BURNED", `-${Math.round(burn)} // FREEZE IT NEXT TIME`, "warn", 1800);
-    g.sfx?.hurt?.();
-    g.playerBox.getCenter(_v);
-    g.debris.sparks(_v, { count: 30, speed: 4 });
-    if (r.vitality <= 0 && r.alive) {
-      r.alive = false;
-      g._caughtByFire();
+      if (p.key === "shutter") this._shoulder(p);
     }
   }
 
@@ -600,7 +434,7 @@ export class ProblemPlay {
     }
     if (!best) return null;
     const m = Math.round(best.gap);
-    return best.p.key === "firewall" ? `FIRE WALL ${m} M - FREEZE IT: CRYO (Q/E)` : `JAMMED SHUTTER ${m} M - HOLD CLICK: CHARGED SHOT`;
+    return `JAMMED SHUTTER ${m} M - HOLD CLICK: CHARGED SHOT`;
   }
 
   /** The Roof: sightings, the crate's flight in, what it brought. */
@@ -629,26 +463,5 @@ export class ProblemPlay {
         roof.addSupplies?.(_v.clone().setY(0));
       }
     }
-  }
-
-  /**
-   * A gravity well opened close to an open ledge (x = +/-edge, the middle of
-   * the side: the corners are walled) pulls toward a point out past it, not
-   * its own centre: what it catches is dragged over. That point, or null.
-   */
-  ledgeGoal(point, edge) {
-    if (!this.game.roof || Math.abs(point.x) < edge - 4.5 || Math.abs(point.z) > edge - 2.6) return null;
-    return new THREE.Vector3(Math.sign(point.x) * (edge + 2), 0, point.z);
-  }
-
-  /** One of them dragged over the ledge by a well: falls, and counts (a clever kill). */
-  sendOver(enemy) {
-    const roof = this.game.roof;
-    if (!roof || !enemy.alive) return;
-    const side = Math.sign(enemy.position.x);
-    enemy.velocity.set(side * 5, 2.2, 0);
-    enemy.die("fall");
-    roof.events.emit("enemy-fall", { enemy, position: enemy.position.clone(), well: true });
-    this.log.solve("ledge");
   }
 }

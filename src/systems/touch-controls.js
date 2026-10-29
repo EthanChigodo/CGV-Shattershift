@@ -13,13 +13,21 @@
  *     tap                   throw at that spot (a click there)
  *     hold                  charge, aiming where the finger is; let go to throw
  *     FOCUS button          slow time while held (the right mouse button)
- *   the roof
- *     left side             a stick where the thumb lands: walk (W A S D)
+ *     the sphere button     the one loaded; a tap: the next (as on the roof,
+ *                           in the same place: the wheel goes, integrity and
+ *                           the spheres left go top left - "tc-hud")
+ *   the roof, over the shoulder (as a phone shooter plays)
+ *     left side             the stick (resting bottom left, it comes to the
+ *                           thumb wherever it lands - or, Settings' Fixed
+ *                           joystick, stays there): walk (W A S D)
+ *     right side            drag to look round (the mouse's turn of the view)
+ *     SHOOT button          fire at the crosshair (a tap a shot, held it charges)
+ *     FOCUS, DODGE          focus (the right button), dodge (Space) - also the
+ *                           generator's cord and the jump for the ladder
+ *     the sphere button     the one loaded; a tap: the next (the wheel's turn)
+ *     (integrity and the spheres left top left; the wheel and its gauges go)
+ *   the roof, top-down (C)
  *     right side            aim and fire where the finger is (held: keeps firing)
- *     DODGE button          dodge (Space) - also the generator's cord and the
- *                           jump for the ladder
- *     PICK UP button        when the bazooka a flying patient made you drop is
- *                           at your feet (E)
  *   anywhere in a run
  *     the sphere wheel      tap it to change sphere (E)
  *     PAUSE                 the button at the top (already there)
@@ -58,7 +66,12 @@ export class TouchControls {
    * @param {() => boolean} [host.skyline]        the Skyline (W / S held: sprint / brake)
    * @param {() => boolean} [host.enabled]        touch controls on
    * @param {() => number} [host.skipProgress]    how far a held skip has got (0..1)
-   * @param {() => boolean} [host.pickup]         something to pick up at your feet (E)
+   * @param {() => boolean} [host.roofLook]       the roof's over-the-shoulder view: drag to look
+   * @param {() => boolean} [host.stickFixed]     the stick stays in its corner (not to the thumb)
+   * @param {() => boolean} [host.levelRun]       a level is being played (not a lift, not a menu): its HUD
+   * @param {() => void} [host.lookReset]         a new finger looking: no jump from the last one
+   * @param {() => void} [host.cycleSphere]       the sphere button: the next sphere
+   * @param {() => {name:string, colour:number, count:number}|null} [host.sphere]  the one loaded, the spheres left
    */
   constructor(host) {
     this.host = host;
@@ -92,7 +105,9 @@ export class TouchControls {
       <button type="button" class="tc-button tc-focus" aria-label="Focus: slow time while held">FOCUS</button>
       <button type="button" class="tc-button tc-dodge" aria-label="Dodge">DODGE</button>
       <button type="button" class="tc-button tc-skip" aria-label="Hold to skip">HOLD TO SKIP</button>
-      <button type="button" class="tc-button tc-pickup" aria-label="Pick up">PICK UP</button>`;
+      <button type="button" class="tc-button tc-shoot" aria-label="Shoot">SHOOT</button>
+      <button type="button" class="tc-button tc-sphere" aria-label="Next sphere"><i></i><b>GLASS</b></button>
+      <div class="tc-ammo" aria-live="polite"><b>0</b><span>Spheres</span></div>`;
     document.body.append(root);
     this.root = root;
     this.react = root.querySelector(".tc-react");
@@ -105,7 +120,9 @@ export class TouchControls {
       el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
       el.addEventListener("pointerdown", (e) => {
         e.preventDefault();
-        el.setPointerCapture?.(e.pointerId);
+        // (A browser can refuse the capture - a second finger landing as the
+        // first lifts: the button must still press, not throw.)
+        try { el.setPointerCapture?.(e.pointerId); } catch { /* pressed all the same */ }
         el.classList.add("down");
         press();
       });
@@ -117,8 +134,14 @@ export class TouchControls {
     };
     this.focusButton = button(".tc-focus", () => this._click("pointerdown", 2), () => this._click("pointerup", 2));
     this.dodgeButton = button(".tc-dodge", () => this.press("Space"), () => this.release("Space"));
+    // The roof over the shoulder: shoot at the crosshair, the next sphere, the count.
+    this.shootButton = button(".tc-shoot", () => this._click("pointerdown", 0, 43), () => this._click("pointerup", 0, 43));
+    this.sphereButton = button(".tc-sphere", () => this.host.cycleSphere?.(), () => {});
+    this.sphereDot = this.sphereButton.querySelector("i");
+    this.sphereName = this.sphereButton.querySelector("b");
+    this.ammo = root.querySelector(".tc-ammo");
+    this.ammoCount = this.ammo.querySelector("b");
     this.skipButton = button(".tc-skip", () => this.press("Escape"), () => this.release("Escape"));
-    this.pickupButton = button(".tc-pickup", () => this.press("KeyE"), () => this.release("KeyE"));
   }
 
   /** The sphere wheel (sphere-wheel.js): a tap on it turns it. */
@@ -157,10 +180,10 @@ export class TouchControls {
     (type === "pointermove" ? window : this.host.canvas).dispatchEvent(new PointerEvent(type, init));
   }
 
-  _click(type, button) {
+  _click(type, button, id = 42) {
     const x = innerWidth / 2;
     const y = innerHeight / 2;
-    this._pointer(type, x, y, button, 42);
+    this._pointer(type, x, y, button, id);
   }
 
   /* ---- fingers ---- */
@@ -198,6 +221,11 @@ export class TouchControls {
       if (e.clientX < innerWidth * 0.42) {
         tr.kind = "stick";
         this._showStick(tr);
+      } else if (this.host.roofLook?.()) {
+        // Over the shoulder: the right side looks round; SHOOT fires.
+        tr.kind = "look";
+        this.host.lookReset?.();
+        this._pointer("pointermove", tr.x, tr.y);
       } else if (this.mouse === null) {
         tr.kind = "aim";
         this.mouse = tr.id;
@@ -234,6 +262,7 @@ export class TouchControls {
       return;
     }
     if (tr.kind === "stick") { this._steer(tr); return; }
+    if (tr.kind === "look") { this._pointer("pointermove", tr.x, tr.y); return; }
     if (tr.kind === "aim" || tr.kind === "hold") { this._pointer("pointermove", tr.x, tr.y); return; }
     // One stroke is one move, however long (two lanes: two flicks) - but it
     // can turn: left then right, or a jump then a lane.
@@ -251,6 +280,7 @@ export class TouchControls {
     if (tr.key) this.release(tr.key);
     if (tr.also) this.release(tr.also);
     if (tr.kind === "stick") { this._hideStick(); for (const c of ["KeyW", "KeyA", "KeyS", "KeyD"]) this.release(c); return; }
+    if (tr.kind === "look") return;
     if (tr.kind === "aim" || tr.kind === "hold") {
       if (this.mouse === tr.id) { this._pointer("pointerup", tr.x, tr.y); this.mouse = null; }
       return;
@@ -291,8 +321,15 @@ export class TouchControls {
 
   _showStick(tr) {
     const r = STICK_RADIUS;
-    tr.cx = Math.max(r + 8, Math.min(innerWidth * 0.42, tr.x0));
-    tr.cy = Math.max(r + 8, Math.min(innerHeight - r - 8, tr.y0));
+    if (this.host.stickFixed?.()) {
+      // Fixed: it stays at home; the thumb steers from there, wherever it landed.
+      const home = this._stickHome();
+      tr.cx = home.x;
+      tr.cy = home.y;
+    } else {
+      tr.cx = Math.max(r + 8, Math.min(innerWidth * 0.42, tr.x0));
+      tr.cy = Math.max(r + 8, Math.min(innerHeight - r - 8, tr.y0));
+    }
     this.stick.style.left = `${tr.cx}px`;
     this.stick.style.top = `${tr.cy}px`;
     this.stick.classList.add("show");
@@ -301,6 +338,20 @@ export class TouchControls {
 
   _hideStick() {
     this.stick.classList.remove("show");
+  }
+
+  /** Where the roof's stick rests: bottom left, where a thumb looks for it. */
+  _stickHome() {
+    const r = STICK_RADIUS;
+    return { x: r + 46, y: innerHeight - r - 40 };
+  }
+
+  /** The roof's stick at rest, faded. */
+  _restStick() {
+    const home = this._stickHome();
+    this.stick.style.left = `${home.x}px`;
+    this.stick.style.top = `${home.y}px`;
+    this.knob.style.transform = "translate(-50%, -50%)";
   }
 
   _steer(tr) {
@@ -374,7 +425,35 @@ export class TouchControls {
     show(this.root, mode !== "off");
     show(this.focusButton, (mode === "run" || mode === "roof") && !!this.host.canFocus?.());
     show(this.dodgeButton, mode === "roof");
-    show(this.pickupButton, mode === "roof" && !!this.host.pickup?.());
+    // Every level, one corner: the sphere button, FOCUS, the count top left
+    // ("tc-hud"); the roof over the shoulder adds SHOOT ("tc-roof").
+    const shoulder = mode === "roof" && !!this.host.roofLook?.();
+    const hud = shoulder || (mode === "run" && !!this.host.levelRun?.());
+    document.documentElement.classList.toggle("tc-roof", shoulder);
+    document.documentElement.classList.toggle("tc-hud", hud);
+    show(this.shootButton, shoulder);
+    show(this.sphereButton, hud);
+    show(this.ammo, hud);
+    if (hud) {
+      const ball = this.host.sphere?.();
+      if (ball) {
+        const name = ball.name.toUpperCase();
+        if (this.sphereName.textContent !== name) {
+          this.sphereName.textContent = name;
+          const hex = `#${ball.colour.toString(16).padStart(6, "0")}`;
+          this.sphereButton.style.setProperty("--ball", hex);
+        }
+        const count = String(ball.count);
+        if (this.ammoCount.textContent !== count) this.ammoCount.textContent = count;
+        this.ammo.classList.toggle("empty", ball.count <= 0);
+      }
+      // The stick, resting where the thumb will look for it (the roof's).
+      if (!shoulder) this.stick.classList.remove("idle");
+      else if (![...this.tracks.values()].some((t) => t.kind === "stick")) {
+        this._restStick();
+        this.stick.classList.add("show", "idle");
+      } else this.stick.classList.remove("idle");
+    } else this.stick.classList.remove("idle");
     show(this.skipButton, mode === "cutscene");
     // The skip fills the button as it is held (the cutscene's own ring says "hold Esc").
     if (mode === "cutscene") this.skipButton.style.setProperty("--p", String(Math.max(0, Math.min(1, this.host.skipProgress?.() ?? 0))));

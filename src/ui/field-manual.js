@@ -82,7 +82,7 @@ const CARDS = {
     ["white", "tool", "glass", "Glass sphere // 1", "Standard throw. Breaks what it hits, and is gone in the burst; ricochets off walls and ceilings on the way."],
     ["cyan", "tool", "cryo", "Cryo sphere // 2", "Goes off like shock, in ice: shatters what's within 4.8 m, puts out fires - fire walls too - freezes falling debris and machinery, knocks people down. Frosts the floor where it lands on it."],
     ["violet", "tool", "shock", "Shock sphere // 3", "Shatters all glass within 5 m. One-hit reinforced glass. The only thing that opens a sealed door or overloads a laser grid's junction box."],
-    ["indigo", "tool", "gravity", "Gravity sphere // 2", "Opens a black hole for a second where it bursts. It breaks nothing: it drags in every sphere cache, sack and serum within 7 m and they're yours - stranded supplies too - and it yanks patients and scientists toward it and stuns them (by an open ledge: over it)."],
+    ["indigo", "tool", "gravity", "Gravity sphere // 2", "Opens a black hole for a second where it bursts. It breaks nothing: it drags in every sphere cache, sack and serum within 7 m and they're yours - stranded supplies too. On the roof it lifts every patient and scientist in reach and throws them at the nearer open ledge, and drags a flying one out of the sky."],
     ["cyan", "collect", "sack", "Sphere caches and sacks", "Shoot cyan caches in the Foundry and the Skyline. In the Labs and on the Roof, shoot sacks or run through them to collect once, without spending ammunition."],
     ["cyan", "tool", "recharge", "Emergency recovery", "At zero spheres, 2.5 seconds of active play (1.6 on Easy, 3.5 on Hard) restores one sphere. It stops at one: use Glass (Q/E) to shoot a supply. Pause, cutscenes and death do not charge it. While empty, a yellow wireframe marks the nearest unobstructed supply.", true],
     ["amber", "collect", "prism", "Prism split", "Gold capsule. Every throw splits into three spheres. 10 s."],
@@ -104,7 +104,7 @@ const CARDS = {
     ["fire", "break", "charge", "Plant charges", "Near the end Vale's charges arm and the shutters start sealing: a clock to the lift. Break the extraction valve."],
   ],
   labs: [
-    ["cyan", "solve", "fire", "Fire walls", "A doorway full of flame at a hall's exit, banded in cryo cyan. Glass only fizzles in it: one cryo sphere (Q/E) puts the whole wall out (+600). Run through it and it burns you badly."],
+    ["cyan", "solve", "fire", "Fire walls", "Flame across the whole corridor, too tall to jump. Nothing else touches it: one cryo sphere (Q/E) puts it out and the way is clear.", true],
     ["amber", "solve", "charge", "Jammed shutter", "A blast shutter stuck across the corridor, with a gold meter. Plain shots only dent it; hold the throw for a full charged shot and it blows out (+700). Dent it full and it gives too - eight spheres, no bonus. Run into it and you shoulder through, hurt.", true],
     ["fire", "avoid", "fire", "The fire front", "It's behind you the whole way. Slow down and it catches you."],
     ["cyan", "collect", "sack", "Sphere sacks", "Run through the floating cyan crystal to collect without shooting, or break it with projectiles. At zero, recharge restores one sphere after 2.5 seconds of play. Use Glass (Q/E); a yellow wireframe marks a nearby unobstructed sack ahead.", true],
@@ -116,6 +116,7 @@ const CARDS = {
   ],
   skyline: [
     ["violet", "solve", "shock", "Sealed security door", "Violet seal bars across the door. Glass and cryo bounce off: one shock sphere (Q/E) overloads the seal (+600). Out of shock, you can shoulder through it - for 34 integrity.", true],
+    ["violet", "solve", "shock", "Security drones", "HALCYON's drones fly in ahead and sweep your lane with a red scan. When the beam holds still and brightens it has locked on: change lane before it fires. Glass, cryo and gravity glance off the armour - only a shock sphere (Q/E) brings one down (+450).", true],
     ["violet", "solve", "laser", "Laser grid and junction box", "A laser grid across all three lanes, fed by a violet junction box on a pylon just before it. Shock the box and the grid dies (+450) - or jump or slide it."],
     ["glass", "break", "pane", "Glass pane", "Cyan rim means breakable. Shoot it for score, or crash through it and lose 15 integrity."],
     ["glass", "break", "reinforced", "Reinforced glass and doors", "Thicker and greener. The first hit cracks it, the second breaks it. A shock sphere breaks it in one."],
@@ -134,14 +135,14 @@ const CARDS = {
   ],
   roof: [
     ["indigo", "solve", "gravity", "Stranded supplies", "A crate on the window-cleaner's cradle off the west ledge, out of reach. Open a gravity well close to it and it's dragged in over the ledge, spheres and all (+500)."],
-    ["indigo", "solve", "gravity", "Over the edge", "A gravity well by an open ledge drags the patients it catches over it (+350)."],
+    ["indigo", "solve", "gravity", "Over the edge", "Gravity's black hole lifts every patient and scientist in reach and throws them at the nearer open ledge - over it from anywhere but the middle of the roof. A flying one low enough is dragged out of the sky.", true],
     ["hazard", "break", "patient", "Patients", "Climb out of the hatches, stalk, wind up and charge in a straight line. Sidestep one near an open ledge and it goes over."],
     ["hazard", "avoid", "hatch", "Open hatches", "The square holes the patients climb out of go straight down into the building. Step into one and you fall."],
     ["serum", "break", "scientist", "Scientists", "Fire slow orbs from their gadgets - dodge them (Space). Three hits each.", true],
     ["fire", "break", "canister", "Gas canisters", "Red, by the cover. Shoot one and everyone near it goes down - chains into the next. Not too close yourself."],
     ["cyan", "collect", "crate", "Supply drop", "A flare, a crate under a parachute: spheres and a serum. Walk into them or shoot them."],
     ["cyan", "tool", "recharge", "Emergency reserve", "At zero, 2.5 seconds of active play restores one sphere. Walk through a sack without spending it, or select Glass (Q/E) to shoot a supply. Overdrive throws remain free at zero.", true],
-    ["hazard", "avoid", "brute", "The brute", "The last wave's big one: six hits, charges harder (on Hard, the second wave brings one too). Use a canister or the ledge."],
+    ["hazard", "avoid", "brute", "The brute", "The last wave's big one: charges harder, and takes only a third of what a sphere does (on Hard, the second wave brings one too). Throw it off the roof with gravity, or use a canister."],
     ["amber", "collect", "heli", "The helicopter", "Clear the roof and it lands; still fighting when it comes and it hangs off the ledge - jump for the ladder."],
   ],
   multi: [

@@ -135,6 +135,9 @@ export async function run(page, { shots }) {
   await shot("05-on-your-back-the-sky");
   const after = await page.evaluate(() => {
     __t.until(() => __dbg.state === "playing", 600);
+    // (Control back after a cutscene: counted in first, 3, 2, 1 - the world held.)
+    __t.step(2);
+    __t.until(() => !__dbg.countingIn, 200);
     const d0 = __dbg.causewayDistance();
     const lane0 = __dbg.playerX;
     __t.key("KeyD");
@@ -191,6 +194,9 @@ export async function run(page, { shots }) {
     const back = m.hero.position.distanceTo(from) < 1.5 && m.phase === "roof";
     const window = r.state.extractT;
     const stillThere = r.state.ending === "extraction";
+    // (The fall scene was a cutscene: counted back in, 3, 2, 1.)
+    __t.step(2);
+    __t.until(() => !__dbg.countingIn, 200);
     // Now properly.
     m.onKeyDown({ code: "Space", preventDefault() {} });
     __t.until(() => __t.R.running, 60);

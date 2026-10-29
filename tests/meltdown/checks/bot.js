@@ -6,8 +6,9 @@
  * slide, the trigger, and mashing at ducts. It sees what a careful player
  * sees - it tests where its body will be over the next second against the
  * level's own collide() - and aims at glass by projecting it to the screen.
- * The right-tool problems (problems.js) it answers as a player should: a
- * cryo sphere at a fire wall, a full charged shot at the jammed shutter.
+ * The sphere-only obstacles it answers as a player should: a cryo sphere at
+ * a fire wall (the team's: kit.js fireWall), a full charged shot at the
+ * jammed shutter (problems.js).
  *
  * Returns a log of every hit (what, where) and why the run ended.
  *
@@ -27,6 +28,12 @@ export const BOT_SOURCE = `
   const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0, solved: [] };
   /** Each problem's shots: how many, and when the last went (a player throws again if one was blocked). */
   const tries = new Map();
+  // The fire walls (cryo's), as problems: where, what to aim at, whether out.
+  const walls = (g.level._fireWalls ?? []).map((w) => {
+    let target = null;
+    w.group.traverse((o) => { if (!target && o.userData.kind === "firewall") target = o; });
+    return { key: "firewall", distance: w.distance, target, get solved() { return !!w.group.userData.out; } };
+  }).filter((w) => w.target);
   const answeredList = [];
   let t = 0;
   let lastHits = 0;
@@ -99,12 +106,12 @@ export const BOT_SOURCE = `
       // spheres for it, then the right tool from its clear run-up (the last
       // ~20 m: nothing in the line of fire) - again, up to three times, if a
       // patient or a sack stepped into the line and took the shot.
-      const problem = (g.level.problemSet?.list ?? []).find((q) => !q.solved && q.distance - r.distance > 7 && q.distance - r.distance < 60);
+      const problem = [...walls, ...(g.level.problemSet?.list ?? [])].find((q) => !q.solved && q.distance - r.distance > 7 && q.distance - r.distance < 60);
       // Shoot glass, sacks, vials and patients ahead: aim by projecting them.
       let target = null;
       for (const b of g.level.breakables) {
         const d = (b.userData.routeDistance ?? 0) - r.distance;
-        if (!b.visible || d < 6 || d > 34 || b.userData.problem) continue;
+        if (!b.visible || d < 6 || d > 34 || b.userData.problem || b.userData.kind === "firewall") continue;
         if (problem && b.userData.kind !== "sack" && r.balls < 6) continue;
         if (!target || d < target.d) target = { b, d };
       }

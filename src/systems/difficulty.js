@@ -25,20 +25,21 @@
 export const DIFFICULTIES = {
   easy: {
     key: "easy", name: "Easy",
-    blurb: "Slower, fewer obstacles, hits hurt less, spheres come back faster.",
-    speed: 0.88, density: 0.75, damage: 0.65, recharge: 1.6, length: 0.9, checkpoint: true, extras: false,
+    blurb: "Slower, fewer obstacles, hits hurt less, spheres come back faster. A checkpoint per level, back at 75 integrity.",
+    // `checkpointLife`: the integrity a checkpoint restart gives back - once a level.
+    speed: 0.88, density: 0.75, damage: 0.65, recharge: 1.6, length: 0.9, checkpoint: true, checkpointLife: 75, extras: false,
     roof: { waves: 1.3, damage: 0.65, enemySpeed: 0.9, heli: 0.9, lastWave: 3 },
   },
   normal: {
     key: "normal", name: "Normal",
-    blurb: "The escape as designed. One checkpoint per level.",
-    speed: 1, density: 1, damage: 1, recharge: 2.5, length: 1, checkpoint: true, extras: false,
+    blurb: "The escape as designed. One checkpoint per level, back at 50 integrity.",
+    speed: 1, density: 1, damage: 1, recharge: 2.5, length: 1, checkpoint: true, checkpointLife: 50, extras: false,
     roof: { waves: 1, damage: 1, enemySpeed: 1, heli: 1, lastWave: 3 },
   },
   hard: {
     key: "hard", name: "Hard",
-    blurb: "Longer and faster, more obstacles and new ones, hits hurt more, no checkpoints; a fourth wave on the roof.",
-    speed: 1.14, density: 1.35, damage: 1.35, recharge: 3.5, length: 1.3, checkpoint: false, extras: true,
+    blurb: "Longer and faster, more obstacles and new ones, hits hurt more; a checkpoint per level, back at only 25 integrity; a fourth wave on the roof.",
+    speed: 1.14, density: 1.35, damage: 1.35, recharge: 3.5, length: 1.3, checkpoint: true, checkpointLife: 25, extras: true,
     roof: { waves: 0.72, damage: 1.35, enemySpeed: 1.15, heli: 1.4, lastWave: 4 },
   },
 };

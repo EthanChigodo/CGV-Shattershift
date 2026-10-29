@@ -154,6 +154,51 @@ export function loadedAssetNames() {
  * where the source file put its pivot.
  * @returns {Promise<Map<string, {template: THREE.Group, size: THREE.Vector3}>>}
  */
+/**
+ * Takes the pieces of a mesh that touch nothing else (islands: triangles
+ * sharing no corner with the rest) out of it when they are smaller than
+ * `size` (the longest side of their box, in the model's world units).
+ */
+function dropSmallIslands(mesh, size) {
+  const geometry = mesh.geometry, pos = geometry.attributes.position;
+  // (Unindexed: every three vertices a triangle - indexed in order.)
+  if (!geometry.index) geometry.setIndex([...Array(pos.count).keys()]);
+  const index = geometry.index;
+  // Corners by where they are (a model's seams split vertices that touch).
+  const at = new Map(), parent = [];
+  const find = (x) => { while (parent[x] !== x) x = parent[x] = parent[parent[x]]; return x; };
+  const corner = (i) => {
+    const key = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+    if (!at.has(key)) { at.set(key, parent.length); parent.push(parent.length); }
+    return at.get(key);
+  };
+  const ids = new Int32Array(pos.count);
+  for (let i = 0; i < pos.count; i += 1) ids[i] = corner(i);
+  for (let t = 0; t < index.count; t += 3) {
+    const a = find(ids[index.getX(t)]);
+    parent[find(ids[index.getX(t + 1)])] = a;
+    parent[find(ids[index.getX(t + 2)])] = a;
+  }
+  const boxes = new Map(), v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 1) {
+    const root = find(ids[i]);
+    if (!boxes.has(root)) boxes.set(root, new THREE.Box3());
+    boxes.get(root).expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld));
+  }
+  const small = new Set();
+  for (const [root, box] of boxes) {
+    box.getSize(v);
+    if (Math.max(v.x, v.y, v.z) < size) small.add(root);
+  }
+  if (!small.size || small.size === boxes.size) return;
+  const kept = [];
+  for (let t = 0; t < index.count; t += 3) {
+    if (small.has(find(ids[index.getX(t)]))) continue;
+    kept.push(index.getX(t), index.getX(t + 1), index.getX(t + 2));
+  }
+  geometry.setIndex(kept);
+}
+
 export async function loadMeltdownAssets(baseUrl, { onProgress, names } = {}) {
   const loader = new GLTFLoader();
   const wanted = names ?? Object.keys(MELTDOWN_ASSETS);
@@ -224,6 +269,19 @@ async function loadOne(loader, baseUrl, name, file) {
     const strays = [];
     scene.traverse((o) => { if (o !== scene && helpers.test(o.name)) strays.push(o); });
     for (const o of strays) o.removeFromParent();
+  }
+  // The launcher: without the sight - its box, its cable and the little
+  // brackets that held it, every "Material #3" piece - nor the knob and the
+  // two thin discs by the rear ring (Object002, and the grip mesh's small
+  // loose islands). They float beside the tube: the stray squares and
+  // circles of the lecturer's feedback. The tube, its grip, straps and end
+  // rings stay.
+  if (name === "launcher") {
+    const loose = [];
+    scene.traverse((o) => { if (o.isMesh && (o.material?.name === "Material #3" || o.name === "Object002")) loose.push(o); });
+    for (const o of loose) o.removeFromParent();
+    scene.updateMatrixWorld(true);
+    scene.traverse((o) => { if (o.isMesh && o.material?.name === "Material #2") dropSmallIslands(o, 0.4); });
   }
   if (MERGE_BY_MATERIAL.has(name)) {
     try {

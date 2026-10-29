@@ -37,23 +37,17 @@ export class CreditsRoom {
 
   _team() {
     const c = STORY_CREDITS;
-    const people = [...new Set(c.roles.flatMap((r) => r.names).filter((n) => !/whole team/i.test(n)))];
+    const people = c.members;
     const colourOf = (n) => TEAM_COLOURS[people.indexOf(n) % TEAM_COLOURS.length];
-    const person = (n) => people.includes(n)
-      ? `<span class="cr-person" style="--tc:${colourOf(n)}"><i>${initials(n)}</i>${esc(n)}</span>`
-      : `<span class="cr-person all"><i>*</i>${esc(n)}</span>`;
+    const person = (n) => `<span class="cr-person" style="--tc:${colourOf(n)}"><i>${initials(n)}</i>${esc(n)}</span>`;
+    // The group together: who made which part isn't said - the game is the team's.
     return `<div data-st-panel="team">
       <section class="tr-summary cr-hero">
         <div class="cr-mark">FR</div>
-        <div class="tr-sum-text"><b>${esc(GAME_TITLE)}</b><small>A game by ${esc(c.team)} - ${people.length} people, three sectors and a roof.</small>
+        <div class="tr-sum-text"><b>${esc(GAME_TITLE)}</b><small>A game by ${esc(c.team)} - ${people.length} people, three sectors and a roof, made together.</small>
           <div class="tr-chips">${people.map(person).join("")}</div>
         </div>
       </section>
-      <h3 class="tr-group">Who made what</h3>
-      <div class="tr-grid">${c.roles.map((r) => `
-        <article class="tr-card got cr-card" tabindex="0" style="--tc:${colourOf(r.names[0]) ?? "#ff8a42"}">
-          <div class="tr-body"><header><b>${esc(r.role)}</b></header><div class="cr-names">${(r.names.length ? r.names : [c.team]).map(person).join("")}</div></div>
-        </article>`).join("")}</div>
       <h3 class="tr-group">Cast</h3>
       <div class="tr-grid">${c.cast.map(([who, as]) => `
         <article class="tr-card got cr-card" tabindex="0" style="--tc:#5ef0ff">

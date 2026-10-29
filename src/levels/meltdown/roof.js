@@ -163,6 +163,14 @@ const PATIENT = { hp: 2, stalk: 2.3, charge: 10, windup: 0.62, chargeRange: 22, 
 const SCIENTIST = { hp: 3, walk: 2.8, aim: 0.85, orbSpeed: 11, damage: 10 };
 /** The last wave's brute: a bigger subject, slower to wind up, much harder to stop. */
 const BRUTE = { hp: 6, stalk: 2.0, charge: 12, windup: 0.85, chargeRange: 24, damage: 24, notice: 14 };
+/** What a sphere does to the brute: a third (it is thrown off the roof instead - gravity). */
+const BRUTE_ARMOUR = 0.34;
+/**
+ * A gravity sphere's black hole (Enemy.lift): pulled toward it and up off
+ * their feet for `hold` s, then thrown at the nearer open ledge - `throw`
+ * m/s out, `up` m/s up: from anywhere but the middle of the roof, over it.
+ */
+export const LIFT = { hold: 0.85, height: 1.6, throw: 15, up: 6, gravity: 16 };
 /** Gas canisters by the cover: shoot one and everything near it goes down (you too, if you're close). */
 const CANISTERS = [new THREE.Vector3(-12.5, 0, 7.5), new THREE.Vector3(11.5, 0, -6.5), new THREE.Vector3(-7, 0, -6), new THREE.Vector3(5, 0, 13)];
 export const CANISTER_RADIUS = 4.5;
@@ -461,7 +469,8 @@ class Enemy {
   /** Returns true if this hit took them down. */
   hit(power, from) {
     if (!this.alive) return false;
-    this.hp = Math.max(0, this.hp - power);
+    // The brute shrugs spheres off: throw it off the roof (lift) instead.
+    this.hp = Math.max(0, this.hp - power * (this.brute ? BRUTE_ARMOUR : 1));
     this.stagger = 1;
     this.flinch.hit(from, this.position, this.yaw, 0.7 + power * 0.25);
     this._hitFrom = from ? from.clone() : null;
@@ -472,6 +481,77 @@ class Enemy {
     if (this.hp > 0) return false;
     this.die("down");
     return true;
+  }
+
+  /**
+   * A gravity sphere's black hole at `point` (game.js _gravityWell): pulled
+   * in and lifted, then thrown at the nearer open ledge ("lifted", "thrown").
+   * False if they can't be (climbing out, already falling or down).
+   */
+  lift(point) {
+    if (!this.alive || ["emerge", "fall", "down", "lifted", "thrown"].includes(this.state)) return false;
+    this.liftAt = point.clone().setY(0);
+    this.velocity.set(0, 0, 0);
+    this.stagger = 1;
+    this.setState("lifted");
+    return true;
+  }
+
+  /** Lifted by a gravity sphere's black hole, then thrown (lift): both kinds. */
+  updateLift(dt, time) {
+    const rig = this.rig;
+    if (this.state === "lifted") {
+      // In the black hole's pull: drawn to it and up off their feet, turning.
+      const k = Math.min(1, this.t / LIFT.hold);
+      _v.subVectors(this.liftAt, this.position).setY(0);
+      const d = _v.length();
+      if (d > 0.8) this.position.addScaledVector(_v.divideScalar(d), Math.min(d - 0.8, dt * 6));
+      this.position.y += (LIFT.height - this.position.y) * Math.min(1, dt * 5);
+      this.body.rotation.x = -0.6 * k;
+      this.body.rotation.z = Math.sin(this.t * 7) * 0.5 * k;
+      rig?.pose({ clip: ["fall"], dt, reach: 1.3, spread: 0.4, headNod: -0.4, elbow: 0.2, phase: time * 16, stride: 0.4 });
+      if (this.t >= LIFT.hold) {
+        // Flung at the nearer ledge (east or west): from near the middle, away from the hole.
+        const side = Math.abs(this.position.x) > 0.5 ? Math.sign(this.position.x) : this.position.x >= this.liftAt.x ? 1 : -1;
+        this.velocity.set(side * LIFT.throw, LIFT.up, THREE.MathUtils.clamp(this.position.z - this.liftAt.z, -1, 1));
+        this.setState("thrown");
+      }
+      return;
+    }
+    this.velocity.y -= LIFT.gravity * dt;
+    this.position.addScaledVector(this.velocity, dt);
+    this.position.z = THREE.MathUtils.clamp(this.position.z, -WALK_LIMIT, WALK_LIMIT);
+    this.body.rotation.x -= dt * 5;
+    this.body.rotation.z += dt * 2;
+    rig?.pose({ clip: ["fall"], dt, reach: 1.3, spread: 0.4, headNod: -0.5, elbow: 0.2, phase: time * 20, stride: 0.4 });
+    if (Math.abs(this.position.x) > EDGE - 0.1) {
+      // Over the ledge: the fall from here.
+      this.die("fall");
+      this.level.events.emit("enemy-fall", { enemy: this, position: this.position.clone(), thrown: true });
+    } else if (this.position.y <= 0 && this.velocity.y < 0) {
+      // Short of it: down hard on the roof, stunned.
+      this.position.y = 0;
+      this.body.rotation.x = 0;
+      this.body.rotation.z = 0;
+      this.velocity.set(0, 0, 0);
+      this.collide();
+      // (A scientist has no "stunned": a moment's recoil, then on again.)
+      if (this.kind === "scientist") { this.cooldown = 1.2; this.setState("recoil"); }
+      else this.setState("stunned");
+      this.level.events.emit("patient-stunned", { position: this.position.clone() });
+    }
+  }
+
+  /** Over the edge (a charge off the ledge, or thrown): gravity, a tumble, gone. */
+  updateFall(dt, time) {
+    const rig = this.rig;
+    // Over the edge: gravity, a tumble, gone.
+    this.velocity.y -= 22 * dt;
+    this.position.addScaledVector(this.velocity, dt);
+    this.body.rotation.x -= dt * 3.2;
+    this.body.rotation.z += dt * 1.3;
+    rig?.pose({ clip: ["fall"], dt, reach: 1.3, spread: 0.3, headNod: -0.5, elbow: 0.2, phase: time * 20, stride: 0.4 });
+    if (this.position.y < -40) this.removed = true;
   }
 
   die(how) {
@@ -668,16 +748,13 @@ class Patient extends Enemy {
         }
         break;
       }
-      case "fall": {
-        // Over the edge: gravity, a tumble, gone.
-        this.velocity.y -= 22 * dt;
-        this.position.addScaledVector(this.velocity, dt);
-        this.body.rotation.x -= dt * 3.2;
-        this.body.rotation.z += dt * 1.3;
-        rig?.pose({ clip: ["fall"], dt, reach: 1.3, spread: 0.3, headNod: -0.5, elbow: 0.2, phase: time * 20, stride: 0.4 });
-        if (this.position.y < -40) this.removed = true;
+      case "lifted":
+      case "thrown":
+        this.updateLift(dt, time);
         break;
-      }
+      case "fall":
+        this.updateFall(dt, time);
+        break;
       case "down":
         this.updateDown(dt);
         break;
@@ -798,6 +875,13 @@ class Scientist extends Enemy {
         }
         break;
       }
+      case "lifted":
+      case "thrown":
+        this.updateLift(dt, time);
+        break;
+      case "fall":
+        this.updateFall(dt, time);
+        break;
       case "down":
         this.updateDown(dt);
         break;

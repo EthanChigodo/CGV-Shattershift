@@ -5,8 +5,10 @@
  * the least danger in the next 26 m (solids, beams, burning fire, sculpture
  * poles), and throws at the most useful target in range - locks in order,
  * sprinkler bulbs, sphere caches, doors, then glass in its own lane - holding
- * back optional shots when spheres run low. It does not cheat: it uses the
- * same fire() and lane controls as the keyboard and mouse.
+ * back optional shots when spheres run low. A security drone: out of the
+ * lane it has locked on, and a shock sphere at it (the only thing that
+ * downs one). It does not cheat: it uses the same fire() and lane controls
+ * as the keyboard and mouse.
  *
  * The right-tool problems (src/systems/problems.js) it answers as a player
  * should: shock (Q/E) at a sealed door and at a laser grid's junction box,
@@ -40,14 +42,30 @@ window.__bot = async function (opts = {}) {
         if (rec.kind === "sculpture") { danger[0] += 0.5; danger[2] += 0.5; }
         if (rec.kind === "fire" && rec.intensity > 0.2) { const w = (rec.entry.width||3)/2; for (let i=0;i<3;i++) if (Math.abs([-3.2,0,3.2][i]-x) < w+0.5) danger[i] += 6/(gap+1); }
       }
+      // A drone's locked lane (and its bolt still in the air) is the worst place to be.
+      for (const dr of L.drones?.list ?? []) {
+        if (dr.state !== "lock" && !(dr.state === "rest" && L.drones.bolts.length)) continue;
+        for (let i=0;i<3;i++) if (Math.abs([-3.2,0,3.2][i]-dr.lockX) < 1.4) danger[i] += 20;
+      }
       const cur = [-3.2,0,3.2].indexOf([-3.2,0,3.2].reduce((a,b)=>Math.abs(b-d.playerX)<Math.abs(a-d.playerX)?b:a));
       let best = cur; for (let i=0;i<3;i++) if (danger[i] < danger[best] - 0.05) best = i;
       if (best !== cur) d.setLane(best);
+      // A drone: a shock sphere at it (and back to the sphere it had).
+      const drone = (L.drones?.targets() ?? []).find((t) => (claimed.get(t) ?? -1) <= frames);
+      if (drone && frames % 8 === 4 && d.ammo >= 3) {
+        const ndc = drone.getWorldPosition(new T.Vector3()).project(d.camera);
+        if (Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1) {
+          const was = d.arsenal.ball; d.arsenal.select("shock");
+          d.setPointer(ndc.x, ndc.y); d.fire(); shotsFired++; claimed.set(drone, frames + 30);
+          d.arsenal.select(was);
+        }
+      }
       // Shoot: nearest alive target 8-40 m ahead, every ~0.25 s.
       if (frames % 8 === 0 && d.ammo > 0) {
         const cam = d.camera; let target = null, bestGap = 1e9;
         const priority = { lock: 0, junction: 0, sprinkler: 1, vent: 2, cache: 1, door: 1, pane: 3, blade: 3, falling: 2, serum: 2, file: 2, tank: 5 };
         for (const t of L.breakables) {
+          if (t.userData.kind === "drone") continue;
           const p = t.getWorldPosition(new T.Vector3()); const gap = cam.position.z - p.z;
           if (gap < 6 || gap > 40) continue;
           if (t.userData.kind === "lock" && t.userData.order !== L.state.finale.nextLock) continue;
