@@ -50,8 +50,9 @@ export const TOOLS = {
  * a controller), what the wrong tool is told, and the bonus for solving it.
  * `mandatory`: it stands in the way (passable without the tool only at a cost).
  * `refund`: spheres back on a solve - the right tool's cost, so answering a
- * problem never leaves you poorer than walking into it (the Skyline's shock
- * costs three; the Foundry's valve gives its sphere back as a cell does).
+ * problem never leaves you poorer than walking into it (cryo and a charged
+ * shot cost two, shock three; the Foundry's valve gives its sphere back as a
+ * cell does, and the stranded crate bursts into spheres).
  */
 export const PROBLEMS = {
   forge: {
@@ -62,14 +63,14 @@ export const PROBLEMS = {
     solved: "HAMMER JAMMED UP",
   },
   firewall: {
-    level: "labs", tool: "cryo", mandatory: true, bonus: 600,
+    level: "labs", tool: "cryo", mandatory: true, bonus: 600, refund: 2,
     name: "Fire wall",
     hint: "Fire wall: freeze it - cryo (Q/E)",
     needs: "NEEDS CRYO",
     solved: "FIRE WALL OUT",
   },
   shutter: {
-    level: "labs", tool: "charge", mandatory: true, bonus: 700,
+    level: "labs", tool: "charge", mandatory: true, bonus: 700, refund: 2,
     name: "Jammed shutter",
     hint: "Jammed shutter: hold CLICK - a full charged shot blasts it",
     needs: "ONLY DENTS IT // HOLD FOR A CHARGED SHOT",

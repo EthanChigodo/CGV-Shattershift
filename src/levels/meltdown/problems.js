@@ -26,6 +26,10 @@
 
 import * as THREE from "../../three.js";
 import { toolBadge, toolSprite, floorStripes, toolColour, fadeMark, disposeMark } from "../../fx/problem-marks.js";
+import { PROBLEMS } from "../../systems/problems.js";
+
+/** The most spheres a runner holds (game.js MAX_BALLS): a refund doesn't go past it. */
+const MAX_BALLS = 45;
 
 const FLAME_SPOTS = 6;
 const _box = new THREE.Box3();
@@ -503,6 +507,9 @@ export class ProblemPlay {
   _solved(p) {
     const g = this.game;
     this.log.solve(p.key);
+    // The right tool's cost back (problems.js `refund`).
+    const refund = PROBLEMS[p.key]?.refund ?? 0;
+    if (refund) g.runner.balls = Math.max(g.runner.balls, Math.min(MAX_BALLS, g.runner.balls + refund));
     g.sfx?.serumCollected?.();
     g.runner.solved = (g.runner.solved ?? 0) + 1;
   }

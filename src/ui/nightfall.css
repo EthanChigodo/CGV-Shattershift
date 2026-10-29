@@ -642,6 +642,8 @@ body.reduced-motion .ep-fill, body.reduced-motion .ep-you { animation: none; }
 .rr-tags { display: flex; gap: 10px; }
 .rr-tags em { font-style: normal; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
 .rr-levels li.hurt .rr-tags em.d { color: var(--blood); }
+/* Right-tool problems solved there (src/systems/problems.js). */
+.rr-tags em.s { color: var(--ok); }
 .end-side .rr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; gap: 12px 0; }
 .end-side .rr-tile:nth-child(3) { border-left: 0; padding-left: 0; }
 .end-side .rr-tile b { font-size: 26px; }

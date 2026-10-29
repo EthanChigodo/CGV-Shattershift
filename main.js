@@ -3600,7 +3600,7 @@ function runReportHTML(r) {
       <span class="rr-name"><b>${esc(place ?? sector)}</b><small>${place ? esc(sector) : ""}</small></span>
       <span class="rr-bar"><i style="width:${((t / longest) * 100).toFixed(1)}%"></i></span>
       <span class="rr-time">${hms(t)}</span>
-      <span class="rr-tags"><em class="d">${deaths} death${deaths === 1 ? "" : "s"}</em><em>${r.hits[key] ?? 0} hits</em></span>
+      <span class="rr-tags"><em class="d">${deaths} death${deaths === 1 ? "" : "s"}</em><em>${r.hits[key] ?? 0} hits</em>${r.solved?.[key] ? `<em class="s">${r.solved[key]} solved</em>` : ""}</span>
     </li>`;
   }).join("");
   const causes = new Map();
