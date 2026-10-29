@@ -37,6 +37,7 @@ import { unlockedKeys } from "../../figure/kits.js";
 import { BALLS, BALL_ORDER } from "../../systems/arsenal.js";
 import { SPHERE_FLIGHT, SPHERE_GEOMETRY, sphereMaterial, sphereHalo, launchVelocity, flySphere, floorSphere, touchSphere } from "../../systems/spheres.js";
 import { SphereImpactFX } from "../../fx/sphere-impact.js";
+import { ElectricArcs } from "../../fx/electric.js";
 
 const SKINS = Object.keys(SKIN_TONES);
 const HEADS = Object.keys(HEADWEAR);
@@ -46,6 +47,16 @@ const WARN_BEHIND = 34;
 const HP = 100;
 const AMMO_MAX = 15;
 const AMMO_START = 10;
+/**
+ * The special spheres: so many of each a runner has for the whole race - not
+ * paid for out of the spheres (those are glass's), and not got back.
+ */
+export const RACE_SPECIALS = { cryo: 3, shock: 3, gravity: 3 };
+/**
+ * Caught in a rival's burst: frozen in ice (`frozen` s, at `slow` of the
+ * pace), or shocked - violet arcs over them, stumbling (`shocked` s).
+ */
+const CAUGHT = { frozen: 1.3, slow: 0.3, shocked: 1.2 };
 const REGEN = 2;
 const JUMP = 7.4;
 const GRAVITY = 19;
@@ -251,6 +262,11 @@ export class Race {
       this.balls.push({ mesh, halo: null, velocity: new THREE.Vector3(), gravity: 0, life: 0, ball: "glass", touched: false, bounces: 0, owner: null, active: false });
     }
     this.impact = new SphereImpactFX(this.scene);
+    // A shocked runner's arcs (the drones' violet, fx/electric.js), and the ice a frozen one is in.
+    this.electric = new ElectricArcs(this.scene);
+    this.iceGeometry = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
+    this.iceGeometry.computeVertexNormals();
+    this.iceMaterial = new THREE.MeshStandardMaterial({ color: 0xcff6ff, emissive: 0x3aa8d8, emissiveIntensity: 0.45, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.5, depthWrite: false, flatShading: true });
     for (const c of this.cameras) this.scene.add(c);
     this.players.forEach((p, i) => this._place(p, i));
     for (const [i, p] of this.players.entries()) this._cameraFollow(p, this.cameras[i], 1, true);
@@ -271,6 +287,11 @@ export class Race {
     for (const p of this.players) this._removeAvatar(p);
     this.impact?.dispose?.();
     this.impact = null;
+    this.electric?.dispose();
+    this.electric = null;
+    this.iceGeometry?.dispose();
+    this.iceMaterial?.dispose();
+    this.iceGeometry = this.iceMaterial = null;
     if (this.course) this.course.dispose();
     this.course = null;
     this.scene = null;
@@ -305,10 +326,16 @@ export class Race {
     // Their launcher on the shoulder, in their finish - or arms free to throw.
     p.rig = p.launcher ? buildLauncher(this.assets?.get("launcher"), p.launcherSkin) : null;
     if (p.rig) mountLauncher(a, p.rig);
+    p.ice = new THREE.Mesh(this.iceGeometry, this.iceMaterial);
+    p.ice.position.y = 0.95;
+    p.ice.scale.set(0.62, 1.08, 0.56);
+    p.ice.visible = false;
+    a.root.add(p.ice);
     Object.assign(p, {
       distance: c.start - i * 0.01, lane: i === 0 ? 0 : 2, lateral: LANES[i === 0 ? 0 : 2], latVel: 0,
-      height: 0, vy: 0, slide: 0, ground: 0, hp: HP, invuln: 0, stumble: 0, shake: 0,
+      height: 0, vy: 0, slide: 0, ground: 0, hp: HP, invuln: 0, stumble: 0, shake: 0, frozen: 0, shocked: 0,
       ammo: AMMO_START, regen: 0, throwCd: 0, aim: { ...AIM_HOME }, ball: "glass", out: null, finished: false, time: 0,
+      specials: { ...RACE_SPECIALS },
       fire: c.fire ? c.start - 40 : null,
       stats: { hits: 0, thrown: 0, broken: 0, best: 0 },
       prev: { lx: 0, ly: 0, a: true, b: true, rt: true, start: true, left: true, right: true, up: true, down: true, lb: true, rb: true },
@@ -441,6 +468,13 @@ export class Race {
     for (const p of this.players) this._run(p, dt);
     this._updateBalls(dt);
     this.impact?.update(dt);
+    // This frame's arcs over anyone shocked, and the ice on anyone frozen.
+    this.electric.begin();
+    for (const p of this.players) {
+      if (p.ice) p.ice.visible = p.frozen > 0 && !p.out;
+      if (p.shocked > 0 && !p.out && p.avatar) this.electric.body(p.avatar.root.position);
+    }
+    this.electric.end(dt);
     this._rules();
     this._world(dt);
   }
@@ -467,6 +501,8 @@ export class Race {
     const course = this.course;
     p.invuln = Math.max(0, p.invuln - dt);
     p.stumble = Math.max(0, p.stumble - dt);
+    p.frozen = Math.max(0, p.frozen - dt);
+    p.shocked = Math.max(0, p.shocked - dt);
     p.shake = Math.max(0, p.shake - dt * 2.5);
     p.throwCd = Math.max(0, p.throwCd - dt);
     if (p.out || p.finished) return;
@@ -497,7 +533,7 @@ export class Race {
       if (p.regen >= this.tier.regen) { p.regen = 0; p.ammo += 1; }
     }
     // Forward, sideways, up and down.
-    const pace = course.speedAt(p.distance) * (p.stumble > 0 ? 0.45 : 1);
+    const pace = course.speedAt(p.distance) * (p.frozen > 0 ? CAUGHT.slow : p.stumble > 0 ? 0.45 : 1);
     p.distance += pace * dt;
     const want = LANES[p.lane];
     const prevLat = p.lateral;
@@ -630,13 +666,20 @@ export class Race {
   _throw(p) {
     const def = BALLS[p.ball];
     if (p.throwCd > 0) return;
-    if (p.ammo < def.cost) {
+    // A special sphere: from the race's stock of it (RACE_SPECIALS); glass, from the spheres.
+    const special = def.key in RACE_SPECIALS;
+    if (special && p.specials[def.key] <= 0) {
+      this.ui.flash(p, `NO ${def.name.toUpperCase()} LEFT`);
+      return;
+    }
+    if (!special && p.ammo < def.cost) {
       this.ui.flash(p, p.ammo < 1 ? "NO SPHERES" : `${def.name.toUpperCase()} NEEDS ${def.cost}`);
       return;
     }
     const b = this.balls.find((x) => !x.active);
     if (!b) return;
-    p.ammo -= def.cost;
+    if (special) p.specials[def.key] -= 1;
+    else p.ammo -= def.cost;
     p.stats.thrown += 1;
     const hand = !p.rig;
     const speed = def.speed * (hand ? SPHERE_FLIGHT.handSpeed : 1);
@@ -755,8 +798,10 @@ export class Race {
   /**
    * Cryo, shock and gravity, where they land (arsenal.js): cryo and shock
    * break everything breakable in reach; gravity drags in the sphere sacks
-   * for its thrower. The rival, caught in it: frozen (slowed), shocked
-   * (hurt), or pulled in (stumbles, into its lane).
+   * for its thrower; cryo puts out the fires in reach (the course's own:
+   * the Labs' fire walls and vents, the Skyline's fires). The rival, caught
+   * in it: frozen in ice (slowed right down), shocked (hurt, stumbling in
+   * violet arcs), or pulled in (stumbles, into its lane).
    */
   _detonate(b, point) {
     const def = BALLS[b.ball];
@@ -773,12 +818,21 @@ export class Race {
       caught.push([m, _w.clone()]);
     }
     for (const [m, at] of caught) this._break(b, m, at);
+    const out = this.course.special?.(b.ball, point, reach) ?? 0;
+    if (out) this.ui.flash(b.owner, out > 1 ? `${out} FIRES OUT` : "FIRE OUT");
     for (const p of this.players) {
       if (p.out || !p.avatar) continue;
       if (Math.hypot(p.pos.x - point.x, p.pos.z - point.z) > reach * 0.6) continue;
       if (p === b.owner && b.ball !== "shock") continue;
-      if (b.ball === "cryo") { this._hurt(p, 4, "FROZEN"); p.stumble = Math.max(p.stumble, 1.3); }
-      else if (b.ball === "shock") this._hurt(p, p === b.owner ? 6 : 14, "SHOCKED");
+      if (b.ball === "cryo") {
+        this._hurt(p, 4, "FROZEN");
+        p.frozen = Math.max(p.frozen, CAUGHT.frozen);
+        p.stumble = Math.max(p.stumble, CAUGHT.frozen);
+      } else if (b.ball === "shock") {
+        this._hurt(p, p === b.owner ? 6 : 14, "SHOCKED");
+        p.shocked = Math.max(p.shocked, CAUGHT.shocked);
+        p.stumble = Math.max(p.stumble, CAUGHT.shocked * 0.8);
+      }
       else if (b.ball === "gravity") {
         p.stumble = Math.max(p.stumble, 1);
         p.lane = LANES.reduce((best, x, i) => (Math.abs(x - point.x) < Math.abs(LANES[best] - point.x) ? i : best), p.lane);

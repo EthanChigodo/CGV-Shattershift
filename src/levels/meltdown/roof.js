@@ -61,6 +61,7 @@ import { CityWar } from "./war.js";
 import { createPropKit } from "../../story/stages/props.js";
 import { buildHatchGuards } from "./hatch-guard.js";
 import { compileReady } from "../../systems/warm-up.js";
+import { ElectricArcs } from "../../fx/electric.js";
 
 /** Half-size of the roof. Parapets at z = +/-EDGE; open ledges at x = +/-EDGE. */
 export const EDGE = 16;
@@ -164,6 +165,30 @@ const SCIENTIST = { hp: 3, walk: 2.8, aim: 0.85, orbSpeed: 11, damage: 10 };
 const BRUTE = { hp: 6, stalk: 2.0, charge: 12, windup: 0.85, chargeRange: 24, damage: 24, notice: 14 };
 /** What a sphere does to the brute: a third (it is thrown off the roof instead - gravity). */
 const BRUTE_ARMOUR = 0.34;
+/**
+ * A cryo sphere's burst (RoofLevel.freeze): frozen in ice for `seconds` (the
+ * brute shakes it off in half; a full charge holds them `charged` times as
+ * long), and a sphere into a frozen one hits it `shatter` times as hard -
+ * it shatters.
+ */
+export const FREEZE = { seconds: 3.2, charged: 1.75, shatter: 3 };
+/**
+ * A shock sphere's burst (RoofLevel.shock): stunned in purple arcs for
+ * `stun` s (the brute for 60 %), and the charge jumps on to the nearest one
+ * within `jump` m, `delay` s later - up to `hops` jumps from each. Charged
+ * (0..1), all of it grows toward `full`: longer, further, more jumps - and
+ * thicker, brighter bolts.
+ */
+export const SHOCK = { stun: 1.8, jump: 5, delay: 0.14, hops: 4, full: { stun: 3.2, jump: 8, hops: 8 } };
+/** What a shock of charge `power` (0..1) does: the stun, the jump's reach, the jumps. */
+export function shockAt(power = 0) {
+  const p = THREE.MathUtils.clamp(power, 0, 1);
+  return {
+    stun: THREE.MathUtils.lerp(SHOCK.stun, SHOCK.full.stun, p),
+    jump: THREE.MathUtils.lerp(SHOCK.jump, SHOCK.full.jump, p),
+    hops: Math.round(THREE.MathUtils.lerp(SHOCK.hops, SHOCK.full.hops, p)),
+  };
+}
 /**
  * A gravity sphere's black hole (Enemy.lift): pulled toward it and up off
  * their feet for `hold` s, then thrown at the nearer open ledge - `throw`
@@ -417,6 +442,9 @@ class Enemy {
     this.state = "idle";
     this.t = 0;
     this.stagger = 0;
+    /** Seconds left frozen in ice (cryo), and stunned in arcs (shock): updateHold. */
+    this.iced = 0;
+    this.shocked = 0;
     this.alive = true;
     this.removed = false;
     this.rig = null;
@@ -468,8 +496,10 @@ class Enemy {
   /** Returns true if this hit took them down. */
   hit(power, from) {
     if (!this.alive) return false;
+    // Frozen: the ice takes the blow with them - they shatter.
+    const shatter = this.iced > 0;
     // The brute shrugs spheres off: throw it off the roof (lift) instead.
-    this.hp = Math.max(0, this.hp - power * (this.brute ? BRUTE_ARMOUR : 1));
+    this.hp = Math.max(0, this.hp - power * (shatter ? FREEZE.shatter : 1) * (this.brute ? BRUTE_ARMOUR : 1));
     this.stagger = 1;
     this.flinch.hit(from, this.position, this.yaw, 0.7 + power * 0.25);
     this._hitFrom = from ? from.clone() : null;
@@ -479,7 +509,104 @@ class Enemy {
     }
     if (this.hp > 0) return false;
     this.die("down");
+    if (shatter) {
+      // In pieces of ice (game.js "enemy-shatter"), not burnt to ash.
+      this._shattered = true;
+      this.body.visible = false;
+      this.level.events.emit("enemy-shatter", { enemy: this, position: this.position.clone().setY(this.position.y + 1) });
+    }
     return true;
+  }
+
+  /** Not to be held in ice or a shock: being thrown, falling, down. (Climbing out, they can - frozen half out.) */
+  get holdable() {
+    return this.alive && !["fall", "down", "lifted", "thrown"].includes(this.state);
+  }
+
+  /**
+   * A cryo sphere's burst (RoofLevel.freeze): frozen in a block of ice for
+   * `seconds` (the brute in half) - no step, no charge, no shot.
+   */
+  freeze(seconds) {
+    if (!this.holdable) return false;
+    this.iced = Math.max(this.iced, seconds * (this.brute ? 0.5 : 1));
+    this.velocity.set(0, 0, 0);
+    if (!this.ice) {
+      this.ice = new THREE.Mesh(this.level.holdFX.iceGeometry, this.level.holdFX.ice);
+      this.ice.position.y = 0.95;
+      this.ice.renderOrder = 4;
+    }
+    this.ice.scale.set(0.62, 1.08, 0.56);
+    this.ice.rotation.y = Math.random() * Math.PI * 2;
+    this.root.add(this.ice);
+    if (this.glowMaterial) this.glowMaterial.opacity = 0;
+    return true;
+  }
+
+  /**
+   * A shock (RoofLevel.shock): the Skyline drones' purple arcs crawling
+   * over them - more, and thicker, the more charge it carries (`power`
+   * 0..1) - and stunned, twitching, for `seconds` (the brute 60 %).
+   */
+  electrify(seconds, power = 0) {
+    if (!this.holdable) return false;
+    // (Already in a shock: the stronger of the two.)
+    this.shockPower = Math.max(this.shocked > 0 ? this.shockPower ?? 0 : 0, power);
+    this.shocked = Math.max(this.shocked, seconds * (this.brute ? 0.6 : 1));
+    this.stagger = 1;
+    if (this.glowMaterial) this.glowMaterial.opacity = 0;
+    return true;
+  }
+
+  /**
+   * Held in ice or a shock: true while they are (their update does nothing
+   * else). Let go, they carry on (`_released`).
+   */
+  updateHold(dt) {
+    if (!this.iced && !this.shocked) return false;
+    if (!this.holdable) {
+      this._endHold();
+      return false;
+    }
+    if (this.iced > 0) {
+      this.iced = Math.max(0, this.iced - dt);
+      // The last half second: the ice shivering as it cracks.
+      if (this.iced < 0.5) this.ice.scale.x = 0.62 + (Math.random() - 0.5) * 0.03;
+      if (this.iced === 0) {
+        this.ice.removeFromParent();
+        this.level.events.emit("enemy-thaw", { position: this.position.clone().setY(this.position.y + 1) });
+      }
+    }
+    if (this.shocked > 0) {
+      this.shocked = Math.max(0, this.shocked - dt);
+      // In the ice there's no twitching.
+      if (!this.iced) {
+        this.body.position.x = (Math.random() - 0.5) * 0.07;
+        this.rig?.pose({ clip: ["hit", "idle"], once: true, dt, lean: -0.15, headNod: 0.5, headTilt: (Math.random() - 0.5) * 1.2, reach: 0.4 + Math.random() * 0.5, elbow: 0.9 });
+      }
+      if (this.shocked === 0) {
+        this.shockPower = 0;
+        this.body.position.x = 0;
+      }
+    }
+    if (this.iced || this.shocked) return true;
+    this._released();
+    return false;
+  }
+
+  /** Out of the ice or the shock (each kind's own). */
+  _released() {}
+
+  _endHold() {
+    this.iced = this.shocked = 0;
+    this.ice?.removeFromParent();
+    this.shockPower = 0;
+    this.body.position.x = 0;
+  }
+
+  /** This frame's arcs over them (fx/electric.js): more, longer and thicker, the more charge the shock carried. */
+  drawArcs(level) {
+    level.electric.body(this.position, { power: this.shockPower ?? 0, scale: this.root.scale.x });
   }
 
   /**
@@ -554,6 +681,7 @@ class Enemy {
   }
 
   die(how) {
+    this._endHold();
     this.alive = false;
     this.hurt.userData.alive = false;
     this.state = how;
@@ -573,6 +701,11 @@ class Enemy {
    * a half (ashify(), the "enemy-ash" event).
    */
   updateDown(dt) {
+    // Shattered in the ice: nothing left to burn.
+    if (this._shattered) {
+      this.removed = true;
+      return;
+    }
     const t = this.t;
     if (!this._ash) {
       this._ash = this.model ? ashify(this.model, 1.9 * this.root.scale.y) : { uniforms: null, dispose() {} };
@@ -637,6 +770,7 @@ class Patient extends Enemy {
   }
 
   update(dt, time, ctx) {
+    if (this.updateHold(dt)) return;
     this.t += dt;
     this.stagger = Math.max(0, this.stagger - dt * 2.5);
     this.cooldown = Math.max(0, this.cooldown - dt);
@@ -771,6 +905,11 @@ class Patient extends Enemy {
     this.state = state;
     this.t = 0;
   }
+
+  /** Out of the ice or the shock: a wind-up or a charge it was in is spent. */
+  _released() {
+    if (this.state === "windup" || this.state === "charge") this.setState("recover");
+  }
 }
 
 class Scientist extends Enemy {
@@ -812,6 +951,7 @@ class Scientist extends Enemy {
   }
 
   update(dt, time, ctx) {
+    if (this.updateHold(dt)) return;
     this.t += dt;
     this.stagger = Math.max(0, this.stagger - dt * 2.5);
     this.cooldown = Math.max(0, this.cooldown - dt);
@@ -904,6 +1044,11 @@ class Scientist extends Enemy {
     this.state = state;
     this.t = 0;
   }
+
+  /** Out of the ice or the shock: the shot it was lining up starts over. */
+  _released() {
+    if (this.state === "aim") this.t = 0;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -947,6 +1092,16 @@ export class RoofLevel {
     this.kit = createMeltdownKit({ fire: this.fire });
     this.owned = { materials: [], textures: [], geometries: [] };
     this.random = rng(seed + 11);
+    // Cryo's ice and shock's arcs on the roof's people (Enemy.freeze, Enemy.electrify).
+    const iceGeometry = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
+    iceGeometry.computeVertexNormals();
+    this.owned.geometries.push(iceGeometry);
+    this.holdFX = {
+      iceGeometry,
+      ice: this._track(new THREE.MeshStandardMaterial({ color: 0xcff6ff, emissive: 0x3aa8d8, emissiveIntensity: 0.45, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.5, depthWrite: false, flatShading: true })),
+    };
+    // The shock's arcs and bolts: glowing violet strands (fx/electric.js).
+    this.electric = new ElectricArcs(this.groups.enemies);
 
     /** Box3s the player and enemies cannot pass through. */
     this.cover = [];
@@ -955,7 +1110,18 @@ export class RoofLevel {
     /** Hurtboxes and sacks. */
     this.breakables = [];
     this.enemies = [];
+    /**
+     * The winged ones, as cryo and shock see them (flying-zombies.js
+     * targets): the host sets it; none without one.
+     */
+    this.airborne = () => [];
     this._ticking = [];
+    /** The shock's charge on its way to the next one (shock). */
+    this._jumps = [];
+    // Hidden, so prewarm compiles the ice with everything else (not mid-fight).
+    const warmIce = new THREE.Mesh(iceGeometry, this.holdFX.ice);
+    warmIce.visible = false;
+    this.groups.enemies.add(warmIce);
 
     this.state = {
       time: 0,
@@ -1897,6 +2063,94 @@ export class RoofLevel {
     return this.enemies.filter((e) => e.alive).length;
   }
 
+  /**
+   * In a burst of `radius` m at `point`: any of the body inside it, across
+   * the roof (and not a burst high over their heads). A winged one: as a
+   * gravity sphere reaches them - over the burst, up to 12 m above it.
+   */
+  _near(enemy, point, radius) {
+    const across = Math.hypot(enemy.position.x - point.x, enemy.position.z - point.z);
+    const above = enemy.position.y - point.y;
+    if (enemy.flying) return across <= radius + 3 && above <= 12 && above > -2;
+    return across <= radius + 0.45 * enemy.root.scale.x && -above < radius;
+  }
+
+  /** Where a bolt meets them: a body's feet (its chest is 1.2 m up); a winged one's middle, less that. */
+  _feet(enemy) {
+    return enemy.flying ? enemy.position.clone().setY(enemy.position.y - 1.2) : enemy.position.clone();
+  }
+
+  /**
+   * A cryo sphere's burst: everyone in its blast frozen in ice
+   * (Enemy.freeze) - for longer the more it was charged (`power` 0..1).
+   * Returns how many.
+   */
+  freeze(point, radius, power = 0) {
+    const seconds = FREEZE.seconds * THREE.MathUtils.lerp(1, FREEZE.charged, THREE.MathUtils.clamp(power, 0, 1));
+    let count = 0;
+    for (const e of [...this.enemies, ...this.airborne()]) if (this._near(e, point, radius) && e.freeze(seconds)) count += 1;
+    if (count) this.events.emit("enemies-frozen", { count, position: point.clone() });
+    return count;
+  }
+
+  /**
+   * A shock sphere's burst: everyone in reach electrified (Enemy.electrify)
+   * - and the charge jumps on, from each of them (the ones the burst killed
+   * too) to the nearest one it hasn't been through, and on from there. How
+   * long, how far and how many jumps grow with its charge (`power` 0..1,
+   * shockAt). Returns how many it reached at once.
+   */
+  shock(point, radius, power = 0) {
+    const at = shockAt(power);
+    const visited = new Set();
+    for (const e of [...this.enemies, ...this.airborne()]) {
+      if (e.removed || !this._near(e, point, radius)) continue;
+      visited.add(e);
+      e.electrify(at.stun, power);
+      this._jumps.push({ at: this._feet(e), hops: at.hops, visited, t: SHOCK.delay, power });
+    }
+    if (visited.size) this.events.emit("enemies-shocked", { count: visited.size, position: point.clone(), power });
+    return visited.size;
+  }
+
+  _updateJumps(dt) {
+    for (let i = this._jumps.length - 1; i >= 0; i -= 1) {
+      const jump = this._jumps[i];
+      jump.t -= dt;
+      if (jump.t > 0) continue;
+      this._jumps.splice(i, 1);
+      const reach = shockAt(jump.power);
+      let next = null;
+      let best = reach.jump;
+      for (const e of [...this.enemies, ...this.airborne()]) {
+        if (jump.visited.has(e) || !e.holdable) continue;
+        // Chest to chest (a winged one's middle): one overhead is a long way up.
+        const d = Math.hypot(e.position.x - jump.at.x, (e.flying ? e.position.y : e.position.y + 1.2) - (jump.at.y + 1.2), e.position.z - jump.at.z);
+        if (d < best) {
+          next = e;
+          best = d;
+        }
+      }
+      if (!next) continue;
+      jump.visited.add(next);
+      next.electrify(reach.stun, jump.power);
+      const feet = this._feet(next);
+      this._bolt(jump.at, feet, jump.power);
+      this.events.emit("shock-jump", { position: feet.clone().setY(feet.y + 1.2), power: jump.power });
+      if (jump.hops > 1) this._jumps.push({ at: feet, hops: jump.hops - 1, visited: jump.visited, t: SHOCK.delay, power: jump.power });
+    }
+  }
+
+  /** A bolt between two of them, chest high - thicker the more charge it carries. */
+  _bolt(from, to, power = 0) {
+    this.electric.bolt(_v.copy(from).setY(from.y + 1.2), _w.copy(to).setY(to.y + 1.2), power);
+  }
+
+  /** One glowing segment from `a` to `b` (the winged ones' arcs: flying-zombies.js). */
+  strand(a, b, width) {
+    this.electric.strand(a, b, width);
+  }
+
   /* ---------------- Orbs ---------------- */
 
   fireOrb(from, to) {
@@ -2089,6 +2343,12 @@ export class RoofLevel {
       }
       if (enemy.removed) enemy.root.visible = false;
     }
+    this._updateJumps(dt);
+    // This frame's strands: every shocked body's arcs, every bolt.
+    this.electric.begin();
+    for (const enemy of this.enemies) if (enemy.alive && enemy.shocked > 0) enemy.drawArcs(this);
+    for (const flyer of this.airborne()) if (flyer.shocked > 0) flyer.drawArcs(this);
+    this.electric.end(dt);
     this._updateOrbs(dt, ctx);
     this._updateChaos(dt, time, ctx);
     for (const piece of this._ticking) piece.userData.tick?.(dt, time);
@@ -2801,6 +3061,7 @@ export class RoofLevel {
   dispose() {
     this.weather?.dispose();
     this.weather = null;
+    this.electric.dispose();
     this.root.traverse((o) => {
       if (o.userData?.disposeGeometry) o.userData.disposeGeometry.dispose();
     });

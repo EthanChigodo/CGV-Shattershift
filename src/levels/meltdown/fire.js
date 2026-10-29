@@ -260,9 +260,16 @@ export function createFire(materials, { width = 2, depth = 2, height = 2.2, coun
       color: 0xff6a1c,
       base: 8,
       distance: 12 + width * 1.5,
-      intensityAt: (time) => 5 + Math.sin(time * 11 + phase) * 1.6 + Math.sin(time * 23 + phase) * 0.9 + width * 0.8,
+      intensityAt: (time) => (group.userData.out ? 0 : 5 + Math.sin(time * 11 + phase) * 1.6 + Math.sin(time * 23 + phase) * 0.9 + width * 0.8),
     };
   }
+
+  // Put out (a cryo sphere: index.js putOutFires): the flames and their
+  // light go; the smoke stays a while, smouldering.
+  group.userData.extinguish = () => {
+    group.userData.out = true;
+    flames.visible = false;
+  };
 
   return group;
 }

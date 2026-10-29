@@ -8,6 +8,7 @@
  *
  *   const wheel = new SphereWheel();
  *   wheel.update({ ball: "cryo", spheres: 12, cost: 2, visible: true });
+ *   wheel.update({ ball: "cryo", spheres: 2, cost: 1, note: "2 OF 3 LEFT" });   // the race's specials
  *   wheel.pulse();   // a switch: the medallion pops
  */
 
@@ -74,7 +75,7 @@ export class SphereWheel {
   }
 
   /** Each frame: the sphere in use, how many you have, what the next one costs. */
-  update({ ball = "glass", spheres = 0, cost = 1, visible = true, allowed = null }) {
+  update({ ball = "glass", spheres = 0, cost = 1, visible = true, allowed = null, note = null }) {
     const s = this.state;
     // The types not earned yet in the story (progression.js): dimmed, locked.
     const lockKey = allowed ? [...allowed].join() : "";
@@ -100,10 +101,11 @@ export class SphereWheel {
       s.spheres = spheres;
       this.count.textContent = String(Math.max(0, Math.floor(spheres)));
     }
-    if (cost !== s.cost || spheres < cost !== s.short) {
+    if (cost !== s.cost || spheres < cost !== s.short || note !== s.note) {
       s.cost = cost;
       s.short = spheres < cost;
-      this.costEl.textContent = cost === 0 ? "FREE" : `${cost} PER SHOT`;
+      s.note = note;
+      this.costEl.textContent = note ?? (cost === 0 ? "FREE" : `${cost} PER SHOT`);
       this.root.classList.toggle("short", s.short);
     }
   }

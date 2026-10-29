@@ -845,6 +845,14 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     }
 
     group.userData.tick = (dt, time) => {
+      // Put out: the grate frosted over, and it never erupts again.
+      if (group.userData.out) {
+        grateMat.emissiveIntensity = 0.3;
+        ventFire.uniforms.uHeightScale.value = 0;
+        for (const column of columns) column.visible = false;
+        for (const hit of hits) hit.userData.disabled = true;
+        return;
+      }
       const cycle = (((time + phase) % period) + period) % period / period;
       let burst = 0;
       if (cycle < duty) burst = THREE.MathUtils.clamp(Math.min(cycle / 0.05, (duty - cycle) / 0.08), 0, 1);
@@ -857,6 +865,14 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     };
     group.userData.tick(0, 0);
     group.userData.hazardMeshes = hits;
+    // A cryo sphere in reach of any column (index.js putOutFires) puts the whole vent out.
+    group.userData.firePoints = columns;
+    group.userData.extinguish = () => {
+      group.userData.out = true;
+      for (const column of columns) column.traverse((o) => o !== column && o.userData.extinguish?.());
+      grateMat.emissive.setHex(0x7fe9ff);
+      group.userData.tick(0, 0);
+    };
     return group;
   }
 

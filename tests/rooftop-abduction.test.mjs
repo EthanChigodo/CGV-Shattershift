@@ -24,6 +24,7 @@ function harness(key='normal', hz=60) {
   const template=new THREE.Group(); template.userData.character={}; template.add(new THREE.Mesh(new THREE.BoxGeometry(.8,1.8,.5)));
   const handL=new THREE.Bone(),handR=new THREE.Bone();handL.name='handL';handR.name='handR';template.add(handL,handR);
   const roof={assets:new Map([['patient',{template}]]),state:{ending:null},cutscene:null,breakables:[],enemies:[],solids:[],cover:[],
+    holdFX:{iceGeometry:new THREE.IcosahedronGeometry(1,1),ice:new THREE.MeshBasicMaterial()},
     blocked:(p,r)=>p.x > 2-r && p.x < 4+r && p.z > 2-r && p.z < 4+r,
     groundAt:p=>Math.abs(p.x)>16||Math.abs(p.z)>16||(Math.abs(p.x-10)<.6&&Math.abs(p.z)<.6)?null:0};
   const ui={root:{hidden:true},show(){this.root.hidden=false;},hide(){this.root.hidden=true;},showReaction(s){this.spec=s;},updateReaction(s){this.progress=s;},hideReaction:noop,endReaction:noop};
@@ -35,6 +36,7 @@ function harness(key='normal', hz=60) {
     launcher:{rig:weapon,heatMaterials:[],recoil:0},runner:{alive:true,vitality:100,balls:10,invulnerable:0,shots:0},
     arsenal:{level:()=>0},held:new Set(),charge:{cancel:noop},hud:{toast:noop,hideBanner:noop,setPrompt:noop},ammoHint:{hide:noop},
     audio:new Proxy({},{get:(_,key)=>key === 'ctx' ? null : noop}),_patientSound:noop,
+    _chunks(at){this.chunked=(this.chunked??0)+1;},
     _roofSummary(won,title,extra){this.result={won,title,extra};this.summaryCount=(this.summaryCount??0)+1;this.phase='over';}
   });
   const layer={ui,reactions,stopTalk:noop,player:{active:false}};
@@ -276,3 +278,44 @@ test('capture Game Over is timed from fly-away and live flight continues afterwa
   assert.equal(h.f.state,'sky');assert.ok(h.g.hero.position.y>player.y);assert.ok(!carrier.equals(h.f.attacker.root.position));
   assert.ok(h.g.camera.position.equals(camera));assert.equal(h.g.summaryCount,1);h.f.dispose();
 });
+
+test('cryo: a frozen winged one drops out of the sky and shatters on the roof - its swoop called off',()=>{
+  const h=harness('normal');const {f,g}=h;
+  const a=h.attack();a.root.position.set(4,8,-4);
+  const hold=f.targets.find(t=>t.position===a.root.position);
+  assert.ok(hold.holdable);assert.ok(hold.freeze());
+  assert.equal(a.state,'frozen');assert.equal(f.attacker,null);assert.equal(f.state,'idle');assert.equal(f.marker.visible,false);
+  assert.equal(a.ice.parent,a.root,'in a block of ice');
+  const flap=a.wings[0].rotation.y;h.step(10);assert.equal(a.wings[0].rotation.y,flap,'its wings locked in the ice');
+  h.until(()=>!a.active,120);
+  assert.ok(g.chunked>0,'in pieces of ice where it landed');assert.equal(a.ice.parent,null);
+  assert.equal(hold.freeze(),false,'gone: nothing left to freeze');f.dispose();
+});
+
+test('cryo: one frozen over the open side falls off the building without landing',()=>{
+  const h=harness('normal');const {f,g}=h;
+  const a=f._spawn();a.root.position.set(20,8,0);
+  assert.ok(f.targets[0].freeze());h.until(()=>!a.active,240);
+  assert.equal(g.chunked??0,0);f.dispose();
+});
+
+test('shock: wings seized, it drops and twitches, its swoop called off - then flies back up',()=>{
+  const h=harness('normal');const {f}=h;
+  const a=h.attack();a.root.position.set(4,8,-4);
+  const hold=f.targets[0];
+  assert.ok(hold.electrify(1.2,0));
+  assert.equal(a.state,'shocked');assert.equal(f.attacker,null);assert.ok(hold.shocked>0);
+  h.step(90);
+  assert.ok(a.root.position.y<8,'it dropped');assert.ok(a.root.position.y>=2.6,'not into the roof');
+  assert.equal(a.state,'circle','back to circling after the stun');
+  const low=a.root.position.y;h.step(120);assert.ok(a.root.position.y>low,'beating its way back up');f.dispose();
+});
+
+test('not while it is carrying you off: cryo and shock leave the carrier alone',()=>{
+  const h=harness('normal');const {f}=h;
+  const a=h.attack();f.state='carried';
+  const hold=f.targets[0];
+  assert.equal(hold.holdable,false);assert.equal(hold.freeze(),false);assert.equal(hold.electrify(1,0),false);
+  assert.equal(f.attacker,a);f.state='idle';f.dispose();
+});
+

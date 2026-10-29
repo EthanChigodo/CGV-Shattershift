@@ -22,7 +22,8 @@
  *                one back every 2.6 s, five from a duffel sack:
  *                  glass    a hard knock where it hits (1)
  *                  cryo     freezes everyone in 3.5 m for 4 s, then they slide (4)
- *                  shock    hits hard, blows everyone far out of 4 m - you too (3)
+ *                  shock    hits hard, blows everyone far out of 4 m - you too -
+ *                           and its charge jumps on to whoever's near them (3)
  *                  gravity  a rift: whoever it catches is warped somewhere
  *                           random on the roof, off the pad (5)
  *   CARE PACKAGES  parachuted in every half minute or so, a serum on top:
@@ -118,6 +119,11 @@ const EFFECT = {
   glass: { radius: 0, knock: 10, stun: 0.3, damage: 20 },
   cryo: { radius: 3.5, freeze: 4, damage: 10 },
   shock: { radius: 4, knock: 26, stun: 0.7, self: 0.5, damage: 48 },
+  // Its charge (the Roof's, roof.js shock): everyone it hits crawls with
+  // violet arcs, and it jumps on to the nearest one within `jump` m, `delay`
+  // s later - stunned, hurt a little - up to `hops` jumps; never back to
+  // the thrower.
+  charge: { arcs: 1.1, jump: 5, delay: 0.14, hops: 3, stun: 1.1, damage: 8 },
   gravity: { radius: 3, stun: 0.6, damage: 0 },
 };
 /** What each sphere costs in the Arena: the stronger, the dearer. */
@@ -433,6 +439,7 @@ export class Arena {
       p.frozen = 0;
       p.dodge = 0;
       p.stun = 0;
+      p.shocked = 0;
       p.invuln = 0;
       if (p.avatar) {
         p.avatar.root.position.copy(p.pos);
@@ -502,6 +509,7 @@ export class Arena {
     p.dodgeDir = new THREE.Vector3();
     p.frozen = 0;
     p.stun = 0;
+    p.shocked = 0;
     p.invuln = 1.2;
     p.falling = false;
     p.out = 0;
@@ -567,6 +575,8 @@ export class Arena {
     if (this.cores) this._resetCores();
     for (const b of this.balls ?? []) { b.active = false; b.mesh.visible = false; }
     this.wells = [];
+    this._jumps = [];
+    this.roof?.electric.clear();
     this.impact?.clear?.();
     for (const s of this.sacks ?? []) { s.sack.visible = true; s.back = 0; }
     this._endDrop();
@@ -740,6 +750,7 @@ export class Arena {
     this._collidePlayers();
     for (const p of this.players) this._move(p, dt);
     this._updateBalls(dt);
+    this._updateCharge(dt);
     this._updateWells(dt);
     this._updateSacks(dt);
     this._updateDrop(dt, t);
@@ -755,6 +766,7 @@ export class Arena {
     p.dodgeCd = Math.max(0, p.dodgeCd - dt);
     p.invuln = Math.max(0, p.invuln - dt);
     p.stun = Math.max(0, p.stun - dt);
+    p.shocked = Math.max(0, (p.shocked ?? 0) - dt);
     if (p.coreCd > 0) p.coreCd -= dt;
     // Serums run out.
     if (p.power) {
@@ -1076,7 +1088,10 @@ export class Arena {
       if (b.kind === "shock") {
         const self = p === b.owner ? fx.self : 1;
         const dir = d > 0.05 ? _v.divideScalar(d) : _v.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
-        if (this._hurt(p, fx.damage * k * self, b.owner, { knockDir: dir.clone(), knock: fx.knock * k * self, stun: fx.stun }) && p !== b.owner) this._landed(b);
+        if (this._hurt(p, fx.damage * k * self, b.owner, { knockDir: dir.clone(), knock: fx.knock * k * self, stun: fx.stun })) {
+          if (p !== b.owner) this._landed(b);
+          this._electrify(p, b.owner);
+        }
       } else if (b.kind === "cryo") {
         if (p === b.owner) continue;
         if (this._hurt(p, fx.damage, b.owner)) {
@@ -1096,6 +1111,52 @@ export class Arena {
         this._landed(b);
       }
     }
+  }
+
+  /**
+   * A shock's charge in someone (EFFECT.charge): violet arcs over them, and
+   * the charge on its way to whoever's next to them. `jump`: the chain it's
+   * part of (who it's been through, how many jumps it has left).
+   */
+  _electrify(p, by, jump = null) {
+    const C = EFFECT.charge;
+    p.shocked = Math.max(p.shocked ?? 0, C.arcs);
+    const chain = jump ?? { visited: new Set([by]), hops: C.hops };
+    chain.visited.add(p);
+    if (chain.hops > 0) (this._jumps ??= []).push({ from: p, at: p.pos.clone(), by, visited: chain.visited, hops: chain.hops, t: C.delay });
+  }
+
+  /** The charge jumping on, and this frame's arcs and bolts (fx/electric.js, the roof's). */
+  _updateCharge(dt) {
+    const C = EFFECT.charge;
+    const electric = this.roof.electric;
+    for (let i = (this._jumps?.length ?? 0) - 1; i >= 0; i -= 1) {
+      const jump = this._jumps[i];
+      jump.t -= dt;
+      if (jump.t > 0) continue;
+      this._jumps.splice(i, 1);
+      let next = null;
+      let best = C.jump;
+      for (const p of this.players) {
+        if (jump.visited.has(p) || p.out > 0 || p.falling) continue;
+        const d = Math.hypot(p.pos.x - jump.at.x, p.pos.y - jump.at.y, p.pos.z - jump.at.z);
+        if (d < best) {
+          next = p;
+          best = d;
+        }
+      }
+      if (!next) continue;
+      jump.visited.add(next);
+      electric.bolt(_v.copy(jump.at).setY(jump.at.y + 1.2), _w.copy(next.pos).setY(next.pos.y + 1.2));
+      this.audio?.surfaceRicochet?.();
+      if (this._hurt(next, C.damage, jump.by, { stun: C.stun })) {
+        if (jump.by?.stats) jump.by.stats.hits += 1;
+        this._electrify(next, jump.by, { visited: jump.visited, hops: jump.hops - 1 });
+      }
+    }
+    electric.begin();
+    for (const p of this.players) if (p.shocked > 0 && !(p.out > 0)) electric.body(p.pos);
+    electric.end(dt);
   }
 
   /** A sphere that got someone else: once, for its thrower's accuracy. */
@@ -1671,6 +1732,7 @@ export class Arena {
       p.falling = false;
       p.frozen = 0;
       p.stun = 0;
+      p.shocked = 0;
       p.dodge = 0;
       p.invuln = 0;
       p.power = null;

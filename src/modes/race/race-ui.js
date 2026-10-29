@@ -20,6 +20,8 @@ import { SKIN_TONES } from "../../figure/look.js";
 import { HEADWEAR } from "../../figure/outfit.js";
 import { LAUNCHER_SKINS } from "../../figure/launcher-skins.js";
 import { BALLS } from "../../systems/arsenal.js";
+// (A cycle with race.js: only read once the race is running.)
+import { RACE_SPECIALS } from "./race.js";
 import { SphereWheel } from "../../ui/sphere-wheel.js";
 
 function ensureStylesheets() {
@@ -392,7 +394,11 @@ export class RaceUI {
       h.hp.style.width = `${p.hp}%`;
       h.hp.classList.toggle("low", p.hp < 35);
       h.hpText.textContent = `${Math.ceil(p.hp)}`;
-      h.wheel.update({ ball: p.ball, spheres: p.ammo, cost: BALLS[p.ball].cost, visible: !p.out });
+      // A special sphere shows what's left of its stock for the race; one used up, dimmed.
+      const stock = p.specials?.[p.ball];
+      const left = new Set(["glass", ...Object.keys(p.specials ?? {}).filter((k) => p.specials[k] > 0)]);
+      if (stock === undefined) h.wheel.update({ ball: p.ball, spheres: p.ammo, cost: BALLS[p.ball].cost, visible: !p.out, allowed: left });
+      else h.wheel.update({ ball: p.ball, spheres: stock, cost: 1, visible: !p.out, allowed: left, note: `${stock} OF ${RACE_SPECIALS[p.ball]} LEFT` });
       const finite = Number.isFinite(r.course.finish);
       h.progress.parentElement.hidden = !finite;
       if (finite) {

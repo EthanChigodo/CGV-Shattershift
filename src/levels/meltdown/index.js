@@ -1522,6 +1522,40 @@ export class MeltdownLevel {
     return (this._fireWalls ?? []).some((w) => !w.group.userData.out && w.distance - playerDistance > 1 && w.distance - playerDistance < radius);
   }
 
+  /**
+   * Put out every fire within `radius` m of `point` (a cryo sphere's burst):
+   * the floor vents, burning rubble and gaps, the fires along the walls and
+   * in the halls - not the fire walls (game.js _putOutWall) or the fire
+   * chasing you. Returns where each one it put out was.
+   */
+  putOutFires(point, radius) {
+    if (!this._fires) {
+      // Found once: none of them moves. A search stops at a fire (a vent's
+      // columns are the vent's) and at a fire wall.
+      this._fires = [];
+      const walk = (o) => {
+        if (o.userData.extinguish) {
+          const points = (o.userData.firePoints ?? [o]).map((p) => p.getWorldPosition(new THREE.Vector3()));
+          this._fires.push({ node: o, points });
+          return;
+        }
+        if (o.userData.putOut) return;
+        for (const child of o.children) walk(child);
+      };
+      for (const group of Object.values(this.groups)) walk(group);
+    }
+    const out = [];
+    const r2 = radius * radius;
+    for (const fire of this._fires) {
+      if (fire.node.userData.out) continue;
+      const near = fire.points.find((p) => p.distanceToSquared(point) <= r2);
+      if (!near) continue;
+      fire.node.userData.extinguish();
+      out.push(near);
+    }
+    return out;
+  }
+
   ductAhead(playerDistance, radius = 6) {
     const bridge = (this._bridges ?? []).some((b) => {
       const gap = b.distance - b.depth / 2 - playerDistance;

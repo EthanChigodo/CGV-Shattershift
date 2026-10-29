@@ -1805,6 +1805,19 @@ export class MeltdownGame {
     this.audio.whoosh?.();
   }
 
+  /**
+   * A cryo burst in the Labs: every fire in reach goes out - the floor
+   * vents for good, the burning rubble, the fires along the walls
+   * (index.js putOutFires) - each in a puff of steam.
+   */
+  _quench(point, radius) {
+    const out = this.level.putOutFires(point, radius);
+    if (!out.length) return;
+    for (const at of out) this.debris.dust(at.clone().setY(at.y + 1), { size: 3.5, life: 1.4, color: 0xdfe8ee });
+    this.hud.toast("FIRE OUT", out.length > 1 ? `${out.length} FIRES` : "", "power", 1200);
+    this.audio.whoosh?.();
+  }
+
   /** A vial: the serum it holds goes in (the Skyline's power-ups). */
   _applyPowerup(kind) {
     const serum = VIAL_SERUM[kind] ?? kind;
@@ -1837,9 +1850,16 @@ export class MeltdownGame {
       // Power-ups (serum capsules) take a direct hit, never a splash.
       if (target.userData.kind === "powerup") continue;
       if (target.userData.kind === "firewall") { if (ball.kind === "cryo") this._putOutWall(target); continue; }
-      this._onBallBreakable(target, at.clone(), { power: ball.kind === "shock" ? 99 : 2, velocity: ball.velocity.clone(), kind: "glass" });
+      // (On the roof cryo hurts a person less: it freezes them instead, below.)
+      this._onBallBreakable(target, at.clone(), { power: ball.kind === "shock" ? 99 : this.roof && ball.kind === "cryo" ? 1 : 2, velocity: ball.velocity.clone(), kind: "glass" });
     }
-    if (ball.kind === "cryo" && this.level && !this.roof) this.runner.fireDistance -= 6;
+    // The roof's people: cryo freezes them in ice, shock's charge jumps from one to the next.
+    if (this.roof && ball.kind === "cryo") this.roof.freeze(point, def.splash);
+    if (this.roof && ball.kind === "shock") this.roof.shock(point, def.splash);
+    if (ball.kind === "cryo" && this.level && !this.roof) {
+      this.runner.fireDistance -= 6;
+      this._quench(point, def.splash);
+    }
     this.trauma = Math.min(1, this.trauma + 0.2);
     this.sfx?.glassBreak();
   }
@@ -1994,7 +2014,8 @@ export class MeltdownGame {
    * fire further back).
    */
   _overcharge(ball, point) {
-    const radius = chargedShot(ball.charged).splash;
+    // (A cryo, shock or gravity sphere's charged burst is never smaller than its plain one.)
+    const radius = Math.max(BALLS[ball.kind]?.splash ?? 0, chargedShot(ball.charged).splash);
     const targets = this.roof ? this.roof.breakables : this.level?.breakables ?? [];
     this.sphereImpact.splash(point, ball.kind === "glass" ? "shock" : ball.kind, radius, null, {});
     this.debris.sparks(point, { count: 60, speed: 9 });
@@ -2011,14 +2032,40 @@ export class MeltdownGame {
       if (data.kind === "firewall") { if (ball.kind === "cryo") this._putOutWall(target); continue; }
       if (ball.kind === "gravity" && (data.kind === "sack" || data.kind === "enemy")) continue;
       const enemy = data.kind === "enemy";
-      if (this._onBallBreakable(target, at.clone(), { power: enemy ? (ball.charged >= 1 ? 3 : 2) : 99, velocity: ball.velocity.clone(), kind: "glass" }) !== false) broken += 1;
+      const power = enemy ? (this.roof && ball.kind === "cryo" ? 1 : ball.charged >= 1 ? 3 : 2) : 99;
+      if (this._onBallBreakable(target, at.clone(), { power, velocity: ball.velocity.clone(), kind: "glass" }) !== false) broken += 1;
     }
-    if (ball.kind === "cryo" && this.level && !this.roof) this.runner.fireDistance -= 10;
+    // Charged: longer in the ice; a stronger shock (longer, further, more jumps, thicker bolts).
+    if (this.roof && ball.kind === "cryo") this.roof.freeze(point, radius, ball.charged);
+    if (this.roof && ball.kind === "shock") this.roof.shock(point, radius, ball.charged);
+    if (ball.kind === "cryo" && this.level && !this.roof) {
+      this.runner.fireDistance -= 10;
+      this._quench(point, radius);
+    }
     this.trauma = Math.min(1, this.trauma + 0.25 + 0.3 * ball.charged);
     this.hitFlash = Math.max(this.hitFlash, 0.25);
     this.sfx?.glassBreak();
     this.audio.clang();
     if (broken) this.hud.toast("OVERCHARGED", `${broken} BROKEN`, "power", 1200);
+  }
+
+  /**
+   * A cryo, shock or gravity sphere (or a charged one) passing a winged one
+   * goes off beside it - they've no hurtbox, so it would fly straight
+   * through.
+   */
+  _airBursts() {
+    if (!this._flying || this.phase !== "roof") return;
+    const near = this._flying.targets.filter((t) => t.holdable);
+    if (!near.length) return;
+    for (const ball of this.projectiles.balls) {
+      if (!ball.active || ball.life >= 99 || (ball.kind === "glass" && !ball.charged)) continue;
+      if (!near.some((t) => t.position.distanceTo(ball.mesh.position) < 1.8)) continue;
+      const at = ball.mesh.position.clone();
+      if (ball.charged) this._overcharge(ball, at);
+      else this._detonate(ball, at);
+      ball.life = 99;
+    }
   }
 
   /** Off a wall or the ceiling: the Skyline's ricochet sparks and sound. */
@@ -2415,6 +2462,8 @@ export class MeltdownGame {
     this.roof = roof;
     roof.addTo(this.scene);
     this._flying = new FlyingZombieEncounter(this, { layer: this.reactionLayer ?? this.story?.layer });
+    // The winged ones feel cryo and shock too (roof.js freeze, shock).
+    roof.airborne = () => (this._flying && this.roof === roof ? this._flying.targets : []);
     // A storm over the last stand (Endless on the roof: rain).
     roof.setWeather(this.mode === "endless-roof" ? "rain" : "storm", this.sfx);
     // The tactical map, top right (an orthographic camera of its own).
@@ -2506,6 +2555,25 @@ export class MeltdownGame {
     on("patient-climb", ({ position }) => {
       this._patientSound(Math.random() < 0.5 ? "moan" : "growl", position, 0.9);
       hud.toast("OVER THE LEDGE", position.x < 0 ? "WEST SIDE" : "EAST SIDE");
+    });
+    // Cryo and shock on them (roof.js freeze, shock).
+    on("enemies-frozen", ({ count }) => {
+      audio.glassCrack();
+      hud.toast("FROZEN", count > 1 ? `${count} IN THE ICE - SHOOT TO SHATTER` : "SHOOT TO SHATTER", "power", 1300);
+    });
+    on("enemy-shatter", ({ position }) => {
+      this._chunks(position, 44, { tint: 0xbff4ff, speed: 5.5, radius: 0.7, size: 0.11 });
+      this.sfx?.glassBreak();
+      audio.glassShatter(false);
+    });
+    on("enemy-thaw", ({ position }) => this._chunks(position, 12, { tint: 0xbff4ff, speed: 2.5, radius: 0.5, size: 0.07 }));
+    on("enemies-shocked", ({ power }) => {
+      audio.zap();
+      this.trauma = Math.min(1, this.trauma + 0.1 + 0.25 * power);
+    });
+    on("shock-jump", ({ position }) => {
+      audio.zap();
+      debris.sparks(position, { count: 14, speed: 4 });
     });
     on("patient-stunned", ({ position }) => {
       debris.dust(position.clone().setY(1), { size: 2 });
@@ -3162,6 +3230,7 @@ export class MeltdownGame {
     }
 
     this._flying?.update(dt, time);
+    this._airBursts();
     this._placeLauncher(false);
     this._placeKeyLight(hero.position);
     this.police?.update(dt, time, { worldZ: (d) => 70 - d, distance: 0, deckY: 0, overDeck: true, cityY: -60, spotZ: 0, spotSpread: 14 });
