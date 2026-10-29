@@ -9,6 +9,8 @@
  *   course.groundAt(distance, lateral)             -> floor height (0, a duct's top)
  *   course.breakables()                            -> what a sphere can break
  *   course.breakTarget(mesh, info)                 -> break it (null if it isn't)
+ *   course.special(ball, point, reach)             -> a cryo / shock / gravity burst on the world
+ *                                                     (cryo: the fires out) -> how many fires it put out
  *   course.surfaceHit(start, end, radius)          -> a wall or ceiling a sphere bounces off
  *   course.solids()                                -> solid things a sphere bounces off
  *   course.update(dt, time, { lead, trail })       -> the world moves on
@@ -113,6 +115,8 @@ function foundryCourse({ scene, renderer, tier, seed }) {
     groundAt: () => 0,
     breakables: () => level.breakables,
     breakTarget: (mesh) => level.breakTarget(mesh),
+    // (No fires to put out: the Foundry's are its furnaces.)
+    special: () => 0,
     surfaceHit: (start, end, radius) => level.surfaceHit(start, end, radius),
     solids: () => level.obstacles,
     update(dt, time, { lead, trail, leadPos, trailPos }) {
@@ -164,6 +168,8 @@ function skylineCourse({ scene, renderer, tier, seed }) {
     groundAt: () => 0,
     breakables: () => level.breakables,
     breakTarget: (mesh, info) => level.breakTarget(mesh, { ball: "glass", ...info }),
+    // Cryo: its fires out and its falling debris frozen, as in the story (index.js splash).
+    special: (ball, point, reach) => (ball === "cryo" ? level.splash(point, reach, "cryo").extinguished : 0),
     surfaceHit: (start, end, radius) => level.corridorSurfaceHit(start, end, radius),
     solids: () => level.solids,
     update(dt, time, { trail, trailPos }) {
@@ -193,6 +199,7 @@ async function labsCourse({ scene, renderer, assetBase, tier, seed }) {
   await level.loadAssets(assetBase).catch(() => null);
   const total = level.route.totalLength;
   const leadPos = new THREE.Vector3();
+  const at = new THREE.Vector3();
   return {
     key: "labs",
     start: 8,
@@ -204,6 +211,25 @@ async function labsCourse({ scene, renderer, assetBase, tier, seed }) {
     groundAt: (d, lateral) => level.groundAt(d, 0.45, lateral),
     breakables: () => level.breakables,
     breakTarget: (mesh) => level.breakTarget(mesh, 2),
+    /**
+     * Cryo: the fire walls in reach out - the way clear (as game.js
+     * _putOutWall) - and every other fire in reach, the floor vents for good
+     * (index.js putOutFires).
+     */
+    special(ball, point, reach) {
+      if (ball !== "cryo") return 0;
+      let out = 0;
+      for (const wall of level._fireWalls ?? []) {
+        const target = wall.group.userData.breakableMeshes?.[0];
+        if (wall.group.userData.out || !target) continue;
+        if (target.getWorldPosition(at).distanceTo(point) > reach + 1) continue;
+        wall.group.userData.putOut();
+        const i = level.breakables.indexOf(target);
+        if (i >= 0) level.breakables.splice(i, 1);
+        out += 1;
+      }
+      return out + level.putOutFires(point, reach).length;
+    },
     surfaceHit: (start, end, radius) => level.surfaceHit(start, end, radius),
     solids: () => level.obstacles,
     /** The fire's front, drawn where it is closest to anyone. */

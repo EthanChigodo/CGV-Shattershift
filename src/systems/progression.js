@@ -80,7 +80,7 @@ export const TIPS = {
   // The obstacles each sphere is for (the level's card says which to use).
   firewall: {
     name: "Fire walls",
-    text: "A wall of fire right across the corridor: too tall to jump, and it burns you if you run into it. Change to the cryo sphere and shoot it before you get there - glass and shock do nothing to it.",
+    text: "A wall of fire right across the corridor: too tall to jump, and it burns you if you run into it. Change to the cryo sphere and shoot it before you get there - glass and shock do nothing to it. Cryo puts out any fire it bursts near, too: shoot the floor by a fire vent and it freezes over for good.",
     how: [{ kb: ["Q", "E"], pad: ["PadLB", "PadRB"], does: "change to cryo" }, { kb: ["Click"], pad: ["PadRT"], does: "shoot the fire" }],
   },
   drone: {

@@ -106,6 +106,114 @@ export class FlyingZombieEncounter {
   }
 
   _own(x) { this.owned.push(x); return x; }
+
+  /**
+   * What the roof's cryo and shock see of the winged ones (roof.js freeze,
+   * shock - the burst, and the charge jumping on): one stand-in each, with
+   * the ground enemies' freeze, electrify and drawArcs.
+   */
+  get targets() {
+    return this.actors.filter((a) => a.active).map((a) => a.hold ?? (a.hold = this._holdFor(a)));
+  }
+
+  _holdFor(a) {
+    const self = this;
+    return {
+      flying: true, removed: false, root: { scale: { x: 1 } },
+      get position() { return a.root.position; },
+      get alive() { return a.active && a.state !== "frozen"; },
+      get holdable() { return self._holdable(a); },
+      get shocked() { return a.state === "shocked" ? a.shocked : 0; },
+      freeze: () => this._freeze(a),
+      electrify: (seconds, power) => this._shock(a, seconds, power),
+      drawArcs: (level) => this._drawArcs(a, level),
+    };
+  }
+
+  /** Free to be frozen, shocked or pulled down: in the air of its own accord - not carrying you off, not already falling. */
+  _holdable(a) {
+    if (!a.active || !["circle", "attack", "shocked"].includes(a.state)) return false;
+    return !(a === this.attacker && !["warning", "dive"].includes(this.state));
+  }
+
+  /** Its swoop called off: frozen, shocked or pulled down before it reached you. */
+  _callOff(a) {
+    if (a !== this.attacker) return;
+    this.marker.visible = false;
+    this.attacker = null;
+    this.state = "idle";
+    this.attackIn = this._range(this.tune.cooldown);
+  }
+
+  /** A cryo burst: frozen solid in the air - it drops like a stone, and shatters where it lands. */
+  _freeze(a) {
+    if (!this._holdable(a)) return false;
+    this._callOff(a);
+    a.state = "frozen"; a.age = 0;
+    a.velocity = new THREE.Vector3((this.random() - 0.5) * 2, 0, (this.random() - 0.5) * 2);
+    a.spin = (this.random() < 0.5 ? -1 : 1) * (0.6 + this.random() * 0.8);
+    if (!a.ice) {
+      // Round the body and both wings (the body lies along +Z, the wings out to the sides).
+      a.ice = new THREE.Mesh(this.roof.holdFX.iceGeometry, this.roof.holdFX.ice);
+      a.ice.position.set(0, 0.1, 0.85);
+      a.ice.scale.set(2.3, 0.75, 1.3);
+      a.ice.renderOrder = 4;
+    }
+    a.root.add(a.ice);
+    this.game._patientSound?.("shriek", a.root.position, 0.7);
+    return true;
+  }
+
+  /** A shock: wings seized in the arcs, dropping and twitching for `seconds`, then back up. */
+  _shock(a, seconds, power = 0) {
+    if (!this._holdable(a)) return false;
+    this._callOff(a);
+    const again = a.state === "shocked";
+    a.shocked = Math.max(again ? a.shocked : 0, seconds);
+    a.shockPower = Math.max(again ? a.shockPower : 0, power);
+    a.state = "shocked"; a.age = 0;
+    a.velocity = new THREE.Vector3(0, -1, 0);
+    return true;
+  }
+
+  /** The shock's arcs over it, wings and all (roof.js strands): more and thicker, charged. */
+  _drawArcs(a, level) {
+    const power = a.shockPower ?? 0;
+    const width = 0.02 * (1 + 1.4 * power);
+    const A = this._arcA ?? (this._arcA = new THREE.Vector3());
+    const B = this._arcB ?? (this._arcB = new THREE.Vector3());
+    for (let i = 0; i < 9 + Math.round(4 * power); i += 1) {
+      let x = (this.random() - 0.5) * 4.2, y = 0.1 + (this.random() - 0.5) * 0.5, z = 0.85 + (this.random() - 0.5) * 1.4;
+      a.root.localToWorld(A.set(x, y, z));
+      for (let j = 0; j < 4; j += 1) {
+        x += (this.random() - 0.5) * 0.6; y += (this.random() - 0.5) * 0.4; z += (this.random() - 0.5) * 0.5;
+        a.root.localToWorld(B.set(x, y, z));
+        level.strand(A, B, width);
+        A.copy(B);
+      }
+    }
+  }
+
+  /** Frozen, it hit the roof: in pieces of ice. */
+  _shatter(a, ground) {
+    const g = this.game;
+    const at = a.root.position.clone().setY(ground + 0.6);
+    this._putAway(a);
+    g._chunks?.(at, 70, { tint: 0xbff4ff, speed: 7, radius: 1.3, size: 0.14 });
+    g.sfx?.glassBreak();
+    g.audio?.glassShatter?.(true);
+    g.trauma = Math.min(1, (g.trauma ?? 0) + 0.3);
+    if (g.runner) g.runner.downs = (g.runner.downs ?? 0) + 1;
+    g.hud?.toast("SHATTERED", "OUT OF THE SKY", "power", 1400);
+  }
+
+  /** Gone: out of the encounter until it's flown again. */
+  _putAway(a) {
+    a.ice?.removeFromParent();
+    a.active = false;
+    a.root.visible = false;
+    a.root.rotation.x = 0;
+  }
   _range([a, b]) { return a + this.random() * (b - a); }
   get activeCount() { return this.actors.filter((a) => a.active).length; }
   get controlsPlayer() { return ["grab", "carried", "shoot", "bite", "release", "landing", "sky"].includes(this.state); }
@@ -227,6 +335,7 @@ export class FlyingZombieEncounter {
     a.angle = angle; a.age = 0; a.wait = this._range(FLIGHT.circle);
     a.state = "circle"; a.active = true; a.root.visible = true;
     a.root.rotation.x = 0;
+    a.ice?.removeFromParent();
     this.spawnIn = this._range(this.tune.spawn);
     return a;
   }
@@ -266,17 +375,12 @@ export class FlyingZombieEncounter {
   gravityPull(point, radius) {
     let plucked = 0;
     for (const a of this.actors) {
-      if (!a.active || !["circle", "attack"].includes(a.state)) continue;
-      if (a === this.attacker && !["warning", "dive"].includes(this.state)) continue;
+      // (A shocked one too: its wings are no use to it.)
+      if (!this._holdable(a)) continue;
       const p = a.root.position;
       if (Math.hypot(p.x - point.x, p.z - point.z) > radius + 3 || p.y - point.y > 12) continue;
-      if (a === this.attacker) {
-        // Its swoop is over: no circle, no grab.
-        this.marker.visible = false;
-        this.attacker = null;
-        this.state = "idle";
-        this.attackIn = this._range(this.tune.cooldown);
-      }
+      // Its swoop is over: no circle, no grab.
+      this._callOff(a);
       a.state = "pulled"; a.age = 0; a.pullTo = point.clone().setY(point.y + 1.2);
       plucked += 1;
     }
@@ -453,8 +557,29 @@ export class FlyingZombieEncounter {
         a.root.position.addScaledVector(a.velocity, dt);
         a.root.rotation.x += dt * a.spin;
         if (a.age > 3.5) { a.active = false; a.root.visible = false; a.root.rotation.x = 0; }
+      } else if (a.state === "frozen") {
+        // Frozen in the air: down like a stone, tumbling - in pieces on the
+        // roof, or past the ledge and down the side of the building.
+        a.velocity.y -= 18 * dt;
+        a.root.position.addScaledVector(a.velocity, dt);
+        a.root.rotation.x += dt * a.spin;
+        const ground = this.roof.groundAt(a.root.position);
+        if (ground !== null && a.root.position.y <= ground + 0.5) this._shatter(a, ground);
+        else if (a.root.position.y < -40) this._putAway(a);
+        // Locked in the ice as it was: no wingbeat, no pose.
+        continue;
+      } else if (a.state === "shocked") {
+        // Seized up in the arcs: dropping, jerking about - then it beats its way back up.
+        a.shocked -= dt;
+        a.velocity.y = Math.max(-4, a.velocity.y - 6 * dt);
+        a.root.position.addScaledVector(a.velocity, dt);
+        a.root.position.x += (this.random() - 0.5) * 0.1;
+        a.root.position.z += (this.random() - 0.5) * 0.1;
+        a.root.position.y = Math.max(2.6, a.root.position.y);
+        if (a.shocked <= 0) { a.state = "circle"; a.age = 0; a.wait = this._range(FLIGHT.circle); a.shockPower = 0; }
       }
       this._poseActor(a, dt, time);
+      if (a.state === "shocked") for (const wing of a.wings) wing.rotation.y = (this.random() - 0.5) * 1.4;
     }
     if (this.state === "idle" && this.attackIn <= 0 && this._canAttack()) {
       const actor = this.actors.find((a) => a.active && a.state === "circle" && a.age >= a.wait);
