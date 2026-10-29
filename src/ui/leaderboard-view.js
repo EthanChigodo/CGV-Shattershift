@@ -13,7 +13,7 @@
 import { BOARDS, BOARD, formatValue } from "../systems/leaderboard.js";
 import { DIFFICULTIES } from "../systems/difficulty.js";
 
-function ensureStyles() {
+export function ensureStyles() {
   if (document.querySelector("link[data-leaderboard]")) return;
   const link = document.createElement("link");
   link.rel = "stylesheet";
@@ -23,6 +23,23 @@ function ensureStyles() {
 }
 
 const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/**
+ * Your name as a card - your initials in a disc, PLAYING AS, the name, and
+ * CHANGE NAME (CHOOSE A NAME with none yet): the Leaderboards' and
+ * Customise's (modes/locker). Its container is `.lb-me`, `.unnamed` with no
+ * name; the button is `.lb-rename`.
+ */
+export function nameCardHTML(name) {
+  // (Two words: their first letters; one: its first two.)
+  const words = name ? name.replace(/[^A-Za-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean) : [];
+  const initials = !name ? "?" : (words.length > 1 ? words[0][0] + words[1][0] : words[0] ?? name).slice(0, 2).toUpperCase();
+  const pencil = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 2.3l2.4 2.4-8.4 8.4-3.1.7.7-3.1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+  return `
+      <i class="lb-avatar" aria-hidden="true">${escape(initials)}</i>
+      <span class="lb-who"><small>Playing as</small><b>${name ? escape(name) : "No name yet"}</b></span>
+      <button type="button" class="lb-rename">${pencil}${name ? "Change<span class=\"lb-word\"> name</span>" : "Choose<span class=\"lb-word\"> a name</span>"}</button>`;
+}
 
 /** Each board's mark in the list (as the main menu's glyphs). */
 const GLYPHS = { time: "&#9201;", points: "&#9733;", m: "&#8734;", count: "&#9650;" };
@@ -54,18 +71,11 @@ export class LeaderboardView {
     this._pick(board, true);
   }
 
-  /** Who you are on the boards: a card - your initials, your name, Change (or Choose). */
+  /** Who you are on the boards: the name card (nameCardHTML). */
   _me() {
     const name = this.lb.name;
-    // (Two words: their first letters; one: its first two.)
-    const words = name ? name.replace(/[^A-Za-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean) : [];
-    const initials = !name ? "?" : (words.length > 1 ? words[0][0] + words[1][0] : words[0] ?? name).slice(0, 2).toUpperCase();
-    const pencil = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 2.3l2.4 2.4-8.4 8.4-3.1.7.7-3.1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
     this.me.classList.toggle("unnamed", !name);
-    this.me.innerHTML = `
-      <i class="lb-avatar" aria-hidden="true">${escape(initials)}</i>
-      <span class="lb-who"><small>Playing as</small><b>${name ? escape(name) : "No name yet"}</b></span>
-      <button type="button" class="lb-rename">${pencil}${name ? "Change name" : "Choose a name"}</button>`;
+    this.me.innerHTML = nameCardHTML(name);
     this.me.querySelector(".lb-rename").addEventListener("click", () => this.onChangeName?.(() => { this._me(); this._load(); }));
   }
 

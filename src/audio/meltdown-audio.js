@@ -22,6 +22,8 @@
  * `start()` is called from a click/keypress handler.
  */
 
+import { effectsFor } from "./output.js";
+
 export class MeltdownAudio {
   constructor({ volume = 0.8 } = {}) {
     this.volume = volume;
@@ -52,7 +54,8 @@ export class MeltdownAudio {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
     comp.ratio.value = 5;
-    this.master.connect(comp).connect(ctx.destination);
+    // (The effects: the Settings' effects volume, then the master.)
+    this.master.connect(comp).connect(effectsFor(ctx));
 
     this.noise = this._noiseBuffer(2);
     this.brown = this._brownBuffer(4);

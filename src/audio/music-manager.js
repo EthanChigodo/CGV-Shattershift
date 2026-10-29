@@ -13,7 +13,7 @@
  * While someone speaks the music steps back (voiceDuck).
  */
 
-import { outputFor } from "./output.js";
+import { musicFor } from "./output.js";
 
 export const MUSIC_VOLUME = Object.freeze({
   story: 0.5,
@@ -303,7 +303,7 @@ export class MusicManager {
     const now = ctx.currentTime;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
-    gain.connect(outputFor(ctx));
+    gain.connect(musicFor(ctx));
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
@@ -338,7 +338,7 @@ export class MusicManager {
     const now = ctx.currentTime;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
-    gain.connect(outputFor(ctx));
+    gain.connect(musicFor(ctx));
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;

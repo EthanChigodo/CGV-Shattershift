@@ -20,6 +20,7 @@ import { MeltdownGame, CHARACTERS, START_BALLS as MELTDOWN_START_BALLS, savedCha
 import { MusicManager } from "./src/audio/music-manager.js";
 import { Level1Audio } from "./src/audio/level1-audio.js";
 import { FoundryAmbience } from "./src/audio/foundry-ambience.js";
+import { setVolumes } from "./src/audio/output.js";
 import { GravityFaultRide } from "./src/elevators/gravity-fault.js";
 import { QuietRide, LINES as RADIO_LINES } from "./src/elevators/quiet-ride.js";
 import { ShatterFX } from "./src/fx/shatter.js";
@@ -405,6 +406,8 @@ const settingsDefaults = {
   // Subtitle size (there are no voiceovers, so they must be easy to read):
   // "normal", "large" or "xl" - see --sub-scale in styles.css.
   subtitleSize: "large",
+  // The volumes (%): the whole game, its music and its sound effects (src/audio/output.js).
+  masterVolume: 100, musicVolume: 100, effectsVolume: 100,
   // The characters' recorded voices (off: only HALCYON, the intercom, speaks).
   voices: true,
   // The player's own grunts, pain, breathing and screams.
@@ -532,6 +535,13 @@ function applySettingsToControls() {
   ui.resolutionSelect.value = String(settings.resolution);
   ui.subtitleSizeSelect.value = settings.subtitleSize;
   applySubtitleSize();
+  for (const [id, key] of [["#masterVolumeSlider", "masterVolume"], ["#musicVolumeSlider", "musicVolume"], ["#effectsVolumeSlider", "effectsVolume"]]) {
+    const slider = $(id);
+    if (!slider) continue;
+    slider.value = settings[key];
+    slider.nextElementSibling.textContent = `${settings[key]}%`;
+  }
+  applyVolumes();
   if (ui.voicesToggle) ui.voicesToggle.checked = settings.voices;
   story.voice.characterVoices = settings.voices;
   if (ui.gruntsToggle) ui.gruntsToggle.checked = settings.grunts;
@@ -539,6 +549,11 @@ function applySettingsToControls() {
   level1Audio.playerVoice = settings.grunts;
   for (const input of document.querySelectorAll("[data-hud-key]")) input.checked = !!settings.hud[input.dataset.hudKey];
   applyHudPanels(settings.hud);
+}
+
+/** The Settings' volumes, on every sound in the game (src/audio/output.js). */
+function applyVolumes() {
+  setVolumes({ master: (settings.masterVolume ?? 100) / 100, music: (settings.musicVolume ?? 100) / 100, effects: (settings.effectsVolume ?? 100) / 100 });
 }
 
 /** Every subtitle in the game (cutscenes, the intercom, the lift rides) scales with this. */
@@ -6082,6 +6097,16 @@ addEventListener("click", (event) => {
   if (!ui.viewMenu.hidden && !event.target.closest("#viewMenu, #viewButton")) ui.viewMenu.hidden = true;
 });
 ui.sensitivitySlider.addEventListener("input", (event) => { settings.sensitivity = Number(event.target.value); saveSettings(); });
+for (const [id, key] of [["#masterVolumeSlider", "masterVolume"], ["#musicVolumeSlider", "musicVolume"], ["#effectsVolumeSlider", "effectsVolume"]]) {
+  $(id)?.addEventListener("input", (event) => {
+    settings[key] = Number(event.target.value);
+    event.target.nextElementSibling.textContent = `${settings[key]}%`;
+    applyVolumes();
+    saveSettings();
+    // (Effects: a click to hear the new level by.)
+    if (key === "effectsVolume") level1Audio.uiClick?.();
+  });
+}
 ui.aimAssistToggle.addEventListener("change", (event) => { settings.aimAssist = event.target.checked; saveSettings(); });
 $("#resetPowerupTipsButton").addEventListener("click", (event) => {
   powerups.resetSeen();

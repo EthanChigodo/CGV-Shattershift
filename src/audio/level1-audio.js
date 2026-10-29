@@ -14,7 +14,7 @@
  * the player's voice; each stage preloads its own (`preloadStage`).
  */
 
-import { outputFor } from "./output.js";
+import { effectsFor } from "./output.js";
 
 export const LEVEL1_SFX_VOLUME = Object.freeze({
   /*
@@ -190,7 +190,8 @@ export class Level1Audio {
     const make = (volume) => {
       const gain = this.context.createGain();
       gain.gain.value = volume;
-      gain.connect(outputFor(this.context));
+      // (Its sounds are the effects: the Settings' effects volume, then the master.)
+      gain.connect(effectsFor(this.context));
       return gain;
     };
     this.buses = { sfx: make(0.9), ambient: make(0.8), ui: make(0.8) };

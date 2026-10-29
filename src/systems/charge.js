@@ -26,6 +26,7 @@
  */
 
 import * as THREE from "../three.js";
+import { effectsFor } from "../audio/output.js";
 
 export const CHARGE = {
   /** Seconds held before it starts to charge (a click is a plain shot). */
@@ -236,7 +237,7 @@ export class ChargeShot {
     f.frequency.value = 900;
     g.gain.setValueAtTime(0, ctx.currentTime);
     g.gain.linearRampToValueAtTime(level, ctx.currentTime + 0.15);
-    o.connect(f).connect(g).connect(ctx.destination);
+    o.connect(f).connect(g).connect(effectsFor(ctx));
     o.start();
     this.humOsc = o;
     this.humGain = g;
@@ -271,7 +272,7 @@ export class ChargeShot {
       g.gain.setValueAtTime(0, t + at);
       g.gain.linearRampToValueAtTime(level, t + at + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0008, t + at + (kind === "full" ? 0.6 : 0.4));
-      o.connect(g).connect(ctx.destination);
+      o.connect(g).connect(effectsFor(ctx));
       o.start(t + at);
       o.stop(t + at + 0.7);
     }

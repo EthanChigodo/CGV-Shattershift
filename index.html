@@ -504,7 +504,21 @@
           </div>
 
           <div class="tr-panel" data-st-panel="sound" hidden>
-            <p class="fm-blurb">Who you hear. The subtitles always stay.</p>
+            <p class="fm-blurb">How loud, and who you hear. The subtitles always stay.</p>
+            <section class="tr-sec st-sec"><h3>Volume</h3>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Game volume</b><small>Everything - the music, the voices and the effects</small></span>
+              <span class="st-range"><input type="range" id="masterVolumeSlider" min="0" max="100" step="5" value="100" /><output for="masterVolumeSlider">100%</output></span>
+            </label>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Music</b><small>The score in every level, the menus and the lifts</small></span>
+              <span class="st-range"><input type="range" id="musicVolumeSlider" min="0" max="100" step="5" value="100" /><output for="musicVolumeSlider">100%</output></span>
+            </label>
+            <label class="setting-row st-row">
+              <span class="st-label"><b>Sound effects</b><small>Glass shattering, explosions, fire, machines, the HUD's blips</small></span>
+              <span class="st-range"><input type="range" id="effectsVolumeSlider" min="0" max="100" step="5" value="100" /><output for="effectsVolumeSlider">100%</output></span>
+            </label>
+            </section>
             <section class="tr-sec st-sec"><h3>Voices</h3>
             <label class="setting-row st-row toggle-row">
               <span class="st-label"><b>Character voices</b><small>Okoro, Vale, the pilot, 07 - the HALCYON intercom always speaks</small></span>
