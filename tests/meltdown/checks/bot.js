@@ -146,6 +146,7 @@ export const BOT_SOURCE = `
     if (g.phase === "depart" || g.phase === "fade" || g.roof) { log.end = { phase: g.phase, t: +t.toFixed(1), d: +r.distance.toFixed(1), vitality: +r.vitality.toFixed(1), timer: +g.level.state.timeRemaining.toFixed(1), shots: r.shots, breaks: r.breaks }; break; }
   }
   log.unsolved = answeredList.filter((q) => !q.solved).map((q) => q.key + "@" + Math.round(q.distance));
+  log.cleared = answeredList.filter((q) => q.solved).map((q) => q.key + "@" + Math.round(q.distance));
   return log;
 })
 `;
