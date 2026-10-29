@@ -37,6 +37,7 @@ import { SHOES } from "../../figure/shoes.js";
 import { LAUNCHER_SKINS, LAUNCHER_SKIN_ORDER } from "../../figure/launcher-skins.js";
 import { KITS, kitLocked } from "../../figure/kits.js";
 import { BALLS, BALL_ORDER } from "../../systems/arsenal.js";
+import { nameCardHTML, ensureStyles as ensureNameCardStyles } from "../../ui/leaderboard-view.js";
 
 function ensureStylesheets() {
   for (const [href, attr] of [["../arena/arena.css", "arena-ui"], ["./locker.css", "locker-ui"]]) {
@@ -202,6 +203,8 @@ export class Locker {
   }
 
   _draw() {
+    // (The name card is the Leaderboards' own: its styles.)
+    if (this.name) ensureNameCardStyles();
     const l = this.look();
     const list = rows(this.tab);
     this.row = Math.min(this.row, list.length - 1);
@@ -210,7 +213,7 @@ export class Locker {
       <aside class="lk-panel">
         <p class="ar-eyebrow">SINGLE PLAYER // SUBJECT 07</p>
         <h2>CUSTOMISE</h2>
-        ${this.name ? `<div class="lk-name"><span>Name</span><b>${(this.name.get() ?? "No name yet").replace(/[&<>"']/g, "")}</b><button type="button" class="lk-rename">${this.name.get() ? "Change" : "Choose"}</button></div>` : ""}
+        ${this.name ? `<div class="lb-me lk-name${this.name.get() ? "" : " unnamed"}">${nameCardHTML(this.name.get())}</div>` : ""}
         <nav class="lk-tabs">
           <kbd>${padLabel("PadLB")}</kbd>
           <button type="button" data-tab="character" class="${this.tab === "character" ? "on" : ""}">Character</button>
@@ -235,7 +238,7 @@ export class Locker {
     };
     for (const s of this.root.querySelectorAll(".lk-row")) s.onmouseenter = () => { this.row = Number(s.dataset.row); this._mark(); };
     this.root.querySelector(".lk-done").onclick = () => this.onExit?.();
-    const rename = this.root.querySelector(".lk-rename");
+    const rename = this.root.querySelector(".lb-rename");
     if (rename) rename.onclick = () => this.name.change(() => this._draw());
     void A;
   }

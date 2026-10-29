@@ -242,6 +242,9 @@
 .settings-screen .toggle-row input.pad-focus, .settings-screen .toggle-row input:focus-visible { outline: 1px solid var(--ember-2) !important; outline-offset: 4px; box-shadow: none !important; }
 /* Sliders and lists. */
 .settings-screen .st-row input[type="range"] { flex: none; width: 220px; accent-color: var(--ember); }
+/* A slider with its value beside it (the volumes). */
+.settings-screen .st-range { flex: none; display: inline-flex; align-items: center; gap: 14px; }
+.settings-screen .st-range output { min-width: 4ch; text-align: right; font-size: 13px; font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .settings-screen .st-row select {
   flex: none; min-width: 210px; height: 34px; padding: 0 28px 0 0; border-radius: 0; cursor: pointer;
   border: 0; border-bottom: 1px solid var(--line-2); color: var(--text); font: inherit; font-size: 14px; font-weight: 400;
@@ -259,6 +262,8 @@
 @media (max-width: 760px) {
   .settings-screen .setting-row.st-row { flex-direction: column; align-items: flex-start; gap: 10px; }
   .settings-screen .st-row input[type="range"], .settings-screen .st-row select { width: 100%; }
+  .settings-screen .st-range { width: 100%; }
+  .settings-screen .st-range input[type="range"] { flex: 1; width: auto; }
   .st-keys { grid-template-columns: 1fr; }
   .tr-head { flex-wrap: wrap; }
 }

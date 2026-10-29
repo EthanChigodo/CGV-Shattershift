@@ -130,9 +130,13 @@ export class Leaderboard {
    */
   async claim(name) {
     const token = this.player?.token;
-    const r = token
+    let r = token
       ? await this._call("rename", { method: "POST", body: { token, name } })
       : await this._call("register", { method: "POST", body: { name } });
+    // The server doesn't know this browser's token ("Unknown player."): its
+    // storage was reset, or the name was taken on another copy of the game.
+    // The new name is taken afresh instead, as a score sent then would.
+    if (!r.ok && r.error === "token") r = await this._call("register", { method: "POST", body: { name } });
     if (r.ok) {
       this.player = { name: r.name, token: r.token ?? token };
       write(PLAYER_KEY, this.player);

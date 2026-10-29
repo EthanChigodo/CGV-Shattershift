@@ -113,7 +113,16 @@ body.in-arena:has(.lk-root:not([hidden])) #game { cursor: grab !important; }
 body.in-arena.lk-turning, body.in-arena.lk-turning * { cursor: grabbing !important; }
 
 /* Your leaderboard name (the name card changes it). */
-.lk-name { display: flex; align-items: baseline; gap: 12px; margin: -6px 0 18px; font-size: 13px; color: var(--text-3); }
-.lk-name b { font-stretch: var(--wide); font-weight: 300; font-size: 17px; letter-spacing: .05em; color: var(--text); }
-.lk-rename { padding: 0; border: 0; border-bottom: 1px solid var(--ember); background: none; color: var(--text-2); font: 500 12px var(--font); letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
-.lk-rename:hover, .lk-rename:focus-visible { color: var(--ember-2); outline: none; }
+/* Your name: the Leaderboards' card (leaderboard.css .lb-me), fitted to the panel. */
+.lk-name.lb-me { align-self: stretch; max-width: 100%; margin: -4px 0 10px; gap: 12px; }
+.lk-name .lb-who { flex: 1; min-width: 0; padding-right: 4px; }
+.lk-name .lb-who b { max-width: 100%; }
+.lk-name .lb-rename { flex: none; white-space: nowrap; margin-left: 0; padding: 9px 14px; }
+/* A narrow panel (a phone): a smaller disc, and the button its pencil and CHANGE only. */
+@media (max-width: 900px) {
+  .lk-name.lb-me { gap: 10px; padding: 7px 8px 7px 7px; }
+  .lk-name .lb-avatar { width: 32px; height: 32px; font-size: 12px; }
+  .lk-name .lb-who b { font-size: 16px; }
+  .lk-name .lb-rename { padding: 8px 12px; margin-left: 0; }
+  .lk-name .lb-rename .lb-word, .lk-name .lb-rename svg { display: none; }
+}

@@ -9,6 +9,7 @@
  */
 
 import { TIERS } from "../systems/trophies.js";
+import { effectsFor } from "../audio/output.js";
 import { trophyBadge, cupIcon, kitToken } from "./trophy-art.js";
 
 const HOLD = 4.2; // seconds on screen
@@ -148,7 +149,7 @@ export class TrophyToast {
         g.gain.setValueAtTime(0, at);
         g.gain.linearRampToValueAtTime(level, at + 0.01);
         g.gain.exponentialRampToValueAtTime(0.0008, at + 1.1);
-        o.connect(g).connect(ctx.destination);
+        o.connect(g).connect(effectsFor(ctx));
         o.start(at);
         o.stop(at + 1.2);
       });
