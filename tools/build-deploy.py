@@ -28,7 +28,7 @@ DIST = os.path.join(ROOT, "dist")
 OUT = os.path.join(DIST, "fracture-run")
 ZIP = os.path.join(DIST, "fracture-run.zip")
 
-FILES = ["index.html", "main.js", "styles.css", "manifest.webmanifest"]
+FILES = ["index.html", "main.js", "styles.css", "manifest.webmanifest", ".htaccess"]
 FOLDERS = ["src", "lib", "assets", "api"]
 # The leaderboard's own data (made on the server by api/leaderboard.php) and
 # any MySQL credentials stay out of the upload.
