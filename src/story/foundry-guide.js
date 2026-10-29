@@ -14,7 +14,10 @@
  * He is never hit by anything: the level's own collision test is only used
  * to *find* a free lane. Lead eases between 4 and 7 m (3-8 m guaranteed).
  * When every lane ahead is shut (a gate the player has not opened yet) he
- * stops short of it and points at the switch.
+ * stops short of it and points at the switch. A drop forge (its hammer
+ * across every lane) he times: he waits short of it, pointing at its valve,
+ * until the hammer is held up long enough to get under and out - and once
+ * under, he keeps going.
  */
 
 import * as THREE from "../three.js";
@@ -25,6 +28,9 @@ const LEAD = { min: 4, max: 7, talk: 4.4, rest: 5.4, handoff: 3.4 };
 /** He checks this far ahead of himself when choosing a lane. */
 const LOOK = [0, 2.5, 5, 7.5];
 const LANE_SPEED = 5.5;
+/** The pace he counts on to get under a drop forge and out the far side (m/s), and a margin (s). */
+const FORGE_PACE = 6;
+const FORGE_MARGIN = 0.2;
 
 const _box = new THREE.Box3();
 const _c = new THREE.Vector3();
@@ -93,11 +99,34 @@ export class FoundryGuide {
       if (Math.abs(entry.distance - d) > 10) continue;
       const mesh = entry.mesh;
       if (!mesh.visible || mesh.userData.disabled) continue;
+      // A drop forge's hammer: free while it stays up long enough to get
+      // from here under it and out the far side.
+      if (mesh.userData.forge && mesh.userData.clearFor?.(this._forgeTime(entry.distance, d))) continue;
       mesh.updateWorldMatrix(true, false);
       entry.box.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
       if (entry.box.intersectsBox(_box)) return false;
     }
     return true;
+  }
+
+  /** Seconds to get from route distance d to past a forge at `at`. */
+  _forgeTime(at, d) {
+    return Math.max(0, at + 2 - d) / FORGE_PACE + FORGE_MARGIN;
+  }
+
+  /** A forge's hammer over route distance d that he can't get under now (or null). */
+  _forgeShut(d) {
+    for (const entry of this.level._hazardIndex ?? []) {
+      const mesh = entry.mesh;
+      if (!mesh.userData.forge || mesh.userData.disabled || Math.abs(entry.distance - d) > 3) continue;
+      if (!mesh.userData.clearFor?.(this._forgeTime(entry.distance, d))) return entry;
+    }
+    return null;
+  }
+
+  /** Is he (at route distance d) under a forge's hammer - his box over its? */
+  _underForge(d) {
+    return (this.level._hazardIndex ?? []).some((e) => e.mesh.userData.forge && !e.mesh.userData.disabled && Math.abs(d - e.distance) < 1.6);
   }
 
   _laneFree(x, d) {
@@ -183,10 +212,14 @@ export class FoundryGuide {
     if (!this.free(LANES[this.lane], next + 1.2)) {
       const free = LANES.some((x) => this.free(x, next + 1.2));
       if (!free) {
-        if (this.blocked === "wait" && !this.catchUp) next = this.d;
+        // (Never over a forge's hammer, even catching up: he waits for it.)
+        if ((this.blocked === "wait" && !this.catchUp) || this._forgeShut(next + 1.2)) next = this.d;
         else vaulting = true;
       }
     }
+    // Under a forge's hammer: out the far side at his forge pace at least,
+    // whatever the player's pace.
+    if (this._underForge(this.d)) next = Math.max(next, this.d + FORGE_PACE * dt);
     // A vault: a quick hop over whatever it is.
     this.height += ((vaulting ? 1.1 : 0) - this.height) * Math.min(1, dt * (vaulting ? 10 : 6));
     const moved = next - this.d;

@@ -10,6 +10,10 @@
  *  - "slide under" barriers sat at 3.1-4.0m and were cleared standing up
  *  - the Beat A half-gate was never added to level.obstacles, so the host
  *    game's collision would have ignored it
+ *
+ * And the drop forges (a right-tool problem, src/systems/problems.js), which
+ * block every lane while the hammer is down: up long enough to run under,
+ * the valve open every cycle, and jammed for good once it is broken.
  */
 
 export const name = "geometry";
@@ -115,8 +119,9 @@ export async function run(page) {
     // 1m steps, not 3m. A gate slab is 0.7m deep and the player box 0.9m, so a
     // 3m sweep steps clean over a fully closed gate and the check passes
     // without ever having looked at one.
+    // (The drop forges' hammers are timed, not walls: checked below.)
     for (let d = 2; d < L.route.totalLength - 2; d += 1) {
-      const blocked = [-3.2, 0, 3.2].every((lane) => probe(d, lane).length > 0);
+      const blocked = [-3.2, 0, 3.2].every((lane) => probe(d, lane).some((m) => !m.userData.forge));
       if (blocked) blockedEverywhere.push(Math.round(d));
     }
     notes.allLanesBlockedAt = blockedEverywhere;
@@ -140,6 +145,31 @@ export async function run(page) {
       );
     } else if (clusters.length === 0) {
       failures.push("nothing blocks all three lanes - the mandatory ROUTE GATE is not blocking the corridor");
+    }
+
+    /* -- 5. Drop forges: a window to run under, a valve open every cycle --- */
+    const forges = L._forges ?? [];
+    notes.forges = forges.map((f) => Math.round(f.distance));
+    if (L.options.problems && forges.length < 2) failures.push(`${forges.length} drop forge(s) - the Foundry's right-tool problem should come twice`);
+    for (const forge of forges) {
+      const piece = forge.piece;
+      const at = Math.round(forge.distance);
+      let lethal = 0, open = 0, openLethal = 0;
+      const STEPS = 280;
+      for (let i = 0; i < STEPS; i += 1) {
+        piece.userData.tick(1 / 60, (i / STEPS) * 2.8);
+        const crushes = [-3.2, 0, 3.2].every((lane) => probe(forge.distance, lane).includes(piece.userData.hazardMesh));
+        const jumpHits = probe(forge.distance, 0, { lift: 1.44 }).includes(piece.userData.hazardMesh);
+        if (crushes) lethal += 1;
+        if (forge.glass.userData.open) { open += 1; if (crushes || jumpHits) openLethal += 1; }
+      }
+      piece.userData.tick(0, 0);
+      const pct = Math.round((lethal / STEPS) * 100);
+      if (lethal === 0) failures.push(`drop forge at ${at}m never comes down on the corridor - it is decorative`);
+      if (pct > 50) failures.push(`drop forge at ${at}m is down ${pct}% of its cycle - too little time to run under it`);
+      if (open === 0) failures.push(`drop forge at ${at}m never opens its valve - it cannot be solved`);
+      if (openLethal) failures.push(`drop forge at ${at}m hits the player while its valve is open - open must mean up`);
+      notes[`forge${at}`] = { downPct: pct, openPct: Math.round((open / STEPS) * 100) };
     }
 
     return { failures, notes };

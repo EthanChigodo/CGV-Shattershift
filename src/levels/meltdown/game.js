@@ -79,6 +79,8 @@ import { applyLauncherSkin, trailColours } from "../../figure/launcher-skins.js"
 import { LAUNCHER_HELD } from "../../figure/launcher-model.js";
 import { CHARGE, chargedShot } from "../../systems/charge.js";
 import { ChargeTrails } from "../../fx/charge-trail.js";
+import { ProblemLog } from "../../systems/problems.js";
+import { ProblemPlay } from "./problems.js";
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                               */
@@ -258,8 +260,14 @@ export class MeltdownGame {
    * @param {boolean} [o.devKeys]    R restarts, P skips to the roof, F dev stats
    * @param {boolean} [o.summary]    show the level's own end-of-run card
    */
-  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null, lookSpeed = () => 1, topView = false, reactionLayer = null }) {
+  constructor({ renderer, assetBase, character = savedCharacter(), audio = true, sfx = null, reducedMotion = false, devKeys = false, summary = false, mode = "full", container = document.body, arsenal = null, charge = null, lookSpeed = () => 1, topView = false, reactionLayer = null, problems = null }) {
     this.reactionLayer = reactionLayer;
+    /**
+     * The right-tool problems (problems.js): the host's log (its HUD and
+     * score listen), or the preview's own; and what each tool does to them.
+     */
+    this.problems = problems ?? new ProblemLog();
+    this.problemPlay = new ProblemPlay(this);
     /**
      * The sphere types and serums (src/systems/arsenal.js) - the host's, so
      * the type you picked and the serums running carry between levels; the
@@ -572,6 +580,7 @@ export class MeltdownGame {
     });
     this.level = level;
     level.addTo(this.scene);
+    if (!carry) this.problems.reset();
     // The patient records (src/systems/collectibles.js): five along the
     // outer lanes - not on an endless lap.
     this._setFiles(this.mode === "endless-labs" ? null : "labs", () => {
@@ -854,6 +863,8 @@ export class MeltdownGame {
       onRoof: Boolean(this.roof),
       ending: this.roof?.state.ending ?? null,
       laps: this.endless.laps,
+      solved: this.problems.count,
+      solvedBonus: this.problems.bonus,
       endlessDistance: this.endless.distance + r.distance,
     };
   }
@@ -1371,6 +1382,7 @@ export class MeltdownGame {
     if (playing && r.alive && this.phase === "run") {
       this._collectLabsSacks();
       this._checkHazards(dt);
+      this.problemPlay.update(dt, playing);
     }
     if (!cutscene) this._updateCamera(dt, time);
     // The story's scenes (the blocked lift, the desk, into the lift) are seen
@@ -1476,7 +1488,7 @@ export class MeltdownGame {
 
     this.hud.setVitality(r.vitality, START_VITALITY);
     this.hud.setBalls(r.balls);
-    this.hud.setPrompt(this.phase !== "run" ? null : level.ductAhead(r.distance, 7) && r.height < 0.5 ? "SPACE - JUMP THE DUCT" : level.fireWallAhead(r.distance) ? (this.arsenal.ball === "cryo" ? "FIRE WALL - SHOOT IT WITH CRYO" : "FIRE WALL AHEAD - CRYO (Q/E) PUTS IT OUT") : r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null);
+    this.hud.setPrompt(this.phase !== "run" ? null : level.ductAhead(r.distance, 7) && r.height < 0.5 ? "SPACE - JUMP THE DUCT" : level.fireWallAhead(r.distance) ? (this.arsenal.ball === "cryo" ? "FIRE WALL - SHOOT IT WITH CRYO" : "FIRE WALL AHEAD - CRYO (Q/E) PUTS IT OUT") : (playing && this.problemPlay.prompt()) || (r.balls <= 0 && playing ? "NO SPHERES - ONE RECHARGES EVERY FEW SECONDS" : null));
     this.hud.update({ fps: this._fps(dt), renderer: this.renderer });
   }
 
@@ -1847,8 +1859,9 @@ export class MeltdownGame {
       if (!target.parent) continue;
       target.getWorldPosition(at);
       if (at.distanceTo(point) > def.splash) continue;
-      // Power-ups (serum capsules) take a direct hit, never a splash.
-      if (target.userData.kind === "powerup") continue;
+      // Power-ups (serum capsules) take a direct hit, never a splash; the
+      // right-tool problems are the burst's own business (below).
+      if (target.userData.kind === "powerup" || target.userData.problem) continue;
       if (target.userData.kind === "firewall") { if (ball.kind === "cryo") this._putOutWall(target); continue; }
       // (On the roof cryo hurts a person less: it freezes them instead, below.)
       this._onBallBreakable(target, at.clone(), { power: ball.kind === "shock" ? 99 : this.roof && ball.kind === "cryo" ? 1 : 2, velocity: ball.velocity.clone(), kind: "glass" });
@@ -1860,6 +1873,8 @@ export class MeltdownGame {
       this.runner.fireDistance -= 6;
       this._quench(point, def.splash);
     }
+    // The right-tool problems in reach (problems.js): the burst's own business.
+    this.problemPlay.splash(point, ball.kind, def.splash);
     this.trauma = Math.min(1, this.trauma + 0.2);
     this.sfx?.glassBreak();
   }
@@ -1896,6 +1911,8 @@ export class MeltdownGame {
     if (pulled) this.hud.toast("GRAVITY", `${pulled} PULLED IN`, "power", 1400);
     if (lifted) this.hud.toast("GRAVITY", `${lifted} THROWN`, "power", 1400);
     if (plucked) this.hud.toast("GRAVITY", "PULLED OUT OF THE SKY", "power", 1600);
+    // The stranded crate, if it's in reach (problems.js).
+    this.problemPlay.well(point, radius);
     // It keeps pulling while it is open (_updateWell).
     this._well = { point: point.clone(), radius, t: 1.1 };
   }
@@ -1920,6 +1937,8 @@ export class MeltdownGame {
   }
 
   _onBallBreakable(object, point, ball) {
+    // The jammed shutter, the stranded crate: the tool decides (problems.js).
+    if (object.userData.problem) return this.problemPlay.hit(object, point, ball);
     if (this.roof) return this._onRoofBreakable(object, point, ball);
     const { level, debris, audio, hud, runner: r } = this;
     // A fire wall: only cold puts it out.
@@ -2028,7 +2047,7 @@ export class MeltdownGame {
       target.getWorldPosition(at);
       if (at.distanceTo(point) > radius) continue;
       const data = target.userData;
-      if (data.kind === "powerup") continue;
+      if (data.kind === "powerup" || data.problem) continue;
       if (data.kind === "firewall") { if (ball.kind === "cryo") this._putOutWall(target); continue; }
       if (ball.kind === "gravity" && (data.kind === "sack" || data.kind === "enemy")) continue;
       const enemy = data.kind === "enemy";
@@ -2042,6 +2061,7 @@ export class MeltdownGame {
       this.runner.fireDistance -= 10;
       this._quench(point, radius);
     }
+    this.problemPlay.splash(point, ball.kind, radius, ball.charged);
     this.trauma = Math.min(1, this.trauma + 0.25 + 0.3 * ball.charged);
     this.hitFlash = Math.max(this.hitFlash, 0.25);
     this.sfx?.glassBreak();
@@ -2461,6 +2481,7 @@ export class MeltdownGame {
     });
     this.roof = roof;
     roof.addTo(this.scene);
+    this.problems.reset();
     this._flying = new FlyingZombieEncounter(this, { layer: this.reactionLayer ?? this.story?.layer });
     // The winged ones feel cryo and shock too (roof.js freeze, shock).
     roof.airborne = () => (this._flying && this.roof === roof ? this._flying.targets : []);
@@ -3159,6 +3180,7 @@ export class MeltdownGame {
       const hits = roof.update({ dt, time, player: hero.position, playerVelocity: hero.velocity });
       for (const h of hits) this._roofHit(h);
       this._updateRoofCamera(dt);
+      this.problemPlay.updateRoof(dt, r.alive);
       if (roof.cutscene?.kind === "cutaway") {
         this.phase = "roofCut";
         this.ui.letterbox.classList.add("on");

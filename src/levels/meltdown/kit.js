@@ -1802,6 +1802,28 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
    * The body sways on its own when the model is still a stand-in, and runs
    * a procedural shamble on the patient's real skeleton once it arrives.
    */
+  /** A patient's eye: a small hot glow (one material for every lurcher). */
+  let eyeGlow = null;
+  function eyeGlowMaterial() {
+    if (eyeGlow) return eyeGlow;
+    const c = document.createElement("canvas");
+    c.width = c.height = 32;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grad.addColorStop(0, "rgba(255,240,200,1)");
+    grad.addColorStop(0.18, "rgba(255,150,70,0.95)");
+    grad.addColorStop(0.5, "rgba(255,60,20,0.35)");
+    grad.addColorStop(1, "rgba(255,40,10,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 32, 32);
+    const map = new THREE.CanvasTexture(c);
+    map.colorSpace = THREE.SRGBColorSpace;
+    eyeGlow = new THREE.SpriteMaterial({ map, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+    tracked.materials.push(eyeGlow);
+    tracked.textures?.push(map);
+    return eyeGlow;
+  }
+
   function lurcher({ lane = 0, fromSide = 1, seed = 0 } = {}) {
     const group = new THREE.Group();
     group.name = "Lurcher";
@@ -1819,11 +1841,31 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     let model = null;
     /** Burning away once down (ash.js, as on the roof). */
     let ash = null;
+    // Eyes that catch the light: a lurcher reads in the dark beats before it
+    // commits (the damage audit: they hit you unseen). They ride the head bone.
+    const eyes = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Sprite(eyeGlowMaterial());
+      eye.scale.setScalar(0.13);
+      eye.position.set(side * 0.034, 0, 0);
+      eyes.add(eye);
+    }
+    eyes.visible = false;
+    body.add(eyes);
+    let headBone = null;
     slot.userData.onFilled = (person) => {
       model = person;
       const r = createRig(person);
       rig = r.valid ? r : null;
       heatSignature(person);
+      person.traverse((o) => { if (!headBone && o.isBone && /head/i.test(o.name) && !/end|top|nub/i.test(o.name)) headBone = o; });
+      eyes.visible = !!headBone;
+    };
+    const placeEyes = () => {
+      if (!headBone || !eyes.visible) return;
+      headBone.getWorldPosition(world);
+      body.worldToLocal(world);
+      eyes.position.set(world.x, world.y + 0.035, world.z + 0.1);
     };
 
     const hit = collider(1.0, 1.95, 0.9, 0, { patient: true });
@@ -1890,6 +1932,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
     group.userData.tick = (dt, time) => {
       t += dt;
       stagger = Math.max(0, stagger - dt * 2.5);
+      if (state === "down") eyes.visible = false;
+      else placeEyes();
       if (state === "lurch") {
         const k = Math.min(1, t / 1.35);
         mover.position.x = THREE.MathUtils.lerp(startX, lane, k * k * (3 - 2 * k));
