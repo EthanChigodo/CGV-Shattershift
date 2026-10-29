@@ -1053,9 +1053,17 @@ export function createFoundryKit({ shadows = false } = {}) {
 
     /** Cryo holds it where it is - only while it is up (frozen down, it would be a wall). */
     group.userData.canFreeze = () => !state.jammed && state.cycle < 0.5;
+    /**
+     * Can someone get under it and out the far side in `seconds`? Jammed,
+     * always; else only in the hold, with that long still to go (Okoro's
+     * guide asks: src/story/foundry-guide.js).
+     */
+    hammer.userData.clearFor = (seconds) => state.jammed || (state.cycle < 0.5 && (0.5 - state.cycle) * period >= seconds);
     /** The valve broken: the hammer stays up, venting steam. */
     group.userData.jam = () => {
       state.jammed = true;
+      // Held up for good: nothing to run into any more.
+      hammer.userData.disabled = true;
       glass.userData.alive = false;
       glass.visible = false;
       steam.visible = true;

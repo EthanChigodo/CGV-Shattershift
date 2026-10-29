@@ -92,10 +92,12 @@ export async function run(page, { shots }) {
       const d = __dbg.foundryDistance();
       if (__dbg.ammo !== lastAmmo && handoffAt === null && __dbg.ammo >= 12) handoffAt = d;
       lastAmmo = __dbg.ammo;
-      // Play it straight: break each switch when it comes into range.
-      for (const glass of f.breakables) {
+      // Play it straight: break each switch when it comes into range, and a
+      // drop forge's valve once it opens (src/systems/problems.js).
+      for (const glass of f.breakables.slice()) {
         const at = glass.userData.routeDistance;
-        if (glass.userData.alive && glass.userData.kind === "switch" && at !== undefined && at - d < 22 && at > d) __dbg.shatter(glass);
+        const target = glass.userData.kind === "switch" || (glass.userData.kind === "valve" && glass.userData.open);
+        if (glass.userData.alive && target && at !== undefined && at - d < 22 && at > d) __dbg.shatter(glass);
       }
       __dbg.setHealth(1e6);
       // Okoro must never be inside a hazard's box while he runs the route.
