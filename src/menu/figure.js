@@ -9,7 +9,7 @@
  *   const figure = await createFigure({ character, skin, hair, assetBase });
  *   figure.root            // Object3D: feet on y = 0, facing local +Z
  *   figure.height          // metres
- *   figure.setLook({ skin, hair })            // instant (SKIN_TONES / HAIR_COLOURS keys)
+ *   figure.setLook({ skin, hair, outfit, shoes, headwear })   // instant (the loadout's keys)
  *   figure.update(dt, time, { camera, attention, gaze, wind, rimDir, rim, reducedMotion })
  *   figure.headPosition(out)                  // world space, for framing
  *   figure.dispose()
@@ -33,7 +33,8 @@ import * as THREE from "../three.js";
 import { loadMeltdownAssets } from "../levels/meltdown/assets.js";
 import { cloneCharacter, rigPlayerMesh, PLAYER_RIG_VERTEX, PLAYER_RIG_MAIN } from "../levels/meltdown/characters.js";
 import { applyFigureLook } from "../figure/look.js";
-import { OUTFITS } from "../figure/outfit.js";
+import { OUTFITS, HEADWEAR, buildHeadwear, disposeHeadwear, headwearColour } from "../figure/outfit.js";
+import { measureHead } from "../levels/meltdown/player.js";
 import { buildShoes, disposeShoes } from "../figure/shoes.js";
 
 /** Head turn, breath and wind, run in the rest pose before the rig poses the body. */
@@ -136,7 +137,7 @@ function contactTexture() {
 const smooth = (t) => t * t * (3 - 2 * t);
 
 class MenuFigure {
-  constructor(template, { skin, hair, outfit, shoes, shadows = true }) {
+  constructor(template, { skin, hair, outfit, shoes, headwear, shadows = true }) {
     this.root = new THREE.Group();
     this.root.name = "Subject07";
     this.pelvis = new THREE.Group();
@@ -175,6 +176,28 @@ class MenuFigure {
     }
     this.mesh = mesh;
     this.pelvis.add(model);
+    // Headwear (src/figure/outfit.js), on a mount that moves the way the
+    // shaders move the head: turned about the neck (MENU_VERTEX_MAIN: yaw,
+    // then pitch), then the rig's twist and lean about the hips
+    // (characters.js - at the head the twist is -0.8 of it). Model space
+    // faces +Z here; a hat's front is its own -Z, so it's turned round.
+    this.headSize = measureHead(mesh.geometry, body.height);
+    this.leanMount = new THREE.Group();
+    this.leanMount.position.set(0, body.hipY, 0);
+    this.twistMount = new THREE.Group();
+    this.leanMount.add(this.twistMount);
+    this.neckMount = new THREE.Group();
+    this.neckMount.position.set(0, this.extra.uNeck.value - body.hipY, -0.01);
+    this.twistMount.add(this.neckMount);
+    this.headMount = new THREE.Group();
+    this.headMount.name = "HeadMount";
+    this.headMount.position.set(0, body.height - this.headSize.h - this.extra.uNeck.value, this.headSize.cz + 0.01);
+    this.headMount.rotation.y = Math.PI;
+    this.neckMount.add(this.headMount);
+    this.pelvis.add(this.leanMount);
+    this.hat = null;
+    this.headwearKind = "none";
+    this.outfitKey = outfit ?? "scrubs";
     // Arms loose at the sides; nothing in the hands.
     uniforms.uHold.value = 0;
     uniforms.uArmDrop.value = 1.36;
@@ -192,7 +215,7 @@ class MenuFigure {
     contact.renderOrder = 1;
     this.root.add(contact);
 
-    this.setLook({ skin, hair, outfit, shoes });
+    this.setLook({ skin, hair, outfit, shoes, headwear });
     // The idle's state.
     this.weight = 0; // -1 on the left leg .. +1 on the right
     this.weightTarget = 0.7;
@@ -204,10 +227,17 @@ class MenuFigure {
     this._m = new THREE.Matrix4();
   }
 
-  setLook({ skin, hair, outfit, shoes } = {}) {
+  setLook({ skin, hair, outfit, shoes, headwear } = {}) {
     if (skin) this.look.setSkinTone(skin);
     if (hair) this.look.setHairColour(hair);
     if (outfit) this.look.setOutfit(OUTFITS[outfit]?.color ?? null);
+    // The headwear (in the outfit's colour, so a new outfit remakes it too).
+    const kind = headwear && HEADWEAR[headwear] ? headwear : this.headwearKind;
+    if (kind !== this.headwearKind || (outfit && outfit !== this.outfitKey)) {
+      this.headwearKind = kind;
+      if (outfit) this.outfitKey = outfit;
+      this._dressHead();
+    }
     if (shoes && shoes !== this.shoeKind) {
       // On the same rig as the body (src/figure/shoes.js).
       this.shoeKind = shoes;
@@ -218,6 +248,18 @@ class MenuFigure {
         this.shoes.userData.onReady = () => this.look.setFeetHidden(true);
       } else this.look.setFeetHidden(false);
     }
+  }
+
+  _dressHead() {
+    if (this.hat) {
+      this.hat.removeFromParent();
+      disposeHeadwear(this.hat);
+      this.hat = null;
+    }
+    if (this.headwearKind === "none") return;
+    this.hat = buildHeadwear(this.headwearKind, headwearColour(this.outfitKey), this.headSize);
+    this.hat.traverse((o) => { if (o.isMesh) o.castShadow = this.mesh.castShadow; });
+    this.headMount.add(this.hat);
   }
 
   /** The head, in world space (for the camera's framing). */
@@ -315,6 +357,10 @@ class MenuFigure {
     x.uHeadPitch.value = this.pitch;
     // The shoulders follow the head a little.
     u.uTwist.value += this.yaw * 0.18;
+    // The headwear's mount, as the shaders move the head (see the constructor).
+    this.neckMount.rotation.set(this.pitch, this.yaw, 0);
+    this.twistMount.rotation.y = -0.8 * u.uTwist.value;
+    this.leanMount.rotation.x = u.uLean.value;
 
     if (wind) {
       // World wind into the model's frame.
@@ -328,6 +374,7 @@ class MenuFigure {
 
   dispose() {
     this.root.removeFromParent();
+    if (this.hat) disposeHeadwear(this.hat);
     for (const o of this.owned) o.dispose?.();
     this.owned.length = 0;
   }
@@ -346,9 +393,9 @@ class MenuFigure {
  * @param {boolean} [o.shadows]  cast a real shadow (the stage's key light)
  * @returns {Promise<MenuFigure|null>}
  */
-export async function createFigure({ character, skin, hair, outfit, shoes, assetBase, shadows = true }) {
+export async function createFigure({ character, skin, hair, outfit, shoes, headwear, assetBase, shadows = true }) {
   const assets = await loadMeltdownAssets(assetBase, { names: [character] });
   const asset = assets.get(character);
   if (!asset) return null;
-  return new MenuFigure(asset.template, { skin, hair, outfit, shoes, shadows });
+  return new MenuFigure(asset.template, { skin, hair, outfit, shoes, headwear, shadows });
 }

@@ -307,17 +307,26 @@ export class Performer {
     a.root.rotation.y = c.yaw;
     a.body.rotation.set(c.pitch, 0, c.side);
     a.body.position.y = (0.004 + 0.006 * this.fear) * breath;
-    // The launcher mount follows the torso's lean and drop, so the hands
-    // stay on it (as PlayerAvatar.update does for Level 3).
-    if (u && a.shoulderBase && a.bodyInfo) {
+    // The mounts follow the torso's lean and drop, as PlayerAvatar.update
+    // does for Level 3: the launcher (so the hands stay on it), the bag on
+    // the back - and the head, with whatever is on it (the headwear stayed
+    // up where a standing head would be while the body crouched and tucked).
+    if (u && a.bodyInfo) {
       const angle = -(u.uLean.value + u.uCrouch.value * 0.25);
       const hip = a.bodyInfo.hipY;
-      const y = a.shoulderBase.y - hip;
-      const z = a.shoulderBase.z;
+      const drop = u.uCrouch.value * 0.42 + u.uTuck.value * 0.15;
       const cs = Math.cos(angle);
       const sn = Math.sin(angle);
-      a.shoulder.position.set(a.shoulderBase.x, hip + y * cs - z * sn - u.uCrouch.value * 0.42 - u.uTuck.value * 0.15, y * sn + z * cs);
-      a.shoulder.rotation.x = angle;
+      const place = (mount, base, x) => {
+        if (!mount || !base) return;
+        const y = base.y - hip;
+        const z = base.z;
+        mount.position.set(x, hip + y * cs - z * sn - drop, y * sn + z * cs);
+        mount.rotation.x = angle;
+      };
+      place(a.shoulder, a.shoulderBase, a.shoulderBase?.x ?? 0);
+      place(a.back, a.backBase, 0);
+      place(a.head, a.headBase, 0);
     }
     // Contact shadow stays on the floor and fades as they lift off it.
     a.shadow.position.y = 0.025 - this.floatY - lift;

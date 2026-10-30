@@ -79,7 +79,7 @@ function shadowTexture() {
  * half-width and half-depth near the crown, hair included, and where its
  * middle is front to back. `h` is from the brow line up to the crown.
  */
-function measureHead(geometry, top) {
+export function measureHead(geometry, top) {
   const pos = geometry.attributes.position;
   let minX = Infinity;
   let maxX = -Infinity;

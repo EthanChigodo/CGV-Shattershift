@@ -285,13 +285,14 @@ export class MenuStage {
   }
 
   /** Subject 07's body, skin and hair. Skin and hair change at once; a new body fades in. */
-  setFigure({ character, skin, hair, outfit, shoes } = {}) {
+  setFigure({ character, skin, hair, outfit, shoes, headwear } = {}) {
     const spec = this.figureSpec;
     if (skin) spec.skin = skin;
     if (hair) spec.hair = hair;
     if (outfit) spec.outfit = outfit;
     if (shoes) spec.shoes = shoes;
-    this.figure?.setLook({ skin: spec.skin, hair: spec.hair, outfit: spec.outfit, shoes: spec.shoes });
+    if (headwear) spec.headwear = headwear;
+    this.figure?.setLook({ skin: spec.skin, hair: spec.hair, outfit: spec.outfit, shoes: spec.shoes, headwear: spec.headwear });
     if (character && character !== spec.character) {
       spec.character = character;
       const wanted = character;
@@ -301,7 +302,7 @@ export class MenuStage {
           f.dispose();
           return;
         }
-        f.setLook({ skin: this.figureSpec.skin, hair: this.figureSpec.hair, outfit: this.figureSpec.outfit, shoes: this.figureSpec.shoes });
+        f.setLook({ skin: this.figureSpec.skin, hair: this.figureSpec.hair, outfit: this.figureSpec.outfit, shoes: this.figureSpec.shoes, headwear: this.figureSpec.headwear });
         if (!this.isReady || this.fade > 0.9) {
           this._placeFigure(f);
           return;
