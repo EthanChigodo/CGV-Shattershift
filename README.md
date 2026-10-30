@@ -120,7 +120,12 @@ The **pause menu** has the same buttons (resume, settings, restart, quit) and a 
 ## Multiplayer (on one machine, controllers or keyboard and mouse)
 
 - **The Arena** (2-4 players): king of the hill on the roof, one camera over everyone. Spheres are thrown by hand: glass knocks, cryo freezes, gravity warps whoever it catches somewhere else on the roof, and shock blows everyone back - and its charge jumps on to whoever is near them in violet bolts, stunning them (never back to the thrower). Care packages bring serums.
-- **The Race** (2 players, split screen): head to head through the Foundry, the Labs or the Skyline. Glass comes from your spheres; each runner has **3 cryo, 3 shock and 3 gravity for the whole race**, shown on the sphere wheel. Cryo puts out the Labs' fire walls and vents and the Skyline's fires, and freezes a rival it catches in ice; shock leaves them stumbling in arcs; gravity pulls them into its lane. (The right-tool problems are not in the race: it is about the line you run.)
+- **The Race** (2 players, split screen): head to head through the Foundry, the Labs or the Skyline, played like Endless.
+  - **Spheres:** glass comes from your spheres; each runner has **3 cryo, 3 shock and 3 gravity for the whole race**, shown on the sphere wheel.
+  - **Aiming:** each runner's ring (the mouse, or the right stick) lights on anything it can break - and on the other runner - with a little aim assist, as in the story. A throw at your rival leads them, and a glass sphere that lands knocks them into a stumble.
+  - **Running into things:** glass breaks as you crash through it (a small hit); sphere caches, serums and case files are taken by running into them.
+  - **Serums** work as in the story, each runner's own: Overdrive, unlimited spheres, prism split, kinetic shield, Thermal Aegis and restoration.
+  - **The special spheres:** cryo puts out the Labs' fire walls and vents and the Skyline's fires (which burn, as in the story), and freezes a rival it catches in ice; shock leaves them stumbling in arcs; gravity pulls them into its lane. (The right-tool problems are not in the race: it is about the line you run.)
 
 Not on a phone: both need a keyboard or controllers.
 
@@ -193,6 +198,7 @@ node tests/causeway/run.js
 node tests/elevators/run.js
 node tests/story/run.js
 node tests/touch/run.js
+node tests/race/run.js
 ```
 
 The bots play each level and answer every sphere-only obstacle with the right tool (the tests fail if the right tool doesn't work); fairness checks prove every obstacle can be passed; `tests/meltdown/checks/holds.js` checks cryo's freeze and shock's chain on the roof.

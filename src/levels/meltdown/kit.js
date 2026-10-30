@@ -1048,6 +1048,8 @@ export function createMeltdownKit({ shadows = false, fire } = {}) {
 
       const hit = collider(3.0, H, 0.5, 0, { glass: true });
       hit.position.x = lane;
+      // (Which glass it guards: a body through it breaks that - the Race's courses.js.)
+      hit.userData.glassMesh = glass;
       group.add(hit);
       hits.push(hit);
 
