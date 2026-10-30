@@ -1894,7 +1894,7 @@ const menuBackdrop = new MenuBackdrop({
   // (Auto means medium here: the frame-rate monitor only watches the runs.)
   quality: () => (settings.quality === "auto" && !autoLow ? "medium" : resolvedQuality()),
   reducedMotion: () => settings.reducedMotion,
-  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes() }),
+  figure: () => ({ character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes(), headwear: savedHeadwear() }),
 });
 menuBackdrop.preload();
 
@@ -6056,7 +6056,7 @@ function applyLook(patch) {
   if (patch.ball) { saveBall(patch.ball); arsenal.prefer(patch.ball); ballPickers.show(patch.ball); }
   refreshDossier();
   // Subject 07 on the menu's roof (src/menu/backdrop.js) too.
-  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes() } }));
+  dispatchEvent(new CustomEvent("loadout:change", { detail: { character: savedCharacter(), skin: savedSkinTone(), hair: savedHairColour(), outfit: savedOutfit(), shoes: savedShoes(), headwear: savedHeadwear() } }));
 }
 let locker = null;
 async function openCustomise(tab = "character") {
