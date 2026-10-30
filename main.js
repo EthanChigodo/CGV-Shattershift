@@ -72,6 +72,8 @@ import { NameCard } from "./src/ui/name-card.js";
 import { LeaderboardView } from "./src/ui/leaderboard-view.js";
 import { TrophyRoom } from "./src/ui/trophy-room.js";
 import { FieldManual } from "./src/ui/field-manual.js";
+import { ProblemLog, PROBLEMS } from "./src/systems/problems.js";
+import { ProblemCue } from "./src/ui/problem-cue.js";
 import { KIT_FOR_TROPHY } from "./src/figure/kits.js";
 import { GhostRecording, Ghost, loadGhost, saveGhostIfBetter } from "./src/systems/ghosts.js";
 import { TabbedScreen } from "./src/ui/tabbed-screen.js";
@@ -864,6 +866,8 @@ function buildFoundry(variant = 0) {
   }
 
   foundryHud.bind(foundry);
+  // The drop forges (src/systems/problems.js): the hint, the wrong moment, the solve.
+  wireProblems(foundry);
   foundry.events.on("complete", () => {
     if (currentLevel !== 2 || state !== "playing") return;
     score += Math.max(0, foundry.state.systemsOnline * 500 + health * 10);
@@ -1009,7 +1013,7 @@ function updateFoundry(dt, time) {
     level1Audio.hurt();
     foundryHud.setIntegrity(Math.max(0, health));
     triggerShake(0.45);
-    showMessage(hazard.userData.barrier === "high" ? "LOW CLEARANCE" : "INTEGRITY DAMAGED");
+    showMessage(hazard.userData.forge ? "CRUSHED // BREAK ITS VALVE WHILE IT'S UP" : hazard.userData.barrier === "high" ? "LOW CLEARANCE" : "INTEGRITY DAMAGED");
     updateUI();
     if (health <= 0) endRun(false);
   }
@@ -1196,6 +1200,7 @@ function buildCauseway(mode = "story") {
   });
   causeway.builtFor = runDifficulty;
   causeway.addTo(scene);
+  wireProblems(causeway);
   // The Skyline is reached by lift now, not woken into: no containment pod.
   // (Level 1 streams its props and resets their roots' visibility, so hide the parts.)
   causeway.pod?.root?.traverse((o) => { if (o !== causeway.pod.root) o.visible = false; });
@@ -1326,6 +1331,44 @@ function activateSerum(type) {
   run.flash = Math.max(run.flash, 0.25);
 }
 
+/*
+ * The right-tool problems (src/systems/problems.js): a forge valve broken on
+ * the beat, a shutter only a charged shot blows out, a door only shock
+ * opens, supplies only gravity reaches. The levels report what they meet,
+ * solve and get wrong to one log; the cue says it (src/ui/problem-cue.js),
+ * and a solve scores and goes in the run report. (The Labs and the Roof
+ * take the log itself: getMeltdown.)
+ */
+const problemLog = new ProblemLog();
+new ProblemCue().bind(problemLog);
+problemLog.on("solved", ({ key, bonus }) => {
+  score += bonus;
+  if (runReport && runKind === "story") {
+    const at = reportLevel() ?? PROBLEMS[key].level;
+    runReport.solved = { ...runReport.solved, [at]: (runReport.solved?.[at] ?? 0) + 1 };
+  }
+  updateUI();
+});
+/** The Skyline's and the Foundry's problems, from their events (a new level: a new log). */
+function wireProblems(level) {
+  problemLog.reset();
+  const on = (name, fn) => level.events.on(name, (p) => { if (level === causeway || level === foundry) fn(p); });
+  on("problem-sighted", (p) => problemLog.sighted(p.key, p));
+  on("problem-wrong", (p) => {
+    problemLog.wrong(p.key, p.used);
+    level1Audio.surfaceRicochet();
+    // (Off a forge valve's guard: sparks where it glanced off.)
+    if (p.position) shatterFX.chunks(p.position, 10, { tint: 0xffd9a0, speed: 3, radius: 0.1, size: 0.05, life: 0.8 });
+  });
+  on("problem-solved", (p) => {
+    problemLog.solve(p.key, p);
+    // The right tool's cost back (problems.js `refund`).
+    const refund = PROBLEMS[p.key]?.refund ?? 0;
+    if (refund) { ammo += refund; ammoRecovery.reset(); level1Audio.sphereCollected(); updateUI(); }
+    level1Audio.impact(0.7); level1Audio.serumCollected(); triggerShake(0.2);
+  });
+}
+
 const _forward = new THREE.Vector3(0, 0, -1);
 const _dv = new THREE.Vector3();
 
@@ -1383,7 +1426,8 @@ function updateCauseway(dt, time) {
   for (const pane of panes) {
     const result = causeway.breakTarget(pane, { body: true, direction: _forward });
     if (!result) continue;
-    if (!absorbWithShield(_forward)) damage(result.kind === "door" ? 24 : 15, result.kind === "door" ? "CRASHED THROUGH THE DOOR" : "GLASS IMPACT");
+    // A sealed door (problems.js) gives to a body too - at a heavy cost.
+    if (!absorbWithShield(_forward)) damage(result.sealed ? 34 : result.kind === "door" ? 24 : 15, result.sealed ? "SHOULDERED THROUGH THE SEAL // SHOCK OPENS IT" : result.kind === "door" ? "CRASHED THROUGH THE DOOR" : "GLASS IMPACT");
     if (state !== "playing") return;
   }
   if (hits.length && run.invulnerable <= 0) {
@@ -1871,6 +1915,8 @@ function getMeltdown() {
     // (A touch screen plays the roof over the shoulder too, as a phone shooter
     // does: the stick, the right side dragged to look, SHOOT - touch-controls.js.)
     reactionLayer: story,
+    // The right-tool problems' log (the cue, the score and the report listen).
+    problems: problemLog,
   });
   meltdown.setBloom(resolvedQuality() !== "low" && gpuReport().halfFloat !== false);
   meltdownQuality();
@@ -2022,6 +2068,8 @@ function leaveMeltdown(nextLevel) {
 let pendingSkyline = false;
 function updateMeltdownFrame(dt, time) {
   if (!meltdown) return;
+  // Focus's look, in the Labs' and the Roof's own grading pass (the world is already slowed: dt).
+  if (meltdown.grade?.uniforms.uFocus) meltdown.grade.uniforms.uFocus.value = 1 - run.timeScale;
   meltdown.update(dt, time);
   const liftCut = meltdown.cut;
   const insideElevator = Boolean(liftCut?.elevatorInside);
@@ -2384,8 +2432,9 @@ function detonate(p, point, ground = false) {
     // gate's locks, one at a time in order (a burst by the middle one was
     // releasing all three at once, I-II-III, wherever it hit).
     if (target.userData.kind === "serum" || target.userData.serum || target.userData.kind === "lock") continue;
-    // (`sphere`: what was thrown - a charged glass burst is shock's, but only a shock sphere downs a drone.)
-    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind, sphere: p.ball });
+    // (`sphere`: what was thrown - a charged glass burst is shock's, but only a shock sphere downs a drone
+    // or overloads a sealed door; `splash`: a burst's reach, not a direct hit.)
+    const r = shatter(target, { point: target.getWorldPosition(new THREE.Vector3()), direction: p.velocity, ball: kind, sphere: p.ball, splash: true });
     if (r && !r.rejected) p.scored = true;
   }
   triggerShake(kind === "shock" ? 0.25 : 0.18);
@@ -3587,7 +3636,7 @@ function runReportHTML(r) {
       <span class="rr-name"><b>${esc(place ?? sector)}</b><small>${place ? esc(sector) : ""}</small></span>
       <span class="rr-bar"><i style="width:${((t / longest) * 100).toFixed(1)}%"></i></span>
       <span class="rr-time">${hms(t)}</span>
-      <span class="rr-tags"><em class="d">${deaths} death${deaths === 1 ? "" : "s"}</em><em>${r.hits[key] ?? 0} hits</em></span>
+      <span class="rr-tags"><em class="d">${deaths} death${deaths === 1 ? "" : "s"}</em><em>${r.hits[key] ?? 0} hits</em>${r.solved?.[key] ? `<em class="s">${r.solved[key]} solved</em>` : ""}</span>
     </li>`;
   }).join("");
   const causes = new Map();
@@ -3673,13 +3722,17 @@ function resumeFromCheckpoint() {
     foundryInvulnerable = 2;
     foundrySlow = 0;
     ammo = Math.max(ammo, cp.ammo);
-    foundry.resetEscape();
+    // Everything past the checkpoint as it was (the escape too).
+    foundry.resetFrom(cp.distance);
   } else if (cp.key === "skyline") {
     runZ = CAUSEWAY_ORIGIN_Z - cp.distance;
     lane = 1;
     run.finished = false;
     run.invulnerable = 2;
     ammo = Math.max(ammo, cp.ammo);
+    // Everything past it rebuilt, the gate sealed again with its full clock.
+    causeway.resetFrom(cp.distance);
+    causewayHud.warning(null);
   } else if (cp.key === "labs") {
     meltdown.resumeAt(cp.distance, cp.ammo, life);
   }
@@ -3969,12 +4022,12 @@ function shatter(target, hit = {}) {
   // Foundry targets must go through the level, because breaking a switch is
   // what opens a gate or restores a system - hiding the mesh here would break
   // the glass and leave the route shut.
-  const isFoundry = target.userData.kind === "switch" || target.userData.kind === "cell";
+  const isFoundry = target.userData.kind === "switch" || target.userData.kind === "cell" || target.userData.kind === "valve";
   let gainedSpheres = 0;
   let result = { kind: target.userData.kind };
 
   if (isFoundry) {
-    const foundryResult = foundry?.breakTarget(target);
+    const foundryResult = foundry?.breakTarget(target, { ball: hit.ball });
     if (!foundryResult) return null;
     result = foundryResult;
     score += foundryResult.points * combo;
@@ -6235,6 +6288,16 @@ function cycleSphere(step) {
 document.addEventListener("pointerlockchange", () => {
   if (!document.pointerLockElement && currentLevel === 3 && state === "playing" && !paused && meltdown?.wantsPointerLock && !unlockCard.open) openPause();
 });
+// Focus held with another button down (holding fire on the Roof, charging in
+// the Labs): the browser sends no second pointerdown or pointerup for a chord,
+// only a move with the new buttons - so the right button is read from that too.
+addEventListener("pointermove", (event) => {
+  if (arena?.active || race?.active || locker?.active || event.pointerType !== "mouse") return;
+  const right = (event.buttons & 2) !== 0;
+  if (right && !run.focusing && state === "playing" && !paused && hasAbility("focus")) run.focusing = true;
+  else if (!right && run.focusing && run.focusByMouse) run.focusing = false;
+  run.focusByMouse = right;
+});
 addEventListener("pointerup", (event) => {
   if (event.button === 2) run.focusing = false;
   if (event.button === 0 && currentLevel === 1 && charge.holding) {
@@ -6770,6 +6833,7 @@ globalThis.__dbg = {
   get foundry() { return foundry; },
   get causeway() { return causeway; },
   get meltdown() { return meltdown; },
+  get problems() { return problemLog; },
   enterMeltdown,
   get gravityLift() { return gravityLift; },
   get loadingScreen() { return loadingScreen; },

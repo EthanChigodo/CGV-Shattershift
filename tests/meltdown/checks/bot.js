@@ -6,6 +6,9 @@
  * slide, the trigger, and mashing at ducts. It sees what a careful player
  * sees - it tests where its body will be over the next second against the
  * level's own collide() - and aims at glass by projecting it to the screen.
+ * The sphere-only obstacles it answers as a player should: a cryo sphere at
+ * a fire wall (the team's: kit.js fireWall), a full charged shot at the
+ * jammed shutter (problems.js).
  *
  * Returns a log of every hit (what, where) and why the run ended.
  *
@@ -22,7 +25,16 @@ export const BOT_SOURCE = `
   const centre = new THREE.Vector3();
   const size = new THREE.Vector3();
   const p = new THREE.Vector3();
-  const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0 };
+  const log = { hits: [], vitality: [], end: null, pushes: 0, shots: 0, solved: [] };
+  /** Each problem's shots: how many, and when the last went (a player throws again if one was blocked). */
+  const tries = new Map();
+  // The fire walls (cryo's), as problems: where, what to aim at, whether out.
+  const walls = (g.level._fireWalls ?? []).map((w) => {
+    let target = null;
+    w.group.traverse((o) => { if (!target && o.userData.kind === "firewall") target = o; });
+    return { key: "firewall", distance: w.distance, target, get solved() { return !!w.group.userData.out; } };
+  }).filter((w) => w.target);
+  const answeredList = [];
   let t = 0;
   let lastHits = 0;
   let lastCollide = [];
@@ -90,11 +102,17 @@ export const BOT_SOURCE = `
           }
         }
       }
+      // A fire wall or the jammed shutter coming (problems.js): save two
+      // spheres for it, then the right tool from its clear run-up (the last
+      // ~20 m: nothing in the line of fire) - again, up to three times, if a
+      // patient or a sack stepped into the line and took the shot.
+      const problem = [...walls, ...(g.level.problemSet?.list ?? [])].find((q) => !q.solved && q.distance - r.distance > 7 && q.distance - r.distance < 60);
       // Shoot glass, sacks, vials and patients ahead: aim by projecting them.
       let target = null;
       for (const b of g.level.breakables) {
         const d = (b.userData.routeDistance ?? 0) - r.distance;
-        if (!b.visible || d < 6 || d > 34) continue;
+        if (!b.visible || d < 6 || d > 34 || b.userData.problem || b.userData.kind === "firewall") continue;
+        if (problem && b.userData.kind !== "sack" && r.balls < 6) continue;
         if (!target || d < target.d) target = { b, d };
       }
       r.firing = Boolean(target) && (r.lockout ?? 0) <= 0;
@@ -102,6 +120,18 @@ export const BOT_SOURCE = `
         target.b.getWorldPosition(p).project(g.camera);
         g.pointer.set(p.x, p.y);
       } else g.pointer.set(0, -0.1);
+      const tried = problem ? tries.get(problem) ?? { n: 0, at: -9 } : null;
+      if (problem && tried.n < 3 && t - tried.at > 0.7 && problem.distance - r.distance < 21 && r.balls >= 2) {
+        tries.set(problem, { n: tried.n + 1, at: t });
+        r.firing = false;
+        problem.target.getWorldPosition(p).project(g.camera);
+        g.pointer.set(p.x, p.y);
+        g.arsenal.select(problem.key === "firewall" ? "cryo" : "glass");
+        g._shoot(problem.key === "shutter" ? { charged: 1 } : {});
+        g.arsenal.select("glass");
+        log.solved.push(problem.key + "@" + Math.round(r.distance));
+        if (!answeredList.includes(problem)) answeredList.push(problem);
+      }
     } else r.firing = false;
 
     g.update(dt, 100 + t);
@@ -115,6 +145,8 @@ export const BOT_SOURCE = `
     if (g.phase === "over") { log.end = { phase: g.phase, t: +t.toFixed(1), d: +r.distance.toFixed(1), vitality: r.vitality, timer: g.level.state.timeRemaining }; break; }
     if (g.phase === "depart" || g.phase === "fade" || g.roof) { log.end = { phase: g.phase, t: +t.toFixed(1), d: +r.distance.toFixed(1), vitality: +r.vitality.toFixed(1), timer: +g.level.state.timeRemaining.toFixed(1), shots: r.shots, breaks: r.breaks }; break; }
   }
+  log.unsolved = answeredList.filter((q) => !q.solved).map((q) => q.key + "@" + Math.round(q.distance));
+  log.cleared = answeredList.filter((q) => q.solved).map((q) => q.key + "@" + Math.round(q.distance));
   return log;
 })
 `;

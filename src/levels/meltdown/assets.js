@@ -33,6 +33,10 @@ const PHONE_AT_ONCE = 2;
  * is a draw call; the ventilation network alone is 79 of them. Merging by
  * material collapses each of these to a handful.
  */
+/** Per model: names of nodes that are the exporter's helpers, not the model. */
+const EXPORT_HELPERS = {
+  launcher: /^(Box0\d+|Circle0\d+|camera\d*)$/,
+};
 const MERGE_BY_MATERIAL = new Set(["officeDesk", "launcher", "ventFan", "gadgetBrass", "gadgetCoil"]);
 
 /**
@@ -257,6 +261,15 @@ async function loadOne(loader, baseUrl, name, file) {
     return { template, size: template.userData.helicopter.size.clone() };
   }
   let scene = gltf.scene;
+  // Helpers the modelling program exported along with the model (its
+  // cameras' target circles, layout boxes): never part of it. They floated
+  // round the launcher as squares and circles (lecturer's feedback).
+  const helpers = EXPORT_HELPERS[name];
+  if (helpers) {
+    const strays = [];
+    scene.traverse((o) => { if (o !== scene && helpers.test(o.name)) strays.push(o); });
+    for (const o of strays) o.removeFromParent();
+  }
   // The launcher: without the sight - its box, its cable and the little
   // brackets that held it, every "Material #3" piece - nor the knob and the
   // two thin discs by the rear ring (Object002, and the grip mesh's small

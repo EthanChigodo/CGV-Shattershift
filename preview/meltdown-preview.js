@@ -13,6 +13,7 @@
 import * as THREE from "../src/three.js";
 import { MeltdownGame, CHARACTERS, savedCharacter } from "../src/levels/meltdown/game.js";
 import { BEATS } from "../src/levels/meltdown/index.js";
+import { ProblemCue } from "../src/ui/problem-cue.js";
 
 const canvas = document.querySelector("#game");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
@@ -30,6 +31,8 @@ const game = new MeltdownGame({
   devKeys: true,
   summary: true,
 });
+// The right-tool problems' hints, as the game shows them (src/ui/problem-cue.js).
+new ProblemCue().bind(game.problems);
 
 const ui = {
   cameraName: document.querySelector("#cameraName"),

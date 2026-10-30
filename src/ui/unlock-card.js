@@ -1,8 +1,10 @@
 /**
  * Before a sector starts in the story: what Subject 07 has gained there -
- * the new sphere type and the new abilities (systems/progression.js), each
- * with a picture of it in play, what it does and how to use it. Continue
- * (click, Space, Enter, the controller's A) and the host counts 3, 2, 1.
+ * the new sphere type and the new abilities (systems/progression.js) - and
+ * then, a page of its own, what to watch out for there (its hazards and
+ * right-tool problems), each with a picture of it in play, what it does and
+ * how to use it. Continue (click, Space, Enter, the controller's A) turns
+ * the page; on the last, the host counts 3, 2, 1.
  *
  *   const card = new UnlockCard();
  *   card.show("labs", () => startCountdown());
@@ -19,7 +21,9 @@ import { isPadCode, padLabel } from "../systems/input-glyphs.js";
  * on the end: a browser that once asked before they existed asks again.
  */
 const PICTURES = new URL("../../assets/ui/unlocks/", import.meta.url).href;
-const PICTURES_VERSION = 4;
+const PICTURES_VERSION = 5;
+/** Cards with no picture yet: the art in their colour, without asking for one (a 404 is an error). */
+const NO_PICTURE = new Set(["junction"]);
 
 /** What each sphere is for, where the card brings it in. */
 const SPHERE_USE = {
@@ -28,7 +32,11 @@ const SPHERE_USE = {
   cryo: "Freezes everything round where it hits, and puts fire out - the fire walls across the Labs burn until a cryo sphere hits them.",
   gravity: "A black hole: every patient near it is pulled in, lifted off their feet and flung at the open ledge - near one, over it. It drags a winged one out of the sky too.",
 };
-const TIP_COLOURS = { firewall: "#ff8a3a", drone: "#ff4a3a", brute: "#7a5cff", vent: "#9fe8d8", sprinkler: "#ff6a4a" };
+const TIP_COLOURS = {
+  firewall: "#ff8a3a", drone: "#ff4a3a", brute: "#7a5cff", vent: "#9fe8d8", sprinkler: "#ff6a4a",
+  // (The right-tool problems: in their tool's colour - fx/problem-marks.js.)
+  forge: "#e8f6ff", shutter: "#ffc04a", sealed: "#c77dff", junction: "#c77dff", stranded: "#7a5cff",
+};
 const ABILITY_COLOURS = { throw: "#ffd9a0", launcher: "#9fefff", charge: "#7fe3ff", focus: "#a9c8ff", dodge: "#ff8a5c" };
 
 const hex = (n) => `#${n.toString(16).padStart(6, "0")}`;
@@ -63,7 +71,8 @@ function touchKeys(kb) {
 
 function how(lines) {
   return lines.map((l) => {
-    const touch = touchKeys(l.kb);
+    // (A line can say what it is on a touch screen itself: the runners' swipes.)
+    const touch = l.touch !== undefined ? l.touch : touchKeys(l.kb);
     return `<div class="uc-how-line${touch ? "" : " no-touch"}">
       <dt><span class="kb-only">${keys(l.kb)}</span><span class="pad-only">${keys(l.pad)}</span>${touch ? `<span class="touch-only" data-keep-keys>${keys(touch)}</span>` : ""}</dt>
       <dd>${l.does}</dd>
@@ -85,8 +94,8 @@ export class UnlockCard {
         <h2 class="uc-title">New abilities</h2>
         <div class="uc-items"></div>
         <div class="uc-foot">
-          <button type="button" class="uc-button"><span>Continue</span><i>&#9654;</i></button>
-          <p class="uc-keys"><span class="kb-only"><kbd>Space</kbd> or <kbd>Enter</kbd></span><span class="pad-only"><kbd class="uc-pad-a"></kbd></span><span class="touch-only">Tap Continue</span> - then 3, 2, 1</p>
+          <button type="button" class="uc-button"><span class="uc-button-label">Continue</span><i>&#9654;</i></button>
+          <p class="uc-keys"><span class="kb-only"><kbd>Space</kbd> or <kbd>Enter</kbd></span><span class="pad-only"><kbd class="uc-pad-a"></kbd></span><span class="touch-only">Tap Continue</span><span class="uc-then"> - then 3, 2, 1</span></p>
         </div>
       </div>`;
     document.body.appendChild(this.root);
@@ -99,15 +108,16 @@ export class UnlockCard {
   }
 
   /**
-   * The card for a sector; `done` once Continue is pressed. `tipsOnly`: just
-   * what to know about it (Endless, where nothing is earned).
+   * The cards for a sector; `done` once Continue is pressed on the last.
+   * Two pages: what's new (the sphere, the abilities), then what to watch
+   * out for (its hazards and problems). `tipsOnly`: just the second
+   * (Endless, where nothing is earned).
    */
   show(stage, done, { tipsOnly = false } = {}) {
     const gains = GAINS[stage];
     if (!gains) { done?.(); return; }
     this.done = done;
-    this.where.textContent = tipsOnly ? `Endless · ${STAGE_NAMES[stage].replace(/^Sector \d+ · /, "")}` : STAGE_NAMES[stage];
-    this.root.querySelector(".uc-title").textContent = tipsOnly ? "Know this first" : "New abilities";
+    const where = tipsOnly ? `Endless · ${STAGE_NAMES[stage].replace(/^Sector \d+ · /, "")}` : STAGE_NAMES[stage];
     const items = [];
     for (const key of tipsOnly ? [] : gains.spheres) {
       const ball = BALLS[key];
@@ -127,15 +137,36 @@ export class UnlockCard {
       const kind = a.kind ?? "Ability";
       items.push({ key, tag: stage === "foundry" ? kind : `${kind} unlocked`, name: a.name, text: a.text, how: a.how, colour: ABILITY_COLOURS[key] });
     }
-    // What to know about the place (its hazards): after what's new.
+    // What to watch out for there (its hazards and problems): a page after what's new.
+    const watch = [];
     for (const key of gains.tips ?? []) {
       const t = TIPS[key];
-      items.push({ key, tag: "Know this", name: t.name, text: t.text, how: t.how, colour: TIP_COLOURS[key] });
+      if (t) watch.push({ key, tag: "Watch out for", name: t.name, text: t.text, how: t.how, colour: TIP_COLOURS[key] });
     }
+    this.pages = [
+      { title: "New abilities", items },
+      { title: tipsOnly ? "Know this first" : "Watch out for", items: watch },
+    ].filter((page) => page.items.length);
+    if (!this.pages.length) { this.done = null; done?.(); return; }
+    this.where.textContent = where;
+    this.page = 0;
+    this._render();
+    this.root.hidden = false;
+    this.open = true;
+  }
+
+  /** The page on screen: its title, its cards, "1 / 2" and Next or Continue. */
+  _render() {
+    const page = this.pages[this.page];
+    const items = page.items;
+    const last = this.page === this.pages.length - 1;
+    this.root.querySelector(".uc-title").textContent = this.pages.length > 1 ? `${page.title}  ·  ${this.page + 1} / ${this.pages.length}` : page.title;
+    this.root.querySelector(".uc-button-label").textContent = last ? "Continue" : "Next";
+    this.root.querySelector(".uc-then").hidden = !last;
     this.items.innerHTML = items.map((it, i) => `
       <article class="uc-item" style="--c:${it.colour}; --i:${i}">
-        <figure class="uc-pic">
-          <img src="${PICTURES}${it.key}.jpg?v=${PICTURES_VERSION}" alt="" loading="eager">
+        <figure class="uc-pic${NO_PICTURE.has(it.key) ? " missing" : ""}">
+          ${NO_PICTURE.has(it.key) ? "" : `<img src="${PICTURES}${it.key}.jpg?v=${PICTURES_VERSION}" alt="" loading="eager">`}
           <i class="uc-pic-fallback" aria-hidden="true"></i>
         </figure>
         <small class="uc-tag">${it.tag}</small>
@@ -153,13 +184,17 @@ export class UnlockCard {
     this.root.classList.remove("show");
     void this.root.offsetWidth;
     this.root.classList.add("show");
-    this.root.hidden = false;
-    this.open = true;
     this.button.focus({ preventScroll: true });
   }
 
+  /** Continue: the next page, or - on the last - away, and the host's 3, 2, 1. */
   close() {
     if (!this.open) return;
+    if (this.page < this.pages.length - 1) {
+      this.page += 1;
+      this._render();
+      return;
+    }
     this.open = false;
     this.root.hidden = true;
     const done = this.done;

@@ -41,6 +41,7 @@ import { LAYERS, setLayer } from "./layers.js";
 import { createGlassShared } from "./shaders/glass.js";
 import { createSky, createSkyline } from "./shaders/sky.js";
 import { CbdBuildings } from "../meltdown/cbd.js";
+import { laserGrid, sealDoor } from "./problems.js";
 import {
   createShardMaterial, buildFractureGeometry, buildChunkGeometry,
   EmberSystem, WaterSystem, SmokeSystem, SootSystem, VentFlowSystem, createBurst,
@@ -86,7 +87,10 @@ const LABELS = {
   sculpture: ["Rotating sculpture", "Steel pole blocks the centre. Blades are glass."],
   gate: ["Lift gate", "Break the three locks in order: I, II, III."],
   lift: ["Calibration lift", "Your way up to Sector 2."],
+  laser: ["Laser grid", "Jump or slide it - or shock its junction box."],
 };
+/** How far ahead a right-tool problem says what it wants (src/systems/problems.js). */
+const PROBLEM_LEAD = 48;
 
 /**
  * The downtown buildings round the causeway (cbd.js): out either side of
@@ -114,8 +118,10 @@ export class CausewayLevel {
    * @param {object} [o]
    * @param {boolean} [o.hard]        the story on Hard (layout.js hardenLayout)
    * @param {number} [o.chaseScale]   the bridge collapse's speed, x the designed one
+   * @param {boolean} [o.problems]    Endless's right-tool problems (sealed doors,
+   *   laser grids and their junction boxes; not in the Race)
    */
-  constructor({ origin = new THREE.Vector3(0, 0, 4000), mode = "story", quality = "high", seed, hard = false, chaseScale = 1 } = {}) {
+  constructor({ origin = new THREE.Vector3(0, 0, 4000), mode = "story", quality = "high", seed, hard = false, chaseScale = 1, problems = true } = {}) {
     this.origin = origin.clone();
     this.mode = mode;
     this.chaseScale = chaseScale;
@@ -188,7 +194,9 @@ export class CausewayLevel {
     const layout = mode === "endless" ? [] : hard ? hardenLayout(authoredLayout()) : authoredLayout();
     this.entries = layout.filter((e) => e.type !== "event");
     this.pendingEvents = layout.filter((e) => e.type === "event");
-    this.generator = mode === "endless" ? new EndlessGenerator(seed ?? Date.now()) : null;
+    // (All of them, for a restart from the checkpoint: resetFrom.)
+    this._events = [...this.pendingEvents];
+    this.generator = mode === "endless" ? new EndlessGenerator(seed ?? Date.now(), { problems }) : null;
     this.nextEntry = 0;
     this.live = [];
     this.debris = [];
@@ -381,6 +389,36 @@ export class CausewayLevel {
     }
   }
 
+  /**
+   * Back to `distance` (a restart from the checkpoint, main.js): everything
+   * from just behind it on rebuilt from the layout - what was broken, put
+   * out, opened or used up on the last attempt is back - the drones' and
+   * the scripted events' schedules from there, the vents past it whole (and
+   * their smoke), and the lift gate sealed again with its full clock: a
+   * failed gate is not lost again the moment you get back to it. (The
+   * story's run: Endless has no checkpoint.)
+   */
+  resetFrom(distance) {
+    const from = distance - DESPAWN_BEHIND;
+    for (let i = this.live.length - 1; i >= 0; i -= 1) {
+      const rec = this.live[i];
+      if (rec.entry.d < from) continue;
+      this._despawn(rec);
+      this.live.splice(i, 1);
+    }
+    if (this.gate && !this.live.includes(this.gate)) this.gate = null;
+    if (this.lift && !this.live.includes(this.lift)) this.lift = null;
+    const next = this.entries.findIndex((e) => e.d >= from);
+    this.nextEntry = next < 0 ? this.entries.length : next;
+    for (const e of this.entries) if (e.type === "vent" && e.id && e.d >= from) this.vents.delete(e.id);
+    this.pendingEvents = this._events.filter((e) => e.d > distance);
+    Object.assign(this.state.finale, { armed: false, nextLock: 0, open: false, opening: 0, sealed: false, sealedTime: 0 });
+    Object.assign(this.state.lift, { active: false, t: 0, cabinY: 0, entered: false, blasted: false });
+    this.drones.reset(distance);
+    this._highlighted = null;
+    this._stream(distance);
+  }
+
   _place(object, entry) {
     object.position.set(entry.x ?? 0, entry.y ?? 0, -entry.d);
     this.groups.props.add(object);
@@ -406,7 +444,17 @@ export class CausewayLevel {
       case "door": {
         const built = k.door();
         rec.root = built.root; own(built.target); rec.material = built.material;
+        // Sealed (problems.js): only shock opens it.
+        if (entry.sealed) { rec.seal = sealDoor(k, built); rec.problem = "sealed"; }
         mark("glass", 10.8, 0.5);
+        break;
+      }
+      case "laser": {
+        // A laser grid and its junction box, hung in its middle (problems.js): shock the box.
+        const built = laserGrid(k, { mode: entry.mode ?? "low" });
+        rec.root = built.root; own(built.target); rec.colliders.push(built.collider); rec.parts = built;
+        rec.problem = "junction";
+        mark("hazard", 11, 0.4);
         break;
       }
       case "cache": {
@@ -541,6 +589,8 @@ export class CausewayLevel {
   }
 
   _despawn(rec) {
+    rec.root.userData.dispose?.();
+    rec.seal?.dispose();
     rec.root.traverse((object) => {
       for (const item of object.userData?.owned ?? []) item.dispose?.();
     });
@@ -741,10 +791,13 @@ export class CausewayLevel {
   /**
    * Break (or damage) a target.
    * @param {THREE.Mesh} mesh
-   * @param {{point?:THREE.Vector3, direction?:THREE.Vector3, ball?:string, body?:boolean}} hit
-   * @returns {null | {kind, points, spheres, label, position, cracked?, rejected?, serum?, file?}}
+   * @param {{point?:THREE.Vector3, direction?:THREE.Vector3, ball?:string, body?:boolean, sphere?:string, splash?:boolean}} hit
+   *   `sphere`: what was thrown (a charged glass one bursts like shock -
+   *   `ball` - but isn't one); `splash`: a burst's reach rather than a
+   *   direct hit.
+   * @returns {null | {kind, points, spheres, label, position, cracked?, rejected?, serum?, file?, sealed?}}
    */
-  breakTarget(mesh, { point, direction, ball = "glass", body = false, sphere = ball } = {}) {
+  breakTarget(mesh, { point, direction, ball = "glass", body = false, sphere = ball, splash = false } = {}) {
     const data = mesh.userData;
     if (!data.alive) return null;
     // A security drone: armoured - only a shock sphere (what was thrown) downs it.
@@ -784,6 +837,35 @@ export class CausewayLevel {
         this.events.emit("lock", { index: data.order });
       }
       return result;
+    }
+
+    // The right-tool problems (problems.js): only a real shock sphere -
+    // not a charged glass one bursting like shock - overloads a junction box
+    // or a door's seal. The wrong one fizzles off and says what it needs
+    // (a burst that merely reaches it, silently).
+    const shock = ball === "shock" && sphere === "shock";
+    if (kind === "junction" || (kind === "door" && data.sealed && !body)) {
+      const key = kind === "junction" ? "junction" : "sealed";
+      if (!shock) {
+        if (splash) return null;
+        this._burst("sparks", hitPoint, { count: 22, speed: 4, color: 0xd28bff });
+        this._flashAt(hitPoint, 0xd28bff, 3);
+        this.events.emit("problem-wrong", { key, used: ball === "shock" ? "charge" : ball });
+        return { ...result, points: 0, rejected: true, label: kind === "junction" ? "JUNCTION BOX // SHOCK IT" : "SEALED // GLASS BOUNCES OFF" };
+      }
+      if (kind === "junction") {
+        // Overloaded: a shower of sparks, and the grid dies.
+        data.alive = false;
+        rec.solved = true;
+        rec.parts.kill();
+        rec.parts.collider.getWorldPosition(this._v);
+        this._burst("sparks", hitPoint, { count: 90, speed: 7, color: 0xe2b0ff });
+        this._burst("shock", hitPoint);
+        for (const s of [-1, 1]) this._burst("sparks", this._v2.set(this._v.x + s * 5.4, 2.6, this._v.z), { count: 50, speed: 5 });
+        this._flashAt(hitPoint, 0xd28bff, 12);
+        this.events.emit("problem-solved", { key: "junction" });
+        return { ...result, label: "JUNCTION OVERLOADED // GRID DOWN" };
+      }
     }
 
     // Reinforced glass and doors take two hits unless it's a shock sphere or a body.
@@ -826,6 +908,16 @@ export class CausewayLevel {
         rec.state = "broken";
       }
       if (kind === "door") result.label = "SECURITY DOOR BREACHED";
+      if (kind === "door" && data.sealed) {
+        rec.solved = true;
+        rec.seal?.open();
+        result.sealed = true;
+        if (!body) {
+          result.label = "SEAL OVERLOADED";
+          this._burst("shock", hitPoint);
+          this.events.emit("problem-solved", { key: "sealed" });
+        }
+      }
     } else if (kind === "cache") {
       result.spheres = 3;
       result.label = "+3 SPHERES";
@@ -1109,6 +1201,19 @@ export class CausewayLevel {
       }
     }
 
+    // The right-tool problems (src/systems/problems.js): each one says what
+    // it wants as it comes into view (the host shows the first of a kind).
+    if (playing) {
+      for (const rec of this.live) {
+        if (!rec.problem || rec.solved || rec.sighted) continue;
+        const gap = rec.entry.d - distance;
+        if (gap > 0 && gap < PROBLEM_LEAD) {
+          rec.sighted = true;
+          this.events.emit("problem-sighted", { key: rec.problem, lead: gap });
+        }
+      }
+    }
+
     this._updateTremor(dt, distance, playing);
     this._updateProps(dt, time, distance, playing);
     this._updateFires(dt, distance);
@@ -1151,6 +1256,7 @@ export class CausewayLevel {
         u.value = Math.min(rec.crackTarget, u.value + dt * 6);
       }
       if (rec.kind === "sprinkler" && rec.active) rec.flow = Math.min(1, rec.flow + dt * 2.5);
+      rec.seal?.tick(time);
       if (rec.kind === "vent") {
         rec.parts.fan.rotation.x += dt * rec.fanSpeed;
       }

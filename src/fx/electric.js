@@ -133,6 +133,10 @@ export class ElectricArcs {
       }
     }
     this.core.count = this.halo.count = this.n;
+    // Nothing shocked: not drawn at all (no state change, no call). The
+    // roof's prewarm still compiles them (it shows what's hidden).
+    this.core.visible = this.halo.visible = this.n > 0;
+    if (!this.n) return;
     this.core.instanceMatrix.needsUpdate = this.halo.instanceMatrix.needsUpdate = true;
     this.halo.material.opacity = 0.24 + Math.random() * 0.16;
   }
@@ -142,6 +146,7 @@ export class ElectricArcs {
     for (const bolt of this.bolts) bolt.t = 0;
     this.n = 0;
     this.core.count = this.halo.count = 0;
+    this.core.visible = this.halo.visible = false;
   }
 
   dispose() {

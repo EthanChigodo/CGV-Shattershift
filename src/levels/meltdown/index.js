@@ -60,6 +60,7 @@ import { routeSurfaceHit, locateOnRoute } from "../../systems/spheres.js";
 import { cloneCharacter } from "./characters.js";
 import { ashify } from "./ash.js";
 import { compileReady } from "../../systems/warm-up.js";
+import { placeLabsProblems } from "./problems.js";
 
 const _liftCam = new THREE.Vector3();
 const _liftFwd = new THREE.Vector3();
@@ -183,6 +184,8 @@ export class MeltdownLevel {
    *   designed (the story's difficulty)
    * @param {boolean} [options.extras]  Hard: fire waves among the patterns,
    *   and patients that stalk you in every section, not only the dark
+   * @param {boolean} [options.problems]  the right-tool problems (problems.js):
+   *   the jammed shutter (not in the Race)
    */
   constructor({
     origin = new THREE.Vector3(0, 0, 0),
@@ -200,6 +203,7 @@ export class MeltdownLevel {
     density = 1,
     extras = false,
     length = 1,
+    problems = true,
   } = {}) {
     // First, the beats at this difficulty's length (everything below reads them).
     setRouteScale(length);
@@ -275,6 +279,9 @@ export class MeltdownLevel {
     this._buildBeatCorridor();
     this._buildBeatBlackout();
     this._buildBeatStairwell();
+    // The right-tool problems (problems.js): a jammed shutter to blast -
+    // before the filler, which keeps clear of it.
+    this.problemSet = problems ? placeLabsProblems(this) : null;
     this._buildLifts();
     this._buildPatterns();
     this._buildCorridorDressing();
@@ -282,6 +289,8 @@ export class MeltdownLevel {
     this._buildFireFront();
     this._bakeCorridor();
     this._registerEmitters();
+    // Everything a sphere can hit, as built (resetFrom puts the broken back).
+    this._allBreakables = [...this.breakables];
 
     this._playerWorld = new THREE.Vector3();
     this._spill = new THREE.Color(0x8fa6c8);
@@ -428,6 +437,7 @@ export class MeltdownLevel {
 
   _hazard(piece, distance, lateral = 0) {
     this._add(this.groups.hazards, piece, distance, lateral);
+    piece.userData.hazardPiece = true;
     // Rubble, gaps and barriers never move: one mesh per material each.
     if (piece.userData.static) bakeStatic(piece);
     const meshes = piece.userData.hazardMeshes ?? (piece.userData.hazardMesh ? [piece.userData.hazardMesh] : []);
@@ -1523,6 +1533,42 @@ export class MeltdownLevel {
   }
 
   /**
+   * Back to `distance` (a restart from the checkpoint, game.js resumeAt):
+   * everything from just before it on as it was the first time - the glass
+   * whole, the caches and serums back, the patients up against the walls,
+   * the ducts and shelves hung again, the fire walls and fires burning, the
+   * vents thawed, the shutter jammed - so nothing broken on the last attempt
+   * is a free way through.
+   */
+  resetFrom(distance) {
+    const from = distance - 4;
+    const ahead = (d) => d !== undefined && d >= from;
+    for (const group of Object.values(this.groups)) {
+      for (const piece of group.children) {
+        if (ahead(piece.userData.routeDistance)) piece.traverse((o) => o.userData.restore?.());
+      }
+    }
+    for (const e of this._fallingHazards) {
+      if (!ahead(e.distance)) continue;
+      Object.assign(e, { triggered: false, landed: false, elapsed: 0 });
+      e.group.userData.blocking = false;
+      e.group.userData.setFallen(0);
+    }
+    for (const e of this._lurchers) {
+      if (!ahead(e.distance)) continue;
+      Object.assign(e, { triggered: false, elapsed: 0 });
+      this._moveLurcher(e, 0);
+    }
+    for (const s of this._signs ?? []) if (ahead(s.distance)) s.shown = false;
+    this.problemSet?.reset(from);
+    // What a sphere can hit, and what can hit you, again.
+    for (const m of this._allBreakables) {
+      if (ahead(m.userData.routeDistance) && m.userData.alive && !this.breakables.includes(m)) this.breakables.push(m);
+    }
+    for (const h of this._hazardIndex) if (ahead(h.distance) && !this.obstacles.includes(h.mesh)) this.obstacles.push(h.mesh);
+  }
+
+  /**
    * Put out every fire within `radius` m of `point` (a cryo sphere's burst):
    * the floor vents, burning rubble and gaps, the fires along the walls and
    * in the halls - not the fire walls (game.js _putOutWall) or the fire
@@ -1750,7 +1796,12 @@ export class MeltdownLevel {
     }
 
     for (const entry of this._culled) {
-      entry.piece.visible = Math.abs(entry.distance - distance) < 110 + (entry.slack ?? 0);
+      const ahead = entry.distance - distance;
+      entry.piece.visible = Math.abs(ahead) < 110 + (entry.slack ?? 0)
+        // Obstacles already behind you, between you and the chase camera,
+        // step out of its way (the damage audit: a glass gate's posts or a
+        // grid you had cleared filled the screen).
+        && !(entry.piece.userData.hazardPiece && ahead < -1.6 && ahead > -9.5);
     }
     for (const entry of this._animated) {
       if (Math.abs(entry.distance - distance) > 80) continue;
@@ -1824,6 +1875,7 @@ export class MeltdownLevel {
     this.endLift?.dispose();
     this.lights.dispose();
     this.ambience.userData.dispose?.();
+    this.problemSet?.dispose();
     this.kit.dispose();
     this.fire.dispose();
     this._frontFire?.dispose();

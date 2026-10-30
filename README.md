@@ -44,7 +44,7 @@ Ascension Tower, level 212. A resonance experiment failed at dawn and its subjec
 | `1` `2` `3` `4` | Demo: jump to Sector 01 (Foundry), 02 (Labs), 03 (Skyline), the Roof - with that stage's story and cutscenes |
 | `5` | Demo: ride the Gravity Fault lift (Sector 01 to 02); left mouse fires at the brake clamps |
 | `6` | Demo: the quiet ride from the Labs up to the Skyline |
-| The Labs and the Roof | Hold left mouse to fire; jump onto fallen ducts (running into one hurts); on the roof `WASD` moves (the open ledges are a long drop) and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available there |
+| The Labs and the Roof | Click to fire the launcher; hold to charge a shot (faster, flatter, a bigger burst - twice the spheres); jump onto fallen ducts (running into one hurts); on the roof `WASD` moves (the open ledges are a long drop), the mouse turns the camera over your shoulder and `Space` dodges or jumps for the ladder; `B` bloom, `K` credits. Photo mode is not available there |
 | Cutscenes | Hold `Esc` to skip the talking; reaction prompts show the keys to press |
 
 ### On a phone or tablet (held sideways)
@@ -69,9 +69,24 @@ A run that uses a demo key (`1`-`6`) still plays on, but it no longer counts for
 
 One set of rules and one look everywhere - the Skyline's (`src/systems/arsenal.js`, `src/systems/spheres.js`):
 
-- **Spheres:** glass (1), cryo (2) and shock (3) spheres are the same glowing orbs in every level, on the same arcs. They ricochet cleanly off a corridor's walls and ceiling, bounce off hazards and the floor, and a glass sphere punches through a pane it breaks. Ammunition comes from the floating cyan **sphere caches**.
+- **Spheres:** glass (1), cryo (2), shock (3) and gravity (2) spheres are the same glowing orbs in every level, on the same arcs. The story earns them a sector at a time: glass in the Foundry, cryo in the Labs, shock on the Skyline, gravity on the Roof. They ricochet cleanly off a corridor's walls and ceiling, bounce off hazards and the floor, and a glass sphere punches through a pane it breaks. Ammunition comes from the floating cyan **sphere caches**.
 - **Serums (power-ups):** prism split (gold), Thermal Aegis (orange: see through smoke, and fireproof), kinetic shield (green), overdrive (pink), unlimited spheres (blue) and restoration (green-teal) - each its own colour, never a sphere type's. The pickup is the Skyline's glass capsule with the serum alive inside it; shoot it or run into it.
 - **What you see:** a banner across the top names the serum, says what it does and how long it lasts, then shrinks into a countdown chip; the screen's edges glow in its colour, and each has its own look - a prism fringe, a heat grade with scan lines, a honeycomb shield rim (that ripples when it takes a hit), overdrive's speed lines and wider view. The last three seconds blink (`src/ui/serum-fx.js`).
+
+## The right tool: what each sphere is for
+
+The four spheres are one physical language - **glass** shatters, **cryo** freezes and puts fire out, **shock** overloads electrics, **gravity** pulls - and every sector asks its questions in it, so there is a reason to switch ([`docs/problem-solving.md`](./docs/problem-solving.md), [`docs/feedback-round-4.md`](./docs/feedback-round-4.md), [`docs/feedback-round-5.md`](./docs/feedback-round-5.md)):
+
+| Sector | Only the right tool... |
+| --- | --- |
+| Sector 01 - The Foundry | **Drop forges:** break the glass valve while the hammer is held up and it jams for good - or time your run under it |
+| Sector 02 - The Labs | **Fire walls** across the corridor: only cryo puts them out - and cryo puts out every fire it bursts near, the floor vents for good. **The jammed shutter:** only a full charged shot blows it out |
+| Sector 03 - The Skyline | **Security drones:** only shock's EMP brings one down. **Sealed doors:** only shock opens them. **Laser grids:** shock the junction box hung in the middle to kill the grid, or jump / slide it |
+| The Roof | **Gravity** lifts the patients and throws them off the open ledge (the brute too, which spheres barely hurt), and pulls in the **stranded supplies** off the west ledge. **Cryo** freezes the patients solid - a hit shatters a frozen one. **Shock** electrifies them in violet arcs and its charge jumps from one to the next, stunning them; charged, it lasts longer, reaches further and jumps more. A **flying mutant** frozen drops out of the sky and shatters; shocked, its wings lock and it drops |
+
+Each is drawn in its tool's colour with its sign, says what it wants the first time, fails visibly with the wrong tool, pays a bonus and the spheres back, and can still be passed without it at a cost - never a soft-lock. Before each sector, a card of two pages shows **New abilities** (the sphere and abilities it brings) and then **Watch out for** (its hazards and problems), with a picture of each.
+
+**Checkpoints:** once a level (the Foundry's Rolling Floor, the Labs' blackout, the Skyline's atrium), on Easy, Normal and Hard: a death past it offers a retry from there, with 75 / 50 / 25 integrity. Everything past the checkpoint is put back as it was - nothing you broke on the last attempt is a free way through, and the Skyline's gate is sealed again with its full clock.
 
 ## Sector 03 - The Skyline (the Glass Causeway module)
 
@@ -98,7 +113,16 @@ Beside it, the **Loadout** card: who you play as (female or male), skin tone, an
 
 The **pause menu** has the same buttons (resume, settings, restart, quit) and a guide with three tabs: the **moves** for the sector you are in (highlighted) and everywhere, the **spheres** (change type mid-run), and the **power-ups**, each with a picture of its capsule, what it does and how long it lasts.
 
-**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), and **Reduced motion & camera shake**. Choices persist locally.
+**Settings** (also the pause menu) has **Interface** (which HUD panels show - also the VIEW button), aim sensitivity, **graphics quality** (Auto, High, Medium, Low), **Reduced motion & camera shake**, and under **Sound** three volume sliders - the whole game, the music and the sound effects. Choices persist locally.
+
+**Customise** changes the character, complexion, outfit and the launcher's finish, and shows your leaderboard name card (change it there or on the **Leaderboards** screen).
+
+## Multiplayer (on one machine, controllers or keyboard and mouse)
+
+- **The Arena** (2-4 players): king of the hill on the roof, one camera over everyone. Spheres are thrown by hand: glass knocks, cryo freezes, gravity warps whoever it catches somewhere else on the roof, and shock blows everyone back - and its charge jumps on to whoever is near them in violet bolts, stunning them (never back to the thrower). Care packages bring serums.
+- **The Race** (2 players, split screen): head to head through the Foundry, the Labs or the Skyline. Glass comes from your spheres; each runner has **3 cryo, 3 shock and 3 gravity for the whole race**, shown on the sphere wheel. Cryo puts out the Labs' fire walls and vents and the Skyline's fires, and freezes a rival it catches in ice; shock leaves them stumbling in arcs; gravity pulls them into its lane. (The right-tool problems are not in the race: it is about the line you run.)
+
+Not on a phone: both need a keyboard or controllers.
 
 ## Sound
 
@@ -152,6 +176,9 @@ During a run, press `1`, `2`, `3`, `4` or `5` (see Controls). These shortcuts ar
 - [`docs/elevators.md`](./docs/elevators.md) - the elevators: the Gravity Fault lift (Level 2 to 3), how it plugs into `main.js`, and the plan for Level 3's lifts.
 - [`docs/figure-wear-shader.md`](./docs/figure-wear-shader.md) - the player figure (lab subject: scrubs, wristband, IV port) and its wear shader - clean, dusty, bloodied, geared up - block by block.
 - [`docs/credits.md`](./docs/credits.md) - credits and asset register.
+- [`docs/feedback-round-4.md`](./docs/feedback-round-4.md) and [`docs/feedback-round-5.md`](./docs/feedback-round-5.md) - the lecturer's feedback and what changed for it.
+- [`docs/problem-solving.md`](./docs/problem-solving.md) - the right-tool problems, sector by sector; [`docs/damage-audit.md`](./docs/damage-audit.md) - what cost players damage, skill or design, and the fixes.
+- [`docs/devlog-script.md`](./docs/devlog-script.md) - the devlog's script, scene by scene.
 - [`docs/pull-request-level-1.md`](./docs/pull-request-level-1.md) - pull request description and push steps for Level 1.
 
 ## Automated checks
@@ -159,10 +186,16 @@ During a run, press `1`, `2`, `3`, `4` or `5` (see Controls). These shortcuts ar
 ```text
 npm install --no-save playwright
 npx playwright install chromium
-node tests/causeway/run.js
+node --test tests/*.test.mjs
 node tests/foundry/run.js
+node tests/meltdown/run.js
+node tests/causeway/run.js
 node tests/elevators/run.js
+node tests/story/run.js
+node tests/touch/run.js
 ```
+
+The bots play each level and answer every sphere-only obstacle with the right tool (the tests fail if the right tool doesn't work); fairness checks prove every obstacle can be passed; `tests/meltdown/checks/holds.js` checks cryo's freeze and shock's chain on the roof.
 
 ## Team workflow
 
@@ -214,7 +247,7 @@ Three.js r160 is kept in the repository (`lib/three/`) rather than loaded from a
 
 ## Current status
 
-The whole story is playable from start to finish: the briefing film, the wake-up and the Foundry with Dr. Okoro, the Gravity Fault lift (its brake clamps as reaction prompts), the Labs with the breach, the bend attack and Okoro's sacrifice, the quiet ride up, the Skyline's demolition and bridge jump, the Roof, and the ending in the helicopter with the credits - over the main theme. A death restarts the sector you were in. The character and skin tone picked on the start screen are the player in every level. Endless runs each environment on its own. Music is managed by `src/audio/music-manager.js` (a track per stage, and the briefing's score, which starts with the film), the voices by `src/story/voice.js`, and the recorded effects - the patients, the alarm, your pain, the building coming down - by `src/audio/level1-audio.js`, in every level; the Foundry adds a synthesized machinery bed (`src/audio/foundry-ambience.js`), and the Labs their own synthesized effects. Everything goes through one limiter (`src/audio/output.js`). Each module has its own checks (`node tests/<story|meltdown|causeway|foundry|elevators>/run.js`). Frame rates still need to be measured on lab hardware (Chrome DevTools > Rendering > FPS meter).
+The whole story is playable from start to finish: the briefing film, the wake-up and the Foundry with Dr. Okoro, the Gravity Fault lift (its brake clamps as reaction prompts), the Labs with the breach, the bend attack and Okoro's sacrifice, the quiet ride up, the Skyline's demolition and bridge jump, the Roof, and the ending in the helicopter with the credits - over the main theme. A death restarts the sector you were in, or - past its checkpoint - from there, once. The character and skin tone picked on the start screen are the player in every level. Endless runs each environment on its own. Music is managed by `src/audio/music-manager.js` (a track per stage, and the briefing's score, which starts with the film), the voices by `src/story/voice.js`, and the recorded effects - the patients, the alarm, your pain, the building coming down - by `src/audio/level1-audio.js`, in every level; the Foundry adds a synthesized machinery bed (`src/audio/foundry-ambience.js`), and the Labs their own synthesized effects. Everything goes through one limiter (`src/audio/output.js`). Each module has its own checks (`node tests/<story|meltdown|causeway|foundry|elevators>/run.js`). Frame rates still need to be measured on lab hardware (Chrome DevTools > Rendering > FPS meter).
 
 ## Technology
 
