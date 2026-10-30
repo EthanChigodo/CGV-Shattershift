@@ -16,6 +16,15 @@
  *           down, whoever got furthest. (The Skyline's bridge never ends:
  *           there, furthest wins.)
  *
+ *   SPHERES  the story's, played as in Endless: glass from your spheres,
+ *           three each of cryo, shock and gravity for the race; a ring
+ *           that lights on what you can break - and on your rival - with
+ *           a little aim assist; a glass sphere into your rival knocks
+ *           them into a stumble. Serums work as in the story (Overdrive,
+ *           unlimited spheres, prism split, kinetic shield, Thermal
+ *           Aegis, restoration), each runner's own; run into one to take
+ *           it, or shoot it.
+ *
  *   const race = new Race({ renderer, pads, assetBase, audio, loading, onExit });
  *   await race.open();          // the lobby
  *   // every frame: race.update(dt); race.render();
@@ -34,8 +43,9 @@ import { SKIN_TONES } from "../../figure/look.js";
 import { HEADWEAR } from "../../figure/outfit.js";
 import { LAUNCHER_SKIN_ORDER, LAUNCHER_SKINS } from "../../figure/launcher-skins.js";
 import { unlockedKeys } from "../../figure/kits.js";
-import { BALLS, BALL_ORDER } from "../../systems/arsenal.js";
-import { SPHERE_FLIGHT, SPHERE_GEOMETRY, sphereMaterial, sphereHalo, launchVelocity, flySphere, floorSphere, touchSphere } from "../../systems/spheres.js";
+import { BALLS, BALL_ORDER, SERUMS } from "../../systems/arsenal.js";
+import { SPHERE_FLIGHT, SPHERE_GEOMETRY, sphereMaterial, sphereHalo, launchVelocity, flySphere, floorSphere, touchSphere, worldSphere } from "../../systems/spheres.js";
+import { LAYERS } from "../../levels/causeway/layers.js";
 import { SphereImpactFX } from "../../fx/sphere-impact.js";
 import { ElectricArcs } from "../../fx/electric.js";
 
@@ -57,6 +67,18 @@ export const RACE_SPECIALS = { cryo: 3, shock: 3, gravity: 3 };
  * pace), or shocked - violet arcs over them, stumbling (`shocked` s).
  */
 const CAUGHT = { frozen: 1.3, slow: 0.3, shocked: 1.2 };
+/** A glass sphere into the rival: the damage, and the stumble that costs them ground (Overdrive: 1.5x). */
+const RIVAL_HIT = { damage: 8, stumble: 0.8 };
+/** Standing in the Skyline's fire: integrity a second, full on (the story's). */
+const FIRE_BURN = 18;
+/**
+ * Aim assist (as the story's, main.js resolveAim): a ring within this much
+ * of something breakable - or the rival - counts as on it (in its half's
+ * -1..1, past the target's own size).
+ */
+const ASSIST = 0.1;
+/** The Labs' vials hold these serums (as the story's: meltdown/game.js). */
+const VIAL_SERUM = { coolant: "thermal", adrenaline: "overdrive", overcharge: "prism", barrier: "shield" };
 const REGEN = 2;
 const JUMP = 7.4;
 const GRAVITY = 19;
@@ -110,6 +132,12 @@ export class Race {
     this._onKey = (e) => this._key(e);
     this._onPointer = (e) => this._pointer(e);
     this.cameras = [new THREE.PerspectiveCamera(62, 1, 0.1, 600), new THREE.PerspectiveCamera(62, 1, 0.1, 600)];
+    // The Skyline draws its glass (and its fire, smoke and sparks) on layers
+    // of their own: seen by both screens, or the race ran past invisible glass.
+    for (const cam of this.cameras) {
+      cam.layers.enable(LAYERS.GLASS);
+      cam.layers.enable(LAYERS.FX);
+    }
   }
 
   get active() {
@@ -463,8 +491,11 @@ export class Race {
       return;
     }
     this.time += dt;
-    // (What the rings can be over, this frame.)
+    // (What the rings can be over, this frame - and what a sphere, or the
+    // aim, bounces off: not a pane's own collider just in front of its glass,
+    // as in the story's flight, nor anything switched off.)
     this._aimTargets = this._breakableMeshes();
+    this._solids = (this.course.solids?.() ?? []).filter((m) => !m.userData.glass && !m.userData.disabled);
     for (const p of this.players) this._run(p, dt);
     this._updateBalls(dt);
     this.impact?.update(dt);
@@ -507,6 +538,14 @@ export class Race {
     p.throwCd = Math.max(0, p.throwCd - dt);
     if (p.out || p.finished) return;
     p.time += dt;
+    // A serum running out.
+    if (p.power) {
+      p.power.left -= dt;
+      if (p.power.left <= 0) {
+        this.ui.flash(p, `${SERUMS[p.power.key].name.toUpperCase()} WORE OFF`);
+        p.power = null;
+      }
+    }
     const c = this._read(p);
     // Lanes: one per push.
     if (c.left && !p.prev.left) p.lane = Math.max(0, p.lane - 1);
@@ -533,7 +572,7 @@ export class Race {
       if (p.regen >= this.tier.regen) { p.regen = 0; p.ammo += 1; }
     }
     // Forward, sideways, up and down.
-    const pace = course.speedAt(p.distance) * (p.frozen > 0 ? CAUGHT.slow : p.stumble > 0 ? 0.45 : 1);
+    const pace = course.speedAt(p.distance) * (p.frozen > 0 ? CAUGHT.slow : p.stumble > 0 ? 0.45 : 1) * (p.power?.key === "overdrive" ? 1.25 : 1);
     p.distance += pace * dt;
     const want = LANES[p.lane];
     const prevLat = p.lateral;
@@ -549,12 +588,17 @@ export class Race {
     const tall = p.slide > 0 ? 1.0 : 1.9;
     course.sample(p.distance, p.lateral, 0.18 + p.height + tall / 2, _centre);
     _box.setFromCenterAndSize(_centre, _size.set(0.9, tall, 0.9));
-    const { hits, panes } = course.collide(_box, p.distance);
+    const { hits: all, panes, pickups = [] } = course.collide(_box, p.distance);
     for (const pane of panes) {
       // Through the glass: it breaks, and it hurts a little.
-      course.breakTarget(pane, { point: _centre.clone(), direction: new THREE.Vector3(0, 0, -1), body: true });
+      const broke = course.breakTarget(pane, { point: _centre.clone(), direction: new THREE.Vector3(0, 0, -1), body: true });
+      if (broke && !broke.rejected) this.impact?.splash(_centre, "glass", 1.2, null, { ground: false });
       this._hurt(p, PANE_DAMAGE, "THROUGH THE GLASS");
     }
+    // Run into a serum, a case file, a sphere cache: it's yours.
+    for (const m of pickups) this._break({ owner: p, ball: "glass", velocity: _fwd }, m, m.getWorldPosition(new THREE.Vector3()), { body: true });
+    // Thermal Aegis (a serum): fire can't burn you - the fire walls and vents pass you by.
+    const hits = p.power?.key === "thermal" ? all.filter((h) => !h.userData.fireWall && !h.userData.fireVent) : all;
     if (hits.length) {
       const h = hits[0];
       // A fallen duct (the Labs): you scramble up onto it - and it costs you.
@@ -564,25 +608,59 @@ export class Race {
       }
       this._hurt(p, (DAMAGE[course.key] ?? 18) * this.tier.damage, h.userData.barrier === "high" ? "LOW CLEARANCE" : "HIT");
     }
-    // The Labs: the fire behind, closer the more you're hurt.
+    // In the Skyline's fire: it burns, as in the story - unless a serum keeps it off.
+    const burning = course.burns?.(_box) ?? 0;
+    if (burning > 0 && p.power?.key !== "thermal" && p.power?.key !== "shield") {
+      p.hp = Math.max(0, p.hp - FIRE_BURN * this.tier.damage * burning * dt);
+      p.burnFlash = (p.burnFlash ?? 0) - dt;
+      if (p.burnFlash <= 0) { p.burnFlash = 1; this.ui.flash(p, "BURNING // CRYO PUTS IT OUT"); }
+      if (p.hp <= 0) this._out(p, "BURNED");
+    }
+    // The Labs: the fire behind, closer the more you're hurt (Thermal Aegis: it gains nothing).
     if (p.fire !== null) {
-      const target = p.distance - (4 + p.hp * 0.42);
-      p.fire += (target - p.fire) * Math.min(1, dt * (target > p.fire ? 0.9 : 3));
+      const target = p.distance - (4 + Math.min(HP, p.hp) * 0.42);
+      if (!(p.power?.key === "thermal" && target > p.fire)) p.fire += (target - p.fire) * Math.min(1, dt * (target > p.fire ? 0.9 : 3));
     }
     p.stats.best = Math.max(p.stats.best, p.distance);
   }
 
-  _hurt(p, amount, label) {
-    if (p.invuln > 0 || p.out) return;
+  /** Hurt a runner (`stumble`: how long they're knocked off their stride). False if it didn't land. */
+  _hurt(p, amount, label, { stumble = 0.55 } = {}) {
+    if (p.invuln > 0 || p.out) return false;
+    // A kinetic shield (a serum) takes it.
+    if (p.power?.key === "shield" && p.power.charges > 0) {
+      p.power.charges -= 1;
+      p.invuln = 0.8;
+      this.ui.flash(p, p.power.charges > 0 ? "SHIELD: 1 LEFT" : "SHIELD BROKEN");
+      if (p.power.charges <= 0) p.power = null;
+      this.audio?.impact?.(0.5);
+      return false;
+    }
     p.hp = Math.max(0, p.hp - amount);
     p.invuln = 1.1;
-    p.stumble = 0.55;
+    p.stumble = Math.max(p.stumble, stumble);
     p.shake = 1;
     p.stats.hits += 1;
     this.ui.hurt(p, label);
     this.audio?.impact?.(0.8);
     this.audio?.hurt?.(0.6);
     if (p.hp <= 0) this._out(p, this.course.fire ? "BURNED" : "WRECKED");
+    return true;
+  }
+
+  /** A serum (the story's - arsenal.js): restoration at once; the rest for their time, this runner's own. */
+  _serum(p, key) {
+    const def = SERUMS[key];
+    if (!def) return;
+    if (def.instant) {
+      p.hp = HP;
+      p.ammo = AMMO_MAX;
+      this.ui.flash(p, `${def.name.toUpperCase()} // FULL`);
+    } else {
+      p.power = { key, left: def.duration, charges: def.charges ?? 0 };
+      this.ui.flash(p, `${def.name.toUpperCase()} // ${def.duration} S`);
+    }
+    this.audio?.serumCollected?.();
   }
 
   _out(p, why) {
@@ -626,18 +704,28 @@ export class Race {
     _ray.near = near;
     _ray.far = far;
     let best = far;
-    let on = false;
+    // What the ring is on: something breakable, the rival, or nothing.
+    let on = null;
     const hit = this._aimTargets?.length ? _ray.intersectObjects(this._aimTargets, false)[0] : null;
-    if (hit) { best = hit.distance; on = true; }
-    const solids = this.course.solids?.() ?? [];
+    if (hit) { best = hit.distance; on = "target"; }
+    // The rival: their body.
+    let rival = null;
+    for (const q of this.players) {
+      if (q === p || q.out || !q.avatar) continue;
+      _rivalBox.setFromCenterAndSize(_rv.set(q.pos.x, q.pos.y + 0.95, q.pos.z), _rs.set(0.9, 1.9, 0.9));
+      const at = _ray.ray.intersectBox(_rivalBox, _rv);
+      const d = at ? o.distanceTo(at) : Infinity;
+      if (d > near && d < best) { best = d; on = "rival"; rival = q; }
+    }
+    const solids = this._solids ?? [];
     const solid = solids.length ? _ray.intersectObjects(solids, false)[0] : null;
-    if (solid && solid.distance < best) { best = solid.distance; on = false; }
+    if (solid && solid.distance < best) { best = solid.distance; on = null; }
     _ray.near = 0;
     _ray.far = Infinity;
     // The floor.
     if (dir.y < -1e-3) {
       const t = (0.05 - o.y) / dir.y;
-      if (t > near && t < best) { best = t; on = false; }
+      if (t > near && t < best) { best = t; on = null; }
     }
     // A wall or the ceiling, in steps along the line.
     if (this.course.surfaceHit) {
@@ -645,11 +733,56 @@ export class Race {
         _seg.copy(o).addScaledVector(dir, s);
         _p.copy(o).addScaledVector(dir, Math.min(best, s + 2.5));
         const sh = this.course.surfaceHit(_seg, _p, 0);
-        if (sh) { best = Math.min(best, o.distanceTo(sh.point ?? sh.position)); on = false; break; }
+        if (sh) { best = Math.min(best, o.distanceTo(sh.point ?? sh.position)); on = null; break; }
       }
     }
-    p.aimOn = on;
+    p.aimRival = on === "rival" ? rival : null;
+    p.aimOn = Boolean(on);
+    if (on) return p.aimAt.copy(o).addScaledVector(dir, best);
+    // Not on anything: close enough to something counts (the assist).
+    const assist = this._assist(p, cam, near, far);
+    if (assist) {
+      p.aimOn = true;
+      p.aimRival = assist.rival;
+      return p.aimAt.copy(assist.point);
+    }
     return p.aimAt.copy(o).addScaledVector(dir, best);
+  }
+
+  /**
+   * Aim assist: the breakable (or the rival) nearest the ring on screen,
+   * if it's within ASSIST of it past its own size, in range and in sight -
+   * the story's resolveAim, in a runner's half. { point, rival } or null.
+   */
+  _assist(p, cam, near, far) {
+    const tanHalf = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    _camFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    let best = null;
+    const consider = (centre, radius, rival = null) => {
+      _rv.subVectors(centre, cam.position);
+      const depth = _rv.dot(_camFwd);
+      if (depth < near || depth > far) return;
+      _ndc3.copy(centre).project(cam);
+      const size = radius / (depth * tanHalf);
+      const gap = Math.hypot((_ndc3.x - p.aim.x) * cam.aspect, _ndc3.y - p.aim.y) - size;
+      if (gap > ASSIST || (best && gap >= best.gap)) return;
+      best = { gap, point: centre.clone(), rival, depth };
+    };
+    for (const m of this._aimTargets ?? []) {
+      const s = worldSphere(m);
+      consider(s.center, Math.min(s.radius, 1.6));
+    }
+    for (const q of this.players) {
+      if (q === p || q.out || !q.avatar) continue;
+      consider(_rc.set(q.pos.x, q.pos.y + 1.0, q.pos.z), 0.6, q);
+    }
+    if (!best) return null;
+    // In sight: nothing solid between.
+    _sight.set(cam.position, _rv.subVectors(best.point, cam.position).normalize());
+    _sight.near = near;
+    _sight.far = cam.position.distanceTo(best.point) - 0.4;
+    const blocked = (this._solids?.length ? _sight.intersectObjects(this._solids, false) : []).length > 0;
+    return blocked ? null : best;
   }
 
   _cycleBall(p, step) {
@@ -667,22 +800,64 @@ export class Race {
     const def = BALLS[p.ball];
     if (p.throwCd > 0) return;
     // A special sphere: from the race's stock of it (RACE_SPECIALS); glass, from the spheres.
+    // (Unlimited spheres: every throw free; Overdrive: glass free - the story's serums.)
     const special = def.key in RACE_SPECIALS;
-    if (special && p.specials[def.key] <= 0) {
+    const free = p.power?.key === "infinite" || (p.power?.key === "overdrive" && !special);
+    if (special && !free && p.specials[def.key] <= 0) {
       this.ui.flash(p, `NO ${def.name.toUpperCase()} LEFT`);
       return;
     }
-    if (!special && p.ammo < def.cost) {
+    if (!special && !free && p.ammo < def.cost) {
       this.ui.flash(p, p.ammo < 1 ? "NO SPHERES" : `${def.name.toUpperCase()} NEEDS ${def.cost}`);
       return;
     }
-    const b = this.balls.find((x) => !x.active);
-    if (!b) return;
-    if (special) p.specials[def.key] -= 1;
-    else p.ammo -= def.cost;
+    if (!this.balls.some((x) => !x.active)) return;
+    if (!free) {
+      if (special) p.specials[def.key] -= 1;
+      else p.ammo -= def.cost;
+    }
     p.stats.thrown += 1;
     const hand = !p.rig;
     const speed = def.speed * (hand ? SPHERE_FLIGHT.handSpeed : 1);
+    // Where it goes: the ring's point - or, on the rival, where they'll be when it gets there.
+    const aim = this._throwAim(p, speed);
+    // Prism split (a serum): three at once, fanned across the lanes.
+    const count = p.power?.key === "prism" ? 3 : 1;
+    for (let k = 0; k < count; k += 1) {
+      const b = this.balls.find((x) => !x.active);
+      if (!b) break;
+      _aimK.copy(aim);
+      if (k) {
+        _right.subVectors(aim, p.pos).setY(0).normalize();
+        _aimK.x += -_right.z * (k === 1 ? 1.4 : -1.4);
+        _aimK.z += _right.x * (k === 1 ? 1.4 : -1.4);
+      }
+      this._launch(p, b, def, hand, speed, _aimK);
+    }
+    if (hand) {
+      p.throwCd = 0.32;
+      p.avatar?.throw();
+    } else p.throwCd = 0.22;
+    this.audio?.throwBall?.();
+  }
+
+  /** The point a throw goes for: the ring's, led onto a rival who's running too. */
+  _throwAim(p, speed) {
+    const at = this._aimPoint(p).clone();
+    const q = p.aimRival;
+    if (!q || q.out) return at;
+    const from = p.avatar?.root.position ?? p.pos;
+    const pace = this.course.speedAt(q.distance) * (q.frozen > 0 ? CAUGHT.slow : q.stumble > 0 ? 0.45 : 1) * (q.power?.key === "overdrive" ? 1.25 : 1);
+    let t = at.distanceTo(from) / speed;
+    for (let i = 0; i < 2; i += 1) {
+      this.course.sample(q.distance + pace * t, q.lateral, q.height + 1.0, at);
+      t = at.distanceTo(from) / speed;
+    }
+    return at;
+  }
+
+  /** One sphere out: its look, its flight, from the launcher (or the hand) at `aim`. */
+  _launch(p, b, def, hand, speed, aim) {
     b.gravity = def.gravity * (hand ? SPHERE_FLIGHT.handGravity : 1);
     b.ball = def.key;
     b.mesh.material = sphereMaterial(def.key);
@@ -695,18 +870,12 @@ export class Race {
     b.life = SPHERE_FLIGHT.life;
     b.owner = p;
     b.active = true;
-    if (hand) {
-      p.throwCd = 0.32;
-      p.avatar?.throw();
-      b.mesh.position.copy(p.pos).add(_v.set(0.3, 1.5, -0.4));
-    } else {
-      p.throwCd = 0.22;
-      p.rig.userData.muzzle.getWorldPosition(b.mesh.position);
-    }
+    b.landed = false;
+    if (hand) b.mesh.position.copy(p.pos).add(_v.set(0.3, 1.5, -0.4));
+    else p.rig.userData.muzzle.getWorldPosition(b.mesh.position);
     // At whatever is under the ring (so it lands there).
-    launchVelocity(b.mesh.position, this._aimPoint(p), speed, b.gravity, b.velocity);
+    launchVelocity(b.mesh.position, aim, speed, b.gravity, b.velocity);
     b.mesh.visible = true;
-    this.audio?.throwBall?.();
   }
 
   /**
@@ -731,7 +900,7 @@ export class Race {
     const targets = this._breakableMeshes();
     const world = {
       targets,
-      solids: this.course.solids?.() ?? [],
+      solids: this._solids ?? [],
       surfaceHit: this.course.surfaceHit ? (a, b, r) => this.course.surfaceHit(a, b, r) : null,
       graze: true,
     };
@@ -742,7 +911,16 @@ export class Race {
       const rival = this._rivalOn(b, b.from, pos);
       if (rival && (!met || rival.distance <= (met.hit ?? met.surface ?? met.solid)?.distance)) {
         if (b.ball !== "glass") this._detonate(b, rival.point);
-        else this._hurt(rival.player, 6, `HIT BY ${b.owner.name}`);
+        else {
+          // A glass sphere into them: hurt, and knocked off their stride.
+          const heavy = b.owner.power?.key === "overdrive" ? 1.5 : 1;
+          const landed = this._hurt(rival.player, RIVAL_HIT.damage * heavy, `HIT BY ${b.owner.name}`, { stumble: RIVAL_HIT.stumble });
+          this.impact?.splash(rival.point, "glass", 1.1, null, { ground: false });
+          if (landed) {
+            b.owner.stats.landed = (b.owner.stats.landed ?? 0) + 1;
+            this.ui.flash(b.owner, `HIT ${rival.player.name}`);
+          }
+        }
         this._spend(b);
         continue;
       }
@@ -784,12 +962,15 @@ export class Race {
     return null;
   }
 
-  /** Break it, for whoever threw it. */
-  _break(b, mesh, point) {
-    const r = this.course.breakTarget(mesh, { point, direction: b.velocity.clone().normalize(), ball: b.ball });
+  /** Break it, for whoever threw it (or ran into it: `info.body`). */
+  _break(b, mesh, point, info = {}) {
+    const r = this.course.breakTarget(mesh, { point, direction: b.velocity.clone().normalize(), ball: b.ball, ...info });
     if (!r || r.rejected) return r;
     b.owner.stats.broken += 1;
     if (r.spheres) b.owner.ammo = Math.min(AMMO_MAX, b.owner.ammo + Math.min(5, r.spheres));
+    // A serum in it (the Foundry's and the Skyline's by name, the Labs' by its vial).
+    const serum = r.serum ?? (r.powerupKind ? VIAL_SERUM[r.powerupKind] ?? r.powerupKind : null);
+    if (serum && SERUMS[serum]) this._serum(b.owner, serum);
     this.audio?.glassBreak?.();
     this.impact?.splash(point, "glass", 1, null, { ground: point.y < 0.6 });
     return r;
@@ -965,3 +1146,16 @@ const _ndc = new THREE.Vector2();
 const _seg = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _ray = new THREE.Raycaster();
+// (Every layer: the Skyline's glass, caches and vent covers are on their own - as the story's aim.)
+_ray.layers.enableAll();
+const _sight = new THREE.Raycaster();
+_sight.layers.enableAll();
+const _rivalBox = new THREE.Box3();
+const _rv = new THREE.Vector3();
+const _rs = new THREE.Vector3();
+const _rc = new THREE.Vector3();
+const _camFwd = new THREE.Vector3();
+const _ndc3 = new THREE.Vector3();
+const _aimK = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _fwd = new THREE.Vector3(0, 0, -1);

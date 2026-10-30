@@ -5,10 +5,12 @@
  *   const course = await buildCourse("foundry", { scene, renderer, assetBase });
  *   course.sample(distance, lateral, height, out)  -> a world point on it
  *   course.speedAt(distance)                       -> running pace, m/s
- *   course.collide(box, distance)                  -> { hits, panes }
+ *   course.collide(box, distance)                  -> { hits, panes, pickups } (panes: glass a body
+ *                                                     breaks through; pickups: what running into takes)
  *   course.groundAt(distance, lateral)             -> floor height (0, a duct's top)
  *   course.breakables()                            -> what a sphere can break
  *   course.breakTarget(mesh, info)                 -> break it (null if it isn't)
+ *   course.burns(box)                              -> 0..1, how much fire the body is in (the Skyline's)
  *   course.special(ball, point, reach)             -> a cryo / shock / gravity burst on the world
  *                                                     (cryo: the fires out) -> how many fires it put out
  *   course.surfaceHit(start, end, radius)          -> a wall or ceiling a sphere bounces off
@@ -164,11 +166,14 @@ function skylineCourse({ scene, renderer, tier, seed }) {
     speedAt: (d) => Math.min(15.5 * tier.speed, (10.4 + d / 220) * tier.speed),
     collide(box, d) {
       const r = level.collide(box, d);
-      return { hits: r.hits, panes: r.panes };
+      // (Run into a serum or a case file and it's yours, as in the story.)
+      return { hits: r.hits, panes: r.panes, pickups: r.pickups };
     },
     groundAt: () => 0,
     breakables: () => level.breakables,
     breakTarget: (mesh, info) => level.breakTarget(mesh, { ball: "glass", ...info }),
+    // Its fires burn, as in the story (main.js: 18 integrity a second, full on).
+    burns: (box) => level.fireExposure(box),
     // Cryo: its fires out and its falling debris frozen, as in the story (index.js splash).
     special: (ball, point, reach) => (ball === "cryo" ? level.splash(point, reach, "cryo").extinguished : 0),
     surfaceHit: (start, end, radius) => level.corridorSurfaceHit(start, end, radius),
@@ -202,6 +207,7 @@ async function labsCourse({ scene, renderer, assetBase, tier, seed }) {
   const total = level.route.totalLength;
   const leadPos = new THREE.Vector3();
   const at = new THREE.Vector3();
+  const near = new THREE.Vector3();
   return {
     key: "labs",
     start: 8,
@@ -209,7 +215,29 @@ async function labsCourse({ scene, renderer, assetBase, tier, seed }) {
     fire: true,
     sample: (d, lateral, h, out) => out.copy(level.route.sample(d, lateral, h).position),
     speedAt: (d) => level.speedAt(d) * 1.05 * tier.speed,
-    collide: (box, d) => ({ hits: level.collide(box, d), panes: [] }),
+    /**
+     * A pane's collider is its glass: through it, the glass breaks (a hit,
+     * not a wall). A sphere cache or a serum in reach is taken - running
+     * into it, as in the story.
+     */
+    collide(box, d) {
+      const hits = [];
+      const panes = [];
+      for (const h of level.collide(box, d)) {
+        if (h.userData.glass && h.userData.glassMesh) panes.push(h.userData.glassMesh);
+        else hits.push(h);
+      }
+      box.getCenter(at);
+      const pickups = [];
+      for (const m of level.breakables) {
+        const kind = m.userData.kind;
+        if ((kind !== "sack" && kind !== "powerup") || !m.userData.alive) continue;
+        if (Math.abs((m.userData.routeDistance ?? -99) - d) > 1.4) continue;
+        m.getWorldPosition(near);
+        if (Math.hypot(near.x - at.x, near.z - at.z) < 1.1) pickups.push(m);
+      }
+      return { hits, panes, pickups };
+    },
     groundAt: (d, lateral) => level.groundAt(d, 0.45, lateral),
     breakables: () => level.breakables,
     breakTarget: (mesh) => level.breakTarget(mesh, 2),
